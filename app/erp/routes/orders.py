@@ -123,7 +123,7 @@ def _create_order_view(order_type: str):
         created = conn.execute("SELECT id FROM orders WHERE order_no=?", (order_no,)).fetchone()
         order_id = int(created["id"])
     if request.form.get("save_action") == "save_print":
-        return redirect(url_for("orders.order_pdf", order_id=order_id))
+        return redirect(url_for("orders.order_pdf", order_id=order_id), code=303)
     return redirect(url_for("orders.list_orders"))
 
 @orders_bp.get("/<int:order_id>")

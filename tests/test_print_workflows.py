@@ -78,7 +78,7 @@ def test_save_print_redirects_to_order_pdf():
         "quantity": ["1"],
         "save_action": "save_print",
     })
-    assert response.status_code == 302
+    assert response.status_code == 303
     with get_db() as conn:
         order = conn.execute("SELECT id FROM orders WHERE order_no=?", (order_no,)).fetchone()
     assert response.headers["Location"].endswith(f"/orders/{order['id']}/pdf")
