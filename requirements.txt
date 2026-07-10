@@ -1,0 +1,9 @@
+Flask==3.0.3
+WeasyPrint==62.3
+pydyf==0.10.0
+openpyxl==3.1.5
+pypinyin==0.51.0
+pytest==8.3.3
+pytest-cov==5.0.0
+waitress==3.0.0
+python-dotenv==1.0.1

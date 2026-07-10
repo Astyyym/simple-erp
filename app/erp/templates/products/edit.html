@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>编辑商品</h2>
+<form method="post" class="col-6">
+  <label class="form-label">商品名称</label><input class="form-control mb-3" name="name" value="{{product.name}}" required>
+  <label class="form-label">单位</label><input class="form-control mb-3" name="unit" value="{{product.unit}}" required>
+  <label class="form-label">默认单价(元)</label><input class="form-control mb-3" name="default_price" value="{{cents_to_yuan(product.default_price_cents)}}" required>
+  <button class="btn btn-primary">保存</button>
+  <a class="btn btn-secondary" href="/products/">返回</a>
+</form>
+{% endblock %}

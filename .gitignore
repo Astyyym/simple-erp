@@ -1,0 +1,38 @@
+# Python / Flask
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+.venv-win/
+venv/
+
+# Runtime business data - do not commit customer/order data
+data/
+logs/
+temp_pdf/
+backups/
+imports/
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+
+# Build outputs
+dist/
+build/
+*.spec.bak
+
+# Local temp files
+temp_*.py
+temp_*.ps1
+.DS_Store
+Thumbs.db
+
+# Environment / secrets
+.env
+.env.*

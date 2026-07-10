@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>回收站</h2>
+<p class="text-muted">删除后的记录进入回收站，保留 7 天后启动系统时自动清理。也可以在这里确认删除。</p>
+
+<h3>单据</h3>
+<div class="d-flex gap-2 mb-2"><button class="btn btn-success" onclick="submitSelected('restoreOrdersForm','确认恢复选中的单据吗？')">恢复选中</button><button class="btn btn-danger" onclick="submitSelected('purgeOrdersForm','确认彻底删除选中的单据吗？')">确认删除选中</button></div>
+<form id="restoreOrdersForm" method="post" action="/recycle/bulk/order/restore"></form><form id="purgeOrdersForm" method="post" action="/recycle/bulk/order/purge"></form>
+<table class="table table-striped stable-table"><tr><th style="width:44px"><input type="checkbox" onclick="toggleAll(this,'order_ids')"></th><th>单号</th><th>客户</th><th>金额</th><th>删除时间</th><th>操作</th></tr>{% for o in orders %}<tr><td><input type="checkbox" name="order_ids" value="{{o.id}}" onchange="syncRecycleChecks()"></td><td>{{o.order_no}}</td><td>{{o.customer_name}}</td><td>{{cents_to_yuan(o.total_amount_cents)}}</td><td>{{o.deleted_at}}</td><td><form class="d-inline" method="post" action="/recycle/order/{{o.id}}/restore"><button class="btn btn-sm btn-success">恢复</button></form> <form class="d-inline" method="post" action="/recycle/order/{{o.id}}/purge" onsubmit="return confirm('确认彻底删除这条单据吗？')"><button class="btn btn-sm btn-danger">确认删除</button></form></td></tr>{% endfor %}</table>
+
+<h3>商品</h3>
+<div class="d-flex gap-2 mb-2"><button class="btn btn-success" onclick="submitSelected('restoreProductsForm','确认恢复选中的商品吗？')">恢复选中</button><button class="btn btn-danger" onclick="submitSelected('purgeProductsForm','确认彻底删除选中的商品吗？')">确认删除选中</button></div>
+<form id="restoreProductsForm" method="post" action="/recycle/bulk/product/restore"></form><form id="purgeProductsForm" method="post" action="/recycle/bulk/product/purge"></form>
+<table class="table table-striped stable-table"><tr><th style="width:44px"><input type="checkbox" onclick="toggleAll(this,'product_ids')"></th><th>名称</th><th>单位</th><th>价格</th><th>删除时间</th><th>操作</th></tr>{% for p in products %}<tr><td><input type="checkbox" name="product_ids" value="{{p.id}}" onchange="syncRecycleChecks()"></td><td>{{p.name}}</td><td>{{p.unit}}</td><td>{{cents_to_yuan(p.default_price_cents)}}</td><td>{{p.deleted_at}}</td><td><form class="d-inline" method="post" action="/recycle/product/{{p.id}}/restore"><button class="btn btn-sm btn-success">恢复</button></form> <form class="d-inline" method="post" action="/recycle/product/{{p.id}}/purge" onsubmit="return confirm('确认彻底删除这个商品吗？历史单据会保留商品名称快照。')"><button class="btn btn-sm btn-danger">确认删除</button></form></td></tr>{% endfor %}</table>
+
+<h3>客户</h3>
+<div class="d-flex gap-2 mb-2"><button class="btn btn-success" onclick="submitSelected('restoreCustomersForm','确认恢复选中的客户吗？')">恢复选中</button><button class="btn btn-danger" onclick="submitSelected('purgeCustomersForm','确认彻底删除选中的客户吗？有历史账务的客户不会被物理删除。')">确认删除选中</button></div>
+<form id="restoreCustomersForm" method="post" action="/recycle/bulk/customer/restore"></form><form id="purgeCustomersForm" method="post" action="/recycle/bulk/customer/purge"></form>
+<table class="table table-striped stable-table"><tr><th style="width:44px"><input type="checkbox" onclick="toggleAll(this,'customer_ids')"></th><th>名称</th><th>电话</th><th>删除时间</th><th>操作</th></tr>{% for c in customers %}<tr><td><input type="checkbox" name="customer_ids" value="{{c.id}}" onchange="syncRecycleChecks()"></td><td>{{c.name}}</td><td>{{c.phone}}</td><td>{{c.deleted_at}}</td><td><form class="d-inline" method="post" action="/recycle/customer/{{c.id}}/restore"><button class="btn btn-sm btn-success">恢复</button></form> <form class="d-inline" method="post" action="/recycle/customer/{{c.id}}/purge" onsubmit="return confirm('确认彻底删除这个客户吗？有历史账务的客户不会被物理删除。')"><button class="btn btn-sm btn-danger">确认删除</button></form></td></tr>{% endfor %}</table>
+
+<script>
+function syncRecycleChecks(){
+  const map = [['order_ids','restoreOrdersForm','purgeOrdersForm'], ['product_ids','restoreProductsForm','purgeProductsForm'], ['customer_ids','restoreCustomersForm','purgeCustomersForm']];
+  map.forEach(([name, restoreId, purgeId]) => {
+    [restoreId, purgeId].forEach(formId => {
+      const form = document.getElementById(formId); form.innerHTML = '';
+      document.querySelectorAll('input[name="'+name+'"]:checked').forEach(cb => {
+        const hidden = document.createElement('input'); hidden.type='hidden'; hidden.name='ids'; hidden.value=cb.value; form.appendChild(hidden);
+      });
+    });
+  });
+}
+document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.addEventListener('change', syncRecycleChecks));
+</script>
+{% endblock %}

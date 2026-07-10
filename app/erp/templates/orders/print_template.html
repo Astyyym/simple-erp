@@ -1,0 +1,58 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page { size: {{config.printer_paper_width_mm}}mm {{config.printer_paper_height_mm}}mm; margin: 0; }
+    body { font-family: "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; margin: 0; color: #000; }
+    .page {
+      width: {{config.printer_paper_width_mm}}mm;
+      min-height: {{config.printer_paper_height_mm}}mm;
+      box-sizing: border-box;
+      padding: 9mm 11mm;
+      transform: translate({{config.print_offset_x_mm}}mm, {{config.print_offset_y_mm}}mm) scale({{config.print_scale}});
+      transform-origin: top left;
+    }
+    h1 { text-align: center; margin: 0 0 4mm 0; font-size: 23px; letter-spacing: 2px; }
+    .subtitle { text-align: center; font-size: 15px; margin-bottom: 4mm; }
+    .meta { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3mm; font-size: 14px; margin-bottom: 4mm; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+    td, th { border: 1px solid #333; padding: 1.8mm; text-align: center; word-break: break-all; }
+    .name-cell { text-align: left; }
+    .total-row td { font-weight: 700; font-size: 14px; }
+    .bottom { margin-top: 5mm; font-size: 12px; line-height: 1.65; }
+    .business { margin-top: 4mm; }
+    .legal-note { margin-top: 1mm; }
+    .sign-row { width: 62mm; margin: 3mm 22mm 0 auto; font-size: 14px; line-height: 1.9; text-align: left; box-sizing: border-box; }
+  </style>
+</head>
+<body>
+  <section class="page">
+    <h1>{{config.shop_name}}</h1>
+    <div class="subtitle">销售清单</div>
+    <div class="meta">
+      <span>单号: {{order.order_no}}</span>
+      <span>日期: {{order.order_date}}</span>
+      <span>客户: {{order.customer_name}}</span>
+    </div>
+    <table>
+      <colgroup><col style="width:10mm"><col><col style="width:16mm"><col style="width:20mm"><col style="width:24mm"><col style="width:26mm"></colgroup>
+      <tr><th>序号</th><th>名称规格</th><th>单位</th><th>数量</th><th>单价</th><th>小计</th></tr>
+      {% for item in items %}
+      <tr><td>{{loop.index}}</td><td class="name-cell">{{item.product_name}} {{item.spec}}</td><td>{{item.unit}}</td><td>{{item.quantity}}</td><td>{{cents_to_yuan(item.unit_price_cents)}}</td><td>{{cents_to_yuan(item.subtotal_cents)}}</td></tr>
+      {% endfor %}
+      <tr class="total-row"><td colspan="5" style="text-align:right">合计</td><td>¥{{cents_to_yuan(order.total_amount_cents)}}</td></tr>
+    </table>
+
+    <div class="bottom">
+      <div class="business">
+        <div><strong>订货电话：</strong>REDACTED_PHONE_2　REDACTED_PHONE_3　REDACTED_PHONE_1（支付宝）</div>
+        <div><strong>订货地址：</strong>REDACTED_ADDRESS</div>
+        <div><strong>主营业务：</strong>软密封闸阀，蝶阀，铜芯硬密封（国，韩标）过滤器，止回阀等消防闸门</div>
+      </div>
+      <div class="legal-note"><strong>备注：</strong>本销售单等同于合同，具有法律效力，收货人签字或附托运物流单号生效，直至货款结清{% if order.notes %}；{{order.notes}}{% endif %}</div>
+      <div class="sign-row"><div>制单人：REDACTED_CONTACT</div><div>收货人：________________</div></div>
+    </div>
+  </section>
+</body>
+</html>

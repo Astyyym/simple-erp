@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>单据回看：{{order.order_no}}</h2>
+<div class="mb-3">
+  <a class="btn btn-secondary" href="/orders/">返回列表</a>
+  <a class="btn btn-primary" href="/orders/{{order.id}}/edit">重编辑</a>
+  <a class="btn btn-info" href="/orders/{{order.id}}/pdf" target="_blank">查看PDF</a>
+</div>
+<div class="card mb-3"><div class="card-body">
+  <p><strong>客户：</strong>{{order.customer_name}}</p>
+  <p><strong>日期：</strong>{{order.order_date}}</p>
+  <p><strong>状态：</strong>{{order.status}}</p>
+  <p><strong>备注：</strong>{{order.notes}}</p>
+</div></div>
+<table class="table table-bordered">
+  <tr><th>序号</th><th>产品名称</th><th>单位</th><th>数量</th><th>单价</th><th>小计</th></tr>
+  {% for item in items %}
+  <tr><td>{{loop.index}}</td><td>{{item.product_name}}</td><td>{{item.unit}}</td><td>{{item.quantity}}</td><td>{{cents_to_yuan(item.unit_price_cents)}}</td><td>{{cents_to_yuan(item.subtotal_cents)}}</td></tr>
+  {% endfor %}
+  <tr><th colspan="5" class="text-end">合计</th><th>{{cents_to_yuan(order.total_amount_cents)}}</th></tr>
+</table>
+{% endblock %}

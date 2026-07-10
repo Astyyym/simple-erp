@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>商品管理</h2>
+<form class="row g-2 mb-3" method="post" action="/products/create">
+  <input class="form-control col" name="name" placeholder="商品名" required>
+  <input class="form-control col" name="spec" placeholder="规格">
+  <input class="form-control col" name="unit" placeholder="单位" required>
+  <input class="form-control col" name="default_price" placeholder="默认单价(元)" required>
+  <button class="btn btn-primary col-2">新增商品</button>
+</form>
+<button class="btn btn-danger mb-3" type="button" onclick="submitSelected('bulkProductsForm','确认删除选中的商品吗？')">删除选中</button>
+<form id="bulkProductsForm" method="post" action="/products/bulk_delete"></form>
+<table class="table table-striped align-middle stable-table">
+  <colgroup><col style="width:44px"><col style="width:26%"><col style="width:18%"><col style="width:12%"><col style="width:14%"><col style="width:220px"></colgroup>
+  <tr><th><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>名称</th><th>规格</th><th>单位</th><th>默认价</th><th class="action-cell">操作</th></tr>
+  {% for p in products %}
+  <tr>
+    <td><input form="bulkProductsForm" type="checkbox" name="ids" value="{{p.id}}"></td><td title="{{p.name}}">{{p.name}}</td><td title="{{p.spec}}">{{p.spec}}</td><td>{{p.unit}}</td><td>{{cents_to_yuan(p.default_price_cents)}}</td>
+    <td class="action-cell"><div class="action-wrap"><a class="btn btn-sm btn-primary" href="/products/{{p.id}}/edit">编辑</a><form class="d-inline ajax-delete-form" method="post" action="/products/{{p.id}}/delete"><button class="btn btn-sm btn-danger">删除</button></form></div></td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

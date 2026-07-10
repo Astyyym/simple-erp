@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>编辑客户</h2>
+<form method="post" class="col-6">
+  <label class="form-label">客户名称</label><input class="form-control mb-3" name="name" value="{{customer.name}}" required>
+  <label class="form-label">电话</label><input class="form-control mb-3" name="phone" value="{{customer.phone}}">
+  <label class="form-label">地址</label><input class="form-control mb-3" name="address" value="{{customer.address}}">
+  <label class="form-label">期初余额(元)</label><input class="form-control mb-3" name="opening_balance" value="{{cents_to_yuan(customer.opening_balance_cents)}}">
+  <button class="btn btn-primary">保存</button>
+  <a class="btn btn-secondary" href="/customers/">返回</a>
+</form>
+{% endblock %}

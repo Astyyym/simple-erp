@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block content %}
+{% set is_edit = order is defined and order %}
+<style>
+  .order-table input { border: 0; width: 100%; padding: 8px; background: transparent; }
+  .order-table td, .order-table th { vertical-align: middle; padding: 0; }
+  .suggest-wrap { position: relative; }
+  .suggest-list { position: absolute; z-index: 20; left: 0; right: 0; top: 100%; background: white; border: 1px solid #bbb; max-height: 220px; overflow-y: auto; box-shadow: 0 4px 12px #0002; }
+  .suggest-item { padding: 8px 10px; cursor: pointer; }
+  .suggest-item:hover { background: #e3f2fd; }
+  .readonly-total { background: #f5f5f5; padding: 8px; min-height: 38px; }
+  .unit-cell { display: flex; gap: 4px; padding: 4px; }
+  .unit-cell select { width: 74px; }
+  .price-cell { padding: 4px !important; }
+  .price-cell input { border: 0; width: 100%; padding: 4px 6px; background: transparent; }
+  .regular-price-option { display: none; margin-top: 3px; font-size: 12px; color: #0d6efd; cursor: pointer; user-select: none; }
+  .regular-price-option input { width: auto; margin-right: 3px; }
+</style>
+
+<h2>{{ '重编辑销售单' if is_edit else '新建销售单' }}</h2>
+<form method="post" action="{{ '/orders/' ~ order.id ~ '/edit' if is_edit else '/orders/create' }}" id="orderForm">
+  <input type="hidden" name="customer_id" id="customer_id" value="{{order.customer_id if is_edit else ''}}">
+  <div class="row g-3 mb-3">
+    <div class="col-4 suggest-wrap">
+      <label class="form-label">客户名称</label>
+      <input class="form-control form-control-lg" id="customer_name" name="customer_name" autocomplete="off" placeholder="输入一个字即可匹配客户" value="{{order.customer_name if is_edit else ''}}" required>
+      <div class="suggest-list d-none" id="customer_suggestions"></div>
+    </div>
+    <div class="col-3">
+      <label class="form-label">销售日期</label>
+      <input class="form-control form-control-lg" type="date" name="order_date" value="{{order.order_date if is_edit else today}}" required>
+    </div>
+    <div class="col-3">
+      <label class="form-label">单号</label>
+      <input class="form-control form-control-lg" name="order_no" value="{{order.order_no if is_edit else order_no}}" required>
+    </div>
+    <div class="col-2">
+      <label class="form-label">状态</label>
+      <select class="form-select form-select-lg" name="status">
+        {% for s, label in [('saved','正式保存'), ('draft','草稿'), ('printed','已打印'), ('void','已作废')] %}
+        <option value="{{s}}" {% if is_edit and order.status == s %}selected{% endif %}>{{label}}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <h4>订单信息</h4>
+  <table class="table table-bordered order-table" id="orderTable">
+    <thead class="table-light"><tr><th style="width:50px">序号</th><th>产品名称</th><th style="width:190px">单位</th><th style="width:120px">数量</th><th style="width:140px">单价(元)</th><th style="width:140px">金额</th><th style="width:80px">操作</th></tr></thead>
+    <tbody id="orderBody">
+      {% set rows = items if is_edit else [none] %}
+      {% for item in rows %}
+      <tr>
+        <td class="text-center row-no">{{loop.index}}</td>
+        <td class="suggest-wrap"><input name="product_name" class="product-name" autocomplete="off" placeholder="输入产品名" value="{{item.product_name if item else ''}}"><div class="suggest-list d-none product-suggestions"></div></td>
+        <td><div class="unit-cell"><select class="form-select form-select-sm unit-select"><option value="">自定义</option>{% for u in ['个','套','件'] %}<option value="{{u}}" {% if item and item.unit == u %}selected{% endif %}>{{u}}</option>{% endfor %}</select><input name="unit" class="unit" placeholder="自定义" value="{{item.unit if item else ''}}"></div></td>
+        <td><input name="quantity" class="quantity" inputmode="decimal" placeholder="0" value="{{item.quantity if item else ''}}"></td>
+        <td class="price-cell"><input name="unit_price" class="unit-price" inputmode="decimal" placeholder="0.00" value="{{cents_to_yuan(item.unit_price_cents) if item else ''}}"><label class="regular-price-option"><input type="checkbox" class="regular-price-check">常规价 <span class="regular-price-text"></span></label></td>
+        <td><div class="readonly-total line-total">0.00</div></td>
+        <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="clearRow(this)">清空</button></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot><tr><th colspan="5" class="text-end p-2">合计</th><th class="p-2" id="grandTotal">0.00</th><th></th></tr></tfoot>
+  </table>
+  <textarea class="form-control my-3" name="notes" placeholder="备注">{{order.notes if is_edit else ''}}</textarea>
+  <div class="d-flex gap-2 align-items-center justify-content-end">
+    <button type="button" class="btn btn-outline-primary btn-lg" onclick="addRow()">新增一行</button>
+    <button class="btn btn-primary btn-lg" name="save_action" value="{{ 'save' if is_edit else 'save_print' }}">{{ '保存修改' if is_edit else '保存/打印订单' }}</button>
+  </div>
+</form>
+
+<script>
+function money(n) { return (Math.round((Number(n) || 0) * 100) / 100).toFixed(2); }
+function recalc() {
+  let total = 0;
+  document.querySelectorAll('#orderBody tr').forEach((tr, idx) => {
+    tr.querySelector('.row-no').textContent = idx + 1;
+    const qty = Number(tr.querySelector('.quantity').value || 0);
+    const price = Number(tr.querySelector('.unit-price').value || 0);
+    const line = qty * price;
+    tr.querySelector('.line-total').textContent = money(line);
+    total += line;
+  });
+  document.getElementById('grandTotal').textContent = money(total);
+}
+function clearRow(btn) {
+  const tr = btn.closest('tr');
+  tr.querySelectorAll('input').forEach(i => i.value = '');
+  tr.querySelector('.unit-select').value = '';
+  const regularOption = tr.querySelector('.regular-price-option');
+  if (regularOption) regularOption.style.display = 'none';
+  recalc();
+}
+function addRow() {
+  const tbody = document.getElementById('orderBody');
+  const tr = tbody.rows[0].cloneNode(true);
+  tr.querySelectorAll('input').forEach(i => i.value = '');
+  tr.querySelector('.unit-select').value = '';
+  tr.querySelector('.line-total').textContent = '0.00';
+  const regularOption = tr.querySelector('.regular-price-option');
+  if (regularOption) regularOption.style.display = 'none';
+  tbody.appendChild(tr);
+  bindRow(tr);
+  recalc();
+}
+async function fetchJson(url) { const res = await fetch(url); return await res.json(); }
+function showSuggestions(box, items, render, onPick) {
+  box.innerHTML = '';
+  if (!items.length) { box.classList.add('d-none'); return; }
+  items.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'suggest-item';
+    div.innerHTML = render(item);
+    div.onclick = () => { onPick(item); box.classList.add('d-none'); };
+    box.appendChild(div);
+  });
+  box.classList.remove('d-none');
+}
+const customerInput = document.getElementById('customer_name');
+customerInput.addEventListener('input', async () => {
+  document.getElementById('customer_id').value = '';
+  const q = customerInput.value.trim();
+  const box = document.getElementById('customer_suggestions');
+  if (!q) { box.classList.add('d-none'); return; }
+  const items = await fetchJson('/orders/api/customers?q=' + encodeURIComponent(q));
+  showSuggestions(box, items, c => `<strong>${c.name}</strong> <small>${c.phone || ''}</small>`, c => {
+    customerInput.value = c.name;
+    document.getElementById('customer_id').value = c.id;
+  });
+});
+function bindRow(tr) {
+  tr.querySelectorAll('.quantity,.unit-price').forEach(input => input.addEventListener('input', recalc));
+  const unitSelect = tr.querySelector('.unit-select');
+  const unitInput = tr.querySelector('.unit');
+  unitSelect.addEventListener('change', () => { if (unitSelect.value) unitInput.value = unitSelect.value; });
+  const productInput = tr.querySelector('.product-name');
+  const priceInput = tr.querySelector('.unit-price');
+  const regularOption = tr.querySelector('.regular-price-option');
+  const regularCheck = tr.querySelector('.regular-price-check');
+  const regularText = tr.querySelector('.regular-price-text');
+  if (regularCheck) {
+    regularCheck.addEventListener('change', () => {
+      if (regularCheck.checked && regularCheck.dataset.price) {
+        priceInput.value = regularCheck.dataset.price;
+        recalc();
+      } else if (!regularCheck.checked && regularCheck.dataset.customerPrice) {
+        priceInput.value = regularCheck.dataset.customerPrice;
+        recalc();
+      }
+    });
+  }
+  const box = tr.querySelector('.product-suggestions');
+  productInput.addEventListener('input', async () => {
+    const q = productInput.value.trim();
+    if (!q) { box.classList.add('d-none'); return; }
+    const items = await fetchJson('/orders/api/products?q=' + encodeURIComponent(q) + '&customer_id=' + encodeURIComponent(document.getElementById('customer_id').value || '0'));
+    showSuggestions(box, items, p => `<strong>${p.name}</strong> <small>${p.spec || ''} / ${p.unit || ''} / ${p.is_customer_price ? '客户价：' + p.unit_price + '元 / 常规价：' + p.regular_price + '元' : '常规价：' + p.regular_price + '元'}</small>`, p => {
+      productInput.value = p.name;
+      unitInput.value = p.unit || '';
+      if (['个','套','件'].includes(p.unit)) unitSelect.value = p.unit; else unitSelect.value = '';
+      priceInput.value = p.unit_price || '';
+      if (p.is_customer_price && p.regular_price) {
+        regularText.textContent = p.regular_price + '元';
+        regularCheck.dataset.price = p.regular_price;
+        regularCheck.dataset.customerPrice = p.unit_price;
+        regularCheck.checked = false;
+        regularOption.style.display = 'block';
+      } else {
+        regularText.textContent = '';
+        regularCheck.dataset.price = '';
+        regularCheck.dataset.customerPrice = '';
+        regularCheck.checked = false;
+        regularOption.style.display = 'none';
+      }
+      tr.querySelector('.quantity').focus();
+      recalc();
+    });
+  });
+}
+document.querySelectorAll('#orderBody tr').forEach(bindRow);
+document.addEventListener('click', e => { if (!e.target.closest('.suggest-wrap')) document.querySelectorAll('.suggest-list').forEach(x => x.classList.add('d-none')); });
+{% if not is_edit %}
+document.getElementById('orderForm').addEventListener('submit', e => {
+  const submitter = e.submitter;
+  if (submitter && submitter.name === 'save_action' && submitter.value === 'save_print') {
+    e.currentTarget.target = '_blank';
+    setTimeout(() => { window.location.href = '/orders/new'; }, 300);
+  }
+});
+{% endif %}
+recalc();
+</script>
+{% endblock %}

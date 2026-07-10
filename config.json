@@ -1,0 +1,17 @@
+{
+  "app_name": "消防器材店ERP系统",
+  "host": "127.0.0.1",
+  "port": 5000,
+  "debug": false,
+  "shop_name": "简单ERP",
+  "database_path": "data/erp.db",
+  "backup_retention_days": 30,
+  "monthly_backup_retention_months": 12,
+  "print_offset_x_mm": 0,
+  "print_offset_y_mm": 0,
+  "print_scale": 1.0,
+  "printer_paper_width_mm": 241,
+  "printer_paper_height_mm": 280,
+  "local_access_password_enabled": false,
+  "local_access_password_hash": ""
+}
