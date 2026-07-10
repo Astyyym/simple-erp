@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>商品管理</h2>
+<form class="row g-2 mb-3" method="get" action="/products/">
+  <input class="form-control col" id="productSearchInput" name="q" value="{{q}}" list="product_name_suggestions" placeholder="输入相似字符查找商品">
+  <datalist id="product_name_suggestions">{% for s in suggestions %}<option value="{{s.name}}"></option>{% endfor %}</datalist>
+  <button class="btn btn-primary col-2">查找商品</button>
+  <a class="btn btn-outline-secondary col-2" href="/products/">清除信息</a>
+</form>
 <form class="row g-2 mb-3" method="post" action="/products/create">
   <input class="form-control col" name="name" placeholder="商品名" required>
   <input class="form-control col" name="spec" placeholder="规格">
@@ -20,4 +26,15 @@
   </tr>
   {% endfor %}
 </table>
+<script>
+const productSearchInput = document.getElementById('productSearchInput');
+const productSuggestions = document.getElementById('product_name_suggestions');
+productSearchInput.addEventListener('input', async () => {
+  const q = productSearchInput.value.trim();
+  if (!q) { productSuggestions.innerHTML = ''; return; }
+  const response = await fetch('/products/api/suggestions?q=' + encodeURIComponent(q));
+  const names = await response.json();
+  productSuggestions.innerHTML = names.map(name => `<option value="${name}"></option>`).join('');
+});
+</script>
 {% endblock %}

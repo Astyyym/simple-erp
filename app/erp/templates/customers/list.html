@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>客户管理</h2>
+<form class="row g-2 mb-3" method="get" action="/customers/">
+  <input class="form-control col" id="customerSearchInput" name="q" value="{{q}}" list="customer_name_suggestions" placeholder="输入相似字符查找客户">
+  <datalist id="customer_name_suggestions">{% for s in suggestions %}<option value="{{s.name}}"></option>{% endfor %}</datalist>
+  <button class="btn btn-primary col-2">查找客户</button>
+  <a class="btn btn-outline-secondary col-2" href="/customers/">清除信息</a>
+</form>
 <form class="row g-2 mb-3" method="post" action="/customers/create"><input class="form-control col" name="name" placeholder="客户名称" required><input class="form-control col" name="phone" placeholder="电话"><input class="form-control col" name="address" placeholder="地址"><input class="form-control col" name="opening_balance" placeholder="期初余额(元)" value="0"><button class="btn btn-primary col-2">新增客户</button></form>
 <button class="btn btn-danger mb-3" type="button" onclick="submitSelected('bulkCustomersForm','确认删除选中的客户吗？')">删除选中</button>
 <form id="bulkCustomersForm" method="post" action="/customers/bulk_delete"></form>
@@ -14,4 +20,15 @@
   </tr>
   {% endfor %}
 </table>
+<script>
+const customerSearchInput = document.getElementById('customerSearchInput');
+const customerSuggestions = document.getElementById('customer_name_suggestions');
+customerSearchInput.addEventListener('input', async () => {
+  const q = customerSearchInput.value.trim();
+  if (!q) { customerSuggestions.innerHTML = ''; return; }
+  const response = await fetch('/customers/api/suggestions?q=' + encodeURIComponent(q));
+  const names = await response.json();
+  customerSuggestions.innerHTML = names.map(name => `<option value="${name}"></option>`).join('');
+});
+</script>
 {% endblock %}

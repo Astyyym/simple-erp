@@ -62,12 +62,21 @@ def list_orders():
 
 @orders_bp.get("/new")
 def new_order():
+    return _new_order_form("sale")
+
+
+@orders_bp.get("/return/new")
+def new_return_order():
+    return _new_order_form("return")
+
+
+def _new_order_form(order_type: str):
     today = request.args.get("date") or date.today().isoformat()
     with get_db() as conn:
         customers = conn.execute("SELECT * FROM customers WHERE deleted_at IS NULL ORDER BY name").fetchall()
         products = conn.execute("SELECT * FROM products WHERE deleted_at IS NULL ORDER BY usage_count DESC, name").fetchall()
         order_no = next_order_no(conn, today)
-    return render_template("orders/new.html", customers=customers, products=products, today=today, order_no=order_no, cents_to_yuan=cents_to_yuan)
+    return render_template("orders/new.html", customers=customers, products=products, today=today, order_no=order_no, order_type=order_type, cents_to_yuan=cents_to_yuan)
 
 def _resolve_customer_id() -> int:
     customer_name = request.form.get("customer_name", "").strip()
@@ -96,11 +105,20 @@ def _typed_rows_from_form() -> list[dict]:
 
 @orders_bp.post("/create")
 def create_order_view():
+    return _create_order_view("sale")
+
+
+@orders_bp.post("/return/create")
+def create_return_order_view():
+    return _create_order_view("return")
+
+
+def _create_order_view(order_type: str):
     customer_id = _resolve_customer_id()
     rows = _typed_rows_from_form()
     with get_db() as conn:
         order_no = bump_order_no_if_exists(conn, request.form["order_no"])
-    create_order_from_typed_rows(customer_id, order_no, rows, status=request.form.get("status", "saved"), order_date=request.form.get("order_date"), notes=request.form.get("notes", ""))
+    create_order_from_typed_rows(customer_id, order_no, rows, status=request.form.get("status", "saved"), order_date=request.form.get("order_date"), notes=request.form.get("notes", ""), order_type=order_type)
     with get_db() as conn:
         created = conn.execute("SELECT id FROM orders WHERE order_no=?", (order_no,)).fetchone()
         order_id = int(created["id"])
@@ -121,7 +139,7 @@ def edit_order(order_id: int):
     with get_db() as conn:
         order = conn.execute("SELECT o.*, c.name AS customer_name FROM orders o JOIN customers c ON c.id=o.customer_id WHERE o.id=?", (order_id,)).fetchone()
         items = conn.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (order_id,)).fetchall()
-    return render_template("orders/new.html", order=order, items=items, today=date.today().isoformat(), cents_to_yuan=cents_to_yuan)
+    return render_template("orders/new.html", order=order, items=items, today=date.today().isoformat(), order_type=order["order_type"] if "order_type" in order.keys() else "sale", cents_to_yuan=cents_to_yuan)
 
 
 @orders_bp.post("/<int:order_id>/edit")

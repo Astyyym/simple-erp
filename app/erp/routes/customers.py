@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, Response
+from flask import Blueprint, render_template, request, redirect, url_for, Response, jsonify
 from erp.db import get_db
 from erp.services.accounting import create_customer
 from erp.utils.money import yuan_to_cents, cents_to_yuan
@@ -7,9 +7,25 @@ customers_bp = Blueprint("customers", __name__, url_prefix="/customers")
 
 @customers_bp.get("/")
 def list_customers():
+    q = request.args.get("q", "").strip()
     with get_db() as conn:
-        customers = conn.execute("SELECT * FROM customers WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE ASC, id ASC LIMIT 200").fetchall()
-    return render_template("customers/list.html", customers=customers, cents_to_yuan=cents_to_yuan)
+        if q:
+            customers = conn.execute("SELECT * FROM customers WHERE deleted_at IS NULL AND (name LIKE ? OR phone LIKE ? OR address LIKE ?) ORDER BY name COLLATE NOCASE ASC, id ASC LIMIT 200", (f"%{q}%", f"%{q}%", f"%{q}%")).fetchall()
+        else:
+            customers = conn.execute("SELECT * FROM customers WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE ASC, id ASC LIMIT 200").fetchall()
+        suggestions = conn.execute("SELECT DISTINCT name FROM customers WHERE deleted_at IS NULL AND name LIKE ? ORDER BY name LIMIT 20", (f"%{q}%" if q else "%",)).fetchall()
+    return render_template("customers/list.html", customers=customers, suggestions=suggestions, cents_to_yuan=cents_to_yuan, q=q)
+
+@customers_bp.get("/api/suggestions")
+def customer_suggestions():
+    q = request.args.get("q", "").strip()
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT name FROM customers WHERE deleted_at IS NULL AND name LIKE ? ORDER BY name LIMIT 20",
+            (f"%{q}%",),
+        ).fetchall()
+    return jsonify([row["name"] for row in rows])
+
 
 @customers_bp.post("/create")
 def create_customer_view():

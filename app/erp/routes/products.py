@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, Response
+from flask import Blueprint, render_template, request, redirect, url_for, Response, jsonify
 from erp.db import get_db
 from erp.services.accounting import create_product
 from erp.utils.money import yuan_to_cents, cents_to_yuan
@@ -13,7 +13,19 @@ def list_products():
             rows = conn.execute("SELECT * FROM products WHERE deleted_at IS NULL AND (name LIKE ? OR spec LIKE ? OR pinyin_initials LIKE ?) ORDER BY usage_count DESC, id DESC", (f"%{q}%", f"%{q}%", f"%{q}%")).fetchall()
         else:
             rows = conn.execute("SELECT * FROM products WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE ASC, id ASC LIMIT 200").fetchall()
-    return render_template("products/list.html", products=rows, cents_to_yuan=cents_to_yuan, q=q)
+        suggestions = conn.execute("SELECT DISTINCT name FROM products WHERE deleted_at IS NULL AND name LIKE ? ORDER BY usage_count DESC, name LIMIT 20", (f"%{q}%" if q else "%",)).fetchall()
+    return render_template("products/list.html", products=rows, suggestions=suggestions, cents_to_yuan=cents_to_yuan, q=q)
+
+@products_bp.get("/api/suggestions")
+def product_suggestions():
+    q = request.args.get("q", "").strip()
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT name FROM products WHERE deleted_at IS NULL AND name LIKE ? ORDER BY usage_count DESC, name LIMIT 20",
+            (f"%{q}%",),
+        ).fetchall()
+    return jsonify([row["name"] for row in rows])
+
 
 @products_bp.post("/create")
 def create_product_view():

@@ -10,7 +10,7 @@ def test_init_db_enables_wal_and_schema_version():
         journal_mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
         version = conn.execute("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1").fetchone()[0]
     assert journal_mode == "wal"
-    assert version == 1
+    assert version == 2
     assert integrity_check() == "ok"
 
 

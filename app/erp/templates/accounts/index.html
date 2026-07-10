@@ -6,6 +6,7 @@
   <input class="form-control col" type="date" name="start_date" value="{{start_date}}" title="开始日期">
   <input class="form-control col" type="date" name="end_date" value="{{end_date}}" title="结束日期">
   <button class="btn btn-primary col-2">查询订单</button>
+  <a class="btn btn-outline-secondary col-2" href="/accounts/">清除筛选条件</a>
 </form>
 {% if selected_customer %}
 <h4>{{selected_customer.name}} 的订单{% if start_date or end_date %}（{{start_date or '最早'}} 至 {{end_date or '最新'}}）{% endif %}</h4>
@@ -14,7 +15,7 @@
   <button class="btn btn-danger" type="button" onclick="submitSelected('bulkAccountOrdersForm','确认删除选中的订单吗？')">删除选中</button>
 </div>
 <form id="bulkAccountOrdersForm" method="post" action="/accounts/bulk_delete_orders"><input type="hidden" name="customer_id" value="{{selected_customer.id}}">
-<table class="table table-bordered stable-table"><colgroup><col style="width:44px"><col><col><col><col><col></colgroup><tr><th><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>单号</th><th>日期</th><th>金额</th><th>状态</th><th>操作</th></tr>{% for o in orders %}<tr><td><input type="checkbox" name="ids" value="{{o.id}}"></td><td>{{o.order_no}}</td><td>{{o.order_date}}</td><td>{{cents_to_yuan(o.total_amount_cents)}}</td><td>{{o.status}}</td><td><a class="btn btn-sm btn-secondary" href="/orders/{{o.id}}">回看</a></td></tr>{% endfor %}</table></form>
+<table class="table table-bordered stable-table"><colgroup><col style="width:44px"><col><col><col><col><col></colgroup><tr><th><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>单号</th><th>日期</th><th>金额</th><th>状态</th><th>操作</th></tr>{% for o in orders %}<tr class="{{ 'table-danger return-order-row' if o.order_type == 'return' else '' }}" data-order-type="{{o.order_type}}"><td><input type="checkbox" name="ids" value="{{o.id}}"></td><td>{{o.order_no}}</td><td>{{o.order_date}}</td><td>{{cents_to_yuan(o.total_amount_cents)}}</td><td>{{o.status}}</td><td><a class="btn btn-sm btn-secondary" href="/orders/{{o.id}}">回看</a></td></tr>{% endfor %}</table></form>
 {% endif %}
 <table class="table"><tr><th>客户</th><th>余额</th></tr>{% for c in customers %}<tr><td>{{c.name}}</td><td class="fw-bold">{{cents_to_yuan(balances[c.id])}}</td></tr>{% endfor %}</table>
 <h3>登记收款</h3><form class="row g-2" method="post" action="/accounts/payment"><select class="form-select col" name="customer_id">{% for c in customers %}<option value="{{c.id}}">{{c.name}}</option>{% endfor %}</select><input class="form-control col" name="amount" placeholder="金额"><input class="form-control col" name="method" value="现金"><button class="btn btn-success col-2">收款</button></form>

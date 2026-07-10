@@ -111,7 +111,7 @@ def _upsert_product_and_customer_price(conn, customer_id: int, product_name: str
     return product_id
 
 
-def create_order_from_typed_rows(customer_id: int, order_no: str, rows: Iterable[dict], status: str = "draft", order_date: str | None = None, notes: str = "") -> int:
+def create_order_from_typed_rows(customer_id: int, order_no: str, rows: Iterable[dict], status: str = "draft", order_date: str | None = None, notes: str = "", order_type: str = "sale") -> int:
     """Create an order from Excel-like typed rows.
 
     Each row may contain product_name, unit, unit_price_yuan, quantity and optional spec.
@@ -121,6 +121,9 @@ def create_order_from_typed_rows(customer_id: int, order_no: str, rows: Iterable
     """
     if status not in {"draft", "saved"}:
         raise ValueError("新建订单只能是 draft 或 saved")
+    if order_type not in {"sale", "return"}:
+        raise ValueError("单据类型不合法")
+    sign = -1 if order_type == "return" else 1
     order_date = order_date or date.today().isoformat()
     prepared = []
     total = 0
@@ -135,11 +138,11 @@ def create_order_from_typed_rows(customer_id: int, order_no: str, rows: Iterable
             unit_price_cents = yuan_to_cents(row.get("unit_price_yuan", "0"))
             product_id = _upsert_product_and_customer_price(conn, customer_id, product_name, spec, unit, unit_price_cents)
             subtotal = line_subtotal_cents(quantity, unit_price_cents)
-            total += subtotal
+            total += subtotal * sign
             prepared.append((product_id, product_name, spec, unit, quantity, unit_price_cents, subtotal))
         cur = conn.execute(
-            "INSERT INTO orders(order_no, customer_id, order_date, total_amount_cents, status, notes) VALUES (?, ?, ?, ?, ?, ?)",
-            (order_no, customer_id, order_date, total, status, notes),
+            "INSERT INTO orders(order_no, customer_id, order_date, total_amount_cents, status, order_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (order_no, customer_id, order_date, total, status, order_type, notes),
         )
         order_id = int(cur.lastrowid)
         conn.executemany(

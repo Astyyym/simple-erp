@@ -29,7 +29,7 @@ def _account_summary_display_dates(rows, start_date: str, end_date: str) -> tupl
 
 
 def _account_summary_table_rows(rows) -> list[dict]:
-    """Add rowspan metadata so repeated dates/order numbers print as merged cells."""
+    """Add rowspan metadata so repeated dates/order numbers/totals print as merged cells."""
     prepared = [dict(row) for row in rows]
     date_counts: dict[str, int] = {}
     order_counts: dict[str, int] = {}
@@ -42,13 +42,38 @@ def _account_summary_table_rows(rows) -> list[dict]:
     for row in prepared:
         order_date = row["order_date"]
         order_no = row["order_no"]
+        row["is_return"] = row.get("order_type") == "return"
         row["show_date"] = order_date not in seen_dates
         row["date_rowspan"] = date_counts[order_date]
         row["show_order_no"] = order_no not in seen_orders
         row["order_no_rowspan"] = order_counts[order_no]
+        row["show_order_total"] = order_no not in seen_orders
+        row["order_total_rowspan"] = order_counts[order_no]
         seen_dates.add(order_date)
         seen_orders.add(order_no)
     return prepared
+
+
+def _account_summary_totals(rows) -> dict[str, int]:
+    """Summarize one total per order, then split sales/returns for the printed formula."""
+    seen_orders: set[str] = set()
+    sale_total = 0
+    return_total = 0
+    for row in rows:
+        order_no = row["order_no"]
+        if order_no in seen_orders:
+            continue
+        seen_orders.add(order_no)
+        order_total = int(row.get("order_total_cents", row.get("subtotal_cents", 0)) or 0)
+        if row.get("order_type") == "return":
+            return_total += abs(order_total)
+        else:
+            sale_total += order_total
+    return {
+        "sale_total_cents": sale_total,
+        "return_total_cents": return_total,
+        "net_total_cents": sale_total - return_total,
+    }
 
 
 def generate_account_summary_pdf(customer_id: int, start_date: str = "", end_date: str = "") -> Path:
@@ -65,7 +90,8 @@ def generate_account_summary_pdf(customer_id: int, start_date: str = "", end_dat
         customer = conn.execute("SELECT * FROM customers WHERE id=?", (customer_id,)).fetchone()
         rows = conn.execute(
             f"""
-            SELECT o.order_no, o.order_date, oi.product_name, oi.spec, oi.unit,
+            SELECT o.order_no, o.order_date, o.order_type, o.total_amount_cents AS order_total_cents,
+                   oi.product_name, oi.spec, oi.unit,
                    oi.quantity, oi.unit_price_cents, oi.subtotal_cents
             FROM orders o
             JOIN order_items oi ON oi.order_id=o.id
@@ -83,13 +109,16 @@ def generate_account_summary_pdf(customer_id: int, start_date: str = "", end_dat
     config = load_config()
     total_cents = int(total_row["total"] or 0)
     display_start_date, display_end_date = _account_summary_display_dates(rows, start_date, end_date)
+    prepared_rows = _account_summary_table_rows(rows)
+    totals = _account_summary_totals(prepared_rows)
     html = render_template(
         "accounts/summary_pdf.html",
         customer=customer,
-        rows=_account_summary_table_rows(rows),
+        rows=prepared_rows,
         start_date=display_start_date,
         end_date=display_end_date,
         total_cents=total_cents,
+        totals=totals,
         config=config,
         cents_to_yuan=cents_to_yuan,
     )

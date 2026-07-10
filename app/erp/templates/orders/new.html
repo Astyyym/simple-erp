@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
 {% set is_edit = order is defined and order %}
+{% set order_type = order_type|default('sale') %}
+{% set is_return = order_type == 'return' %}
 <style>
   .order-table input { border: 0; width: 100%; padding: 8px; background: transparent; }
   .order-table td, .order-table th { vertical-align: middle; padding: 0; }
@@ -17,8 +19,8 @@
   .regular-price-option input { width: auto; margin-right: 3px; }
 </style>
 
-<h2>{{ '重编辑销售单' if is_edit else '新建销售单' }}</h2>
-<form method="post" action="{{ '/orders/' ~ order.id ~ '/edit' if is_edit else '/orders/create' }}" id="orderForm">
+<h2>{{ ('重编辑退货单' if is_return else '重编辑销售单') if is_edit else ('新建退货单' if is_return else '新建销售单') }}</h2>
+<form method="post" action="{{ '/orders/' ~ order.id ~ '/edit' if is_edit else ('/orders/return/create' if is_return else '/orders/create') }}" id="orderForm">
   <input type="hidden" name="customer_id" id="customer_id" value="{{order.customer_id if is_edit else ''}}">
   <div class="row g-3 mb-3">
     <div class="col-4 suggest-wrap">
@@ -27,7 +29,7 @@
       <div class="suggest-list d-none" id="customer_suggestions"></div>
     </div>
     <div class="col-3">
-      <label class="form-label">销售日期</label>
+      <label class="form-label">{{ '退货日期' if is_return else '销售日期' }}</label>
       <input class="form-control form-control-lg" type="date" name="order_date" value="{{order.order_date if is_edit else today}}" required>
     </div>
     <div class="col-3">
@@ -44,7 +46,7 @@
     </div>
   </div>
 
-  <h4>订单信息</h4>
+  <h4>{{ '退货信息' if is_return else '订单信息' }}</h4>
   <table class="table table-bordered order-table" id="orderTable">
     <thead class="table-light"><tr><th style="width:50px">序号</th><th>产品名称</th><th style="width:190px">单位</th><th style="width:120px">数量</th><th style="width:140px">单价(元)</th><th style="width:140px">金额</th><th style="width:80px">操作</th></tr></thead>
     <tbody id="orderBody">
@@ -66,7 +68,7 @@
   <textarea class="form-control my-3" name="notes" placeholder="备注">{{order.notes if is_edit else ''}}</textarea>
   <div class="d-flex gap-2 align-items-center justify-content-end">
     <button type="button" class="btn btn-outline-primary btn-lg" onclick="addRow()">新增一行</button>
-    <button class="btn btn-primary btn-lg" name="save_action" value="{{ 'save' if is_edit else 'save_print' }}">{{ '保存修改' if is_edit else '保存/打印订单' }}</button>
+    <button class="btn btn-primary btn-lg" name="save_action" value="{{ 'save' if is_edit else 'save_print' }}">{{ '保存修改' if is_edit else ('保存/打印退货单' if is_return else '保存/打印订单') }}</button>
   </div>
 </form>
 
@@ -185,7 +187,7 @@ document.getElementById('orderForm').addEventListener('submit', e => {
   const submitter = e.submitter;
   if (submitter && submitter.name === 'save_action' && submitter.value === 'save_print') {
     e.currentTarget.target = '_blank';
-    setTimeout(() => { window.location.href = '/orders/new'; }, 300);
+    setTimeout(() => { window.location.href = '{{ "/orders/return/new" if is_return else "/orders/new" }}'; }, 300);
   }
 });
 {% endif %}

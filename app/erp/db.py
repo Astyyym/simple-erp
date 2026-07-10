@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 from .config import project_path
 
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 
 def db_path() -> Path:
@@ -35,6 +35,7 @@ def init_db() -> None:
         conn.execute("PRAGMA synchronous=NORMAL")
         apply_schema(conn)
         ensure_soft_delete_columns(conn)
+        ensure_order_type_column(conn)
         purge_expired_recycle_bin(conn)
         row = conn.execute("PRAGMA integrity_check").fetchone()
         if row[0] != "ok":
@@ -64,6 +65,12 @@ def ensure_soft_delete_columns(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN deleted_at TEXT")
         if "delete_reason" not in cols:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN delete_reason TEXT DEFAULT ''")
+
+
+def ensure_order_type_column(conn: sqlite3.Connection) -> None:
+    cols = _columns(conn, "orders")
+    if "order_type" not in cols:
+        conn.execute("ALTER TABLE orders ADD COLUMN order_type TEXT NOT NULL DEFAULT 'sale' CHECK(order_type IN ('sale','return'))")
 
 
 def purge_expired_recycle_bin(conn: sqlite3.Connection) -> None:
@@ -124,6 +131,7 @@ CREATE TABLE IF NOT EXISTS orders (
     order_date TEXT NOT NULL,
     total_amount_cents INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','saved','printed','void')),
+    order_type TEXT NOT NULL DEFAULT 'sale' CHECK(order_type IN ('sale','return')),
     notes TEXT DEFAULT '',
     void_reason TEXT DEFAULT '',
     print_count INTEGER NOT NULL DEFAULT 0,

@@ -21,11 +21,11 @@ def test_account_summary_pdf_uses_filtered_order_items_without_grouping():
     assert path.stat().st_size > 0
 
 
-def test_account_summary_rows_merge_same_date_and_order_no():
+def test_account_summary_rows_merge_same_date_and_order_no_and_show_order_total_once():
     rows = [
-        {"order_date": "2026-07-10", "order_no": "SUM-001", "product_name": "A", "spec": "", "unit": "个", "quantity": "1", "unit_price_cents": 1000, "subtotal_cents": 1000},
-        {"order_date": "2026-07-10", "order_no": "SUM-002", "product_name": "B", "spec": "", "unit": "个", "quantity": "1", "unit_price_cents": 2000, "subtotal_cents": 2000},
-        {"order_date": "2026-07-10", "order_no": "SUM-002", "product_name": "C", "spec": "", "unit": "个", "quantity": "1", "unit_price_cents": 3000, "subtotal_cents": 3000},
+        {"order_date": "2026-07-10", "order_no": "SUM-001", "order_type": "sale", "product_name": "A", "spec": "", "unit": "个", "quantity": "1", "unit_price_cents": 1000, "subtotal_cents": 1000, "order_total_cents": 1000},
+        {"order_date": "2026-07-10", "order_no": "SUM-002", "order_type": "return", "product_name": "B", "spec": "", "unit": "个", "quantity": "1", "unit_price_cents": 2000, "subtotal_cents": 2000, "order_total_cents": -5000},
+        {"order_date": "2026-07-10", "order_no": "SUM-002", "order_type": "return", "product_name": "C", "spec": "", "unit": "个", "quantity": "1", "unit_price_cents": 3000, "subtotal_cents": 3000, "order_total_cents": -5000},
     ]
 
     prepared = _account_summary_table_rows(rows)
@@ -35,7 +35,28 @@ def test_account_summary_rows_merge_same_date_and_order_no():
     assert prepared[1]["show_date"] is False
     assert prepared[1]["show_order_no"] is True
     assert prepared[1]["order_no_rowspan"] == 2
+    assert prepared[1]["show_order_total"] is True
+    assert prepared[1]["order_total_rowspan"] == 2
+    assert prepared[1]["is_return"] is True
     assert prepared[2]["show_order_no"] is False
+    assert prepared[2]["show_order_total"] is False
+
+
+def test_account_summary_totals_split_sale_return_and_net():
+    from erp.utils.pdf import _account_summary_totals
+
+    rows = [
+        {"order_no": "S1", "order_type": "sale", "order_total_cents": 10000},
+        {"order_no": "S1", "order_type": "sale", "order_total_cents": 10000},
+        {"order_no": "R1", "order_type": "return", "order_total_cents": -3000},
+        {"order_no": "R1", "order_type": "return", "order_total_cents": -3000},
+    ]
+
+    totals = _account_summary_totals(rows)
+
+    assert totals["sale_total_cents"] == 10000
+    assert totals["return_total_cents"] == 3000
+    assert totals["net_total_cents"] == 7000
 
 
 def test_save_print_redirects_to_order_pdf():
