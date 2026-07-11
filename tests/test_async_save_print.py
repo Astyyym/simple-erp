@@ -58,6 +58,22 @@ def test_fetch_save_print_returns_json_with_get_urls(route, expected_next_url, p
     assert payload["order_id"] == saved["id"]
 
 
+def test_order_entry_disables_browser_history_but_keeps_erp_suggestions():
+    init_db()
+    client = create_app().test_client()
+
+    for path in ("/orders/new", "/orders/return/new"):
+        html = client.get(path).get_data(as_text=True)
+        assert 'id="orderForm" autocomplete="off"' in html
+        assert 'id="customer_name" name="customer_name" autocomplete="new-password"' in html
+        assert 'name="product_name" class="product-name" autocomplete="new-password"' in html
+        assert 'name="quantity" class="quantity" autocomplete="new-password"' in html
+        assert 'name="unit_price" class="unit-price" autocomplete="new-password"' in html
+        assert 'data-lpignore="true"' in html
+        assert "fetchJson('/orders/api/customers?q='" in html
+        assert "fetchJson('/orders/api/products?q='" in html
+
+
 def test_order_entry_uses_fetch_success_panel_without_blank_post_target():
     init_db()
     client = create_app().test_client()

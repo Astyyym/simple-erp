@@ -4,37 +4,49 @@
 {% set order_type = order_type|default('sale') %}
 {% set is_return = order_type == 'return' %}
 <style>
-  .order-table input { border: 0; width: 100%; padding: 8px; background: transparent; }
+  .order-table { background: #fff; border: 1px solid var(--erp-border); border-radius: var(--erp-radius); overflow: visible; box-shadow: var(--erp-shadow); }
+  .order-table input { border: 0; width: 100%; min-height: 42px; padding: 8px 10px; background: transparent; }
+  .order-table input:focus { outline: 2px solid var(--erp-primary); outline-offset: -2px; background: #fff; }
   .order-table td, .order-table th { vertical-align: middle; padding: 0; }
+  .order-table thead th { height: 42px; padding: 0 10px; background: #f7f8fa; color: #475467; font-size: 12px; font-weight: 650; }
+  .order-table tfoot th { background: #f7f8fa; }
   .suggest-wrap { position: relative; }
-  .suggest-list { position: absolute; z-index: 20; left: 0; right: 0; top: 100%; background: white; border: 1px solid #bbb; max-height: 220px; overflow-y: auto; box-shadow: 0 4px 12px #0002; }
-  .suggest-item { padding: 8px 10px; cursor: pointer; }
-  .suggest-item:hover { background: #e3f2fd; }
-  .readonly-total { background: #f5f5f5; padding: 8px; min-height: 38px; }
+  .suggest-list { position: absolute; z-index: 20; left: 0; right: 0; top: 100%; background: white; border: 1px solid var(--erp-border-strong); max-height: 220px; overflow-y: auto; border-radius: 0 0 7px 7px; box-shadow: 0 12px 28px rgba(16,24,40,.14); }
+  .suggest-item { padding: 9px 11px; cursor: pointer; border-bottom: 1px solid #eef0f3; }
+  .suggest-item:hover { background: var(--erp-primary-soft); }
+  .readonly-total { background: #f7f8fa; padding: 10px; min-height: 42px; font-variant-numeric: tabular-nums; }
   .unit-cell { display: flex; gap: 4px; padding: 4px; }
   .unit-cell select { width: 74px; }
   .price-cell { padding: 4px !important; }
   .price-cell input { border: 0; width: 100%; padding: 4px 6px; background: transparent; }
-  .regular-price-option { display: none; margin-top: 3px; font-size: 12px; color: #0d6efd; cursor: pointer; user-select: none; }
-  .regular-price-option input { width: auto; margin-right: 3px; }
+  .regular-price-option { display: none; margin: 3px 6px 4px; font-size: 12px; color: var(--erp-primary); cursor: pointer; user-select: none; }
+  .regular-price-option input { width: auto; min-height: auto; margin-right: 3px; }
+  .order-heading { display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:20px; }
+  .order-heading h2 { margin:0 0 4px; }.order-heading p{margin:0;color:var(--erp-muted);font-size:13px}
+  .order-meta { background:#fff; border:1px solid var(--erp-border); border-radius:var(--erp-radius); padding:16px; box-shadow:var(--erp-shadow); }
+  .section-title{font-size:14px;font-weight:650;color:#344054;margin:22px 0 10px}
 </style>
 
-<h2>{{ ('重编辑退货单' if is_return else '重编辑销售单') if is_edit else ('新建退货单' if is_return else '新建销售单') }}</h2>
-<form method="post" action="{{ '/orders/' ~ order.id ~ '/edit' if is_edit else ('/orders/return/create' if is_return else '/orders/create') }}" id="orderForm">
+<div class="order-heading">
+  <div><h2>{{ ('重编辑退货单' if is_return else '重编辑销售单') if is_edit else ('新建退货单' if is_return else '新建销售单') }}</h2><p>{{ '登记客户退回商品，金额将冲减应收账款。' if is_return else '按行录入商品，完成后保存并打开打印单。' }}</p></div>
+  <a class="btn btn-outline-secondary" href="/orders/">返回单据查询</a>
+</div>
+<form method="post" action="{{ '/orders/' ~ order.id ~ '/edit' if is_edit else ('/orders/return/create' if is_return else '/orders/create') }}" id="orderForm" autocomplete="off">
   <input type="hidden" name="customer_id" id="customer_id" value="{{order.customer_id if is_edit else ''}}">
-  <div class="row g-3 mb-3">
+  <div class="order-meta">
+  <div class="row g-3">
     <div class="col-4 suggest-wrap">
       <label class="form-label">客户名称</label>
-      <input class="form-control form-control-lg" id="customer_name" name="customer_name" autocomplete="off" placeholder="输入一个字即可匹配客户" value="{{order.customer_name if is_edit else ''}}" required>
+      <input class="form-control form-control-lg" id="customer_name" name="customer_name" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="输入一个字即可匹配客户" value="{{order.customer_name if is_edit else ''}}" required>
       <div class="suggest-list d-none" id="customer_suggestions"></div>
     </div>
     <div class="col-3">
       <label class="form-label">{{ '退货日期' if is_return else '销售日期' }}</label>
-      <input class="form-control form-control-lg" type="date" name="order_date" value="{{order.order_date if is_edit else today}}" required>
+      <input class="form-control form-control-lg" type="date" name="order_date" autocomplete="off" value="{{order.order_date if is_edit else today}}" required>
     </div>
     <div class="col-3">
       <label class="form-label">单号</label>
-      <input class="form-control form-control-lg" name="order_no" value="{{order.order_no if is_edit else order_no}}" required>
+      <input class="form-control form-control-lg" name="order_no" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" value="{{order.order_no if is_edit else order_no}}" required>
     </div>
     <div class="col-2">
       <label class="form-label">状态</label>
@@ -45,8 +57,9 @@
       </select>
     </div>
   </div>
+  </div>
 
-  <h4>{{ '退货信息' if is_return else '订单信息' }}</h4>
+  <div class="section-title">{{ '退货信息' if is_return else '订单信息' }}</div>
   <table class="table table-bordered order-table" id="orderTable">
     <thead class="table-light"><tr><th style="width:50px">序号</th><th>产品名称</th><th style="width:190px">单位</th><th style="width:120px">数量</th><th style="width:140px">单价(元)</th><th style="width:140px">金额</th><th style="width:80px">操作</th></tr></thead>
     <tbody id="orderBody">
@@ -54,10 +67,10 @@
       {% for item in rows %}
       <tr>
         <td class="text-center row-no">{{loop.index}}</td>
-        <td class="suggest-wrap"><input name="product_name" class="product-name" autocomplete="off" placeholder="输入产品名" value="{{item.product_name if item else ''}}"><div class="suggest-list d-none product-suggestions"></div></td>
-        <td><div class="unit-cell"><select class="form-select form-select-sm unit-select"><option value="">自定义</option>{% for u in ['个','套','件'] %}<option value="{{u}}" {% if item and item.unit == u %}selected{% endif %}>{{u}}</option>{% endfor %}</select><input name="unit" class="unit" placeholder="自定义" value="{{item.unit if item else ''}}"></div></td>
-        <td><input name="quantity" class="quantity" inputmode="decimal" placeholder="0" value="{{item.quantity if item else ''}}"></td>
-        <td class="price-cell"><input name="unit_price" class="unit-price" inputmode="decimal" placeholder="0.00" value="{{cents_to_yuan(item.unit_price_cents) if item else ''}}"><label class="regular-price-option"><input type="checkbox" class="regular-price-check">常规价 <span class="regular-price-text"></span></label></td>
+        <td class="suggest-wrap"><input name="product_name" class="product-name" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="输入产品名" value="{{item.product_name if item else ''}}"><div class="suggest-list d-none product-suggestions"></div></td>
+        <td><div class="unit-cell"><select class="form-select form-select-sm unit-select"><option value="">自定义</option>{% for u in ['个','套','件'] %}<option value="{{u}}" {% if item and item.unit == u %}selected{% endif %}>{{u}}</option>{% endfor %}</select><input name="unit" class="unit" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="自定义" value="{{item.unit if item else ''}}"></div></td>
+        <td><input name="quantity" class="quantity" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0" value="{{item.quantity if item else ''}}"></td>
+        <td class="price-cell"><input name="unit_price" class="unit-price" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.00" value="{{cents_to_yuan(item.unit_price_cents) if item else ''}}"><label class="regular-price-option"><input type="checkbox" class="regular-price-check">常规价 <span class="regular-price-text"></span></label></td>
         <td><div class="readonly-total line-total">0.00</div></td>
         <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="clearRow(this)">清空</button></td>
       </tr>
@@ -65,8 +78,9 @@
     </tbody>
     <tfoot><tr><th colspan="5" class="text-end p-2">合计</th><th class="p-2" id="grandTotal">0.00</th><th></th></tr></tfoot>
   </table>
-  <textarea class="form-control my-3" name="notes" placeholder="备注">{{order.notes if is_edit else ''}}</textarea>
+  <textarea class="form-control my-3" name="notes" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="备注">{{order.notes if is_edit else ''}}</textarea>
   <div class="d-flex gap-2 align-items-center justify-content-end" id="orderActions">
+    <button type="button" class="btn btn-outline-secondary btn-lg" onclick="clearAllRows()">一键清空</button>
     <button type="button" class="btn btn-outline-primary btn-lg" onclick="addRow()">新增一行</button>
     <button class="btn btn-primary btn-lg" id="savePrintButton" name="save_action" value="{{ 'save' if is_edit else 'save_print' }}">{{ '保存修改' if is_edit else ('保存/打印退货单' if is_return else '保存/打印订单') }}</button>
   </div>
@@ -105,6 +119,28 @@ function clearRow(btn) {
   const regularOption = tr.querySelector('.regular-price-option');
   if (regularOption) regularOption.style.display = 'none';
   recalc();
+}
+function clearAllRows() {
+  if (!confirm('确认清空当前单据中已填写的客户、商品和备注信息吗？')) return;
+  document.getElementById('customer_id').value = '';
+  document.getElementById('customer_name').value = '';
+  document.querySelector('textarea[name="notes"]').value = '';
+  const tbody = document.getElementById('orderBody');
+  while (tbody.rows.length > 1) tbody.deleteRow(1);
+  const firstRow = tbody.rows[0];
+  firstRow.querySelectorAll('input').forEach(input => {
+    input.value = '';
+    if (input.type === 'checkbox') input.checked = false;
+    delete input.dataset.price;
+    delete input.dataset.customerPrice;
+  });
+  firstRow.querySelector('.unit-select').value = '';
+  firstRow.querySelector('.line-total').textContent = '0.00';
+  const regularOption = firstRow.querySelector('.regular-price-option');
+  if (regularOption) regularOption.style.display = 'none';
+  document.querySelectorAll('.suggest-list').forEach(box => box.classList.add('d-none'));
+  recalc();
+  document.getElementById('customer_name').focus();
 }
 function addRow() {
   const tbody = document.getElementById('orderBody');

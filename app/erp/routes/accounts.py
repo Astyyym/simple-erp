@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, send_file
 from erp.db import get_db
-from erp.services.accounting import add_payment, add_adjustment, customer_balance_cents
+from erp.services.accounting import add_payment, add_adjustment
 from erp.utils.money import yuan_to_cents, cents_to_yuan
 from erp.utils.pdf import generate_account_summary_pdf
 
@@ -13,6 +13,37 @@ def accounts():
     end_date = request.args.get("end_date", "").strip()
     with get_db() as conn:
         customers = conn.execute("SELECT * FROM customers WHERE deleted_at IS NULL ORDER BY name").fetchall()
+        balance_rows = conn.execute(
+            """
+            SELECT
+                c.id,
+                COALESCE(c.opening_balance_cents, 0)
+                + COALESCE(o.order_total, 0)
+                + COALESCE(a.adjustment_total, 0)
+                - COALESCE(p.payment_total, 0) AS balance_cents
+            FROM customers c
+            LEFT JOIN (
+                SELECT customer_id, SUM(total_amount_cents) AS order_total
+                FROM orders
+                WHERE status IN ('saved','printed') AND deleted_at IS NULL
+                GROUP BY customer_id
+            ) o ON o.customer_id = c.id
+            LEFT JOIN (
+                SELECT customer_id, SUM(amount_cents) AS payment_total
+                FROM payments
+                WHERE status='active'
+                GROUP BY customer_id
+            ) p ON p.customer_id = c.id
+            LEFT JOIN (
+                SELECT customer_id, SUM(amount_cents) AS adjustment_total
+                FROM adjustments
+                WHERE status='active'
+                GROUP BY customer_id
+            ) a ON a.customer_id = c.id
+            WHERE c.deleted_at IS NULL
+            """
+        ).fetchall()
+        balances = {row["id"]: int(row["balance_cents"] or 0) for row in balance_rows}
         selected_customer = None
         orders = []
         if customer_id:
@@ -26,7 +57,6 @@ def accounts():
                 conditions.append("order_date <= ?")
                 params.append(end_date)
             orders = conn.execute(f"SELECT * FROM orders WHERE {' AND '.join(conditions)} ORDER BY order_date ASC, id ASC", params).fetchall()
-    balances = {c["id"]: customer_balance_cents(c["id"]) for c in customers}
     return render_template("accounts/index.html", customers=customers, balances=balances, selected_customer=selected_customer, orders=orders, start_date=start_date, end_date=end_date, cents_to_yuan=cents_to_yuan)
 
 @accounts_bp.get("/summary_pdf")

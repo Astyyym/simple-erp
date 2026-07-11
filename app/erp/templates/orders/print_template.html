@@ -21,9 +21,11 @@
     .name-cell { text-align: left; }
     .total-row td { font-weight: 700; font-size: 14px; }
     .bottom { margin-top: 5mm; font-size: 12px; line-height: 1.65; }
-    .business { margin-top: 4mm; }
+    .business-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8mm; }
+    .business-text { flex: 1 1 auto; min-width: 0; }
+    .business-sign { flex: 0 0 46.5mm; width: 46.5mm; text-align: left; font-size: 14px; white-space: nowrap; }
+    .maker-sign { transform: translateX(-15mm); }
     .legal-note { margin-top: 1mm; }
-    .sign-row { width: 62mm; margin: 3mm 22mm 0 auto; font-size: 14px; line-height: 1.9; text-align: left; box-sizing: border-box; }
   </style>
 </head>
 <body>
@@ -46,12 +48,11 @@
 
     <div class="bottom">
       <div class="business">
-        <div><strong>订货电话：</strong>REDACTED_PHONE_2　REDACTED_PHONE_3　REDACTED_PHONE_1（支付宝）</div>
-        <div><strong>订货地址：</strong>REDACTED_ADDRESS</div>
+        <div class="business-row"><span class="business-text"><strong>订货电话：</strong>REDACTED_PHONE_2　REDACTED_PHONE_3　REDACTED_PHONE_1（支付宝）</span><span class="business-sign maker-sign">制单人：REDACTED_CONTACT</span></div>
+        <div class="business-row"><span class="business-text"><strong>订货地址：</strong>REDACTED_ADDRESS</span><span class="business-sign">收货人：____________</span></div>
         <div><strong>主营业务：</strong>软密封闸阀，蝶阀，铜芯硬密封（国，韩标）过滤器，止回阀等消防闸门</div>
       </div>
       <div class="legal-note"><strong>备注：</strong>本销售单等同于合同，具有法律效力，收货人签字或附托运物流单号生效，直至货款结清{% if order.notes %}；{{order.notes}}{% endif %}</div>
-      <div class="sign-row"><div>制单人：REDACTED_CONTACT</div><div>收货人：________________</div></div>
     </div>
   </section>
 </body>

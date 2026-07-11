@@ -59,6 +59,18 @@ def test_account_summary_totals_split_sale_return_and_net():
     assert totals["net_total_cents"] == 7000
 
 
+def test_order_print_signatures_share_phone_and_address_rows():
+    template = Path("app/erp/templates/orders/print_template.html").read_text(encoding="utf-8")
+
+    assert '<div class="business-row"><span class="business-text"><strong>订货电话：' in template
+    assert '<div class="business-row"><span class="business-text"><strong>订货地址：' in template
+    assert '</span><span class="business-sign maker-sign">制单人：REDACTED_CONTACT</span>' in template
+    assert '</span><span class="business-sign">收货人：____________</span>' in template
+    assert "flex: 0 0 46.5mm; width: 46.5mm" in template
+    assert ".maker-sign { transform: translateX(-15mm); }" in template
+    assert "sign-row" not in template
+
+
 def test_save_print_redirects_to_order_pdf():
     init_db()
     suffix = uuid4().hex[:8]
