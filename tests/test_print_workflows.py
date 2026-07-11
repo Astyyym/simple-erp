@@ -84,7 +84,7 @@ def test_save_print_redirects_to_order_pdf():
     assert response.headers["Location"].endswith(f"/orders/{order['id']}/pdf")
 
 
-def test_new_order_save_print_button_opens_pdf_in_new_tab_and_clears_original_page():
+def test_new_order_save_print_button_uses_async_save_and_success_actions():
     init_db()
     app = create_app()
     client = app.test_client()
@@ -92,5 +92,8 @@ def test_new_order_save_print_button_opens_pdf_in_new_tab_and_clears_original_pa
     html = client.get("/orders/new?date=2026-07-10").data.decode("utf-8")
 
     assert "保存/打印订单" in html
-    assert "e.currentTarget.target = '_blank';" in html
-    assert "window.location.href = '/orders/new';" in html
+    assert "fetch(orderForm.action" in html
+    assert "window.open(result.pdf_url, '_blank', 'noopener')" in html
+    assert 'id="openPrintLink"' in html
+    assert 'id="continueOrderLink" href="/orders/new"' in html
+    assert "e.currentTarget.target = '_blank';" not in html

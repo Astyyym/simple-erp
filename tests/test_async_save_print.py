@@ -1,0 +1,76 @@
+from uuid import uuid4
+
+import pytest
+
+from erp import create_app
+from erp.db import get_db, init_db
+from erp.services.accounting import create_customer
+
+
+def _post_save_print(client, route: str, customer_id: int, customer_name: str, order_no: str):
+    return client.post(
+        route,
+        data={
+            "customer_id": str(customer_id),
+            "customer_name": customer_name,
+            "order_no": order_no,
+            "order_date": "2026-07-11",
+            "status": "saved",
+            "product_name": ["测试商品"],
+            "unit": ["个"],
+            "unit_price": ["12.34"],
+            "quantity": ["1"],
+            "save_action": "save_print",
+        },
+        headers={"X-Requested-With": "fetch"},
+    )
+
+
+@pytest.mark.parametrize(
+    ("route", "expected_next_url", "prefix"),
+    [
+        ("/orders/create", "/orders/new", "FETCH-SALE"),
+        ("/orders/return/create", "/orders/return/new", "FETCH-RETURN"),
+    ],
+)
+def test_fetch_save_print_returns_json_with_get_urls(route, expected_next_url, prefix):
+    init_db()
+    suffix = uuid4().hex[:8]
+    customer_name = f"异步保存客户-{suffix}"
+    customer_id = create_customer(customer_name)
+    order_no = f"{prefix}-{suffix}"
+    client = create_app().test_client()
+
+    response = _post_save_print(client, route, customer_id, customer_name, order_no)
+
+    assert response.status_code == 200
+    assert response.is_json
+    payload = response.get_json()
+    assert payload["ok"] is True
+    assert payload["order_no"] == order_no
+    assert payload["next_url"] == expected_next_url
+    assert payload["detail_url"].startswith("/orders/")
+    assert payload["pdf_url"].startswith("http://")
+    assert payload["pdf_url"].endswith("/pdf")
+    with get_db() as conn:
+        saved = conn.execute("SELECT id FROM orders WHERE order_no=?", (order_no,)).fetchone()
+    assert saved is not None
+    assert payload["order_id"] == saved["id"]
+
+
+def test_order_entry_uses_fetch_success_panel_without_blank_post_target():
+    init_db()
+    client = create_app().test_client()
+
+    html = client.get("/orders/new").get_data(as_text=True)
+
+    assert "event.preventDefault();" in html
+    assert "fetch(orderForm.action" in html
+    assert "X-Requested-With" in html
+    assert "订单已保存成功" in html
+    assert "打开打印页" in html
+    assert "查看订单" in html
+    assert "继续开单" in html
+    assert "e.currentTarget.target = '_blank'" not in html
+    assert "setTimeout(() => { window.location.href" not in html
+    assert "submitButton.disabled = true" in html

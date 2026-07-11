@@ -66,10 +66,22 @@
     <tfoot><tr><th colspan="5" class="text-end p-2">合计</th><th class="p-2" id="grandTotal">0.00</th><th></th></tr></tfoot>
   </table>
   <textarea class="form-control my-3" name="notes" placeholder="备注">{{order.notes if is_edit else ''}}</textarea>
-  <div class="d-flex gap-2 align-items-center justify-content-end">
+  <div class="d-flex gap-2 align-items-center justify-content-end" id="orderActions">
     <button type="button" class="btn btn-outline-primary btn-lg" onclick="addRow()">新增一行</button>
-    <button class="btn btn-primary btn-lg" name="save_action" value="{{ 'save' if is_edit else 'save_print' }}">{{ '保存修改' if is_edit else ('保存/打印退货单' if is_return else '保存/打印订单') }}</button>
+    <button class="btn btn-primary btn-lg" id="savePrintButton" name="save_action" value="{{ 'save' if is_edit else 'save_print' }}">{{ '保存修改' if is_edit else ('保存/打印退货单' if is_return else '保存/打印订单') }}</button>
   </div>
+  {% if not is_edit %}
+  <div class="alert alert-success mt-3 d-none" id="saveSuccessPanel" role="status">
+    <div class="fw-bold" id="saveSuccessMessage">订单已保存成功</div>
+    <div class="mt-3 d-flex flex-wrap gap-2">
+      <a class="btn btn-info" id="openPrintLink" href="#" target="_blank" rel="noopener">打开打印页</a>
+      <a class="btn btn-secondary" id="viewOrderLink" href="#">查看订单</a>
+      <a class="btn btn-primary" id="continueOrderLink" href="{{ '/orders/return/new' if is_return else '/orders/new' }}">继续开单</a>
+    </div>
+    <div class="small mt-2" id="printHint">如果浏览器没有自动打开打印页，请点击“打开打印页”。</div>
+  </div>
+  <div class="alert alert-danger mt-3 d-none" id="saveErrorPanel" role="alert"></div>
+  {% endif %}
 </form>
 
 <script>
@@ -183,11 +195,53 @@ function bindRow(tr) {
 document.querySelectorAll('#orderBody tr').forEach(bindRow);
 document.addEventListener('click', e => { if (!e.target.closest('.suggest-wrap')) document.querySelectorAll('.suggest-list').forEach(x => x.classList.add('d-none')); });
 {% if not is_edit %}
-document.getElementById('orderForm').addEventListener('submit', e => {
-  const submitter = e.submitter;
-  if (submitter && submitter.name === 'save_action' && submitter.value === 'save_print') {
-    e.currentTarget.target = '_blank';
-    setTimeout(() => { window.location.href = '{{ "/orders/return/new" if is_return else "/orders/new" }}'; }, 300);
+const orderForm = document.getElementById('orderForm');
+const submitButton = document.getElementById('savePrintButton');
+const successPanel = document.getElementById('saveSuccessPanel');
+const errorPanel = document.getElementById('saveErrorPanel');
+const successMessage = document.getElementById('saveSuccessMessage');
+const openPrintLink = document.getElementById('openPrintLink');
+const viewOrderLink = document.getElementById('viewOrderLink');
+const continueOrderLink = document.getElementById('continueOrderLink');
+const originalButtonText = submitButton.textContent;
+
+orderForm.addEventListener('submit', async event => {
+  const submitter = event.submitter;
+  if (!submitter || submitter.name !== 'save_action' || submitter.value !== 'save_print') return;
+
+  event.preventDefault();
+  if (submitButton.disabled) return;
+
+  submitButton.disabled = true;
+  submitButton.textContent = '正在保存...';
+  successPanel.classList.add('d-none');
+  errorPanel.classList.add('d-none');
+
+  try {
+    const formData = new FormData(orderForm);
+    formData.set('save_action', 'save_print');
+    const response = await fetch(orderForm.action, {
+      method: 'POST',
+      body: formData,
+      headers: {'X-Requested-With': 'fetch'},
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.message || '订单保存失败');
+
+    successMessage.textContent = `订单 ${result.order_no} 已保存成功`;
+    openPrintLink.href = result.pdf_url;
+    viewOrderLink.href = result.detail_url;
+    continueOrderLink.href = result.next_url;
+    successPanel.classList.remove('d-none');
+    document.getElementById('orderActions').classList.add('d-none');
+
+    const printWindow = window.open(result.pdf_url, '_blank', 'noopener');
+    if (!printWindow) document.getElementById('printHint').textContent = '打印页被浏览器拦截，请点击“打开打印页”。';
+  } catch (error) {
+    errorPanel.textContent = `订单未保存：${error.message || '请检查输入后重试'}`;
+    errorPanel.classList.remove('d-none');
+    submitButton.disabled = false;
+    submitButton.textContent = originalButtonText;
   }
 });
 {% endif %}

@@ -13,7 +13,8 @@ def test_return_order_page_saves_and_prints_instead_of_plain_save():
 
     assert "保存/打印退货单" in html
     assert 'name="save_action" value="save_print"' in html
-    assert "window.location.href = '/orders/return/new'" in html
+    assert 'id="continueOrderLink" href="/orders/return/new"' in html
+    assert "fetch(orderForm.action" in html
 
 
 def test_orders_and_accounts_mark_return_orders_red_and_offer_clear_filters():

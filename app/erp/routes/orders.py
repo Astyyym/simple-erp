@@ -123,7 +123,18 @@ def _create_order_view(order_type: str):
         created = conn.execute("SELECT id FROM orders WHERE order_no=?", (order_no,)).fetchone()
         order_id = int(created["id"])
     if request.form.get("save_action") == "save_print":
-        return redirect(url_for("orders.order_pdf", order_id=order_id), code=303)
+        pdf_path = url_for("orders.order_pdf", order_id=order_id)
+        if request.headers.get("X-Requested-With") == "fetch":
+            next_url = url_for("orders.new_return_order" if order_type == "return" else "orders.new_order")
+            return jsonify({
+                "ok": True,
+                "order_id": order_id,
+                "order_no": order_no,
+                "pdf_url": request.host_url.rstrip("/") + pdf_path,
+                "detail_url": url_for("orders.view_order", order_id=order_id),
+                "next_url": next_url,
+            })
+        return redirect(pdf_path, code=303)
     return redirect(url_for("orders.list_orders"))
 
 @orders_bp.get("/<int:order_id>")
