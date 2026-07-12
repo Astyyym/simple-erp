@@ -30,7 +30,19 @@ dist\消防ERP\
   data\
   logs\
   temp_pdf\
+  backups\
+  imports\
 ```
+
+本地还会同步生成 ZIP（示例）：
+
+```text
+dist\消防ERP-Windows桌面版.zip
+dist\消防ERP-Windows桌面版-vX.Y.Z.zip
+dist\simple-erp-windows-vX.Y.Z.zip
+```
+
+GitHub Releases 优先上传英文文件名 ZIP（中文文件名在上传时可能乱码）。
 
 ## 3. 给父母电脑安装
 

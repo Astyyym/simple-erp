@@ -27,9 +27,13 @@ dist/
 build/
 *.spec.bak
 
-# Local temp files
+# Local temp / probe files
 temp_*.py
 temp_*.ps1
+temp_*.md
+temp_*.html
+temp_*.pdf
+*.log
 .DS_Store
 Thumbs.db
 
