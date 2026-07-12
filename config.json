@@ -1,9 +1,9 @@
 {
-  "app_name": "消防器材店ERP系统",
+  "app_name": "简单ERP",
+  "shop_name": "简单ERP",
   "host": "127.0.0.1",
   "port": 5000,
   "debug": false,
-  "shop_name": "简单ERP",
   "database_path": "data/erp.db",
   "backup_retention_days": 30,
   "monthly_backup_retention_months": 12,
@@ -12,6 +12,15 @@
   "print_scale": 1.0,
   "printer_paper_width_mm": 241,
   "printer_paper_height_mm": 280,
-  "local_access_password_enabled": false,
-  "local_access_password_hash": ""
+  "local_access_password_enabled": true,
+  "local_access_password_hash": "scrypt:32768:8:1$T3uSsPXgL2k5sOQY$411bd2937c54882e399b3529f40af8d13061f19184a5ec1b88ebcd993f80e79f0f617311ee380f9b59d32288b287f1479f3b82e080b529aa3943ff57ed9e2bf3",
+  "local_access_username": "simple_erp",
+  "ui_theme": "light",
+  "ui_scale": "125",
+  "print_order_phone": "REDACTED_PHONE_2　REDACTED_PHONE_3　REDACTED_PHONE_1（支付宝）",
+  "print_order_address": "REDACTED_ADDRESS",
+  "print_main_business": "软密封闸阀，蝶阀，铜芯硬密封（国，韩标）过滤器，止回阀等消防闸门。",
+  "print_legal_note": "本销售单等同于合同，具有法律效力，收货人签字或附托运物流单号生效，直至货款结清",
+  "print_maker_name": "REDACTED_CONTACT",
+  "print_receiver_label": "收货人：____________"
 }

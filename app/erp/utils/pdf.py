@@ -2,7 +2,7 @@ from pathlib import Path
 from flask import render_template
 from weasyprint import HTML
 
-from erp.config import load_config, project_path
+from erp.config import load_config, project_path, runtime_root
 from erp.db import get_db
 from erp.utils.money import cents_to_yuan
 
@@ -16,7 +16,7 @@ def generate_order_pdf(order_id: int) -> Path:
     config = load_config()
     html = render_template("orders/print_template.html", order=order, items=items, config=config, cents_to_yuan=cents_to_yuan)
     out = project_path("temp_pdf", f"order_{order_id}.pdf")
-    HTML(string=html, base_url=str(project_path())).write_pdf(out)
+    HTML(string=html, base_url=str(runtime_root())).write_pdf(out)
     return out
 
 
@@ -145,7 +145,7 @@ def generate_account_summary_pdf_for_customers(customer_ids: list[int], start_da
     if len(customer_ids) > 8:
         ids_part += f"_n{len(customer_ids)}"
     out = project_path("temp_pdf", f"account_summary_{ids_part}_{safe_range}.pdf")
-    HTML(string=html, base_url=str(project_path())).write_pdf(out)
+    HTML(string=html, base_url=str(runtime_root())).write_pdf(out)
     return out
 
 

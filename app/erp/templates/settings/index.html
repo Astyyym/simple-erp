@@ -1,0 +1,296 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>设置</h2>
+<p class="text-muted mb-3">公司信息、数据目录、界面显示与打印单文案。保存后刷新页面即可生效；改数据目录会一键迁移业务文件。若修改后未保存就切换页面，会询问是否先保存。</p>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="alert alert-{{ category }}">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<form method="post" action="{{ url_for('settings.save_settings') }}" class="settings-form" id="settingsMainForm" data-dirty-guard="1">
+  <input type="hidden" name="next" id="settingsNextUrl" value="">
+  <section class="settings-card">
+    <h3>公司信息</h3>
+    <p class="text-muted small">只改这一处：顶栏、销售单/退货单 PDF、账款汇总 PDF 抬头，以及系统名称会同步为同一名称。</p>
+    <label class="form-label" for="shop_name">公司名称</label>
+    <input class="form-control form-control-lg" id="shop_name" name="shop_name" required maxlength="120" value="{{ config.shop_name }}">
+  </section>
+
+  <section class="settings-card">
+    <h3>显示</h3>
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label">界面缩放（仅网页界面，不影响打印纸张）</label>
+        <div class="d-flex flex-wrap gap-3">
+          {% for scale in ui_scale_choices %}
+          <label class="form-check">
+            <input class="form-check-input" type="radio" name="ui_scale" value="{{ scale }}" {% if config.ui_scale == scale %}checked{% endif %}>
+            <span class="form-check-label">{{ scale }}%</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">页面背景 / 主题</label>
+        <div class="d-flex flex-wrap gap-3">
+          <label class="form-check">
+            <input class="form-check-input" type="radio" name="ui_theme" value="light" {% if config.ui_theme == 'light' %}checked{% endif %}>
+            <span class="form-check-label">浅色</span>
+          </label>
+          <label class="form-check">
+            <input class="form-check-input" type="radio" name="ui_theme" value="dark" {% if config.ui_theme == 'dark' %}checked{% endif %}>
+            <span class="form-check-label">深色</span>
+          </label>
+          <label class="form-check">
+            <input class="form-check-input" type="radio" name="ui_theme" value="system" {% if config.ui_theme == 'system' %}checked{% endif %}>
+            <span class="form-check-label">跟随系统</span>
+          </label>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="settings-card">
+    <h3>打印单信息</h3>
+    <p class="text-muted small">版式位置固定：在对应文本框填写内容即可出现在打印单对应位置。副标题「销售清单」不可改。</p>
+    <div class="mb-3">
+      <label class="form-label" for="print_order_phone">订货电话</label>
+      <input class="form-control" id="print_order_phone" name="print_order_phone" value="{{ config.print_order_phone }}">
+    </div>
+    <div class="mb-3">
+      <label class="form-label" for="print_order_address">订货地址</label>
+      <input class="form-control" id="print_order_address" name="print_order_address" value="{{ config.print_order_address }}">
+    </div>
+    <div class="mb-3">
+      <label class="form-label" for="print_main_business">主营业务</label>
+      <textarea class="form-control" id="print_main_business" name="print_main_business" rows="2">{{ config.print_main_business }}</textarea>
+    </div>
+    <div class="mb-3">
+      <label class="form-label" for="print_legal_note">备注（固定法律句）</label>
+      <textarea class="form-control" id="print_legal_note" name="print_legal_note" rows="2">{{ config.print_legal_note }}</textarea>
+    </div>
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label" for="print_maker_name">制单人</label>
+        <input class="form-control" id="print_maker_name" name="print_maker_name" value="{{ config.print_maker_name }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="print_receiver_label">收货人</label>
+        <input class="form-control" id="print_receiver_label" name="print_receiver_label" value="{{ config.print_receiver_label }}">
+      </div>
+    </div>
+  </section>
+
+  <div class="settings-actions">
+    <button type="submit" class="btn btn-primary btn-lg" id="settingsSaveBtn">保存设置</button>
+    <a class="btn btn-info btn-lg" id="settingsPrintPreview" href="{{ url_for('settings.print_preview') }}" target="_blank" rel="noopener">预览打印效果</a>
+    <span class="settings-dirty-hint d-none" id="settingsDirtyHint">有未保存的修改</span>
+  </div>
+</form>
+
+<section class="settings-card mt-4">
+  <h3>数据存储位置</h3>
+  <p class="text-muted small">业务数据在数据根目录下的 <code>data/erp.db</code> 等文件夹。路径记忆在本机 LocalAppData，不跟程序安装包走。</p>
+  <dl class="settings-dl">
+    <dt>当前数据目录</dt>
+    <dd><code>{{ data_root_path }}</code></dd>
+    <dt>默认推荐目录</dt>
+    <dd><code>{{ default_data_root_path }}</code></dd>
+    <dt>路径记忆文件</dt>
+    <dd><code>{{ location_file_path }}</code></dd>
+  </dl>
+  <form method="post" action="{{ url_for('settings.migrate_data') }}" class="settings-migrate" id="settingsMigrateForm" onsubmit="return confirm('将把当前数据复制到新目录并切换。目标若已有数据库会拒绝覆盖；旧目录不会自动删除。确定继续？');">
+    <label class="form-label" for="new_data_root">新数据目录（完整路径）</label>
+    <div class="d-flex flex-wrap gap-2 align-items-start">
+      <input class="form-control" style="max-width:min(720px,100%)" id="new_data_root" name="new_data_root" placeholder="例如 D:\店里数据\简单ERP数据" required>
+      <button type="button" class="btn btn-outline-secondary" id="settingsBrowseFolder" {% if not is_desktop %}title="请在桌面版 EXE 中使用系统选夹，或直接粘贴路径"{% endif %}>浏览文件夹…</button>
+      <button type="submit" class="btn btn-warning">一键迁移并切换</button>
+    </div>
+    <p class="text-muted small mt-2 mb-0">
+      {% if is_desktop %}
+      点击「浏览文件夹」可打开系统选夹；也可粘贴资源管理器地址栏路径。
+      {% else %}
+      浏览器开发预览请直接粘贴完整路径；桌面 EXE 支持系统选夹。
+      {% endif %}
+      迁移包含 data / backups / imports / logs；temp_pdf 会在新目录重建。
+    </p>
+  </form>
+</section>
+
+<div class="settings-leave-modal d-none" id="settingsLeaveModal" role="dialog" aria-modal="true" aria-labelledby="settingsLeaveTitle">
+  <div class="settings-leave-dialog">
+    <h3 id="settingsLeaveTitle">设置尚未保存</h3>
+    <p class="text-muted mb-3">你修改了设置但还没有保存。离开前要先保存吗？</p>
+    <div class="settings-leave-actions">
+      <button type="button" class="btn btn-primary" id="settingsLeaveSave">保存并离开</button>
+      <button type="button" class="btn btn-outline-secondary" id="settingsLeaveDiscard">不保存离开</button>
+      <button type="button" class="btn btn-secondary" id="settingsLeaveCancel">取消</button>
+    </div>
+  </div>
+</div>
+
+<style>
+  .settings-form{display:flex;flex-direction:column;gap:18px;max-width:920px}
+  .settings-card{background:var(--erp-surface);border:1px solid var(--erp-border);border-radius:var(--erp-radius);padding:18px 18px 16px;box-shadow:var(--erp-shadow)}
+  .settings-card h3{margin:0 0 10px;font-size:18px}
+  .settings-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .settings-dirty-hint{color:#b45309;font-size:13px;font-weight:600}
+  .settings-dl{display:grid;grid-template-columns:140px 1fr;gap:8px 12px;margin:0 0 16px}
+  .settings-dl dt{color:var(--erp-muted);font-size:13px;font-weight:600}
+  .settings-dl dd{margin:0;word-break:break-all}
+  .settings-migrate .form-control{flex:1 1 280px}
+  .settings-leave-modal{position:fixed;inset:0;background:rgba(15,20,30,.45);display:flex;align-items:center;justify-content:center;z-index:2000;padding:20px}
+  .settings-leave-modal.d-none{display:none!important}
+  .settings-leave-dialog{width:min(440px,100%);background:var(--erp-surface);color:var(--erp-ink);border:1px solid var(--erp-border);border-radius:10px;box-shadow:0 16px 48px rgba(0,0,0,.18);padding:20px 20px 16px}
+  .settings-leave-dialog h3{margin:0 0 8px;font-size:18px}
+  .settings-leave-actions{display:flex;flex-wrap:wrap;gap:8px}
+</style>
+
+<script>
+(function () {
+  const form = document.getElementById('settingsMainForm');
+  if (!form) return;
+
+  const dirtyHint = document.getElementById('settingsDirtyHint');
+  const nextInput = document.getElementById('settingsNextUrl');
+  const modal = document.getElementById('settingsLeaveModal');
+  const btnSave = document.getElementById('settingsLeaveSave');
+  const btnDiscard = document.getElementById('settingsLeaveDiscard');
+  const btnCancel = document.getElementById('settingsLeaveCancel');
+  const previewLink = document.getElementById('settingsPrintPreview');
+
+  let baseline = '';
+  let allowLeave = false;
+  let pendingHref = '';
+
+  function serializeForm(target) {
+    const data = new FormData(target);
+    // Exclude navigation helper so it never marks dirty.
+    data.delete('next');
+    const pairs = [];
+    for (const [key, value] of data.entries()) {
+      pairs.push(key + '=' + String(value));
+    }
+    pairs.sort();
+    return pairs.join('&');
+  }
+
+  function isDirty() {
+    return serializeForm(form) !== baseline;
+  }
+
+  function refreshDirtyUi() {
+    const dirty = isDirty();
+    if (dirtyHint) dirtyHint.classList.toggle('d-none', !dirty);
+  }
+
+  function openModal(href) {
+    pendingHref = href || '';
+    if (modal) modal.classList.remove('d-none');
+  }
+
+  function closeModal() {
+    pendingHref = '';
+    if (modal) modal.classList.add('d-none');
+  }
+
+  function navigateAway(href) {
+    allowLeave = true;
+    closeModal();
+    if (href) window.location.href = href;
+  }
+
+  baseline = serializeForm(form);
+  form.addEventListener('input', refreshDirtyUi);
+  form.addEventListener('change', refreshDirtyUi);
+
+  form.addEventListener('submit', function () {
+    // Saving is intentional leave of the dirty state.
+    allowLeave = true;
+  });
+
+  document.addEventListener('click', function (event) {
+    const anchor = event.target.closest('a[href]');
+    if (!anchor) return;
+    if (anchor.target === '_blank' || anchor.hasAttribute('download')) return;
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+    const href = anchor.getAttribute('href') || '';
+    if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+
+    // Same settings page refresh / hash — ignore.
+    try {
+      const url = new URL(href, window.location.href);
+      if (url.pathname === window.location.pathname && url.search === window.location.search) return;
+    } catch (e) {
+      return;
+    }
+
+    if (!isDirty() || allowLeave) return;
+    event.preventDefault();
+    openModal(anchor.href);
+  }, true);
+
+  window.addEventListener('beforeunload', function (event) {
+    if (allowLeave || !isDirty()) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
+
+  if (btnCancel) btnCancel.addEventListener('click', closeModal);
+  if (modal) {
+    modal.addEventListener('click', function (event) {
+      if (event.target === modal) closeModal();
+    });
+  }
+  if (btnDiscard) {
+    btnDiscard.addEventListener('click', function () {
+      navigateAway(pendingHref);
+    });
+  }
+  if (btnSave) {
+    btnSave.addEventListener('click', function () {
+      if (nextInput) nextInput.value = pendingHref || '';
+      allowLeave = true;
+      closeModal();
+      if (typeof form.requestSubmit === 'function') form.requestSubmit();
+      else form.submit();
+    });
+  }
+
+  if (previewLink) {
+    previewLink.addEventListener('click', function (event) {
+      if (!isDirty()) return;
+      // Preview reads saved config from server; warn but still allow new tab.
+      const ok = window.confirm('当前修改尚未保存，打印预览仍显示上次已保存的内容。是否继续打开预览？');
+      if (!ok) event.preventDefault();
+    });
+  }
+
+  // Desktop native folder picker (pywebview js_api); browser falls back to paste path.
+  const browseBtn = document.getElementById('settingsBrowseFolder');
+  const pathInput = document.getElementById('new_data_root');
+  if (browseBtn && pathInput) {
+    browseBtn.addEventListener('click', async function () {
+      try {
+        if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.choose_folder === 'function') {
+          const selected = await window.pywebview.api.choose_folder();
+          if (selected) {
+            pathInput.value = selected;
+            pathInput.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          return;
+        }
+      } catch (e) {
+        // fall through to message
+      }
+      window.alert('当前不是桌面版窗口，无法打开系统选夹。请直接粘贴文件夹完整路径后点「一键迁移并切换」。');
+    });
+  }
+})();
+</script>
+{% endblock %}

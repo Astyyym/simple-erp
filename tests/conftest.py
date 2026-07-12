@@ -6,7 +6,7 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "app"))
-os.environ["ERP_CONFIG_PATH"] = str(PROJECT_ROOT / "config.json")
+sys.path.insert(0, str(PROJECT_ROOT))
 
 
 @pytest.fixture(autouse=True)
@@ -17,10 +17,23 @@ def isolate_test_database(tmp_path, monkeypatch):
 
     test_root = tmp_path / "runtime"
     test_root.mkdir()
-    test_db = test_root / "erp.db"
-    monkeypatch.setattr(db_module, "db_path", lambda: test_db)
+    test_db = test_root / "data" / "erp.db"
+    test_db.parent.mkdir(parents=True, exist_ok=True)
+    location = tmp_path / "location" / "data_location.json"
+    location.parent.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setenv("ERP_CONFIG_PATH", str(test_root / "config.json"))
+    monkeypatch.setenv("ERP_LOCATION_FILE", str(location))
+    monkeypatch.setenv("ERP_DISABLE_AUTH", "1")
+    monkeypatch.delenv("ERP_DATA_ROOT", raising=False)
+
     monkeypatch.setattr(config_module, "runtime_root", lambda: test_root)
+    monkeypatch.setattr(config_module, "is_frozen", lambda: False)
+    monkeypatch.setattr(db_module, "db_path", lambda: test_db)
+
     (test_root / "config.json").write_text(
         (PROJECT_ROOT / "config.json").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
+    # Remember data_root as test_root so project_path aligns with db layout under data/.
+    config_module.save_data_root(test_root)

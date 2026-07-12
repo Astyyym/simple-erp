@@ -63,13 +63,47 @@ def test_account_summary_totals_split_sale_return_and_net():
 def test_order_print_signatures_share_phone_and_address_rows():
     template = Path("app/erp/templates/orders/print_template.html").read_text(encoding="utf-8")
 
-    assert '<div class="business-row"><span class="business-text"><strong>订货电话：' in template
-    assert '<div class="business-row"><span class="business-text"><strong>订货地址：' in template
-    assert '</span><span class="business-sign maker-sign">制单人：REDACTED_CONTACT</span>' in template
-    assert '</span><span class="business-sign">收货人：____________</span>' in template
-    assert "flex: 0 0 46.5mm; width: 46.5mm" in template
-    assert ".maker-sign { transform: translateX(-15mm); }" in template
+    # Footer uses fixed table columns (WeasyPrint-stable), not flex + translate.
+    assert 'table class="footer-grid"' in template or "table class=\"footer-grid\"" in template
+    assert "footer-sign" in template
+    assert "footer-text" in template
+    assert "制单人：{{config.print_maker_name}}" in template
+    assert "{{config.print_receiver_label}}" in template
+    assert "config.print_order_phone" in template
+    assert "config.print_order_address" in template
+    assert "config.print_main_business" in template
+    assert "config.print_legal_note" in template
+    assert "width:46.5mm" in template or "width: 46.5mm" in template
+    assert "business-row" not in template
+    assert "maker-sign" not in template
+    assert "translateX(-15mm)" not in template
     assert "sign-row" not in template
+    assert "REDACTED_PHONE_2" not in template
+    assert "REDACTED_CONTACT" not in template
+
+
+def test_order_pdf_footer_sign_columns_share_fixed_width():
+    """Regenerate a real PDF path and assert template HTML used for WeasyPrint keeps equal sign cells."""
+    from erp.utils.pdf import generate_order_pdf
+
+    init_db()
+    suffix = uuid4().hex[:8]
+    customer_id = create_customer(f"签字对齐-{suffix}")
+    order_id = create_order_from_typed_rows(
+        customer_id,
+        f"ALIGN-{suffix}",
+        [{"product_name": "对齐阀", "unit": "只", "unit_price_yuan": "20", "quantity": "1"}],
+        status="saved",
+    )
+    app = create_app()
+    with app.app_context():
+        path = generate_order_pdf(order_id)
+    assert path.exists() and path.stat().st_size > 0
+    # Source template contract (WeasyPrint input)
+    template = Path("app/erp/templates/orders/print_template.html").read_text(encoding="utf-8")
+    assert template.count("footer-sign") >= 2
+    assert template.count("width:46.5mm") + template.count("width: 46.5mm") >= 1
+    assert "translateX" not in template
 
 
 def test_save_print_redirects_to_order_pdf():

@@ -16,16 +16,44 @@
     h1 { text-align: center; margin: 0 0 4mm 0; font-size: 23px; letter-spacing: 2px; }
     .subtitle { text-align: center; font-size: 15px; margin-bottom: 4mm; }
     .meta { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3mm; font-size: 14px; margin-bottom: 4mm; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
-    td, th { border: 1px solid #333; padding: 1.8mm; text-align: center; word-break: break-all; }
+    table.items { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+    table.items td, table.items th { border: 1px solid #333; padding: 1.8mm; text-align: center; word-break: break-all; }
     .name-cell { text-align: left; }
     .total-row td { font-weight: 700; font-size: 14px; }
     .bottom { margin-top: 5mm; font-size: 12px; line-height: 1.65; }
-    .business-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8mm; }
-    .business-text { flex: 1 1 auto; min-width: 0; }
-    .business-sign { flex: 0 0 46.5mm; width: 46.5mm; text-align: left; font-size: 14px; white-space: nowrap; }
-    .maker-sign { transform: translateX(-15mm); }
-    .legal-note { margin-top: 1mm; }
+    /*
+      WeasyPrint flex metrics differ from browsers: phone/address rows used to drift.
+      Use a fixed two-column table so 制单人/收货人 share identical left and right edges.
+    */
+    table.footer-grid {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      margin: 0;
+      font-size: 12px;
+      line-height: 1.65;
+    }
+    table.footer-grid td {
+      border: none;
+      padding: 0;
+      vertical-align: baseline;
+    }
+    table.footer-grid td.footer-text {
+      width: auto;
+      text-align: left;
+      padding-right: 8mm;
+      word-break: break-all;
+    }
+    table.footer-grid td.footer-sign {
+      width: 46.5mm;
+      min-width: 46.5mm;
+      max-width: 46.5mm;
+      text-align: left;
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .legal-note { margin-top: 1mm; font-size: 12px; line-height: 1.65; }
   </style>
 </head>
 <body>
@@ -37,7 +65,7 @@
       <span>日期: {{order.order_date}}</span>
       <span>客户: {{order.customer_name}}</span>
     </div>
-    <table>
+    <table class="items">
       <colgroup><col style="width:10mm"><col><col style="width:16mm"><col style="width:20mm"><col style="width:24mm"><col style="width:26mm"></colgroup>
       <tr><th>序号</th><th>名称规格</th><th>单位</th><th>数量</th><th>单价</th><th>小计</th></tr>
       {% for item in items %}
@@ -47,12 +75,24 @@
     </table>
 
     <div class="bottom">
-      <div class="business">
-        <div class="business-row"><span class="business-text"><strong>订货电话：</strong>REDACTED_PHONE_2　REDACTED_PHONE_3　REDACTED_PHONE_1（支付宝）</span><span class="business-sign maker-sign">制单人：REDACTED_CONTACT</span></div>
-        <div class="business-row"><span class="business-text"><strong>订货地址：</strong>REDACTED_ADDRESS</span><span class="business-sign">收货人：____________</span></div>
-        <div><strong>主营业务：</strong>软密封闸阀，蝶阀，铜芯硬密封（国，韩标）过滤器，止回阀等消防闸门</div>
-      </div>
-      <div class="legal-note"><strong>备注：</strong>本销售单等同于合同，具有法律效力，收货人签字或附托运物流单号生效，直至货款结清{% if order.notes %}；{{order.notes}}{% endif %}</div>
+      <table class="footer-grid">
+        <colgroup>
+          <col>
+          <col style="width:46.5mm">
+        </colgroup>
+        <tr>
+          <td class="footer-text"><strong>订货电话：</strong>{{config.print_order_phone}}</td>
+          <td class="footer-sign">制单人：{{config.print_maker_name}}</td>
+        </tr>
+        <tr>
+          <td class="footer-text"><strong>订货地址：</strong>{{config.print_order_address}}</td>
+          <td class="footer-sign">{{config.print_receiver_label}}</td>
+        </tr>
+        <tr>
+          <td class="footer-text" colspan="2"><strong>主营业务：</strong>{{config.print_main_business}}</td>
+        </tr>
+      </table>
+      <div class="legal-note"><strong>备注：</strong>{{config.print_legal_note}}{% if order.notes %}；{{order.notes}}{% endif %}</div>
     </div>
   </section>
 </body>

@@ -6,6 +6,7 @@ import threading
 import time
 import webbrowser
 from contextlib import closing
+from typing import Any
 
 from waitress import serve
 
@@ -16,10 +17,54 @@ if os.path.isdir(GTK_BIN):
     if hasattr(os, "add_dll_directory"):
         os.add_dll_directory(GTK_BIN)
 
+# Mark desktop shell so UI can enable native folder picker affordances.
+os.environ.setdefault("ERP_DESKTOP", "1")
+
 from erp import create_app
+from erp.config import load_config
 
 
 APP_URL = "http://127.0.0.1:5000"
+_window = None
+
+
+class DesktopApi:
+    """JS bridge for the PyWebView desktop shell."""
+
+    def choose_folder(self) -> str:
+        """Open a native folder dialog; return selected path or empty string."""
+        global _window
+        if _window is None:
+            return ""
+        try:
+            import webview
+
+            result = _window.create_file_dialog(webview.FOLDER_DIALOG)
+        except Exception:
+            # Fallback: some hosts accept a bare dialog constant / string.
+            try:
+                result = _window.create_file_dialog("FOLDER_DIALOG")
+            except Exception:
+                return ""
+        if not result:
+            return ""
+        # pywebview may return a tuple/list of paths
+        path = result[0] if isinstance(result, (list, tuple)) else result
+        return str(path or "")
+
+    def set_window_title(self, title: str = "") -> bool:
+        global _window
+        if _window is None:
+            return False
+        text = (title or "").strip() or "消防ERP"
+        try:
+            _window.set_title(text)
+            return True
+        except Exception:
+            return False
+
+    def is_desktop(self) -> bool:
+        return True
 
 
 def _port_is_open(host: str = "127.0.0.1", port: int = 5000) -> bool:
@@ -42,13 +87,23 @@ def _wait_for_server(timeout_seconds: int = 20) -> None:
     raise RuntimeError("消防ERP启动超时，请重新打开或联系维护人员。")
 
 
+def _window_title() -> str:
+    try:
+        name = str(load_config().get("shop_name") or "").strip()
+    except Exception:
+        name = ""
+    return name or "消防ERP"
+
+
 def main() -> None:
+    global _window
     os.environ.setdefault("ERP_PORT", "5000")
     if not _port_is_open():
         server_thread = threading.Thread(target=_run_server, daemon=True)
         server_thread.start()
         _wait_for_server()
 
+    title = _window_title()
     try:
         import webview
     except Exception:
@@ -56,7 +111,15 @@ def main() -> None:
         while True:
             time.sleep(3600)
 
-    window = webview.create_window("消防ERP", APP_URL, width=1280, height=820, min_size=(1100, 700))
+    api = DesktopApi()
+    _window = webview.create_window(
+        title,
+        APP_URL,
+        width=1280,
+        height=820,
+        min_size=(1100, 700),
+        js_api=api,
+    )
     webview.start()
 
 

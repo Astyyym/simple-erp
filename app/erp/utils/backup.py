@@ -27,7 +27,7 @@ def create_backup(reason: str = "manual") -> Path:
         f"reason={reason}\\ncreated_at={datetime.now().isoformat()}\\nintegrity={integrity}\\n",
         encoding="utf-8",
     )
-    config_path = config_module.project_path("config.json")
+    config_path = config_module.writable_config_path()
     if config_path.exists():
         (work_dir / "config.json").write_text(config_path.read_text(encoding="utf-8"), encoding="utf-8")
     zip_path = backup_dir / f"backup_{timestamp}_{reason}.zip"
