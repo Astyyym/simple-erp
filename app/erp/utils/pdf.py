@@ -77,8 +77,15 @@ def _account_summary_totals(rows) -> dict[str, int]:
 
 
 def generate_account_summary_pdf(customer_id: int, start_date: str = "", end_date: str = "") -> Path:
+    return generate_account_summary_pdf_for_customers([int(customer_id)], start_date, end_date)
+
+
+def _load_account_summary_section(conn, customer_id: int, start_date: str, end_date: str) -> dict | None:
+    customer = conn.execute("SELECT * FROM customers WHERE id=?", (customer_id,)).fetchone()
+    if customer is None:
+        return None
     conditions = ["o.customer_id=?", "o.deleted_at IS NULL", "o.status IN ('saved','printed')"]
-    params = [customer_id]
+    params: list = [customer_id]
     if start_date:
         conditions.append("o.order_date >= ?")
         params.append(start_date)
@@ -86,43 +93,105 @@ def generate_account_summary_pdf(customer_id: int, start_date: str = "", end_dat
         conditions.append("o.order_date <= ?")
         params.append(end_date)
     where_clause = " AND ".join(conditions)
-    with get_db() as conn:
-        customer = conn.execute("SELECT * FROM customers WHERE id=?", (customer_id,)).fetchone()
-        rows = conn.execute(
-            f"""
-            SELECT o.order_no, o.order_date, o.order_type, o.total_amount_cents AS order_total_cents,
-                   oi.product_name, oi.spec, oi.unit,
-                   oi.quantity, oi.unit_price_cents, oi.subtotal_cents
-            FROM orders o
-            JOIN order_items oi ON oi.order_id=o.id
-            WHERE {where_clause}
-            ORDER BY o.order_date ASC, o.id ASC, oi.id ASC
-            """,
-            params,
-        ).fetchall()
-        total_row = conn.execute(
-            f"SELECT COALESCE(SUM(o.total_amount_cents), 0) AS total FROM orders o WHERE {where_clause}",
-            params,
-        ).fetchone()
-    if customer is None:
-        raise ValueError(f"客户不存在: {customer_id}")
-    config = load_config()
-    total_cents = int(total_row["total"] or 0)
-    display_start_date, display_end_date = _account_summary_display_dates(rows, start_date, end_date)
+    rows = conn.execute(
+        f"""
+        SELECT o.order_no, o.order_date, o.order_type, o.total_amount_cents AS order_total_cents,
+               oi.product_name, oi.spec, oi.unit,
+               oi.quantity, oi.unit_price_cents, oi.subtotal_cents
+        FROM orders o
+        JOIN order_items oi ON oi.order_id=o.id
+        WHERE {where_clause}
+        ORDER BY o.order_date ASC, o.id ASC, oi.id ASC
+        """,
+        params,
+    ).fetchall()
+    total_row = conn.execute(
+        f"SELECT COALESCE(SUM(o.total_amount_cents), 0) AS total FROM orders o WHERE {where_clause}",
+        params,
+    ).fetchone()
     prepared_rows = _account_summary_table_rows(rows)
     totals = _account_summary_totals(prepared_rows)
+    display_start_date, display_end_date = _account_summary_display_dates(rows, start_date, end_date)
+    return {
+        "customer": customer,
+        "rows": prepared_rows,
+        "start_date": display_start_date,
+        "end_date": display_end_date,
+        "total_cents": int(total_row["total"] or 0),
+        "totals": totals,
+    }
+
+
+def generate_account_summary_pdf_for_customers(customer_ids: list[int], start_date: str = "", end_date: str = "") -> Path:
+    if not customer_ids:
+        raise ValueError("没有可导出的客户")
+    sections = []
+    with get_db() as conn:
+        for customer_id in customer_ids:
+            section = _load_account_summary_section(conn, int(customer_id), start_date, end_date)
+            if section is not None:
+                sections.append(section)
+    if not sections:
+        raise ValueError("没有可导出的客户")
+    config = load_config()
     html = render_template(
         "accounts/summary_pdf.html",
-        customer=customer,
-        rows=prepared_rows,
-        start_date=display_start_date,
-        end_date=display_end_date,
-        total_cents=total_cents,
-        totals=totals,
+        sections=sections,
         config=config,
         cents_to_yuan=cents_to_yuan,
     )
     safe_range = f"{start_date or 'all'}_{end_date or 'all'}".replace("/", "-")
-    out = project_path("temp_pdf", f"account_summary_{customer_id}_{safe_range}.pdf")
+    ids_part = "-".join(str(i) for i in customer_ids[:8])
+    if len(customer_ids) > 8:
+        ids_part += f"_n{len(customer_ids)}"
+    out = project_path("temp_pdf", f"account_summary_{ids_part}_{safe_range}.pdf")
     HTML(string=html, base_url=str(project_path())).write_pdf(out)
     return out
+
+
+def resolve_summary_customer_ids(customer_q: str, start_date: str, end_date: str) -> list[int]:
+    """Customers for summary export: unique match, or multi/all with orders in range."""
+    customer_q = (customer_q or "").strip()
+    with get_db() as conn:
+        if customer_q:
+            exact = conn.execute(
+                "SELECT id FROM customers WHERE deleted_at IS NULL AND name=? LIMIT 1",
+                (customer_q,),
+            ).fetchone()
+            if exact is not None:
+                return [int(exact["id"])]
+            fuzzy = conn.execute(
+                "SELECT id, name FROM customers WHERE deleted_at IS NULL AND name LIKE ? ORDER BY name",
+                (f"%{customer_q}%",),
+            ).fetchall()
+            if len(fuzzy) == 1:
+                return [int(fuzzy[0]["id"])]
+            candidate_ids = [int(row["id"]) for row in fuzzy]
+            if not candidate_ids:
+                return []
+        else:
+            candidate_ids = None
+
+        conditions = ["o.deleted_at IS NULL", "o.status IN ('saved','printed')"]
+        params: list = []
+        if start_date:
+            conditions.append("o.order_date >= ?")
+            params.append(start_date)
+        if end_date:
+            conditions.append("o.order_date <= ?")
+            params.append(end_date)
+        if candidate_ids is not None:
+            placeholders = ",".join("?" for _ in candidate_ids)
+            conditions.append(f"o.customer_id IN ({placeholders})")
+            params.extend(candidate_ids)
+        rows = conn.execute(
+            f"""
+            SELECT DISTINCT c.id
+            FROM customers c
+            JOIN orders o ON o.customer_id=c.id
+            WHERE c.deleted_at IS NULL AND {' AND '.join(conditions)}
+            ORDER BY c.name COLLATE NOCASE ASC, c.id ASC
+            """,
+            params,
+        ).fetchall()
+        return [int(row["id"]) for row in rows]

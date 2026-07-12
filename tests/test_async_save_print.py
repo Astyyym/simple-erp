@@ -1,4 +1,5 @@
 from uuid import uuid4
+from datetime import date
 
 import pytest
 
@@ -14,7 +15,7 @@ def _post_save_print(client, route: str, customer_id: int, customer_name: str, o
             "customer_id": str(customer_id),
             "customer_name": customer_name,
             "order_no": order_no,
-            "order_date": "2026-07-11",
+            "order_date": "2026-07-10",
             "status": "saved",
             "product_name": ["测试商品"],
             "unit": ["个"],
@@ -27,35 +28,35 @@ def _post_save_print(client, route: str, customer_id: int, customer_name: str, o
 
 
 @pytest.mark.parametrize(
-    ("route", "expected_next_url", "prefix"),
+    ("route", "expected_next_url"),
     [
-        ("/orders/create", "/orders/new", "FETCH-SALE"),
-        ("/orders/return/create", "/orders/return/new", "FETCH-RETURN"),
+        ("/orders/create", "/orders/new"),
+        ("/orders/return/create", "/orders/return/new"),
     ],
 )
-def test_fetch_save_print_returns_json_with_get_urls(route, expected_next_url, prefix):
+def test_fetch_save_print_returns_json_with_get_urls(route, expected_next_url):
     init_db()
     suffix = uuid4().hex[:8]
     customer_name = f"异步保存客户-{suffix}"
     customer_id = create_customer(customer_name)
-    order_no = f"{prefix}-{suffix}"
     client = create_app().test_client()
 
-    response = _post_save_print(client, route, customer_id, customer_name, order_no)
+    response = _post_save_print(client, route, customer_id, customer_name, f"IGNORED-{suffix}")
 
     assert response.status_code == 200
     assert response.is_json
     payload = response.get_json()
     assert payload["ok"] is True
-    assert payload["order_no"] == order_no
+    assert payload["order_no"].startswith("MD20260710")
     assert payload["next_url"] == expected_next_url
     assert payload["detail_url"].startswith("/orders/")
     assert payload["pdf_url"].startswith("http://")
     assert payload["pdf_url"].endswith("/pdf")
     with get_db() as conn:
-        saved = conn.execute("SELECT id FROM orders WHERE order_no=?", (order_no,)).fetchone()
+        saved = conn.execute("SELECT id, order_date FROM orders WHERE order_no=?", (payload["order_no"],)).fetchone()
     assert saved is not None
     assert payload["order_id"] == saved["id"]
+    assert saved["order_date"] == "2026-07-10"
 
 
 def test_order_entry_disables_browser_history_but_keeps_erp_suggestions():

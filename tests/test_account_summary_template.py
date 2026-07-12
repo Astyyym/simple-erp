@@ -34,12 +34,14 @@ def test_account_summary_template_marks_return_rows_red_and_prints_net_formula()
     with app.app_context():
         html = render_template(
             "accounts/summary_pdf.html",
-            customer={"name": "汇总退货客户"},
-            rows=_account_summary_table_rows(rows),
-            start_date="2026-07-10",
-            end_date="2026-07-11",
-            total_cents=5000,
-            totals=_account_summary_totals(rows),
+            sections=[{
+                "customer": {"name": "汇总退货客户"},
+                "rows": _account_summary_table_rows(rows),
+                "start_date": "2026-07-10",
+                "end_date": "2026-07-11",
+                "total_cents": 5000,
+                "totals": _account_summary_totals(rows),
+            }],
             config={"shop_name": "测试店", "printer_paper_width_mm": 241, "printer_paper_height_mm": 280},
             cents_to_yuan=cents_to_yuan,
         )
@@ -47,3 +49,7 @@ def test_account_summary_template_marks_return_rows_red_and_prints_net_formula()
     assert 'class="return-row"' in html
     assert "销售总金额 ¥100.00 - 退货总金额 ¥50.00 = 总金额 ¥50.00" in html
     assert html.count("¥-50.00") == 1
+    assert "order-no-cell" in html
+    assert "width:42mm" in html
+    assert "white-space: nowrap" not in html.split("order-no-cell")[1][:200]
+    assert "break-all" in html

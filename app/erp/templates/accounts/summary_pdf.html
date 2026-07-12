@@ -6,13 +6,22 @@
     @page { size: {{config.printer_paper_width_mm}}mm {{config.printer_paper_height_mm}}mm; margin: 0; }
     body { font-family: "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; margin: 0; color: #000; }
     .page { width: {{config.printer_paper_width_mm}}mm; min-height: {{config.printer_paper_height_mm}}mm; box-sizing: border-box; padding: 9mm 11mm; }
+    .page + .page { page-break-before: always; }
     h1 { text-align: center; margin: 0 0 4mm 0; font-size: 23px; letter-spacing: 2px; }
     .subtitle { text-align: center; font-size: 16px; margin-bottom: 4mm; }
     .meta { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3mm; font-size: 13px; margin-bottom: 4mm; }
     table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
-    td, th { border: 1px solid #333; padding: 1.5mm; text-align: center; word-break: break-all; }
-    .date-cell, .order-no-cell { word-break: keep-all; overflow-wrap: normal; white-space: nowrap; }
-    .name-cell { text-align: left; }
+    td, th { border: 1px solid #333; padding: 1.2mm 1mm; text-align: center; vertical-align: middle; word-break: break-word; overflow-wrap: anywhere; }
+    .date-cell { word-break: keep-all; overflow-wrap: normal; white-space: nowrap; font-size: 11px; }
+    .order-no-cell {
+      word-break: break-all;
+      overflow-wrap: anywhere;
+      white-space: normal;
+      line-height: 1.25;
+      font-size: 10.5px;
+      font-family: "Consolas", "Courier New", "Noto Sans CJK SC", "Microsoft YaHei", monospace;
+    }
+    .name-cell { text-align: left; word-break: break-word; overflow-wrap: anywhere; }
     .summary { margin-top: 5mm; font-size: 14px; line-height: 1.8; }
     .total { font-size: 16px; font-weight: bold; }
     .return-row, .return-row td { color: #c00000; }
@@ -20,28 +29,30 @@
   </style>
 </head>
 <body>
+  {% for section in sections %}
   <section class="page">
     <h1>{{config.shop_name}}</h1>
     <div class="subtitle">客户货款汇总表</div>
     <div class="meta">
-      <span>客户: {{customer.name}}</span>
-      <span>开始日期: {{start_date or '最早'}}</span>
-      <span>结束日期: {{end_date or '最新'}}</span>
+      <span>客户: {{section.customer.name}}</span>
+      <span>开始日期: {{section.start_date or '最早'}}</span>
+      <span>结束日期: {{section.end_date or '最新'}}</span>
     </div>
     <table>
-      <colgroup><col style="width:24mm"><col style="width:29mm"><col><col style="width:13mm"><col style="width:16mm"><col style="width:18mm"><col style="width:20mm"><col style="width:22mm"></colgroup>
+      <colgroup><col style="width:22mm"><col style="width:42mm"><col><col style="width:12mm"><col style="width:14mm"><col style="width:17mm"><col style="width:18mm"><col style="width:20mm"></colgroup>
       <tr><th>日期</th><th>单号</th><th>名称规格</th><th>单位</th><th>数量</th><th>单价</th><th>小计</th><th>单号合计</th></tr>
-      {% for row in rows %}
+      {% for row in section.rows %}
       <tr class="{{ 'return-row' if row.is_return else '' }}">{% if row.show_date %}<td class="date-cell" rowspan="{{row.date_rowspan}}">{{row.order_date}}</td>{% endif %}{% if row.show_order_no %}<td class="order-no-cell" rowspan="{{row.order_no_rowspan}}">{{row.order_no}}</td>{% endif %}<td class="name-cell">{{row.product_name}} {{row.spec}}</td><td>{{row.unit}}</td><td>{{row.quantity}}</td><td>{{cents_to_yuan(row.unit_price_cents)}}</td><td>{{cents_to_yuan(row.subtotal_cents)}}</td>{% if row.show_order_total %}<td rowspan="{{row.order_total_rowspan}}">¥{{cents_to_yuan(row.order_total_cents)}}</td>{% endif %}</tr>
       {% endfor %}
-      <tr><td colspan="7" style="text-align:right;font-weight:bold">总金额</td><td style="font-weight:bold">¥{{cents_to_yuan(total_cents)}}</td></tr>
+      <tr><td colspan="7" style="text-align:right;font-weight:bold">总金额</td><td style="font-weight:bold">¥{{cents_to_yuan(section.total_cents)}}</td></tr>
     </table>
     <div class="summary">
-      <div>客户名称：{{customer.name}}</div>
-      <div>起止日期：{{start_date or '最早'}} 至 {{end_date or '最新'}}</div>
-      <div class="formula">销售总金额 ¥{{cents_to_yuan(totals.sale_total_cents)}} - 退货总金额 ¥{{cents_to_yuan(totals.return_total_cents)}} = 总金额 ¥{{cents_to_yuan(totals.net_total_cents)}}</div>
-      <div class="total">总金额：¥{{cents_to_yuan(total_cents)}}</div>
+      <div>客户名称：{{section.customer.name}}</div>
+      <div>起止日期：{{section.start_date or '最早'}} 至 {{section.end_date or '最新'}}</div>
+      <div class="formula">销售总金额 ¥{{cents_to_yuan(section.totals.sale_total_cents)}} - 退货总金额 ¥{{cents_to_yuan(section.totals.return_total_cents)}} = 总金额 ¥{{cents_to_yuan(section.totals.net_total_cents)}}</div>
+      <div class="total">总金额：¥{{cents_to_yuan(section.total_cents)}}</div>
     </div>
   </section>
+  {% endfor %}
 </body>
 </html>

@@ -1,6 +1,22 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>商品管理</h2>
+{% if import_error %}<div class="alert alert-danger">{{ import_error }}</div>{% endif %}
+{% if import_result %}
+<div class="alert alert-info">
+  <strong>导入完成：</strong>新增：{{ import_result.added }}，跳过：{{ import_result.skipped }}，错误：{{ import_result.error_count }}
+  {% if import_result.errors %}<ul class="mb-0 mt-2">{% for error in import_result.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
+  {% if import_result.error_count > import_result.errors|length %}<div class="small mt-2">仅显示前{{ import_result.errors|length }}条错误，其余{{ import_result.error_count - import_result.errors|length }}条未展开。</div>{% endif %}
+</div>
+{% endif %}
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <a class="btn btn-outline-primary" href="/products/import/template">下载Excel模板</a>
+  <form class="d-flex gap-2" method="post" action="/products/import" enctype="multipart/form-data">
+    <input class="form-control" type="file" name="file" accept=".xlsx,.csv" required>
+    <button class="btn btn-primary text-nowrap">批量导入</button>
+  </form>
+  <span class="text-muted small">支持.xlsx/.csv，最大5MB；重复名称自动跳过；模板未填写单位，导入商品默认单位为“个”</span>
+</div>
 <form class="row g-2 mb-3" method="get" action="/products/">
   <input class="form-control col" id="productSearchInput" name="q" value="{{q}}" list="product_name_suggestions" placeholder="输入相似字符查找商品">
   <datalist id="product_name_suggestions">{% for s in suggestions %}<option value="{{s.name}}"></option>{% endfor %}</datalist>

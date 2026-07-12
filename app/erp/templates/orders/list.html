@@ -1,13 +1,130 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>单据查询</h2>
-<form class="row g-2 mb-3" method="get" action="/orders/">
-  <input class="form-control col" name="customer" value="{{customer_q}}" placeholder="客户名称">
-  <input class="form-control col" type="date" name="start_date" value="{{start_date}}" title="开始日期">
-  <input class="form-control col" type="date" name="end_date" value="{{end_date}}" title="结束日期">
-  <button class="btn btn-primary col-2">筛选</button>
-  <a class="btn btn-outline-secondary col-2" href="/orders/">清除筛选条件</a>
+<h2>单据管理</h2>
+<form id="ordersFilterForm" class="card card-body mb-3" method="get" action="/orders/" autocomplete="off">
+  <div class="row g-2 align-items-end">
+    <div class="col-lg-3">
+      <label class="form-label mb-1" for="customerFilterInput">客户名称</label>
+      <input class="form-control" id="customerFilterInput" name="customer" value="{{customer_q}}" list="order_customer_suggestions" placeholder="输入可自动匹配库内客户" autocomplete="off">
+      <datalist id="order_customer_suggestions">{% for s in customer_suggestions %}<option value="{{s.name}}"></option>{% endfor %}</datalist>
+    </div>
+    <div class="col-lg-4">
+      <label class="form-label mb-1 d-block">时间模式</label>
+      <div class="btn-group flex-wrap" role="group" aria-label="时间模式">
+        <input type="radio" class="btn-check" name="date_mode" id="dateModeYear" value="year" {{ 'checked' if date_mode == 'year' else '' }} autocomplete="off">
+        <label class="btn btn-outline-primary" for="dateModeYear">按年</label>
+        <input type="radio" class="btn-check" name="date_mode" id="dateModeMonth" value="month" {{ 'checked' if date_mode == 'month' else '' }} autocomplete="off">
+        <label class="btn btn-outline-primary" for="dateModeMonth">按月</label>
+        <input type="radio" class="btn-check" name="date_mode" id="dateModeRange" value="range" {{ 'checked' if date_mode == 'range' else '' }} autocomplete="off">
+        <label class="btn btn-outline-primary" for="dateModeRange">按日到日</label>
+      </div>
+    </div>
+    <div class="col-lg-2 date-mode-panel" data-mode="year" {% if date_mode != 'year' %}hidden{% endif %}>
+      <label class="form-label mb-1" for="filterYear">年份</label>
+      <input class="form-control" id="filterYear" name="year" type="number" min="2000" max="2100" value="{{filter_year}}">
+    </div>
+    <div class="col-lg-5 date-mode-panel" data-mode="month" {% if date_mode != 'month' %}hidden{% endif %}>
+      <div class="row g-2">
+        <div class="col-3">
+          <label class="form-label mb-1" for="filterStartYear">开始年</label>
+          <input class="form-control" id="filterStartYear" name="start_year" type="number" min="2000" max="2100" value="{{filter_start_year}}">
+        </div>
+        <div class="col-3">
+          <label class="form-label mb-1" for="filterStartMonth">开始月</label>
+          <select class="form-select" id="filterStartMonth" name="start_month">
+            {% for m in range(1, 13) %}
+            <option value="{{m}}" {{ 'selected' if filter_start_month == m else '' }}>{{m}}月</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-3">
+          <label class="form-label mb-1" for="filterEndYear">结束年</label>
+          <input class="form-control" id="filterEndYear" name="end_year" type="number" min="2000" max="2100" value="{{filter_end_year}}">
+        </div>
+        <div class="col-3">
+          <label class="form-label mb-1" for="filterEndMonth">结束月</label>
+          <select class="form-select" id="filterEndMonth" name="end_month">
+            {% for m in range(1, 13) %}
+            <option value="{{m}}" {{ 'selected' if filter_end_month == m else '' }}>{{m}}月</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-4 date-mode-panel" data-mode="range" {% if date_mode != 'range' %}hidden{% endif %}>
+      <div class="row g-2">
+        <div class="col-6">
+          <label class="form-label mb-1" for="filterStartDate">开始日期</label>
+          <input class="form-control" id="filterStartDate" type="date" name="start_date" value="{{start_date}}" title="开始日期">
+        </div>
+        <div class="col-6">
+          <label class="form-label mb-1" for="filterEndDate">结束日期</label>
+          <input class="form-control" id="filterEndDate" type="date" name="end_date" value="{{end_date}}" title="结束日期">
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-2">
+      <label class="form-label mb-1" for="orderTypeFilter">订单类型</label>
+      <select class="form-select" id="orderTypeFilter" name="order_type" aria-label="订单类型">
+        <option value="" {{ 'selected' if not order_type else '' }}>全部</option>
+        <option value="sale" {{ 'selected' if order_type == 'sale' else '' }}>只看销售单</option>
+        <option value="return" {{ 'selected' if order_type == 'return' else '' }}>只看退货单</option>
+      </select>
+    </div>
+    <div class="col-lg-auto d-flex flex-wrap gap-2 align-items-center">
+      <button class="btn btn-primary" type="submit">筛选</button>
+      <a class="btn btn-outline-secondary" href="/orders/">清除筛选条件</a>
+      <a id="exportSummaryBtn" class="btn btn-info" href="/orders/summary_pdf" target="_blank" rel="noopener">导出汇总表</a>
+    </div>
+  </div>
+  {% if summary_hint %}
+  <div class="small text-muted mt-2" id="summaryExportHint">{{ summary_hint }}</div>
+  {% endif %}
+  {% if dashboard_notice %}
+  <div class="alert alert-warning mt-3 mb-0" role="status">{{ dashboard_notice }}{% if matched_customer_names %}（匹配：{{ matched_customer_names|join('、') }}）{% endif %}</div>
+  {% endif %}
 </form>
+{% if purchase_dashboard %}
+<section class="card mb-4 purchase-dashboard" aria-labelledby="purchaseDashboardTitle">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+      <div>
+        <h3 id="purchaseDashboardTitle" class="h5 mb-1">{% if purchase_dashboard.scope == 'all' %}全店拿货统计{% else %}客户采购统计{% endif %}</h3>
+        <div class="text-muted">
+          {% if purchase_dashboard.scope == 'customer' %}{{purchase_dashboard.customer}} · {% endif %}
+          {{purchase_dashboard.start_date}} 至 {{purchase_dashboard.end_date}}
+        </div>
+      </div>
+      <div id="rangeActions" class="purchase-range-actions" hidden>
+        <strong id="selectedRange"></strong>
+        <button id="viewRangeOrders" class="btn btn-sm btn-primary" type="button">查看订单详情</button>
+        <button id="cancelRange" class="btn btn-sm btn-outline-secondary" type="button">取消选择</button>
+      </div>
+    </div>
+    <div class="purchase-dashboard-layout">
+      <div class="purchase-heatmap-pane">
+        <h4 class="h6">采购热力图</h4>
+        <div id="purchaseHeatmap" class="purchase-month-grid" aria-label="逐日采购热力图"></div>
+        <div class="small text-muted mt-2">颜色越深表示当天拿货总额越高；单击查看当天，拖动选择连续日期。年视图按自然月分块，月份之间留有间隙。</div>
+      </div>
+      <div class="purchase-ranking-pane">
+        <div class="d-flex justify-content-between align-items-center">
+          <h4 class="h6 mb-0">商品排行</h4>
+          <select id="rankingLimit" class="form-select form-select-sm ranking-limit"><option value="5">前5</option><option value="10">前10</option></select>
+        </div>
+        <canvas id="productRankingChart" height="250" aria-label="商品数量与金额排行"></canvas>
+        <div class="table-responsive mt-3">
+          <table class="table table-sm align-middle">
+            <thead><tr><th>排名</th><th>商品名称</th><th>累计数量</th><th>累计金额</th></tr></thead>
+            <tbody id="productRankingTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<script id="customerPurchaseData" type="application/json">{{ purchase_dashboard|tojson }}</script>
+{% endif %}
 <div class="d-flex gap-2 mb-3"><a class="btn btn-primary" href="/orders/new">新建订单</a><button class="btn btn-danger" type="button" onclick="submitSelected('bulkOrdersForm','确认删除选中的单据吗？')">删除选中</button></div>
 <form id="bulkOrdersForm" method="post" action="/orders/bulk_delete"></form>
 <table class="table table-striped align-middle stable-table">
@@ -25,4 +142,237 @@
   </tr>
   {% endfor %}
 </table>
+<style>
+.purchase-dashboard-layout{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(300px,min(420px,38%));
+  gap:1.25rem;
+  align-items:start;
+}
+.purchase-heatmap-pane{min-width:0}
+.purchase-ranking-pane{
+  min-width:0;
+  width:100%;
+  max-width:100%;
+}
+.purchase-ranking-pane canvas#productRankingChart{
+  display:block;
+  width:100% !important;
+  max-width:100%;
+  height:250px;
+}
+.purchase-month-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}
+.month-calendar{border:1px solid #dee2e6;border-radius:8px;padding:8px;background:#fff}
+.month-calendar h5{font-size:.9rem;margin:0 0 6px;color:#495057}
+.month-days{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.heat-day{aspect-ratio:1;min-width:0;border:1px solid rgba(27,31,36,.08);border-radius:3px;cursor:pointer;padding:0;background:#ebedf0}
+.heat-day.selected{outline:2px solid #0d6efd;outline-offset:1px}
+.heat-day.out-of-range{visibility:hidden;pointer-events:none}
+.purchase-range-actions{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+.ranking-limit{width:82px}
+@media (max-width:1400px){
+  .purchase-dashboard-layout{grid-template-columns:minmax(0,1fr) minmax(280px,min(380px,40%))}
+  .purchase-month-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+@media (max-width:1100px){
+  .purchase-dashboard-layout{grid-template-columns:minmax(0,1fr) minmax(260px,min(340px,42%))}
+  .purchase-month-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media (max-width:992px){
+  .purchase-dashboard-layout{grid-template-columns:1fr}
+  .purchase-ranking-pane{max-width:560px}
+  .purchase-month-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media (max-width:576px){
+  .purchase-month-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .purchase-ranking-pane{max-width:100%}
+}
+</style>
+<script>
+(() => {
+  const form = document.getElementById('ordersFilterForm');
+  const modeInputs = form.querySelectorAll('input[name="date_mode"]');
+  const panels = form.querySelectorAll('.date-mode-panel');
+  const exportBtn = document.getElementById('exportSummaryBtn');
+  const syncModePanels = () => {
+    const mode = form.querySelector('input[name="date_mode"]:checked')?.value || 'range';
+    panels.forEach(panel => {
+      const active = panel.dataset.mode === mode;
+      panel.hidden = !active;
+      panel.querySelectorAll('input,select').forEach(el => { el.disabled = !active; });
+    });
+  };
+  const syncExportLink = () => {
+    if (!exportBtn) return;
+    const params = new URLSearchParams(new FormData(form));
+    params.delete('order_type');
+    exportBtn.href = '/orders/summary_pdf?' + params.toString();
+  };
+  modeInputs.forEach(input => input.addEventListener('change', () => { syncModePanels(); syncExportLink(); }));
+  form.addEventListener('change', syncExportLink);
+  form.addEventListener('input', syncExportLink);
+  syncModePanels();
+  syncExportLink();
+
+  const customerInput = document.getElementById('customerFilterInput');
+  const suggestions = document.getElementById('order_customer_suggestions');
+  if (customerInput && suggestions) {
+    let timer = null;
+    customerInput.addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        const q = customerInput.value.trim();
+        if (!q) { suggestions.innerHTML = ''; return; }
+        try {
+          const response = await fetch('/orders/api/customers?q=' + encodeURIComponent(q));
+          const rows = await response.json();
+          suggestions.innerHTML = rows.map(row => `<option value="${row.name}"></option>`).join('');
+        } catch (_) {}
+      }, 180);
+    });
+  }
+
+  const dataNode = document.getElementById('customerPurchaseData');
+  if (!dataNode) return;
+  const data = JSON.parse(dataNode.textContent);
+  const heatmap = document.getElementById('purchaseHeatmap');
+  const amounts = data.days.map(day => day.amount_cents).filter(value => value > 0);
+  const maxAmount = Math.max(0, ...amounts);
+  const colors = ['#ebedf0','#c6e48b','#7bc96f','#239a3b','#196127'];
+  const level = amount => amount <= 0 || maxAmount <= 0 ? 0 : Math.max(1, Math.ceil(amount / maxAmount * 4));
+  const money = cents => `¥${(cents / 100).toFixed(2)}`;
+  const cells = [];
+  let dragStart = null, dragging = false, moved = false, selected = null;
+
+  const openOrders = (start, end) => {
+    const query = new URLSearchParams({
+      customer: data.customer || '',
+      date_mode: 'range',
+      start_date: start,
+      end_date: end,
+      order_type: data.order_type || ''
+    });
+    window.location.href = `/orders/?${query.toString()}`;
+  };
+  const selectRange = (a, b) => {
+    const start = a < b ? a : b, end = a < b ? b : a;
+    selected = {start, end};
+    cells.forEach(cell => cell.classList.toggle('selected', cell.dataset.date >= start && cell.dataset.date <= end));
+    document.getElementById('selectedRange').textContent = `已选范围：${start} 至 ${end}`;
+    document.getElementById('rangeActions').hidden = false;
+  };
+
+  const byDate = Object.fromEntries(data.days.map(day => [day.date, day]));
+  const start = new Date(data.start_date + 'T00:00:00');
+  const end = new Date(data.end_date + 'T00:00:00');
+  const months = [];
+  let cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+  const lastMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+  while (cursor <= lastMonth) {
+    months.push({year: cursor.getFullYear(), month: cursor.getMonth() + 1});
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+  }
+
+  months.forEach(({year, month}) => {
+    const card = document.createElement('div');
+    card.className = 'month-calendar';
+    const title = document.createElement('h5');
+    title.textContent = `${year}年${month}月`;
+    card.appendChild(title);
+    const grid = document.createElement('div');
+    grid.className = 'month-days';
+    const first = new Date(year, month - 1, 1);
+    const pad = (first.getDay() + 6) % 7; // Monday-first
+    for (let i = 0; i < pad; i++) {
+      const spacer = document.createElement('span');
+      spacer.className = 'heat-day out-of-range';
+      grid.appendChild(spacer);
+    }
+    const daysInMonth = new Date(year, month, 0).getDate();
+    for (let dayNum = 1; dayNum <= daysInMonth; dayNum++) {
+      const iso = `${year}-${String(month).padStart(2,'0')}-${String(dayNum).padStart(2,'0')}`;
+      const day = byDate[iso];
+      const cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = 'heat-day';
+      cell.dataset.date = iso;
+      if (!day) {
+        cell.classList.add('out-of-range');
+        cell.tabIndex = -1;
+      } else {
+        cell.style.backgroundColor = colors[level(day.amount_cents)];
+        const productSummary = (() => {
+          if (!day.products.length) return '无';
+          const shown = day.products.slice(0, 3);
+          const extra = day.products.length - shown.length;
+          return extra > 0 ? `${shown.join('、')}，另有${extra}种` : shown.join('、');
+        })();
+        cell.title = `${day.date}\n拿货总额：${money(day.amount_cents)}\n拿货次数：${day.order_count}\n货物：${productSummary}`;
+        cell.setAttribute('aria-label', cell.title.replaceAll('\n', '，'));
+        cell.addEventListener('mousedown', event => { event.preventDefault(); dragStart = day.date; dragging = true; moved = false; });
+        cell.addEventListener('mouseenter', () => { if (dragging) { moved = moved || day.date !== dragStart; selectRange(dragStart, day.date); } });
+        cell.addEventListener('click', () => { if (!moved) openOrders(day.date, day.date); });
+        cells.push(cell);
+      }
+      grid.appendChild(cell);
+    }
+    card.appendChild(grid);
+    heatmap.appendChild(card);
+  });
+
+  document.addEventListener('mouseup', () => { dragging = false; });
+  document.getElementById('viewRangeOrders').addEventListener('click', () => selected && openOrders(selected.start, selected.end));
+  document.getElementById('cancelRange').addEventListener('click', () => {
+    selected = null;
+    cells.forEach(c => c.classList.remove('selected'));
+    document.getElementById('rangeActions').hidden = true;
+  });
+
+  const canvas = document.getElementById('productRankingChart'), ctx = canvas.getContext('2d');
+  const rankingPane = canvas.closest('.purchase-ranking-pane') || canvas.parentElement;
+  const drawRanking = () => {
+    const rows = data.ranking.slice(0, Number(document.getElementById('rankingLimit').value));
+    const tableBody = document.getElementById('productRankingTableBody');
+    tableBody.replaceChildren(...rows.map((row, index) => {
+      const tr = document.createElement('tr');
+      [String(index + 1), row.name, String(row.quantity), money(row.amount_cents)].forEach(value => {
+        const td = document.createElement('td'); td.textContent = value; tr.appendChild(td);
+      });
+      return tr;
+    }));
+    if (!rows.length) {
+      const tr=document.createElement('tr'),td=document.createElement('td'); td.colSpan=4; td.className='text-muted'; td.textContent='暂无拿货数据'; tr.appendChild(td); tableBody.appendChild(tr);
+    }
+    // Fit canvas to the ranking pane width across different monitors.
+    const paneWidth = Math.floor((rankingPane && rankingPane.clientWidth) || canvas.clientWidth || 360);
+    const ratio = window.devicePixelRatio || 1;
+    const width = Math.max(240, paneWidth);
+    const height = 250;
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+    canvas.width = Math.floor(width * ratio);
+    canvas.height = Math.floor(height * ratio);
+    ctx.setTransform(ratio,0,0,ratio,0,0);
+    ctx.clearRect(0,0,width,height);
+    if (!rows.length) { ctx.fillStyle='#6c757d'; ctx.fillText('暂无拿货数据', 12, 30); return; }
+    const left=42,right=54,top=22,bottom=58,w=width-left-right,h=height-top-bottom;
+    const maxQty=Math.max(...rows.map(r=>r.quantity),1), maxMoney=Math.max(...rows.map(r=>r.amount_cents),1);
+    // Keep bars readable: do not let a few items create huge empty gutters.
+    const idealStep = w / rows.length;
+    const step = Math.min(idealStep, 88);
+    const chartWidth = step * rows.length;
+    const offsetX = left + Math.max(0, (w - chartWidth) / 2);
+    ctx.strokeStyle='#dee2e6'; ctx.beginPath(); ctx.moveTo(left,top); ctx.lineTo(left,top+h); ctx.lineTo(left+w,top+h); ctx.stroke();
+    rows.forEach((row,i)=>{ const barH=row.quantity/maxQty*h, x=offsetX+i*step+step*.18; ctx.fillStyle='#6ea8fe'; ctx.fillRect(x,top+h-barH,step*.5,barH); ctx.fillStyle='#495057'; ctx.font='11px sans-serif'; const label=row.name.length>6?row.name.slice(0,6)+'…':row.name; ctx.save(); ctx.translate(offsetX+i*step+step*.45,top+h+8); ctx.rotate(-.55); ctx.fillText(label,0,0); ctx.restore(); });
+    ctx.strokeStyle='#dc3545'; ctx.fillStyle='#dc3545'; ctx.lineWidth=2; ctx.beginPath(); rows.forEach((row,i)=>{ const x=offsetX+i*step+step*.45,y=top+h-row.amount_cents/maxMoney*h; i?ctx.lineTo(x,y):ctx.moveTo(x,y); }); ctx.stroke();
+    rows.forEach((row,i)=>{ const x=offsetX+i*step+step*.45,y=top+h-row.amount_cents/maxMoney*h; ctx.beginPath();ctx.arc(x,y,3,0,Math.PI*2);ctx.fill(); });
+    ctx.fillStyle='#6c757d'; ctx.font='11px sans-serif'; ctx.fillText('数量',4,top+8); ctx.fillText('金额',width-right+8,top+8);
+  };
+  document.getElementById('rankingLimit').addEventListener('change', drawRanking);
+  window.addEventListener('resize', drawRanking);
+  // Second paint after layout settles on wide monitors.
+  requestAnimationFrame(() => requestAnimationFrame(drawRanking));
+  drawRanking();
+})();
+</script>
 {% endblock %}

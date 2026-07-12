@@ -1,5 +1,6 @@
 from pathlib import Path
 from uuid import uuid4
+from datetime import date
 
 from erp import create_app
 from erp.db import get_db, init_db
@@ -74,14 +75,14 @@ def test_order_print_signatures_share_phone_and_address_rows():
 def test_save_print_redirects_to_order_pdf():
     init_db()
     suffix = uuid4().hex[:8]
-    customer_id = create_customer(f"打印客户-{suffix}")
+    customer_name = f"打印客户-{suffix}"
+    customer_id = create_customer(customer_name)
     app = create_app()
     client = app.test_client()
-    order_no = f"PRINT-{suffix}"
     response = client.post("/orders/create", data={
         "customer_id": str(customer_id),
-        "customer_name": f"打印客户-{suffix}",
-        "order_no": order_no,
+        "customer_name": customer_name,
+        "order_no": f"PRINT-{suffix}",
         "order_date": "2026-07-10",
         "status": "saved",
         "product_name": ["闸阀"],
@@ -92,7 +93,13 @@ def test_save_print_redirects_to_order_pdf():
     })
     assert response.status_code == 303
     with get_db() as conn:
-        order = conn.execute("SELECT id FROM orders WHERE order_no=?", (order_no,)).fetchone()
+        order = conn.execute(
+            "SELECT id, order_no, order_date FROM orders WHERE customer_id=? ORDER BY id DESC LIMIT 1",
+            (customer_id,),
+        ).fetchone()
+    assert order is not None
+    assert order["order_no"] == "MD202607100001"
+    assert order["order_date"] == "2026-07-10"
     assert response.headers["Location"].endswith(f"/orders/{order['id']}/pdf")
 
 

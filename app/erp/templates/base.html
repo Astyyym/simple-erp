@@ -87,7 +87,7 @@
     <a class="{{'active' if request.path.startswith('/orders/new') or request.path.startswith('/orders/return/new') else ''}}" href="/orders/new">开单</a>
     <a class="sidebar-sub {{'active' if request.path.startswith('/orders/new') else ''}}" href="/orders/new">销售单</a>
     <a class="sidebar-sub {{'active' if request.path.startswith('/orders/return/new') else ''}}" href="/orders/return/new">退货单</a>
-    <a class="{{'active' if request.path.startswith('/orders/') and not request.path.startswith('/orders/new') and not request.path.startswith('/orders/return/new') else ''}}" href="/orders/">单据查询</a>
+    <a class="{{'active' if request.path.startswith('/orders/') and not request.path.startswith('/orders/new') and not request.path.startswith('/orders/return/new') else ''}}" href="/orders/">单据管理</a>
     <a class="{{'active' if request.path.startswith('/accounts') else ''}}" href="/accounts/">账款管理</a>
     <div class="nav-label">基础资料</div>
     <a class="{{'active' if request.path.startswith('/products') else ''}}" href="/products/">商品管理</a>

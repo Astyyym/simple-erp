@@ -29,7 +29,7 @@
 
 <div class="order-heading">
   <div><h2>{{ ('重编辑退货单' if is_return else '重编辑销售单') if is_edit else ('新建退货单' if is_return else '新建销售单') }}</h2><p>{{ '登记客户退回商品，金额将冲减应收账款。' if is_return else '按行录入商品，完成后保存并打开打印单。' }}</p></div>
-  <a class="btn btn-outline-secondary" href="/orders/">返回单据查询</a>
+  <a class="btn btn-outline-secondary" href="/orders/">返回单据管理</a>
 </div>
 <form method="post" action="{{ '/orders/' ~ order.id ~ '/edit' if is_edit else ('/orders/return/create' if is_return else '/orders/create') }}" id="orderForm" autocomplete="off">
   <input type="hidden" name="customer_id" id="customer_id" value="{{order.customer_id if is_edit else ''}}">
@@ -42,11 +42,13 @@
     </div>
     <div class="col-3">
       <label class="form-label">{{ '退货日期' if is_return else '销售日期' }}</label>
-      <input class="form-control form-control-lg" type="date" name="order_date" autocomplete="off" value="{{order.order_date if is_edit else today}}" required>
+      <input class="form-control form-control-lg" id="orderDateInput" type="date" name="order_date" autocomplete="off" value="{{order.order_date if is_edit else today}}" required {% if is_edit %}readonly{% endif %}>
+      <div class="form-text">{{ '重编辑不可改日期' if is_edit else '默认当天，可改；改后单号会按该日重算' }}</div>
     </div>
     <div class="col-3">
       <label class="form-label">单号</label>
-      <input class="form-control form-control-lg" name="order_no" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" value="{{order.order_no if is_edit else order_no}}" required>
+      <input class="form-control form-control-lg" id="orderNoInput" name="order_no" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" value="{{order.order_no if is_edit else order_no}}" required readonly>
+      <div class="form-text">{{ '重编辑保持原单号' if is_edit else '系统按 MD+所选日期+流水 自动生成' }}</div>
     </div>
     <div class="col-2">
       <label class="form-label">状态</label>
@@ -231,6 +233,27 @@ function bindRow(tr) {
 document.querySelectorAll('#orderBody tr').forEach(bindRow);
 document.addEventListener('click', e => { if (!e.target.closest('.suggest-wrap')) document.querySelectorAll('.suggest-list').forEach(x => x.classList.add('d-none')); });
 {% if not is_edit %}
+const orderDateInput = document.getElementById('orderDateInput');
+const orderNoInput = document.getElementById('orderNoInput');
+let orderNoRefreshTimer = null;
+const refreshOrderNo = async () => {
+  if (!orderDateInput || !orderNoInput) return;
+  const dateValue = orderDateInput.value;
+  if (!dateValue) return;
+  try {
+    const response = await fetch('/orders/api/next_order_no?date=' + encodeURIComponent(dateValue));
+    const data = await response.json();
+    if (data && data.order_no) orderNoInput.value = data.order_no;
+  } catch (_) {}
+};
+if (orderDateInput) {
+  orderDateInput.addEventListener('change', refreshOrderNo);
+  orderDateInput.addEventListener('input', () => {
+    clearTimeout(orderNoRefreshTimer);
+    orderNoRefreshTimer = setTimeout(refreshOrderNo, 180);
+  });
+}
+
 const orderForm = document.getElementById('orderForm');
 const submitButton = document.getElementById('savePrintButton');
 const successPanel = document.getElementById('saveSuccessPanel');

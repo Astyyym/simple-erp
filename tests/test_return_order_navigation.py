@@ -39,6 +39,8 @@ def test_return_order_page_uses_same_entry_table_with_return_labels():
 
 
 def test_return_order_create_records_return_type_and_reduces_customer_balance():
+    from datetime import date
+
     from erp import create_app
     from erp.services.accounting import customer_balance_cents
 
@@ -46,7 +48,6 @@ def test_return_order_create_records_return_type_and_reduces_customer_balance():
     suffix = uuid.uuid4().hex[:8]
     customer_name = f"退货客户{suffix}"
     product_name = f"退货商品{suffix}"
-    order_no = f"RET-{suffix}"
 
     response = client.post(
         "/orders/return/create",
@@ -54,7 +55,7 @@ def test_return_order_create_records_return_type_and_reduces_customer_balance():
             "customer_name": customer_name,
             "customer_id": "",
             "order_date": "2026-07-10",
-            "order_no": order_no,
+            "order_no": f"RET-{suffix}",
             "status": "saved",
             "product_name": [product_name],
             "unit": ["个"],
@@ -68,8 +69,13 @@ def test_return_order_create_records_return_type_and_reduces_customer_balance():
 
     assert response.status_code == 302
     with get_db() as conn:
-        order = conn.execute("SELECT * FROM orders WHERE order_no=?", (order_no,)).fetchone()
         customer = conn.execute("SELECT id FROM customers WHERE name=?", (customer_name,)).fetchone()
+        order = conn.execute(
+            "SELECT * FROM orders WHERE customer_id=? ORDER BY id DESC LIMIT 1",
+            (customer["id"],),
+        ).fetchone()
     assert order["order_type"] == "return"
     assert order["total_amount_cents"] == -10000
+    assert order["order_date"] == "2026-07-10"
+    assert order["order_no"] == "MD202607100001"
     assert customer_balance_cents(int(customer["id"])) == -10000
