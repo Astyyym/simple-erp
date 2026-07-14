@@ -10,7 +10,7 @@
       --erp-primary:#2563eb;--erp-primary-hover:#1d4ed8;--erp-primary-soft:#eff6ff;
       --erp-ink:#172033;--erp-muted:#667085;--erp-border:#dfe3ea;--erp-border-strong:#c8ced8;
       --erp-bg:#f3f5f8;--erp-surface:#fff;--erp-surface-soft:#f8fafc;
-      --erp-sidebar:#172033;--erp-sidebar-hover:#222d42;--erp-success:#17803d;--erp-danger:#c73535;
+      --erp-sidebar:#012121;--erp-sidebar-hover:#0a3535;--erp-success:#17803d;--erp-danger:#c73535;
       --erp-radius:8px;--erp-shadow:0 1px 2px rgba(16,24,40,.04),0 8px 24px rgba(16,24,40,.05);
       --erp-scale:1;
       /* stronger glassmorphism tokens (still enterprise, blur capped ~16px) */
@@ -19,8 +19,9 @@
       --erp-glass-bg-strong:rgba(255,255,255,.78);
       --erp-glass-border:rgba(255,255,255,.55);
       --erp-glass-shadow:0 1px 2px rgba(16,24,40,.05),0 14px 36px rgba(16,24,40,.10);
-      --erp-sidebar-glass:rgba(23,32,51,.62);
-      --erp-sidebar-border:rgba(255,255,255,.16);
+      /* solid brand sidebar color (user-specified) */
+      --erp-sidebar-glass:#012121;
+      --erp-sidebar-border:rgba(255,255,255,.12);
       --erp-content-wash:linear-gradient(165deg,#d9e6f7 0%,#eef2f8 38%,#e4ebf5 100%);
       --erp-content-mesh:radial-gradient(980px 480px at 10% -10%,rgba(37,99,235,.16),transparent 58%),radial-gradient(760px 400px at 92% 6%,rgba(14,116,144,.10),transparent 52%),radial-gradient(640px 320px at 55% 110%,rgba(99,102,241,.08),transparent 55%);
     }
@@ -30,15 +31,15 @@
       --erp-primary:#3b82f6;--erp-primary-hover:#60a5fa;--erp-primary-soft:#1e293b;
       --erp-ink:#e8eef9;--erp-muted:#9aa8c0;--erp-border:#2b3648;--erp-border-strong:#3d4b63;
       --erp-bg:#0f141d;--erp-surface:#171e2b;--erp-surface-soft:#1c2535;
-      --erp-sidebar:#0b1018;--erp-sidebar-hover:#182234;--erp-success:#34d399;--erp-danger:#f87171;
+      --erp-sidebar:#012121;--erp-sidebar-hover:#0a3535;--erp-success:#34d399;--erp-danger:#f87171;
       --erp-shadow:0 1px 2px rgba(0,0,0,.35),0 8px 24px rgba(0,0,0,.25);
       --erp-glass-blur:16px;
       --erp-glass-bg:rgba(23,30,43,.48);
       --erp-glass-bg-strong:rgba(23,30,43,.70);
       --erp-glass-border:rgba(148,163,184,.22);
       --erp-glass-shadow:0 1px 2px rgba(0,0,0,.40),0 16px 36px rgba(0,0,0,.34);
-      --erp-sidebar-glass:rgba(11,16,24,.58);
-      --erp-sidebar-border:rgba(255,255,255,.14);
+      --erp-sidebar-glass:#012121;
+      --erp-sidebar-border:rgba(255,255,255,.12);
       --erp-content-wash:linear-gradient(165deg,#0a0f18 0%,#101826 46%,#0d1522 100%);
       --erp-content-mesh:radial-gradient(980px 480px at 10% -10%,rgba(59,130,246,.20),transparent 58%),radial-gradient(760px 400px at 92% 6%,rgba(34,211,238,.08),transparent 52%),radial-gradient(640px 320px at 55% 110%,rgba(129,140,248,.10),transparent 55%);
     }
@@ -47,15 +48,15 @@
         --erp-primary:#3b82f6;--erp-primary-hover:#60a5fa;--erp-primary-soft:#1e293b;
         --erp-ink:#e8eef9;--erp-muted:#9aa8c0;--erp-border:#2b3648;--erp-border-strong:#3d4b63;
         --erp-bg:#0f141d;--erp-surface:#171e2b;--erp-surface-soft:#1c2535;
-        --erp-sidebar:#0b1018;--erp-sidebar-hover:#182234;--erp-success:#34d399;--erp-danger:#f87171;
+        --erp-sidebar:#012121;--erp-sidebar-hover:#0a3535;--erp-success:#34d399;--erp-danger:#f87171;
         --erp-shadow:0 1px 2px rgba(0,0,0,.35),0 8px 24px rgba(0,0,0,.25);
         --erp-glass-blur:16px;
         --erp-glass-bg:rgba(23,30,43,.48);
         --erp-glass-bg-strong:rgba(23,30,43,.70);
         --erp-glass-border:rgba(148,163,184,.22);
         --erp-glass-shadow:0 1px 2px rgba(0,0,0,.40),0 16px 36px rgba(0,0,0,.34);
-        --erp-sidebar-glass:rgba(11,16,24,.58);
-        --erp-sidebar-border:rgba(255,255,255,.14);
+        --erp-sidebar-glass:#012121;
+        --erp-sidebar-border:rgba(255,255,255,.12);
         --erp-content-wash:linear-gradient(165deg,#0a0f18 0%,#101826 46%,#0d1522 100%);
         --erp-content-mesh:radial-gradient(980px 480px at 10% -10%,rgba(59,130,246,.20),transparent 58%),radial-gradient(760px 400px at 92% 6%,rgba(34,211,238,.08),transparent 52%),radial-gradient(640px 320px at 55% 110%,rgba(129,140,248,.10),transparent 55%);
       }
@@ -78,9 +79,10 @@
       background:var(--erp-sidebar-glass);color:#fff;display:flex;flex-direction:column;z-index:100;
       padding:0 12px 18px;overflow:auto;
       border-right:1px solid var(--erp-sidebar-border);
-      -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.35);
-      backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.35);
-      box-shadow:4px 0 28px rgba(0,0,0,.14);
+      /* solid brand color #012121 — no glass wash on sidebar */
+      -webkit-backdrop-filter:none;
+      backdrop-filter:none;
+      box-shadow:4px 0 28px rgba(0,0,0,.18);
     }
     .brand{min-height:calc(72px * var(--erp-scale));display:flex;align-items:center;gap:11px;padding:10px;border-bottom:1px solid rgba(255,255,255,.1);margin-bottom:12px}
     .brand-mark{width:34px;height:34px;border-radius:7px;background:var(--erp-primary);display:grid;place-items:center;font-weight:700;font-size:17px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18);flex:0 0 auto}
@@ -92,13 +94,28 @@
     .sidebar a.sidebar-sub:before{content:"";position:absolute;left:7px;width:5px;height:5px;border-radius:50%;background:#66758e}
     .sidebar a.sidebar-sub:hover{color:#fff;background:var(--erp-sidebar-hover)}.sidebar a.sidebar-sub.active{color:#fff;background:#263b60}.sidebar a.sidebar-sub.active:before{background:#73a5ff}
     .app-version{margin-top:auto;padding:12px;color:#8290a8;font-size:12px;border-top:1px solid rgba(255,255,255,.08)}
-    .content{position:relative;z-index:1;flex:1 1 auto;min-width:0;height:100%;overflow:auto;padding:26px 30px 48px}
+    /*
+      Topbar stays outside the scrollport:
+      - keeps glassmorphism
+      - page body scrolls in a sibling pane, so content never peeks through the topbar
+    */
+    .content{
+      position:relative;z-index:1;flex:1 1 auto;min-width:0;height:100%;
+      display:flex;flex-direction:column;overflow:hidden;padding:0;
+    }
     .page-topbar{
-      display:flex;align-items:center;justify-content:space-between;margin:-26px -30px 26px;padding:0 30px;min-height:58px;
-      background:var(--erp-glass-bg);border-bottom:1px solid var(--erp-glass-border);position:sticky;top:0;z-index:10;
+      display:flex;align-items:center;justify-content:space-between;
+      flex:0 0 auto;margin:0;padding:0 30px;min-height:58px;
+      position:relative;z-index:50;
+      background:var(--erp-glass-bg);
+      border-bottom:1px solid var(--erp-glass-border);
       -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.3);
       backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.3);
       box-shadow:0 8px 24px rgba(16,24,40,.06);
+    }
+    .page-body{
+      flex:1 1 auto;min-height:0;overflow:auto;
+      padding:26px 30px 48px;
     }
     .page-topbar .company{font-size:calc(13px * var(--erp-scale));color:var(--erp-muted)}
     .page-topbar .status-wrap{display:flex;align-items:center;gap:12px}
@@ -162,7 +179,12 @@
         background:var(--erp-surface)!important;
       }
     }
-    @media(max-width:900px){.sidebar{flex-basis:calc(190px * var(--erp-scale));width:calc(190px * var(--erp-scale))}.content{padding:20px}.page-topbar{margin:-20px -20px 22px;padding:0 20px}.stable-table .action-cell{width:300px;min-width:300px}}
+    @media(max-width:900px){
+      .sidebar{flex-basis:calc(190px * var(--erp-scale));width:calc(190px * var(--erp-scale))}
+      .page-topbar{padding:0 20px}
+      .page-body{padding:20px 20px 32px}
+      .stable-table .action-cell{width:300px;min-width:300px}
+    }
   </style>
   <script>
     async function postAndRemoveRow(form) {
@@ -232,7 +254,9 @@
         {% endif %}
       </div>
     </div>
-    {% block content %}{% endblock %}
+    <div class="page-body">
+      {% block content %}{% endblock %}
+    </div>
   </main>
 </div>
 <script>
