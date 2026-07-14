@@ -4,6 +4,12 @@ from decimal import Decimal, InvalidOperation
 import re
 from erp.db import get_db
 from erp.services.accounting import create_order_from_typed_rows, update_order_from_typed_rows, mark_order_printed, void_order
+from erp.utils.exporting import (
+    export_filename,
+    order_line_export_headers,
+    order_line_export_rows,
+    workbook_download,
+)
 from erp.utils.money import cents_to_yuan
 from erp.utils.pdf import generate_order_pdf
 
@@ -457,6 +463,98 @@ def orders_summary_pdf():
     except ValueError as exc:
         return str(exc), 400
     return send_file(path, as_attachment=False)
+
+
+def _order_export_filter_context(fixed_order_type: str):
+    """Resolve list filters for sales/return Excel export. fixed_order_type is sale|return."""
+    args = _filter_args_from_request()
+    customer_q = args["customer_q"]
+    with get_db() as conn:
+        scope, customer_row, _, _ = _resolve_customer_scope(conn, customer_q)
+        if scope == "customer":
+            bounds = conn.execute(
+                """SELECT MIN(order_date) AS first_date, MAX(order_date) AS last_date
+                   FROM orders WHERE customer_id=? AND deleted_at IS NULL""",
+                (customer_row["id"],),
+            ).fetchone()
+        else:
+            bounds = conn.execute(
+                """SELECT MIN(order_date) AS first_date, MAX(order_date) AS last_date
+                   FROM orders WHERE deleted_at IS NULL"""
+            ).fetchone()
+        (
+            _date_mode,
+            _year,
+            _month,
+            start_date,
+            end_date,
+            _start_day,
+            _end_day,
+            _sy,
+            _sm,
+            _ey,
+            _em,
+        ) = _resolve_date_range(
+            args["date_mode_raw"],
+            args["year_raw"],
+            args["month_raw"],
+            args["start_date_raw"],
+            args["end_date_raw"],
+            bounds["first_date"] if bounds else None,
+            bounds["last_date"] if bounds else None,
+            args["start_year_raw"],
+            args["start_month_raw"],
+            args["end_year_raw"],
+            args["end_month_raw"],
+        )
+
+        conditions = ["o.deleted_at IS NULL", "o.order_type = ?"]
+        params: list = [fixed_order_type]
+        if customer_q:
+            conditions.append("c.name LIKE ?")
+            params.append(f"%{customer_q}%")
+        conditions.append("o.order_date >= ?")
+        params.append(start_date)
+        conditions.append("o.order_date <= ?")
+        params.append(end_date)
+        where_clause = " AND ".join(conditions)
+        lines = conn.execute(
+            f"""
+            SELECT o.order_no, o.order_date, o.order_type, o.status, o.notes, o.total_amount_cents,
+                   c.name AS customer_name,
+                   oi.product_name, oi.spec, oi.unit, oi.quantity, oi.unit_price_cents, oi.subtotal_cents
+            FROM orders o
+            JOIN customers c ON c.id = o.customer_id
+            JOIN order_items oi ON oi.order_id = o.id
+            WHERE {where_clause}
+            ORDER BY o.order_date ASC, o.id ASC, oi.id ASC
+            """,
+            params,
+        ).fetchall()
+    return lines
+
+
+@orders_bp.get("/export/sales.xlsx")
+def export_sales_orders_excel():
+    lines = _order_export_filter_context("sale")
+    return workbook_download(
+        order_line_export_headers(),
+        order_line_export_rows(lines),
+        sheet_title="销售单导出",
+        filename=export_filename("销售单导出"),
+    )
+
+
+@orders_bp.get("/export/returns.xlsx")
+def export_return_orders_excel():
+    lines = _order_export_filter_context("return")
+    return workbook_download(
+        order_line_export_headers(),
+        order_line_export_rows(lines),
+        sheet_title="退货单导出",
+        filename=export_filename("退货单导出"),
+    )
+
 
 @orders_bp.get("/new")
 def new_order():

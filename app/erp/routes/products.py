@@ -1,6 +1,12 @@
 from flask import Blueprint, render_template, request, redirect, url_for, Response, jsonify
 from erp.db import get_db
 from erp.services.accounting import create_product
+from erp.utils.exporting import (
+    export_filename,
+    product_export_headers,
+    product_export_rows,
+    workbook_download,
+)
 from erp.utils.importing import ImportFileError, ImportResult, excel_template, normalized_name, price_to_cents, read_upload
 from erp.utils.money import yuan_to_cents, cents_to_yuan
 
@@ -9,6 +15,19 @@ products_bp = Blueprint("products", __name__, url_prefix="/products")
 @products_bp.get("/import/template")
 def download_import_template():
     return excel_template(["商品名称", "价格"], "商品导入模板.xlsx")
+
+
+@products_bp.get("/export.xlsx")
+def export_products_excel():
+    q = request.args.get("q", "").strip()
+    with get_db() as conn:
+        products, _suggestions = _product_list_context(conn, q)
+    return workbook_download(
+        product_export_headers(),
+        product_export_rows(products),
+        sheet_title="商品导出",
+        filename=export_filename("商品导出"),
+    )
 
 
 def _product_list_context(conn, q: str = ""):
