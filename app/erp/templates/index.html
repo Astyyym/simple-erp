@@ -6,7 +6,7 @@
   .quick-card{
     display:block;padding:18px;background:var(--erp-glass-bg);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);
     color:var(--erp-ink);text-decoration:none;box-shadow:var(--erp-glass-shadow);
-    -webkit-backdrop-filter:blur(var(--erp-glass-blur));backdrop-filter:blur(var(--erp-glass-blur));
+    -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);
     transition:transform .15s,border-color .15s,background .15s
   }
   .quick-card:hover{transform:translateY(-1px);border-color:var(--erp-primary);color:var(--erp-ink)}
@@ -22,7 +22,7 @@
   .quick-card.primary span{color:#dbeafe}
   .workspace-panel{
     background:var(--erp-glass-bg);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);padding:20px;
-    box-shadow:var(--erp-glass-shadow);-webkit-backdrop-filter:blur(var(--erp-glass-blur));backdrop-filter:blur(var(--erp-glass-blur))
+    box-shadow:var(--erp-glass-shadow);-webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25)
   }
   .workspace-panel h3{margin:0 0 8px}.workspace-panel p{color:var(--erp-muted);margin:0 0 18px}
   .flow{display:grid;grid-template-columns:repeat(4,1fr);gap:0}

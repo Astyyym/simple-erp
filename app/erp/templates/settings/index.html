@@ -137,7 +137,7 @@
   .settings-form{display:flex;flex-direction:column;gap:18px;max-width:920px}
   .settings-card{
     background:var(--erp-glass-bg);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);padding:18px 18px 16px;box-shadow:var(--erp-glass-shadow);
-    -webkit-backdrop-filter:blur(var(--erp-glass-blur));backdrop-filter:blur(var(--erp-glass-blur))
+    -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25)
   }
   @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
     .settings-card{background:var(--erp-surface)}
