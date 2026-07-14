@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN" data-ui-theme="{{ ui_theme or 'light' }}" data-ui-scale="{{ ui_scale or '100' }}">
+<html lang="zh-CN" data-ui-theme="{{ ui_theme or 'light' }}" data-ui-scale="{{ ui_scale or '100' }}" data-desktop="{{ '1' if is_desktop else '0' }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -101,6 +101,18 @@
       if (!hasIds) { alert('请先选中要操作的记录'); return false; }
       if (message && !confirm(message)) return false;
       form.submit(); return true;
+    }
+    // Desktop shell shares session only inside pywebview; keep print/PDF in-shell.
+    function isDesktopShell() {
+      return document.documentElement && document.documentElement.dataset.desktop === '1';
+    }
+    function openPrintUrl(url) {
+      if (!url) return null;
+      if (isDesktopShell()) {
+        window.location.assign(url);
+        return null;
+      }
+      return window.open(url, '_blank', 'noopener');
     }
   </script>
 </head>

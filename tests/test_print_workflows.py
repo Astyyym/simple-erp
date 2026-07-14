@@ -146,7 +146,72 @@ def test_new_order_save_print_button_uses_async_save_and_success_actions():
 
     assert "保存/打印订单" in html
     assert "fetch(orderForm.action" in html
-    assert "window.open(result.pdf_url, '_blank', 'noopener')" in html
+    assert "openPrintUrl(result.pdf_url)" in html
+    assert "function openPrintUrl(url)" in html
     assert 'id="openPrintLink"' in html
     assert 'id="continueOrderLink" href="/orders/new"' in html
     assert "e.currentTarget.target = '_blank';" not in html
+
+
+def test_browser_print_links_keep_blank_target_when_not_desktop():
+    """Ordinary browser keeps target=_blank so PDF does not replace the ERP page."""
+    init_db()
+    app = create_app()
+    client = app.test_client()
+    html = client.get("/orders/new").get_data(as_text=True)
+    assert 'data-desktop="0"' in html
+    assert "openPrintUrl(result.pdf_url)" in html
+    # Manual fallback link still opens a new tab in browser mode.
+    assert 'id="openPrintLink"' in html
+    assert 'target="_blank"' in html
+    assert "function isDesktopShell()" in html
+
+
+def test_desktop_print_links_stay_in_shell_without_blank_target(monkeypatch):
+    """Desktop shell must not force system-browser popups (session cookie split)."""
+    monkeypatch.setenv("ERP_DESKTOP", "1")
+    init_db()
+    suffix = uuid4().hex[:8]
+    customer_name = f"桌面打印-{suffix}"
+    customer_id = create_customer(customer_name)
+    order_id = create_order_from_typed_rows(
+        customer_id,
+        f"DESK-{suffix}",
+        [{"product_name": "桌面阀", "unit": "只", "unit_price_yuan": "10", "quantity": "1"}],
+        status="saved",
+    )
+    app = create_app()
+    client = app.test_client()
+
+    new_html = client.get("/orders/new").get_data(as_text=True)
+    assert 'data-desktop="1"' in new_html
+    assert "openPrintUrl(result.pdf_url)" in new_html
+    assert 'id="openPrintLink"' in new_html
+    # Desktop: openPrintLink must not set target=_blank
+    assert 'id="openPrintLink" href="#"' in new_html
+    assert 'id="openPrintLink" href="#" target="_blank"' not in new_html
+
+    list_html = client.get("/orders/").get_data(as_text=True)
+    assert f'href="/orders/{order_id}/pdf"' in list_html
+    assert f'href="/orders/{order_id}/pdf" target="_blank"' not in list_html
+    assert 'id="exportSummaryBtn"' in list_html
+    assert 'id="exportSummaryBtn" class="btn btn-info" href="/orders/summary_pdf" target="_blank"' not in list_html
+
+    detail_html = client.get(f"/orders/{order_id}").get_data(as_text=True)
+    assert f'href="/orders/{order_id}/pdf"' in detail_html
+    assert f'href="/orders/{order_id}/pdf" target="_blank"' not in detail_html
+
+    settings_html = client.get("/settings/").get_data(as_text=True)
+    assert 'id="settingsPrintPreview"' in settings_html
+    assert 'id="settingsPrintPreview" href="/settings/print-preview" target="_blank"' not in settings_html
+
+    accounts_html = client.get(f"/accounts/?customer_id={customer_id}").get_data(as_text=True)
+    assert "打印汇总表" in accounts_html
+    assert 'target="_blank" href="/accounts/summary_pdf' not in accounts_html
+    assert 'href="/accounts/summary_pdf' in accounts_html
+    assert 'target="_blank"' not in accounts_html or 'summary_pdf' in accounts_html
+    # Stronger: the summary link itself has no target=_blank
+    assert 'summary_pdf?customer_id=' in accounts_html
+    assert 'summary_pdf?customer_id=' + str(customer_id) in accounts_html or f"customer_id={customer_id}" in accounts_html
+    assert 'target="_blank" rel="noopener">打印汇总表' not in accounts_html
+    assert 'target="_blank">打印汇总表' not in accounts_html
