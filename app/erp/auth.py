@@ -9,8 +9,8 @@ from flask import session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 # Built-in shop account (tell the operator once; change later via config if needed).
-DEFAULT_USERNAME = "simple_erp"
-DEFAULT_PASSWORD = "SimpleERP@2026"
+DEFAULT_USERNAME = "wangyanli"
+DEFAULT_PASSWORD = "zzzz"
 
 SESSION_USER_KEY = "erp_auth_user"
 

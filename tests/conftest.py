@@ -26,6 +26,9 @@ def isolate_test_database(tmp_path, monkeypatch):
     monkeypatch.setenv("ERP_LOCATION_FILE", str(location))
     monkeypatch.setenv("ERP_DISABLE_AUTH", "1")
     monkeypatch.delenv("ERP_DATA_ROOT", raising=False)
+    # Desktop-shell markers must not leak across tests (order-dependent data-desktop="1").
+    monkeypatch.delenv("ERP_DESKTOP", raising=False)
+    monkeypatch.delenv("ERP_DESKTOP_SHELL", raising=False)
 
     monkeypatch.setattr(config_module, "runtime_root", lambda: test_root)
     monkeypatch.setattr(config_module, "is_frozen", lambda: False)

@@ -85,6 +85,29 @@
     </div>
   </section>
 
+  <section class="settings-card">
+    <h3>打印位置校准</h3>
+    <p class="text-muted small">
+      销售单按<strong>一联二联连续纸 241×140mm</strong>排版（撕开后用的一张；两联连在一起约 280mm 高，不是单页高度）。
+      左边已按导孔留约 20mm，右边同宽 20mm，标题与表格相对纸面居中。若真机仍有 1～3mm 偏差，再用下面偏移微调（横向正右负左，纵向正下负上）。
+      打印机请选自定义纸 <strong>241×140mm</strong>，并关闭「适合页面 / 缩放」。
+    </p>
+    <div class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label" for="print_offset_x_mm">横向偏移（mm）</label>
+        <input class="form-control" type="number" step="0.5" min="-50" max="50" id="print_offset_x_mm" name="print_offset_x_mm" value="{{ config.print_offset_x_mm }}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="print_offset_y_mm">纵向偏移（mm）</label>
+        <input class="form-control" type="number" step="0.5" min="-50" max="50" id="print_offset_y_mm" name="print_offset_y_mm" value="{{ config.print_offset_y_mm }}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="print_scale">打印缩放</label>
+        <input class="form-control" type="number" step="0.01" min="0.80" max="1.20" id="print_scale" name="print_scale" value="{{ config.print_scale }}">
+      </div>
+    </div>
+  </section>
+
   <div class="settings-actions">
     <button type="submit" class="btn btn-primary btn-lg" id="settingsSaveBtn">保存设置</button>
     <a class="btn btn-info btn-lg" id="settingsPrintPreview" href="{{ url_for('settings.print_preview') }}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>预览打印效果</a>

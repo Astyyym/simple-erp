@@ -21,11 +21,12 @@ CONFIG_DEFAULTS: dict[str, Any] = {
     "print_offset_x_mm": 0,
     "print_offset_y_mm": 0,
     "print_scale": 1.0,
+    # 一联二联连续纸撕开后：241×140；两联未撕约 280 高，禁止当单页高度
     "printer_paper_width_mm": 241,
-    "printer_paper_height_mm": 280,
+    "printer_paper_height_mm": 140,
     "local_access_password_enabled": True,
     "local_access_password_hash": "",
-    "local_access_username": "simple_erp",
+    "local_access_username": "wangyanli",
     "ui_theme": "light",  # light | dark | system
     "ui_scale": "100",  # 100 | 125 | 150
     "print_order_phone": "REDACTED_PHONE_2　REDACTED_PHONE_3　REDACTED_PHONE_1（支付宝）",

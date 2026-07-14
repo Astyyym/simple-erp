@@ -5,7 +5,7 @@
 ## 当前版本
 
 ```text
-v0.6.0
+v0.7.0
 ```
 
 GitHub Releases：https://github.com/Astyyym/simple-erp/releases
@@ -28,6 +28,8 @@ GitHub Releases：https://github.com/Astyyym/simple-erp/releases
 - 销售/退货共用当天流水
 - 新建日期默认当天可改，单号随日期重算；重编辑保号保日期
 - 保存后可直接打开打印 PDF；退货单列表标红
+- 销售清单按 **241×140mm 一联二联纸** 排版（左右各 20mm 居中；页脚紧跟表格）
+- 打印机请选自定义纸 241×140，关闭「适合页面 / 缩放」；细调可在设置页偏移
 - 桌面版已登录后，打印预览尽量在壳内打开，避免二次登录
 
 ### 单据管理
@@ -54,7 +56,7 @@ GitHub Releases：https://github.com/Astyyym/simple-erp/releases
 ### 登录
 
 - 打开系统需输入用户名和密码（单账号）
-- 默认账号：`simple_erp` / `SimpleERP@2026`（首次启动写入配置哈希；可在 `config.json` 的 `local_access_*` 字段维护）
+- 默认账号：`wangyanli` / `zzzz`（首次启动写入配置哈希；可在 `config.json` 的 `local_access_*` 字段维护）
 - 顶栏可「退出登录」；`/health` 不需登录（便于打包冒烟）
 
 ### 系统设置
@@ -64,6 +66,7 @@ GitHub Releases：https://github.com/Astyyym/simple-erp/releases
 - 界面缩放 100% / 125% / 150%（仅网页界面）
 - 主题：浅色 / 深色 / 跟随系统（不影响打印 PDF）
 - 打印单文案可改：订货电话、地址、主营、备注、制单人、收货人；支持预览
+- 打印位置校准：横向/纵向毫米偏移 + 缩放（真实打印机相对预览偏了时在这里调）
 - 修改设置后切换页面会询问是否保存
 - 数据目录：显示当前/默认路径；可浏览文件夹（桌面版）或粘贴路径后一键迁移
 

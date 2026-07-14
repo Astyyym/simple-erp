@@ -22,6 +22,10 @@ def test_settings_page_renders_and_nav_link():
     assert "订货电话" in html
     assert "一键迁移并切换" in html
     assert "预览打印效果" in html
+    assert "打印位置校准" in html
+    assert 'name="print_offset_x_mm"' in html
+    assert 'name="print_offset_y_mm"' in html
+    assert 'name="print_scale"' in html
     assert "settingsLeaveModal" in html
     assert "保存并离开" in html
     assert "不保存离开" in html
@@ -154,6 +158,35 @@ def test_save_company_name_syncs_app_name_and_topbar():
     assert new_name in html
     assert 'data-ui-theme="dark"' in html
     assert 'data-ui-scale="125"' in html
+
+
+def test_save_settings_print_offsets_and_scale():
+    init_db()
+    app = create_app()
+    client = app.test_client()
+    resp = client.post(
+        "/settings/save",
+        data={
+            "shop_name": f"校准公司-{uuid4().hex[:6]}",
+            "ui_theme": "light",
+            "ui_scale": "100",
+            "print_order_phone": "1",
+            "print_order_address": "2",
+            "print_main_business": "3",
+            "print_legal_note": "4",
+            "print_maker_name": "5",
+            "print_receiver_label": "收货人：____",
+            "print_offset_x_mm": "8",
+            "print_offset_y_mm": "-10",
+            "print_scale": "1.0",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code in (302, 303)
+    cfg = load_config()
+    assert float(cfg["print_offset_x_mm"]) == 8.0
+    assert float(cfg["print_offset_y_mm"]) == -10.0
+    assert float(cfg["print_scale"]) == 1.0
 
 
 def test_print_preview_uses_config_and_does_not_create_orders():

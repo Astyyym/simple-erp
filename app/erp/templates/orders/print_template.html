@@ -3,35 +3,114 @@
 <head>
   <meta charset="utf-8">
   <style>
-    @page { size: {{config.printer_paper_width_mm}}mm {{config.printer_paper_height_mm}}mm; margin: 0; }
-    body { font-family: "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; margin: 0; color: #000; }
+    /*
+      一联二联连续纸（撕开后用）：241mm × 140mm
+      两联未撕总高约 280mm，禁止当作单页高度。
+      版心：左右绝对各 20mm（对称居中），上/下 6mm。
+      内容区宽 = 241 - 40 = 201mm。
+    */
+    @page {
+      size: {{config.printer_paper_width_mm}}mm {{config.printer_paper_height_mm}}mm;
+      margin: 0;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      color: #000;
+      font-family: "Noto Sans CJK SC", "Microsoft YaHei", "SimHei", sans-serif;
+    }
     .page {
-      width: {{config.printer_paper_width_mm}}mm;
-      min-height: {{config.printer_paper_height_mm}}mm;
       box-sizing: border-box;
-      padding: 9mm 11mm;
+      width: {{config.printer_paper_width_mm}}mm;
+      height: {{config.printer_paper_height_mm}}mm;
+      position: relative;
+      overflow: hidden;
       transform: translate({{config.print_offset_x_mm}}mm, {{config.print_offset_y_mm}}mm) scale({{config.print_scale}});
       transform-origin: top left;
     }
-    h1 { text-align: center; margin: 0 0 4mm 0; font-size: 23px; letter-spacing: 2px; }
-    .subtitle { text-align: center; font-size: 15px; margin-bottom: 4mm; }
-    .meta { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3mm; font-size: 14px; margin-bottom: 4mm; }
-    table.items { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
-    table.items td, table.items th { border: 1px solid #333; padding: 1.8mm; text-align: center; word-break: break-all; }
+    /* 固定对称版心，避免 padding + 表格百分比把右边挤出页 */
+    .sheet {
+      box-sizing: border-box;
+      position: absolute;
+      left: 20mm;
+      right: 20mm;
+      top: 6mm;
+      bottom: 6mm;
+      width: 201mm;
+      overflow: hidden;
+    }
+    .header {
+      margin: 0 0 2mm 0;
+    }
+    h1 {
+      text-align: center;
+      margin: 0 0 1mm 0;
+      font-size: 16px;
+      letter-spacing: 0;
+      line-height: 1.15;
+    }
+    .subtitle {
+      text-align: center;
+      font-size: 12px;
+      margin: 0 0 2mm 0;
+      line-height: 1.15;
+    }
+    .meta {
+      display: table;
+      width: 100%;
+      table-layout: fixed;
+      font-size: 11px;
+      line-height: 1.25;
+    }
+    .meta span {
+      display: table-cell;
+      width: 33.33%;
+      vertical-align: top;
+    }
+    .meta span:nth-child(1) { text-align: left; }
+    .meta span:nth-child(2) { text-align: center; }
+    .meta span:nth-child(3) { text-align: right; }
+    table.items {
+      width: 201mm;
+      max-width: 201mm;
+      border-collapse: collapse;
+      font-size: 11px;
+      table-layout: fixed;
+      margin: 0;
+    }
+    table.items td, table.items th {
+      border: 1px solid #333;
+      padding: 0.8mm 0.8mm;
+      text-align: center;
+      word-break: break-all;
+      line-height: 1.2;
+      overflow: hidden;
+    }
+    table.items th {
+      font-weight: 700;
+      background: #f5f5f5;
+    }
     .name-cell { text-align: left; }
-    .total-row td { font-weight: 700; font-size: 14px; }
-    .bottom { margin-top: 5mm; font-size: 12px; line-height: 1.65; }
+    .total-row td {
+      font-weight: 700;
+      font-size: 11px;
+    }
+    .bottom {
+      /* 紧贴表格下方，不贴页面底边 */
+      margin-top: 2.5mm;
+      font-size: 10px;
+      line-height: 1.35;
+    }
     /*
-      WeasyPrint flex metrics differ from browsers: phone/address rows used to drift.
-      Use a fixed two-column table so 制单人/收货人 share identical left and right edges.
+      WeasyPrint：页脚用固定两列表格，制单人/收货人右栏对齐。
     */
     table.footer-grid {
       width: 100%;
       border-collapse: collapse;
       table-layout: fixed;
       margin: 0;
-      font-size: 12px;
-      line-height: 1.65;
+      font-size: 10px;
+      line-height: 1.35;
     }
     table.footer-grid td {
       border: none;
@@ -41,58 +120,87 @@
     table.footer-grid td.footer-text {
       width: auto;
       text-align: left;
-      padding-right: 8mm;
+      padding-right: 3mm;
       word-break: break-all;
     }
     table.footer-grid td.footer-sign {
-      width: 46.5mm;
-      min-width: 46.5mm;
-      max-width: 46.5mm;
+      width: 38mm;
+      min-width: 38mm;
+      max-width: 38mm;
       text-align: left;
-      font-size: 14px;
+      font-size: 11px;
       white-space: nowrap;
       overflow: hidden;
     }
-    .legal-note { margin-top: 1mm; font-size: 12px; line-height: 1.65; }
+    .legal-note {
+      margin-top: 0.6mm;
+      font-size: 9.5px;
+      line-height: 1.3;
+    }
   </style>
 </head>
 <body>
   <section class="page">
-    <h1>{{config.shop_name}}</h1>
-    <div class="subtitle">销售清单</div>
-    <div class="meta">
-      <span>单号: {{order.order_no}}</span>
-      <span>日期: {{order.order_date}}</span>
-      <span>客户: {{order.customer_name}}</span>
-    </div>
-    <table class="items">
-      <colgroup><col style="width:10mm"><col><col style="width:16mm"><col style="width:20mm"><col style="width:24mm"><col style="width:26mm"></colgroup>
-      <tr><th>序号</th><th>名称规格</th><th>单位</th><th>数量</th><th>单价</th><th>小计</th></tr>
-      {% for item in items %}
-      <tr><td>{{loop.index}}</td><td class="name-cell">{{item.product_name}} {{item.spec}}</td><td>{{item.unit}}</td><td>{{item.quantity}}</td><td>{{cents_to_yuan(item.unit_price_cents)}}</td><td>{{cents_to_yuan(item.subtotal_cents)}}</td></tr>
-      {% endfor %}
-      <tr class="total-row"><td colspan="5" style="text-align:right">合计</td><td>¥{{cents_to_yuan(order.total_amount_cents)}}</td></tr>
-    </table>
+    <div class="sheet">
+      <div class="header">
+        <h1>{{config.shop_name}}</h1>
+        <div class="subtitle">销售清单</div>
+        <div class="meta">
+          <span>单号: {{order.order_no}}</span>
+          <span>日期: {{order.order_date}}</span>
+          <span>客户: {{order.customer_name}}</span>
+        </div>
+      </div>
 
-    <div class="bottom">
-      <table class="footer-grid">
+      <table class="items">
         <colgroup>
-          <col>
-          <col style="width:46.5mm">
+          <!-- 列宽合计 201mm = 版心宽 -->
+          <col style="width:12mm">
+          <col style="width:78mm">
+          <col style="width:18mm">
+          <col style="width:24mm">
+          <col style="width:32mm">
+          <col style="width:37mm">
         </colgroup>
         <tr>
-          <td class="footer-text"><strong>订货电话：</strong>{{config.print_order_phone}}</td>
-          <td class="footer-sign">制单人：{{config.print_maker_name}}</td>
+          <th>序号</th><th>名称规格</th><th>单位</th><th>数量</th><th>单价</th><th>小计</th>
         </tr>
+        {% for item in items %}
         <tr>
-          <td class="footer-text"><strong>订货地址：</strong>{{config.print_order_address}}</td>
-          <td class="footer-sign">{{config.print_receiver_label}}</td>
+          <td>{{loop.index}}</td>
+          <td class="name-cell">{{item.product_name}}{% if item.spec %} {{item.spec}}{% endif %}</td>
+          <td>{{item.unit}}</td>
+          <td>{{item.quantity}}</td>
+          <td>{{cents_to_yuan(item.unit_price_cents)}}</td>
+          <td>{{cents_to_yuan(item.subtotal_cents)}}</td>
         </tr>
-        <tr>
-          <td class="footer-text" colspan="2"><strong>主营业务：</strong>{{config.print_main_business}}</td>
+        {% endfor %}
+        <tr class="total-row">
+          <td colspan="5" style="text-align:right">合计</td>
+          <td>¥{{cents_to_yuan(order.total_amount_cents)}}</td>
         </tr>
       </table>
-      <div class="legal-note"><strong>备注：</strong>{{config.print_legal_note}}{% if order.notes %}；{{order.notes}}{% endif %}</div>
+
+      <div class="bottom">
+        <table class="footer-grid">
+          <colgroup>
+            <col>
+            <col style="width:38mm">
+          </colgroup>
+          <tr>
+            <td class="footer-text"><strong>订货电话：</strong>{{config.print_order_phone}}</td>
+            <td class="footer-sign">制单人：{{config.print_maker_name}}</td>
+          </tr>
+          <tr>
+            <td class="footer-text"><strong>订货地址：</strong>{{config.print_order_address}}</td>
+            <td class="footer-sign">{{config.print_receiver_label}}</td>
+          </tr>
+          <tr>
+            <td class="footer-text" colspan="2"><strong>主营业务：</strong>{{config.print_main_business}}</td>
+          </tr>
+        </table>
+        <div class="legal-note"><strong>备注：</strong>{{config.print_legal_note}}{% if order.notes %}；{{order.notes}}{% endif %}</div>
+      </div>
     </div>
   </section>
 </body>

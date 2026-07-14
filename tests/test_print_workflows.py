@@ -73,7 +73,15 @@ def test_order_print_signatures_share_phone_and_address_rows():
     assert "config.print_order_address" in template
     assert "config.print_main_business" in template
     assert "config.print_legal_note" in template
-    assert "width:46.5mm" in template or "width: 46.5mm" in template
+    assert "width:46.5mm" in template or "width: 46.5mm" in template or "width:40mm" in template or "width: 40mm" in template or "width:38mm" in template or "width: 38mm" in template
+    assert "print_offset_x_mm" in template
+    assert "print_offset_y_mm" in template
+    assert "print_scale" in template
+    assert "left: 20mm" in template or "left:20mm" in template
+    assert "right: 20mm" in template or "right:20mm" in template
+    assert "width: 201mm" in template or "width:201mm" in template
+    assert "241" in template or "printer_paper_width_mm" in template
+    assert "width:78mm" in template or "width: 78mm" in template
     assert "business-row" not in template
     assert "maker-sign" not in template
     assert "translateX(-15mm)" not in template
@@ -102,8 +110,56 @@ def test_order_pdf_footer_sign_columns_share_fixed_width():
     # Source template contract (WeasyPrint input)
     template = Path("app/erp/templates/orders/print_template.html").read_text(encoding="utf-8")
     assert template.count("footer-sign") >= 2
-    assert template.count("width:46.5mm") + template.count("width: 46.5mm") >= 1
+    assert (
+        template.count("width:46.5mm")
+        + template.count("width: 46.5mm")
+        + template.count("width:40mm")
+        + template.count("width: 40mm")
+        + template.count("width:38mm")
+        + template.count("width: 38mm")
+    ) >= 1
+    # Only the page-level calibration translate(...) is allowed — not maker-sign hacks.
     assert "translateX" not in template
+    assert "transform: translate({{config.print_offset_x_mm}}mm" in template or "print_offset_x_mm" in template
+    assert "left: 20mm" in template or "left:20mm" in template
+    assert "width: 201mm" in template or "width:201mm" in template
+
+
+def test_order_print_preview_uses_241x140_page():
+    from erp.config import load_config, save_config
+
+    init_db()
+    # Ensure live defaults after 241×140 migration.
+    save_config({"printer_paper_width_mm": 241, "printer_paper_height_mm": 140})
+    cfg = load_config()
+    assert int(cfg["printer_paper_width_mm"]) == 241
+    assert int(cfg["printer_paper_height_mm"]) == 140
+    app = create_app()
+    client = app.test_client()
+    html = client.get("/settings/print-preview").get_data(as_text=True)
+    assert "241mm" in html
+    assert "140mm" in html
+    assert "left: 20mm" in html or "left:20mm" in html
+    assert "right: 20mm" in html or "right:20mm" in html
+    assert "width: 201mm" in html or "width:201mm" in html
+    # Page size must be 241×140; 280 only appears in explanatory copy, never as @page height.
+    assert "size: 241mm 140mm" in html or "size:241mm 140mm" in html
+    assert "size: 241mm 280mm" not in html
+    assert "size:241mm 280mm" not in html
+    assert "height: 140mm" in html or "height:140mm" in html
+    assert "width:78mm" in html or "width: 78mm" in html
+
+
+def test_order_print_preview_html_includes_configured_offsets():
+    from erp.config import save_config
+
+    init_db()
+    save_config({"print_offset_x_mm": 8, "print_offset_y_mm": -10, "print_scale": 1.0})
+    app = create_app()
+    client = app.test_client()
+    html = client.get("/settings/print-preview").get_data(as_text=True)
+    assert "translate(8mm, -10mm)" in html or "translate(8.0mm, -10.0mm)" in html
+    assert "scale(1.0)" in html or "scale(1)" in html
 
 
 def test_save_print_redirects_to_order_pdf():

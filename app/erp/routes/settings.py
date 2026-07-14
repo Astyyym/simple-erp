@@ -18,6 +18,7 @@ from erp.config import (
 )
 from erp.db import init_db
 from erp.utils.money import cents_to_yuan
+from typing import Any
 
 settings_bp = Blueprint("settings", __name__, url_prefix="/settings")
 
@@ -45,12 +46,38 @@ def settings_page():
     )
 
 
+def _parse_print_mm(raw: str | None, field_label: str) -> float:
+    text = (raw or "").strip()
+    if text == "":
+        return 0.0
+    try:
+        value = float(text)
+    except ValueError as exc:
+        raise ValueError(f"{field_label}必须是数字（毫米）") from exc
+    if value < -50 or value > 50:
+        raise ValueError(f"{field_label}建议在 -50～50 毫米之间")
+    return value
+
+
+def _parse_print_scale(raw: str | None) -> float:
+    text = (raw or "").strip()
+    if text == "":
+        return 1.0
+    try:
+        value = float(text)
+    except ValueError as exc:
+        raise ValueError("打印缩放必须是数字，例如 1.0") from exc
+    if value < 0.80 or value > 1.20:
+        raise ValueError("打印缩放建议在 0.80～1.20 之间")
+    return value
+
+
 @settings_bp.post("/save")
 def save_settings():
     form = request.form
     next_url = (form.get("next") or "").strip()
     try:
-        updates = {
+        updates: dict[str, Any] = {
             "shop_name": (form.get("shop_name") or "").strip(),
             "ui_theme": (form.get("ui_theme") or "light").strip().lower(),
             "ui_scale": (form.get("ui_scale") or "100").strip().replace("%", ""),
@@ -61,6 +88,14 @@ def save_settings():
             "print_maker_name": (form.get("print_maker_name") or "").strip(),
             "print_receiver_label": (form.get("print_receiver_label") or "").strip(),
         }
+        # Only touch calibration when the settings form actually posts these fields.
+        # Older POSTs / partial tests must not wipe live printer offsets back to 0.
+        if "print_offset_x_mm" in form:
+            updates["print_offset_x_mm"] = _parse_print_mm(form.get("print_offset_x_mm"), "横向偏移")
+        if "print_offset_y_mm" in form:
+            updates["print_offset_y_mm"] = _parse_print_mm(form.get("print_offset_y_mm"), "纵向偏移")
+        if "print_scale" in form:
+            updates["print_scale"] = _parse_print_scale(form.get("print_scale"))
         if not updates["shop_name"]:
             raise ValueError("公司名称不能为空")
         # app_name synced inside save_config
