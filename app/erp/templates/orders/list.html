@@ -75,6 +75,8 @@
       <button class="btn btn-primary" type="submit">筛选</button>
       <a class="btn btn-outline-secondary" href="/orders/">清除筛选条件</a>
       <a id="exportSummaryBtn" class="btn btn-info" href="/orders/summary_pdf" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>导出汇总表</a>
+      <a id="exportSalesExcelBtn" class="btn btn-outline-success" href="/orders/export/sales.xlsx">导出销售单Excel</a>
+      <a id="exportReturnsExcelBtn" class="btn btn-outline-success" href="/orders/export/returns.xlsx">导出退货单Excel</a>
     </div>
   </div>
   {% if summary_hint %}
@@ -194,6 +196,8 @@
   const modeInputs = form.querySelectorAll('input[name="date_mode"]');
   const panels = form.querySelectorAll('.date-mode-panel');
   const exportBtn = document.getElementById('exportSummaryBtn');
+  const exportSalesExcelBtn = document.getElementById('exportSalesExcelBtn');
+  const exportReturnsExcelBtn = document.getElementById('exportReturnsExcelBtn');
   const syncModePanels = () => {
     const mode = form.querySelector('input[name="date_mode"]:checked')?.value || 'range';
     panels.forEach(panel => {
@@ -203,10 +207,21 @@
     });
   };
   const syncExportLink = () => {
-    if (!exportBtn) return;
     const params = new URLSearchParams(new FormData(form));
+    if (exportBtn) {
+      const summaryParams = new URLSearchParams(params);
+      summaryParams.delete('order_type');
+      exportBtn.href = '/orders/summary_pdf?' + summaryParams.toString();
+    }
+    // Sales/return Excel endpoints already pin order_type; drop list filter to avoid confusion.
     params.delete('order_type');
-    exportBtn.href = '/orders/summary_pdf?' + params.toString();
+    const qs = params.toString();
+    if (exportSalesExcelBtn) {
+      exportSalesExcelBtn.href = '/orders/export/sales.xlsx' + (qs ? '?' + qs : '');
+    }
+    if (exportReturnsExcelBtn) {
+      exportReturnsExcelBtn.href = '/orders/export/returns.xlsx' + (qs ? '?' + qs : '');
+    }
   };
   modeInputs.forEach(input => input.addEventListener('change', () => { syncModePanels(); syncExportLink(); }));
   form.addEventListener('change', syncExportLink);

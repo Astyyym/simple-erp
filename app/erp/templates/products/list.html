@@ -11,6 +11,7 @@
 {% endif %}
 <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
   <a class="btn btn-outline-primary" href="/products/import/template">下载Excel模板</a>
+  <a class="btn btn-outline-success" href="/products/export.xlsx{% if q %}?q={{ q|urlencode }}{% endif %}">导出Excel</a>
   <form class="d-flex gap-2" method="post" action="/products/import" enctype="multipart/form-data">
     <input class="form-control" type="file" name="file" accept=".xlsx,.csv" required>
     <button class="btn btn-primary text-nowrap">批量导入</button>
