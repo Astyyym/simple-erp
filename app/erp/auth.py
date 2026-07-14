@@ -20,6 +20,13 @@ def auth_disabled() -> bool:
     return os.environ.get("ERP_DISABLE_AUTH", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def is_desktop_shell() -> bool:
+    """True when running inside the pywebview desktop shell (desktop_app.py)."""
+    return os.environ.get("ERP_DESKTOP", "").strip().lower() in {"1", "true", "yes", "on"} or os.environ.get(
+        "ERP_DESKTOP_SHELL", ""
+    ).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def ensure_auth_defaults(config: dict[str, Any]) -> dict[str, Any]:
     """
     Make sure login fields exist.

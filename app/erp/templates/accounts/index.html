@@ -11,7 +11,7 @@
 {% if selected_customer %}
 <h4>{{selected_customer.name}} 的订单{% if start_date or end_date %}（{{start_date or '最早'}} 至 {{end_date or '最新'}}）{% endif %}</h4>
 <div class="d-flex gap-2 mb-2">
-  <a class="btn btn-info" target="_blank" href="/accounts/summary_pdf?customer_id={{selected_customer.id}}&start_date={{start_date}}&end_date={{end_date}}">打印汇总表</a>
+  <a class="btn btn-info" href="/accounts/summary_pdf?customer_id={{selected_customer.id}}&start_date={{start_date}}&end_date={{end_date}}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>打印汇总表</a>
   <button class="btn btn-danger" type="button" onclick="submitSelected('bulkAccountOrdersForm','确认删除选中的订单吗？')">删除选中</button>
 </div>
 <form id="bulkAccountOrdersForm" method="post" action="/accounts/bulk_delete_orders"><input type="hidden" name="customer_id" value="{{selected_customer.id}}">

@@ -4,7 +4,7 @@ from datetime import timedelta
 
 from flask import Flask, render_template, redirect, request, url_for, session
 
-from .auth import ensure_auth_defaults, is_authenticated, current_username
+from .auth import ensure_auth_defaults, is_authenticated, current_username, is_desktop_shell
 from .config import ensure_data_location_initialized, load_config, bundled_root, runtime_root
 from .db import init_db, integrity_check
 from .routes.accounts import accounts_bp
@@ -50,6 +50,7 @@ def create_app() -> Flask:
             "ui_theme": cfg_now.get("ui_theme", "light"),
             "ui_scale": cfg_now.get("ui_scale", "100"),
             "current_user": current_username(),
+            "is_desktop": is_desktop_shell(),
             "auth_enabled": not os.environ.get("ERP_DISABLE_AUTH", "").strip().lower()
             in {"1", "true", "yes", "on"},
         }
