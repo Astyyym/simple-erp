@@ -5,7 +5,7 @@
 ## 当前版本
 
 ```text
-v0.5.0
+v0.6.0
 ```
 
 GitHub Releases：https://github.com/Astyyym/simple-erp/releases
@@ -15,6 +15,8 @@ GitHub Releases：https://github.com/Astyyym/simple-erp/releases
 ### 桌面界面与录入体验
 
 - 企业 ERP 风格工作台、分组侧边栏、统一表格/表单样式
+- 界面毛玻璃层次（顶栏/卡片/面板等）；顶栏固定，正文独立滚动
+- 左侧业务栏实色 `#012121`
 - 销售单/退货单支持“一键清空”，默认保留一行空白明细
 - 关闭浏览器对开单字段的历史自动填充，保留 ERP 字典联想
 - 账款页聚合查询客户余额
@@ -26,6 +28,7 @@ GitHub Releases：https://github.com/Astyyym/simple-erp/releases
 - 销售/退货共用当天流水
 - 新建日期默认当天可改，单号随日期重算；重编辑保号保日期
 - 保存后可直接打开打印 PDF；退货单列表标红
+- 桌面版已登录后，打印预览尽量在壳内打开，避免二次登录
 
 ### 单据管理
 
@@ -33,11 +36,13 @@ GitHub Releases：https://github.com/Astyyym/simple-erp/releases
 - 支持全部 / 只看销售 / 只看退货
 - 客户采购统计：唯一客户出图、多客户提示、空客户全店
 - 导出货款汇总表（PDF 预览，多客户分段）
+- 导出销售单 / 退货单 Excel（按明细一行，可跟随筛选）
 
 ### 商品与客户资料
 
 - 增删改、模糊查询
 - Excel/CSV 模板下载与批量导入（同名跳过）
+- 客户 / 商品列表支持导出 Excel
 - 客户价 / 常规价
 
 ### 账款管理
