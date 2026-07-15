@@ -1,10 +1,26 @@
 from pathlib import Path
-from flask import render_template
+from urllib.parse import urlencode
+from flask import render_template, request, send_file
 from weasyprint import HTML
 
 from erp.config import load_config, project_path, runtime_root
 from erp.db import get_db
 from erp.utils.money import cents_to_yuan
+
+
+def send_pdf_for_preview(path: Path, filename: str, title: str):
+    """Keep desktop PDFs in-session while exposing a native save action."""
+    if request.args.get("desktop_preview") == "1":
+        args = request.args.to_dict(flat=True)
+        args.pop("desktop_preview", None)
+        pdf_url = request.path + (f"?{urlencode(args)}" if args else "")
+        return render_template(
+            "desktop_pdf_preview.html",
+            pdf_url=pdf_url,
+            filename=filename,
+            title=title,
+        )
+    return send_file(path, as_attachment=False, download_name=filename)
 
 
 def generate_order_pdf(order_id: int) -> Path:

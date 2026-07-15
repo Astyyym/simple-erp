@@ -5,6 +5,7 @@ import socket
 import threading
 import time
 import webbrowser
+import base64
 from contextlib import closing
 from typing import Any
 
@@ -65,6 +66,26 @@ class DesktopApi:
 
     def is_desktop(self) -> bool:
         return True
+
+    def save_pdf(self, filename: str, data_url: str) -> dict[str, str | bool]:
+        """Save a PDF fetched by the authenticated webview session."""
+        global _window
+        if _window is None or not data_url.startswith("data:application/pdf;base64,"):
+            return {"ok": False, "message": "PDF 数据无效"}
+        safe_name = os.path.basename(filename or "打印单.pdf")
+        if not safe_name.lower().endswith(".pdf"):
+            safe_name += ".pdf"
+        try:
+            import webview
+            target = _window.create_file_dialog(webview.SAVE_DIALOG, save_filename=safe_name, file_types=("PDF Files (*.pdf)",))
+            if not target:
+                return {"ok": False, "cancelled": True, "message": ""}
+            path = target[0] if isinstance(target, (list, tuple)) else target
+            with open(str(path), "wb") as output:
+                output.write(base64.b64decode(data_url.split(",", 1)[1], validate=True))
+            return {"ok": True, "path": str(path)}
+        except Exception as exc:
+            return {"ok": False, "message": f"保存失败：{exc}"}
 
 
 def _port_is_open(host: str = "127.0.0.1", port: int = 5000) -> bool:

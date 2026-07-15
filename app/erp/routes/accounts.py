@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, send_f
 from erp.db import get_db
 from erp.services.accounting import add_payment, add_adjustment
 from erp.utils.money import yuan_to_cents, cents_to_yuan
-from erp.utils.pdf import generate_account_summary_pdf
+from erp.utils.pdf import generate_account_summary_pdf, send_pdf_for_preview
 
 accounts_bp = Blueprint("accounts", __name__, url_prefix="/accounts")
 
@@ -67,7 +67,7 @@ def summary_pdf():
     start_date = request.args.get("start_date", "").strip()
     end_date = request.args.get("end_date", "").strip()
     path = generate_account_summary_pdf(customer_id, start_date, end_date)
-    return send_file(path, as_attachment=False)
+    return send_pdf_for_preview(path, "客户货款汇总表.pdf", "客户货款汇总表")
 
 
 @accounts_bp.post("/bulk_delete_orders")

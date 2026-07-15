@@ -11,7 +11,7 @@ from erp.utils.exporting import (
     workbook_download,
 )
 from erp.utils.money import cents_to_yuan
-from erp.utils.pdf import generate_order_pdf
+from erp.utils.pdf import generate_order_pdf, send_pdf_for_preview
 
 orders_bp = Blueprint("orders", __name__, url_prefix="/orders")
 
@@ -462,7 +462,7 @@ def orders_summary_pdf():
         path = generate_account_summary_pdf_for_customers(customer_ids, start_date, end_date)
     except ValueError as exc:
         return str(exc), 400
-    return send_file(path, as_attachment=False)
+    return send_pdf_for_preview(path, "货款汇总表.pdf", "货款汇总表")
 
 
 def _order_export_filter_context(fixed_order_type: str):
@@ -741,7 +741,7 @@ def api_next_order_no():
 @orders_bp.get("/<int:order_id>/pdf")
 def order_pdf(order_id: int):
     path = generate_order_pdf(order_id)
-    return send_file(path, as_attachment=False)
+    return send_pdf_for_preview(path, f"{order_id}.pdf", "销售单 PDF")
 
 @orders_bp.post("/<int:order_id>/confirm_print")
 def confirm_print(order_id: int):

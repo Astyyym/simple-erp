@@ -257,14 +257,14 @@ def test_desktop_print_links_stay_in_shell_without_blank_target(monkeypatch):
     assert 'id="openPrintLink" href="#" target="_blank"' not in new_html
 
     list_html = client.get("/orders/").get_data(as_text=True)
-    assert f'href="/orders/{order_id}/pdf"' in list_html
-    assert f'href="/orders/{order_id}/pdf" target="_blank"' not in list_html
+    assert f'href="/orders/{order_id}/pdf?desktop_preview=1"' in list_html
+    assert f'href="/orders/{order_id}/pdf?desktop_preview=1" target="_blank"' not in list_html
     assert 'id="exportSummaryBtn"' in list_html
     assert 'id="exportSummaryBtn" class="btn btn-info" href="/orders/summary_pdf" target="_blank"' not in list_html
 
     detail_html = client.get(f"/orders/{order_id}").get_data(as_text=True)
-    assert f'href="/orders/{order_id}/pdf"' in detail_html
-    assert f'href="/orders/{order_id}/pdf" target="_blank"' not in detail_html
+    assert f'href="/orders/{order_id}/pdf?desktop_preview=1"' in detail_html
+    assert f'href="/orders/{order_id}/pdf?desktop_preview=1" target="_blank"' not in detail_html
 
     settings_html = client.get("/settings/").get_data(as_text=True)
     assert 'id="settingsPrintPreview"' in settings_html

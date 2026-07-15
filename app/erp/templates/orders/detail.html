@@ -4,7 +4,7 @@
 <div class="mb-3">
   <a class="btn btn-secondary" href="/orders/">返回列表</a>
   <a class="btn btn-primary" href="/orders/{{order.id}}/edit">重编辑</a>
-  <a class="btn btn-info" href="/orders/{{order.id}}/pdf" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>查看PDF</a>
+  <a class="btn btn-info" href="/orders/{{order.id}}/pdf{% if is_desktop %}?desktop_preview=1{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>查看PDF</a>
 </div>
 <div class="card mb-3"><div class="card-body">
   <p><strong>客户：</strong>{{order.customer_name}}</p>

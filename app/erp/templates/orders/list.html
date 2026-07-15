@@ -74,7 +74,7 @@
     <div class="col-lg-auto d-flex flex-wrap gap-2 align-items-center">
       <button class="btn btn-primary" type="submit">筛选</button>
       <a class="btn btn-outline-secondary" href="/orders/">清除筛选条件</a>
-      <a id="exportSummaryBtn" class="btn btn-info" href="/orders/summary_pdf" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>导出汇总表</a>
+      <a id="exportSummaryBtn" class="btn btn-info" href="/orders/summary_pdf{% if is_desktop %}?desktop_preview=1{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>导出汇总表</a>
       <a id="exportSalesExcelBtn" class="btn btn-outline-success" href="/orders/export/sales.xlsx">导出销售单Excel</a>
       <a id="exportReturnsExcelBtn" class="btn btn-outline-success" href="/orders/export/returns.xlsx">导出退货单Excel</a>
     </div>
@@ -138,7 +138,7 @@
     <td class="action-cell"><div class="action-wrap">
       <a class="btn btn-sm btn-secondary" href="/orders/{{o.id}}">回看</a>
       <a class="btn btn-sm btn-primary" href="/orders/{{o.id}}/edit">重编辑</a>
-      <a class="btn btn-sm btn-info" href="/orders/{{o.id}}/pdf" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>打印</a>
+      <a class="btn btn-sm btn-info" href="/orders/{{o.id}}/pdf{% if is_desktop %}?desktop_preview=1{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>打印</a>
       <form class="d-inline ajax-delete-form" method="post" action="/orders/{{o.id}}/delete"><button class="btn btn-sm btn-danger">删除</button></form>
     </div></td>
   </tr>
