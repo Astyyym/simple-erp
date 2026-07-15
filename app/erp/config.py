@@ -24,10 +24,10 @@ CONFIG_DEFAULTS: dict[str, Any] = {
     # 一联二联连续纸撕开后：241×140；两联未撕约 280 高，禁止当单页高度
     "printer_paper_width_mm": 241,
     "printer_paper_height_mm": 140,
-    # Nantian PR2 Plus / NantianPR-LQ 仅公开 A4；销售单逻辑页模仿秒账 8.5×5.5 英寸。
-    # 实体纸仍是 241×140，打印机居中逻辑页后，配合页内 7.3mm 边距得到实体纸约 20mm 留白。
-    "order_pdf_page_width_mm": 215.9,
-    "order_pdf_page_height_mm": 139.7,
+    # Nantian PR2 Plus / NantianPR-LQ 仅公开 A4；销售单使用标准 A4 横向 PDF。
+    # 实体纸单据区域为页面上方居中的 241×140mm，避免驱动对特殊逻辑页再次居中。
+    "order_pdf_page_width_mm": 297,
+    "order_pdf_page_height_mm": 210,
     "local_access_password_enabled": True,
     "local_access_password_hash": "",
     "local_access_username": "wangyanli",

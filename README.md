@@ -5,7 +5,7 @@
 ## 当前版本
 
 ```text
-v0.7.0
+v0.7.2
 ```
 
 GitHub Releases：https://github.com/Astyyym/simple-erp/releases
@@ -28,8 +28,8 @@ GitHub Releases：https://github.com/Astyyym/simple-erp/releases
 - 销售/退货共用当天流水
 - 新建日期默认当天可改，单号随日期重算；重编辑保号保日期
 - 保存后可直接打开打印 PDF；退货单列表标红
-- 销售清单面向 **241×140mm 实体二联纸**；PDF 逻辑页模仿秒账，使用 **215.9×139.7mm（8.5×5.5 英寸）**
-- Nantian PR2 Plus / `NantianPR-LQ`：241mm 长边先进，选 A4 横向、实际大小/100%、页面居中；细调可在设置页偏移
+- 销售清单面向 **241×140mm 实体二联纸**；PDF 使用标准 **A4 横向（297×210mm）**，单据固定在上方居中，左右各留 28mm、下方留白
+- Nantian PR2 Plus / `NantianPR-LQ`：241mm 长边先进，选 A4 横向、实际大小/100%、不要缩放；细调可在设置页偏移
 - 桌面版已登录后，打印预览尽量在壳内打开，避免二次登录
 
 ### 单据管理

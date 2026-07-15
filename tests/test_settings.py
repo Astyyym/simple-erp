@@ -23,7 +23,7 @@ def test_settings_page_renders_and_nav_link():
     assert "一键迁移并切换" in html
     assert "预览打印效果" in html
     assert "打印位置校准" in html
-    assert "215.9×139.7mm" in html
+    assert "A4 横向（297×210mm）" in html
     assert "A4 横向" in html
     assert "241mm 长边先进" in html
     assert 'name="print_offset_x_mm"' in html

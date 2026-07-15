@@ -4,10 +4,9 @@
   <meta charset="utf-8">
   <style>
     /*
-      实体二联纸：241mm × 140mm，241mm 长边先进。
-      NantianPR-LQ 仅公开 A4；逻辑 PDF 模仿秒账：215.9mm × 139.7mm（8.5 × 5.5 英寸）。
-      打印机把逻辑页居中到实体纸后，两侧各补约 12.55mm；页内再留 7.3mm，
-      实体纸到正文总留白约 19.85mm。内容区约 201.3mm。
+      标准 A4 横向 PDF：297mm × 210mm。
+      实体二联纸单据区域固定在页面上方居中：241mm × 140mm，241mm 长边先进。
+      左右各留 28mm、下方留白，避免驱动把特殊小尺寸 PDF 再次居中。
     */
     @page {
       size: {{config.order_pdf_page_width_mm}}mm {{config.order_pdf_page_height_mm}}mm;
@@ -32,11 +31,11 @@
     .sheet {
       box-sizing: border-box;
       position: absolute;
-      left: 7.3mm;
-      right: 7.3mm;
-      top: 6mm;
-      bottom: 6mm;
-      width: 201.3mm;
+      left: 28mm;
+      top: 0;
+      width: 241mm;
+      height: 140mm;
+      padding: 6mm 7.3mm;
       overflow: hidden;
     }
     .header {
@@ -71,8 +70,8 @@
     .meta span:nth-child(2) { text-align: center; }
     .meta span:nth-child(3) { text-align: right; }
     table.items {
-      width: 201.3mm;
-      max-width: 201.3mm;
+      width: 226.4mm;
+      max-width: 226.4mm;
       border-collapse: collapse;
       font-size: 11px;
       table-layout: fixed;
@@ -156,11 +155,11 @@
         <colgroup>
           <!-- 固定列宽合计 201mm；表格余下 0.3mm 由 WeasyPrint 稳定分配 -->
           <col style="width:12mm">
-          <col style="width:78mm">
+          <col style="width:92mm">
           <col style="width:18mm">
-          <col style="width:24mm">
-          <col style="width:32mm">
-          <col style="width:37mm">
+          <col style="width:28mm">
+          <col style="width:36mm">
+          <col style="width:40mm">
         </colgroup>
         <tr>
           <th>序号</th><th>名称规格</th><th>单位</th><th>数量</th><th>单价</th><th>小计</th>
