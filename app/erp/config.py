@@ -33,11 +33,11 @@ CONFIG_DEFAULTS: dict[str, Any] = {
     "local_access_username": "wangyanli",
     "ui_theme": "light",  # light | dark | system
     "ui_scale": "100",  # 100 | 125 | 150
-    "print_order_phone": "REDACTED_PHONE_2　REDACTED_PHONE_3　REDACTED_PHONE_1（支付宝）",
-    "print_order_address": "REDACTED_ADDRESS",
+    "print_order_phone": "",
+    "print_order_address": "",
     "print_main_business": "软密封闸阀，蝶阀，铜芯硬密封（国，韩标）过滤器，止回阀等消防闸门",
     "print_legal_note": "本销售单等同于合同，具有法律效力，收货人签字或附托运物流单号生效，直至货款结清",
-    "print_maker_name": "REDACTED_CONTACT",
+    "print_maker_name": "",
     "print_receiver_label": "收货人：____________",
 }
 
