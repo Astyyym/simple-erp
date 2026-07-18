@@ -111,6 +111,7 @@
   <div class="settings-actions">
     <button type="submit" class="btn btn-primary btn-lg" id="settingsSaveBtn">保存设置</button>
     <a class="btn btn-info btn-lg" id="settingsPrintPreview" href="{{ url_for('settings.print_preview') }}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>预览打印效果</a>
+    <a class="btn btn-outline-info btn-lg" id="settingsPrintPreviewPdf" href="{{ url_for('settings.print_preview_pdf', desktop_preview=1) if is_desktop else url_for('settings.print_preview_pdf') }}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>生成预览 PDF</a>
     <span class="settings-dirty-hint d-none" id="settingsDirtyHint">有未保存的修改</span>
   </div>
 </form>

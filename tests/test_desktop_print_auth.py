@@ -65,6 +65,7 @@ def test_unauthenticated_summary_and_print_preview_redirect(monkeypatch):
         f"/accounts/summary_pdf?customer_id={customer_id}",
         "/orders/summary_pdf",
         "/settings/print-preview",
+        "/settings/print-preview.pdf",
         "/",
     ):
         resp = client.get(path, follow_redirects=False)

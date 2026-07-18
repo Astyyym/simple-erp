@@ -8,6 +8,52 @@ from erp.db import get_db
 from erp.utils.money import cents_to_yuan
 
 
+def settings_print_preview_context() -> tuple[dict, list[dict], dict]:
+    """Return the fixed sample data and current configuration used by Settings previews."""
+    config = load_config()
+    order = {
+        "order_no": "MD202607120001",
+        "order_date": "2026-07-12",
+        "customer_name": "预览客户（示例）",
+        "total_amount_cents": 15000,
+        "notes": "",
+    }
+    items = [
+        {
+            "product_name": "示例闸阀",
+            "spec": "DN50",
+            "unit": "只",
+            "quantity": "2",
+            "unit_price_cents": 5000,
+            "subtotal_cents": 10000,
+        },
+        {
+            "product_name": "示例蝶阀",
+            "spec": "DN80",
+            "unit": "只",
+            "quantity": "1",
+            "unit_price_cents": 5000,
+            "subtotal_cents": 5000,
+        },
+    ]
+    return order, items, config
+
+
+def generate_settings_print_preview_pdf() -> Path:
+    """Render Settings' sample with the same order-print template as real orders."""
+    order, items, config = settings_print_preview_context()
+    html = render_template(
+        "orders/print_template.html",
+        order=order,
+        items=items,
+        config=config,
+        cents_to_yuan=cents_to_yuan,
+    )
+    out = project_path("temp_pdf", "settings_print_preview.pdf")
+    HTML(string=html, base_url=str(runtime_root())).write_pdf(out)
+    return out
+
+
 def send_pdf_for_preview(path: Path, filename: str, title: str):
     """Keep desktop PDFs in-session while exposing a native save action."""
     if request.args.get("desktop_preview") == "1":
