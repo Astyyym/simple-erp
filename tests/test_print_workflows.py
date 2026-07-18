@@ -269,6 +269,8 @@ def test_desktop_print_links_stay_in_shell_without_blank_target(monkeypatch):
     settings_html = client.get("/settings/").get_data(as_text=True)
     assert 'id="settingsPrintPreview"' in settings_html
     assert 'id="settingsPrintPreview" href="/settings/print-preview" target="_blank"' not in settings_html
+    assert 'id="settingsPrintPreviewPdf" href="/settings/print-preview.pdf?desktop_preview=1"' in settings_html
+    assert 'id="settingsPrintPreviewPdf" href="/settings/print-preview.pdf?desktop_preview=1" target="_blank"' not in settings_html
 
     accounts_html = client.get(f"/accounts/?customer_id={customer_id}").get_data(as_text=True)
     assert "打印汇总表" in accounts_html

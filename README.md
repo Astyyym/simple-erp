@@ -5,7 +5,7 @@
 ## 当前版本
 
 ```text
-v0.7.3
+v0.7.4
 ```
 
 GitHub Releases：https://github.com/Astyyym/simple-erp/releases

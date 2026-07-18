@@ -18,6 +18,11 @@ from erp.config import (
 )
 from erp.db import init_db
 from erp.utils.money import cents_to_yuan
+from erp.utils.pdf import (
+    generate_settings_print_preview_pdf,
+    send_pdf_for_preview,
+    settings_print_preview_context,
+)
 from typing import Any
 
 settings_bp = Blueprint("settings", __name__, url_prefix="/settings")
@@ -134,32 +139,7 @@ def migrate_data():
 @settings_bp.get("/print-preview")
 def print_preview():
     """Sample print HTML — does not read or write business orders."""
-    config = load_config()
-    order = {
-        "order_no": "MD202607120001",
-        "order_date": "2026-07-12",
-        "customer_name": "预览客户（示例）",
-        "total_amount_cents": 15000,
-        "notes": "",
-    }
-    items = [
-        {
-            "product_name": "示例闸阀",
-            "spec": "DN50",
-            "unit": "只",
-            "quantity": "2",
-            "unit_price_cents": 5000,
-            "subtotal_cents": 10000,
-        },
-        {
-            "product_name": "示例蝶阀",
-            "spec": "DN80",
-            "unit": "只",
-            "quantity": "1",
-            "unit_price_cents": 5000,
-            "subtotal_cents": 5000,
-        },
-    ]
+    order, items, config = settings_print_preview_context()
     html = render_template(
         "orders/print_template.html",
         order=order,
@@ -168,3 +148,10 @@ def print_preview():
         cents_to_yuan=cents_to_yuan,
     )
     return Response(html, mimetype="text/html; charset=utf-8")
+
+
+@settings_bp.get("/print-preview.pdf")
+def print_preview_pdf():
+    """Render the Settings sample through the normal PDF preview/save workflow."""
+    path = generate_settings_print_preview_pdf()
+    return send_pdf_for_preview(path, "打印样张.pdf", "打印样张 PDF")

@@ -22,6 +22,9 @@ def test_settings_page_renders_and_nav_link():
     assert "订货电话" in html
     assert "一键迁移并切换" in html
     assert "预览打印效果" in html
+    assert "生成预览 PDF" in html
+    assert 'id="settingsPrintPreviewPdf"' in html
+    assert "/settings/print-preview.pdf" in html
     assert "打印位置校准" in html
     assert "A4 横向（297×210mm）" in html
     assert "A4 横向" in html
