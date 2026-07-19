@@ -2,6 +2,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from erp import create_app
+from erp import config as config_module
 from erp.config import load_config, migrate_data_root, data_root, save_config
 from erp.db import get_db, init_db
 from erp.services.accounting import create_customer, create_order_from_typed_rows
@@ -49,6 +50,17 @@ def test_settings_page_marks_desktop_copy_when_env_set(monkeypatch):
     html = client.get("/settings/").get_data(as_text=True)
     assert "打开系统选夹" in html or "浏览文件夹" in html
     assert "浏览器开发预览请直接粘贴" not in html
+
+
+def test_default_brand_and_storage_folder_names(monkeypatch, tmp_path):
+    monkeypatch.delenv("ERP_LOCATION_FILE", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
+    monkeypatch.setattr(config_module, "is_frozen", lambda: True)
+
+    assert config_module.location_file() == (
+        tmp_path / "local-app-data" / "简单ERP" / "data_location.json"
+    )
+    assert config_module.default_data_root_display().endswith("简单ERP数据")
 
 
 def test_desktop_api_choose_folder_and_title_helpers(monkeypatch):

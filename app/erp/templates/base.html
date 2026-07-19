@@ -227,7 +227,7 @@
 <body>
 <div class="app-shell">
   <nav class="sidebar">
-    <div class="brand"><div class="brand-mark">铭</div><div><div class="brand-title">{{ shop_name or '简单ERP' }}</div><div class="brand-subtitle">BUSINESS MANAGEMENT</div></div></div>
+    <div class="brand"><div class="brand-mark">简</div><div><div class="brand-title">{{ shop_name or '简单ERP' }}</div><div class="brand-subtitle">BUSINESS MANAGEMENT</div></div></div>
     <div class="nav-label">业务中心</div>
     <a class="{{'active' if request.path == '/' else ''}}" href="/">工作台</a>
     <a class="{{'active' if request.path.startswith('/orders/new') or request.path.startswith('/orders/return/new') else ''}}" href="/orders/new">开单</a>

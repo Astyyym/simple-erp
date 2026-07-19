@@ -44,6 +44,8 @@ CONFIG_DEFAULTS: dict[str, Any] = {
 UI_SCALE_CHOICES = ("100", "125", "150")
 UI_THEME_CHOICES = ("light", "dark", "system")
 MIGRATE_DIRNAMES = ("data", "backups", "imports", "logs")
+APP_STORAGE_DIRNAME = "简单ERP"
+DEFAULT_DATA_ROOT_DIRNAME = "简单ERP数据"
 
 
 def is_frozen() -> bool:
@@ -67,25 +69,40 @@ def location_file() -> Path:
     override = os.environ.get("ERP_LOCATION_FILE")
     if override:
         return Path(override).expanduser().resolve()
+    return _local_app_data_root() / APP_STORAGE_DIRNAME / "data_location.json"
+
+
+def _local_app_data_root() -> Path:
     local_app_data = os.environ.get("LOCALAPPDATA")
     if local_app_data:
-        base = Path(local_app_data)
-    else:
-        base = Path.home() / "AppData" / "Local"
-    return base / "简单ERP" / "data_location.json"
+        return Path(local_app_data)
+    return Path.home() / "AppData" / "Local"
+
+
+def _read_data_root(location: Path) -> Path | None:
+    if not location.exists():
+        return None
+    try:
+        payload = json.loads(location.read_text(encoding="utf-8"))
+        root = payload.get("data_root")
+        if root:
+            return Path(str(root)).expanduser().resolve()
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        pass
+    return None
 
 
 def default_data_root() -> Path:
     """Recommended data root when nothing is remembered yet."""
     if is_frozen():
-        return (Path.home() / "Documents" / "简单ERP数据").resolve()
+        return (Path.home() / "Documents" / DEFAULT_DATA_ROOT_DIRNAME).resolve()
     # Source / tests: same as runtime_root (project root, or monkeypatched tmp).
     return runtime_root().resolve()
 
 
 def default_data_root_display() -> str:
     if is_frozen():
-        return str(Path.home() / "Documents" / "简单ERP数据")
+        return str(Path.home() / "Documents" / DEFAULT_DATA_ROOT_DIRNAME)
     return str(runtime_root().resolve())
 
 
@@ -94,15 +111,9 @@ def resolve_data_root() -> Path:
     if env:
         return Path(env).expanduser().resolve()
 
-    loc = location_file()
-    if loc.exists():
-        try:
-            payload = json.loads(loc.read_text(encoding="utf-8"))
-            root = payload.get("data_root")
-            if root:
-                return Path(str(root)).expanduser().resolve()
-        except (OSError, json.JSONDecodeError, TypeError, ValueError):
-            pass
+    root = _read_data_root(location_file())
+    if root is not None:
+        return root
 
     return default_data_root()
 
