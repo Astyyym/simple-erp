@@ -23,21 +23,21 @@ if errorlevel 1 (
 )
 
 echo 正在打包 Windows 桌面版 EXE...
-.venv-win\Scripts\pyinstaller.exe 消防ERP.spec --clean --noconfirm
+.venv-win\Scripts\pyinstaller.exe 简单ERP.spec --clean --noconfirm
 if errorlevel 1 (
   echo 打包失败。
   pause
   exit /b 1
 )
 
-if not exist dist\消防ERP\data mkdir dist\消防ERP\data
-if not exist dist\消防ERP\logs mkdir dist\消防ERP\logs
-if not exist dist\消防ERP\temp_pdf mkdir dist\消防ERP\temp_pdf
-if not exist dist\消防ERP\backups mkdir dist\消防ERP\backups
-if not exist dist\消防ERP\imports mkdir dist\消防ERP\imports
-if not exist dist\消防ERP\config.json copy config.json dist\消防ERP\config.json >nul
+if not exist dist\简单ERP\data mkdir dist\简单ERP\data
+if not exist dist\简单ERP\logs mkdir dist\简单ERP\logs
+if not exist dist\简单ERP\temp_pdf mkdir dist\简单ERP\temp_pdf
+if not exist dist\简单ERP\backups mkdir dist\简单ERP\backups
+if not exist dist\简单ERP\imports mkdir dist\简单ERP\imports
+if not exist dist\简单ERP\config.json copy config.json dist\简单ERP\config.json >nul
 
 echo.
-echo 打包完成：dist\消防ERP\消防ERP.exe
-echo 可以把整个 dist\消防ERP 文件夹复制到父母电脑使用。
+echo 打包完成：dist\简单ERP\简单ERP.exe
+echo 可以把整个 dist\简单ERP 文件夹复制到父母电脑使用。
 pause

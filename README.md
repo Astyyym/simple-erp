@@ -72,7 +72,7 @@ GitHub Releases：https://github.com/Astyyym/simple-erp/releases
 
 ### Windows 桌面版
 
-- 复制 `dist\消防ERP` 文件夹，双击 `消防ERP.exe`
+- 复制 `dist\简单ERP` 文件夹，双击 `简单ERP.exe`
 - **推荐**：业务数据放在「文档\简单ERP数据」或设置里自选目录（与程序文件夹分离，升级只换程序）
 - 路径记忆：`%LOCALAPPDATA%\简单ERP\data_location.json`（只记路径，不是订单库）
 - 旧安装若仍把数据放在程序旁 `data\erp.db`，升级时不要覆盖该 `data` 文件夹
@@ -91,7 +91,7 @@ GitHub Releases：https://github.com/Astyyym/simple-erp/releases
 │   └── 复盘/                  # 复盘与纪律
 ├── 开发短计划/                # 当次可执行短计划
 ├── desktop_app.py             # 桌面版入口
-├── 消防ERP.spec               # PyInstaller 规格
+├── 简单ERP.spec               # PyInstaller 规格
 ├── 打包Windows桌面版.bat
 ├── 启动系统.bat / 启动系统.vbs / 停止系统.bat
 ├── 启动系统-WSL版.bat / 停止系统-WSL版.bat   # 仅开发机
@@ -135,8 +135,8 @@ PYTHONPATH=app pytest tests/ -q
 产物：
 
 ```text
-dist\消防ERP\消防ERP.exe
-dist\消防ERP-Windows桌面版.zip
+dist\简单ERP\简单ERP.exe
+dist\简单ERP-Windows桌面版.zip
 dist\simple-erp-windows-vX.Y.Z.zip
 ```
 
@@ -144,9 +144,9 @@ dist\simple-erp-windows-vX.Y.Z.zip
 
 ## 升级注意
 
-1. 先退出消防 ERP
+1. 先退出简单ERP
 2. **备份**当前数据目录（设置页可查看路径；常见为 `文档\简单ERP数据\data` 或程序旁 `data`）
-3. 用新版覆盖 **程序文件**（`消防ERP.exe`、`_internal` 等）
+3. 用新版覆盖 **程序文件**（`简单ERP.exe`、`_internal` 等）
 4. **不要**用安装包里的空库覆盖正在用的 `erp.db`
 5. 若数据已在独立目录，整夹覆盖程序一般丢不了单
 设置页用法：侧栏「设置」→ 改公司名/主题/打印文案后点「保存设置」；改数据目录用「浏览文件夹」或粘贴路径后「一键迁移并切换」。

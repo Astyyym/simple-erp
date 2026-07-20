@@ -57,7 +57,7 @@ class DesktopApi:
         global _window
         if _window is None:
             return False
-        text = (title or "").strip() or "消防ERP"
+        text = (title or "").strip() or "简单ERP"
         try:
             _window.set_title(text)
             return True
@@ -105,7 +105,7 @@ def _wait_for_server(timeout_seconds: int = 20) -> None:
         if _port_is_open():
             return
         time.sleep(0.2)
-    raise RuntimeError("消防ERP启动超时，请重新打开或联系维护人员。")
+    raise RuntimeError("简单ERP启动超时，请重新打开或联系维护人员。")
 
 
 def _window_title() -> str:
@@ -113,7 +113,7 @@ def _window_title() -> str:
         name = str(load_config().get("shop_name") or "").strip()
     except Exception:
         name = ""
-    return name or "消防ERP"
+    return name or "简单ERP"
 
 
 def main() -> None:

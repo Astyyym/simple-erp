@@ -24,8 +24,8 @@ py -3.11 -m venv .venv-win
 生成目录：
 
 ```text
-dist\消防ERP\
-  消防ERP.exe
+dist\简单ERP\
+  简单ERP.exe
   config.json
   _internal\   （依赖；以实际打包结果为准）
 ```
@@ -33,8 +33,8 @@ dist\消防ERP\
 本地还会同步生成 ZIP（示例）：
 
 ```text
-dist\消防ERP-Windows桌面版.zip
-dist\消防ERP-Windows桌面版-vX.Y.Z.zip
+dist\简单ERP-Windows桌面版.zip
+dist\简单ERP-Windows桌面版-vX.Y.Z.zip
 dist\simple-erp-windows-vX.Y.Z.zip
 ```
 
@@ -45,10 +45,10 @@ GitHub Releases 优先上传英文文件名 ZIP（中文文件名在上传时可
 把整个目录复制到父母电脑，例如：
 
 ```text
-D:\消防ERP\
+D:\简单ERP\
 ```
 
-然后给桌面创建 `消防ERP.exe` 的快捷方式。
+然后给桌面创建 `简单ERP.exe` 的快捷方式。
 
 日常使用：双击桌面图标即可。
 

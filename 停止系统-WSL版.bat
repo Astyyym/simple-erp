@@ -11,5 +11,5 @@ if errorlevel 1 (
   exit /b 1
 )
 
-wsl.exe bash -lc "pid=$(lsof -ti tcp:5000 2>/dev/null | head -n 1); if [ -n \"$pid\" ]; then kill $pid; echo 已停止消防ERP。; else echo 消防ERP后台服务没有运行。; fi"
+wsl.exe bash -lc "pid=$(lsof -ti tcp:5000 2>/dev/null | head -n 1); if [ -n \"$pid\" ]; then kill $pid; echo 已停止简单ERP。; else echo 简单ERP后台服务没有运行。; fi"
 pause

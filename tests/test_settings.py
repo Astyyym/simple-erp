@@ -88,7 +88,7 @@ def test_desktop_api_choose_folder_and_title_helpers(monkeypatch):
     assert api.set_window_title("简单ERP") is True
     assert fake.title == "简单ERP"
     assert api.set_window_title("  ") is True
-    assert fake.title == "消防ERP"
+    assert fake.title == "简单ERP"
 
 
 def test_save_settings_can_redirect_to_next_path():

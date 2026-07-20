@@ -263,7 +263,7 @@
 <script>
   // Desktop shell: keep native window title in sync with company name.
   (function () {
-    const title = {{ (shop_name or '消防ERP')|tojson }};
+    const title = {{ (shop_name or '简单ERP')|tojson }};
     try {
       if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.set_window_title === 'function') {
         window.pywebview.api.set_window_title(title);
