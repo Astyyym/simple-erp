@@ -4,7 +4,7 @@
 
 ## 1. 在 Windows 里准备打包环境
 
-在项目目录 `D:\wenjian\Hermes\ERP系统` 打开 PowerShell 或 CMD：
+在唯一正式项目目录 `D:\wenjian\Hermes\简单ERP` 打开 PowerShell 或 CMD：
 
 ```bat
 py -3.11 -m venv .venv-win

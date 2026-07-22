@@ -2,8 +2,8 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 if not exist logs mkdir logs
-set "ERP_URL=http://127.0.0.1:5000"
-set "WSL_PROJECT=/mnt/d/wenjian/Hermes/ERP系统"
+set "ERP_URL=http://127.0.0.1:5001"
+set "WSL_PROJECT=/mnt/d/wenjian/Hermes/简单ERP"
 
 echo [%date% %time%] 正在启动简单ERP（WSL版）... >> logs\startup.log
 
@@ -18,7 +18,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-start "简单ERP后台服务" /min wsl.exe bash -lc "cd '%WSL_PROJECT%' && source .venv/bin/activate && PYTHONPATH=app python app/app.py >> logs/startup.log 2>&1"
+start "简单ERP WSL开发预览" /min wsl.exe bash -lc "cd '%WSL_PROJECT%' && ERP_PORT=5001 PYTHONPATH=app .venv/bin/python app/app.py >> logs/startup.log 2>&1"
 
 echo 正在等待后台服务启动...
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$url='%ERP_URL%/health'; for ($i=0; $i -lt 30; $i++) { try { $r=Invoke-WebRequest -UseBasicParsing $url -TimeoutSec 1; if ($r.StatusCode -eq 200) { Start-Process '%ERP_URL%'; exit 0 } } catch {}; Start-Sleep -Milliseconds 500 }; exit 1"

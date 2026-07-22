@@ -94,7 +94,7 @@ GitHub Releases：https://github.com/Astyyym/simple-erp/releases
 ├── 简单ERP.spec               # PyInstaller 规格
 ├── 打包Windows桌面版.bat
 ├── 启动系统.bat / 启动系统.vbs / 停止系统.bat
-├── 启动系统-WSL版.bat / 停止系统-WSL版.bat   # 仅开发机
+├── 启动系统-WSL版.bat / 停止系统-WSL版.bat   # 可选的 WSL 交叉测试入口（5001）
 ├── setup.bat / dev_start.bat
 ├── config.json
 └── requirements.txt
@@ -109,21 +109,31 @@ dist/  build/  .venv/  .venv-win/  __pycache__/
 
 ## 本地开发
 
-### WSL
+### 双环境开发约定
 
-```bash
-cd '/mnt/d/wenjian/Hermes/ERP系统'
-source .venv/bin/activate
-PYTHONPATH=app python app/app.py
+唯一源码位于 Windows：`D:\wenjian\Hermes\简单ERP`。Windows 负责日常开发、桌面流程、打包和最终验收；WSL 通过 `/mnt/d` 访问同一仓库，仅用于按需交叉测试，不另建长期源码副本。
+
+Windows 源码运行：
+
+```bat
+setup.bat
+启动系统.bat
 ```
 
-源码预览建议 `5001`，避免与正式 EXE 的 `5000` 冲突。
+可选的 WSL 交叉测试与开发预览：
+
+```bash
+cd '/mnt/d/wenjian/Hermes/简单ERP'
+ERP_PORT=5001 PYTHONPATH=app .venv/bin/python app/app.py
+```
+
+也可从 Windows 双击 `启动系统-WSL版.bat`。WSL 预览固定使用 `5001`，Windows 正式 EXE 使用 `5000`，避免命中错误实例。
 
 ### 测试
 
 ```bash
-source .venv/bin/activate
-PYTHONPATH=app pytest tests/ -q
+cd '/mnt/d/wenjian/Hermes/简单ERP'
+PYTHONPATH=app .venv/bin/python -m pytest tests/ -q
 ```
 
 ## Windows 打包
