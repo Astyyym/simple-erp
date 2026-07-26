@@ -247,12 +247,7 @@
     <div class="page-topbar">
       <div class="company">{{ shop_name }}</div>
       <div class="status-wrap">
-        <div class="status">本地数据已连接{% if current_user %} · {{ current_user }}{% endif %}</div>
-        {% if auth_enabled and current_user %}
-        <form method="post" action="{{ url_for('auth.logout') }}" class="logout-form">
-          <button type="submit" class="btn btn-sm btn-outline-secondary">退出登录</button>
-        </form>
-        {% endif %}
+        <div class="status">本地数据已连接</div>
       </div>
     </div>
     <div class="page-body">

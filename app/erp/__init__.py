@@ -2,9 +2,9 @@ import os
 from pathlib import Path
 from datetime import timedelta
 
-from flask import Flask, render_template, redirect, request, url_for, session
+from flask import Flask, render_template
 
-from .auth import ensure_auth_defaults, is_authenticated, current_username, is_desktop_shell
+from .auth import ensure_auth_defaults, current_username, is_desktop_shell
 from .config import ensure_data_location_initialized, load_config, bundled_root, runtime_root
 from .db import init_db, integrity_check
 from .routes.accounts import accounts_bp
@@ -51,25 +51,12 @@ def create_app() -> Flask:
             "ui_scale": cfg_now.get("ui_scale", "100"),
             "current_user": current_username(),
             "is_desktop": is_desktop_shell(),
-            "auth_enabled": not os.environ.get("ERP_DISABLE_AUTH", "").strip().lower()
-            in {"1", "true", "yes", "on"},
+            # Permanent no-login product default.
+            "auth_enabled": False,
         }
 
-    @app.before_request
-    def require_login():
-        if is_authenticated():
-            return None
-        endpoint = request.endpoint or ""
-        path = request.path or ""
-        # Public endpoints
-        if endpoint in {"auth.login", "auth.logout", "auth.logout_get", "health"}:
-            return None
-        if path.startswith("/static"):
-            return None
-        # Keep health JSON public for smoke tests / packaging probes
-        if path == "/health":
-            return None
-        return redirect(url_for("auth.login", next=request.full_path if request.query_string else request.path))
+    # Login gate removed: permanent free access for local single-machine use.
+    # is_authenticated() remains True for any residual callers.
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(products_bp)
@@ -90,7 +77,7 @@ def create_app() -> Flask:
             "database": integrity_check(),
             "version": app.config["ERP_VERSION"],
             "data_root": load_config().get("data_root"),
-            "auth": "disabled" if os.environ.get("ERP_DISABLE_AUTH") else "enabled",
+            "auth": "disabled",
         }
 
     return app

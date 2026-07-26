@@ -5,7 +5,7 @@
 ## 当前版本
 
 ```text
-v0.7.4
+v0.8.0
 ```
 
 GitHub Releases：https://github.com/Astyyym/simple-erp/releases
@@ -30,7 +30,7 @@ GitHub Releases：https://github.com/Astyyym/simple-erp/releases
 - 保存后可直接打开打印 PDF；退货单列表标红
 - 销售清单面向 **241×140mm 实体二联纸**；PDF 使用标准 **A4 横向（297×210mm）**，单据固定在上方居中，左右各留 28mm、下方留白
 - Nantian PR2 Plus / `NantianPR-LQ`：241mm 长边先进，选 A4 横向、实际大小/100%、不要缩放；细调可在设置页偏移
-- 桌面版已登录后，打印预览尽量在壳内打开，避免二次登录
+- 桌面版打印预览尽量在壳内打开
 
 ### 单据管理
 
@@ -53,11 +53,11 @@ GitHub Releases：https://github.com/Astyyym/simple-erp/releases
 - 余额：期初 + 销售 - 退货 + 调整 - 收款
 - 旧账款入口保留
 
-### 登录
+### 访问方式
 
-- 打开系统需输入用户名和密码（单账号）
-- 默认账号：`wangyanli` / `zzzz`（首次启动写入配置哈希；可在 `config.json` 的 `local_access_*` 字段维护）
-- 顶栏可「退出登录」；`/health` 不需登录（便于打包冒烟）
+- **永久免登录**：打开即可使用，无需账号密码
+- 本机/店内单机场景；能访问服务端口即可进入系统
+- `/health` 公开，返回 `auth: disabled`（便于打包冒烟）
 
 ### 系统设置
 

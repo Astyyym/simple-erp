@@ -1,66 +1,56 @@
 from erp import create_app
-from erp.auth import DEFAULT_PASSWORD, DEFAULT_USERNAME, ensure_auth_defaults, verify_credentials
+from erp.auth import ensure_auth_defaults, is_authenticated
 from erp.config import load_config
 from erp.db import init_db
 
 
-def test_unauthenticated_request_redirects_to_login(monkeypatch):
+def test_home_is_public_without_login(monkeypatch):
     monkeypatch.delenv("ERP_DISABLE_AUTH", raising=False)
     init_db()
     app = create_app()
     client = app.test_client()
     resp = client.get("/", follow_redirects=False)
-    assert resp.status_code in (302, 303)
-    assert "/login" in resp.headers["Location"]
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "退出登录" not in html
+    assert 'name="username"' not in html
 
 
-def test_login_success_and_logout(monkeypatch):
+def test_business_pages_open_without_login(monkeypatch):
     monkeypatch.delenv("ERP_DISABLE_AUTH", raising=False)
     init_db()
-    app = create_app()
-    client = app.test_client()
+    client = create_app().test_client()
+    for path in ("/orders/new", "/settings/", "/customers/", "/products/"):
+        resp = client.get(path, follow_redirects=False)
+        assert resp.status_code == 200, path
 
-    bad = client.post(
-        "/login",
-        data={"username": DEFAULT_USERNAME, "password": "wrong", "next": "/"},
-        follow_redirects=False,
-    )
-    assert bad.status_code == 200
-    assert "用户名或密码不正确" in bad.get_data(as_text=True)
 
-    ok = client.post(
-        "/login",
-        data={"username": DEFAULT_USERNAME, "password": DEFAULT_PASSWORD, "next": "/settings/"},
-        follow_redirects=False,
-    )
-    assert ok.status_code in (302, 303)
-    assert "/settings/" in ok.headers["Location"]
-
-    page = client.get("/settings/")
+def test_login_route_redirects_home(monkeypatch):
+    monkeypatch.delenv("ERP_DISABLE_AUTH", raising=False)
+    init_db()
+    client = create_app().test_client()
+    resp = client.get("/login", follow_redirects=False)
+    assert resp.status_code in (302, 303)
+    assert resp.headers["Location"].endswith("/") or resp.headers["Location"] == "/"
+    # No login form rendered even with follow.
+    page = client.get("/login", follow_redirects=True)
     assert page.status_code == 200
-    assert "公司名称" in page.get_data(as_text=True)
-    assert "退出登录" in page.get_data(as_text=True)
+    assert "用户名或密码不正确" not in page.get_data(as_text=True)
+    assert 'id="togglePassword"' not in page.get_data(as_text=True)
 
+
+def test_logout_routes_go_home(monkeypatch):
+    monkeypatch.delenv("ERP_DISABLE_AUTH", raising=False)
+    init_db()
+    client = create_app().test_client()
     out = client.post("/logout", follow_redirects=False)
     assert out.status_code in (302, 303)
-    assert "/login" in out.headers["Location"]
-    blocked = client.get("/orders/new", follow_redirects=False)
-    assert blocked.status_code in (302, 303)
-    assert "/login" in blocked.headers["Location"]
+    assert out.headers["Location"].endswith("/") or out.headers["Location"] == "/"
+    out_get = client.get("/logout", follow_redirects=False)
+    assert out_get.status_code in (302, 303)
 
 
-def test_login_page_has_password_visibility_toggle(monkeypatch):
-    monkeypatch.delenv("ERP_DISABLE_AUTH", raising=False)
-    init_db()
-    app = create_app()
-    client = app.test_client()
-    html = client.get("/login").get_data(as_text=True)
-    assert 'id="togglePassword"' in html
-    assert "显示密码" in html
-    assert 'type="password"' in html
-
-
-def test_health_stays_public_when_auth_enabled(monkeypatch):
+def test_health_reports_auth_disabled(monkeypatch):
     monkeypatch.delenv("ERP_DISABLE_AUTH", raising=False)
     init_db()
     app = create_app()
@@ -69,16 +59,13 @@ def test_health_stays_public_when_auth_enabled(monkeypatch):
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["status"] == "ok"
-    assert data.get("auth") == "enabled"
+    assert data.get("auth") == "disabled"
 
 
-def test_default_credentials_verify_after_bootstrap(monkeypatch):
+def test_auth_defaults_force_password_gate_off(monkeypatch):
     monkeypatch.delenv("ERP_DISABLE_AUTH", raising=False)
     init_db()
     create_app()
     cfg = ensure_auth_defaults(load_config())
-    assert cfg["local_access_password_enabled"] is True
-    assert cfg["local_access_username"] == DEFAULT_USERNAME
-    assert cfg["local_access_password_hash"]
-    assert verify_credentials(DEFAULT_USERNAME, DEFAULT_PASSWORD, cfg) is True
-    assert verify_credentials(DEFAULT_USERNAME, "nope", cfg) is False
+    assert cfg["local_access_password_enabled"] is False
+    assert is_authenticated() is True

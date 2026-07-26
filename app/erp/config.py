@@ -28,9 +28,9 @@ CONFIG_DEFAULTS: dict[str, Any] = {
     # 实体纸单据区域为页面上方居中的 241×140mm，避免驱动对特殊逻辑页再次居中。
     "order_pdf_page_width_mm": 297,
     "order_pdf_page_height_mm": 210,
-    "local_access_password_enabled": True,
+    "local_access_password_enabled": False,
     "local_access_password_hash": "",
-    "local_access_username": "wangyanli",
+    "local_access_username": "",
     "ui_theme": "light",  # light | dark | system
     "ui_scale": "100",  # 100 | 125 | 150
     "print_order_phone": "",

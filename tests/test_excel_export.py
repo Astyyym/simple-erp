@@ -156,7 +156,7 @@ def test_excel_export_endpoints_and_headers():
     assert return_rows[1][11] == "退货备注"
 
 
-def test_excel_export_requires_login(monkeypatch):
+def test_excel_export_open_without_login(monkeypatch):
     monkeypatch.delenv("ERP_DISABLE_AUTH", raising=False)
     init_db()
     client = create_app().test_client()
@@ -167,5 +167,8 @@ def test_excel_export_requires_login(monkeypatch):
         "/orders/export/returns.xlsx",
     ):
         resp = client.get(url, follow_redirects=False)
-        assert resp.status_code in (302, 303)
-        assert "/login" in resp.headers["Location"]
+        assert resp.status_code == 200, url
+        assert resp.mimetype in (
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/octet-stream",
+        ) or (resp.data[:2] == b"PK")

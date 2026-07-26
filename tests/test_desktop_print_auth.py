@@ -1,19 +1,10 @@
-"""Desktop print must reuse pywebview session; browser still requires login."""
+"""With permanent no-login, print/PDF and business pages stay open without a session."""
 
 from uuid import uuid4
 
 from erp import create_app
-from erp.auth import DEFAULT_PASSWORD, DEFAULT_USERNAME
 from erp.db import init_db
 from erp.services.accounting import create_customer, create_order_from_typed_rows
-
-
-def _login(client):
-    return client.post(
-        "/login",
-        data={"username": DEFAULT_USERNAME, "password": DEFAULT_PASSWORD, "next": "/"},
-        follow_redirects=False,
-    )
 
 
 def _make_order():
@@ -29,7 +20,7 @@ def _make_order():
     return customer_id, order_id
 
 
-def test_unauthenticated_pdf_redirects_to_login(monkeypatch):
+def test_pdf_open_without_login(monkeypatch):
     monkeypatch.delenv("ERP_DISABLE_AUTH", raising=False)
     monkeypatch.delenv("ERP_DESKTOP", raising=False)
     init_db()
@@ -37,24 +28,12 @@ def test_unauthenticated_pdf_redirects_to_login(monkeypatch):
     client = create_app().test_client()
 
     resp = client.get(f"/orders/{order_id}/pdf", follow_redirects=False)
-    assert resp.status_code in (302, 303)
-    assert "/login" in resp.headers["Location"]
-
-
-def test_authenticated_user_can_open_pdf(monkeypatch):
-    monkeypatch.delenv("ERP_DISABLE_AUTH", raising=False)
-    init_db()
-    _, order_id = _make_order()
-    client = create_app().test_client()
-    assert _login(client).status_code in (302, 303)
-
-    resp = client.get(f"/orders/{order_id}/pdf")
     assert resp.status_code == 200
     assert resp.mimetype == "application/pdf"
     assert resp.data[:4] == b"%PDF"
 
 
-def test_unauthenticated_summary_and_print_preview_redirect(monkeypatch):
+def test_summary_and_print_preview_open_without_login(monkeypatch):
     monkeypatch.delenv("ERP_DISABLE_AUTH", raising=False)
     monkeypatch.delenv("ERP_DESKTOP", raising=False)
     init_db()
@@ -69,51 +48,47 @@ def test_unauthenticated_summary_and_print_preview_redirect(monkeypatch):
         "/",
     ):
         resp = client.get(path, follow_redirects=False)
-        assert resp.status_code in (302, 303), path
-        assert "/login" in resp.headers["Location"], path
+        assert resp.status_code == 200, path
 
 
-def test_non_print_pages_still_require_login(monkeypatch):
+def test_non_print_pages_open_without_login(monkeypatch):
     monkeypatch.delenv("ERP_DISABLE_AUTH", raising=False)
     init_db()
     client = create_app().test_client()
     for path in ("/orders/new", "/orders/", "/settings/", "/customers/"):
         resp = client.get(path, follow_redirects=False)
-        assert resp.status_code in (302, 303)
-        assert "/login" in resp.headers["Location"]
+        assert resp.status_code == 200, path
+        assert "退出登录" not in resp.get_data(as_text=True)
 
 
-def test_health_public_with_auth_enabled(monkeypatch):
+def test_health_public_auth_disabled(monkeypatch):
     monkeypatch.delenv("ERP_DISABLE_AUTH", raising=False)
     init_db()
     client = create_app().test_client()
     resp = client.get("/health")
     assert resp.status_code == 200
-    assert resp.get_json()["status"] == "ok"
+    body = resp.get_json()
+    assert body["status"] == "ok"
+    assert body.get("auth") == "disabled"
 
 
-def test_desktop_mode_does_not_disable_auth(monkeypatch):
-    """ERP_DESKTOP only changes print navigation; it is not a login bypass."""
+def test_desktop_mode_also_no_login(monkeypatch):
+    """ERP_DESKTOP only changes print navigation; product is already no-login."""
     monkeypatch.delenv("ERP_DISABLE_AUTH", raising=False)
     monkeypatch.setenv("ERP_DESKTOP", "1")
     init_db()
     _, order_id = _make_order()
     client = create_app().test_client()
 
-    blocked = client.get(f"/orders/{order_id}/pdf", follow_redirects=False)
-    assert blocked.status_code in (302, 303)
-    assert "/login" in blocked.headers["Location"]
-
-    assert _login(client).status_code in (302, 303)
     ok = client.get(f"/orders/{order_id}/pdf")
     assert ok.status_code == 200
     assert ok.data[:4] == b"%PDF"
 
-    # After logout, same PDF URL requires login again (no lingering free access).
+    # Logout is a no-op for access control; PDF remains open.
     client.post("/logout")
     again = client.get(f"/orders/{order_id}/pdf", follow_redirects=False)
-    assert again.status_code in (302, 303)
-    assert "/login" in again.headers["Location"]
+    assert again.status_code == 200
+    assert again.data[:4] == b"%PDF"
 
 
 def test_desktop_shell_marker_and_in_shell_print_helpers(monkeypatch):

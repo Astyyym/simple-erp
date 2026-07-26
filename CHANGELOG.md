@@ -1,5 +1,13 @@
 # 简单ERP 更新记录
 
+## v0.8.0 - 永久免登录
+
+- 打开系统不再要求用户名/密码；浏览器与桌面 EXE 直接进入业务页。
+- 去掉登录页与顶栏「退出登录」；`/login`、`/logout` 仅重定向到首页。
+- `config.json` 默认关闭 `local_access_password_enabled`，不再强制写入密码哈希。
+- `/health` 固定返回 `auth: disabled`。
+- 相关鉴权回归测试改为「免登录可进」；全量 pytest 通过。
+
 ## v0.7.4 - 设置页打印样张 PDF
 
 - 设置页保留原有 HTML 快速预览，并新增“生成预览 PDF”入口。
