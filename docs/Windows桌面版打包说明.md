@@ -1,19 +1,19 @@
-# Windows 原生 EXE 打包说明
+# Windows 桌面版打包说明
 
-目标：生成父母电脑可直接双击使用的 Windows 桌面端程序，不依赖 WSL，不要求他们打开命令行。
+目标：生成用户可直接双击运行的 Windows 桌面版，不要求日常使用者打开终端、安装 Python 或连接互联网。
 
-## 1. 在 Windows 里准备打包环境
+## 1. Windows 打包环境
 
-在唯一正式项目目录 `D:\wenjian\Hermes\简单ERP` 打开 PowerShell 或 CMD：
+- 当前默认业务环境为 Windows 11。构建脚本会创建 `.venv-win`，优先使用 `py -V:Astral/CPython3.11.15`，失败时尝试 `py -3.14`；不要用 WSL Python 打 Windows EXE。
+
+优先直接运行 `打包Windows桌面版.bat`：脚本会在 `.venv-win` 不存在时创建环境（先尝试 `py -V:Astral/CPython3.11.15`，再回退 `py -3.14`），并安装/检查依赖。已有 `.venv-win` 时不要重复创建。只有手动准备独立的 Python 3.11 环境时才使用下列命令：
 
 ```bat
 py -3.11 -m venv .venv-win
 .venv-win\Scripts\python.exe -m pip install --upgrade pip
-.venv-win\Scripts\pip.exe install -r requirements.txt
-.venv-win\Scripts\pip.exe install pyinstaller pywebview
+.venv-win\Scripts\python.exe -m pip install -r requirements.txt
+.venv-win\Scripts\python.exe -m pip install pyinstaller pywebview
 ```
-
-> 不要用 WSL 的 `.venv` 打 Windows exe。必须用 Windows Python 的 venv。
 
 ## 2. 打包
 
@@ -21,64 +21,63 @@ py -3.11 -m venv .venv-win
 打包Windows桌面版.bat
 ```
 
-生成目录：
+当前 PyInstaller one-folder 产物目录：
 
 ```text
 dist\简单ERP\
   简单ERP.exe
   config.json
-  _internal\   （依赖；以实际打包结果为准）
+  _internal\
 ```
 
-本地还会同步生成 ZIP（示例）：
+打包脚本也可能生成版本化 ZIP。实际文件名及版本以本次打包脚本输出为准，常见示例：
 
 ```text
-dist\简单ERP-Windows桌面版.zip
 dist\简单ERP-Windows桌面版-vX.Y.Z.zip
 dist\simple-erp-windows-vX.Y.Z.zip
 ```
 
-GitHub Releases 优先上传英文文件名 ZIP（中文文件名在上传时可能乱码）。
+仅本地存在 ZIP/EXE 不能证明其已上传 GitHub Releases；推送源码、构建包和发布 Release 是不同状态。
 
-## 3. 给父母电脑安装
+## 3. 安装与启动
 
-把整个目录复制到父母电脑，例如：
+将整个 `dist\简单ERP` 文件夹复制到目标 Windows 电脑，例如 `D:\简单ERP\`，然后创建 `简单ERP.exe` 的快捷方式。不要只复制 EXE，one-folder 依赖 `_internal`。
 
-```text
-D:\简单ERP\
-```
+程序运行本地服务，桌面窗口访问 `127.0.0.1:5000`。当前版本永久免登录，任何能访问该端口的人都可能操作数据；不得把服务开放给局域网或公网。
 
-然后给桌面创建 `简单ERP.exe` 的快捷方式。
+## 4. 数据目录
 
-日常使用：双击桌面图标即可。
+| 项 | 当前行为 |
+|---|---|
+| 新装桌面版默认数据根 | `%USERPROFILE%\Documents\简单ERP数据` |
+| 业务数据库 | `{数据根}\data\erp.db` |
+| 路径记忆 | `%LOCALAPPDATA%\简单ERP\data_location.json`，只记录数据根路径 |
+| 设置 | 设置页显示当前/默认路径；桌面版可选文件夹并迁移数据 |
+| 源码运行 | 默认数据根为项目运行目录，通常是仓库根目录 |
 
-## 4. 数据目录（与程序分离）
+数据根可以由用户在设置中更改。迁移前备份；目标目录已有非空数据库时程序会拒绝覆盖；迁移后旧目录仍保留，不要未经确认删除。
 
-| 项 | 说明 |
-|----|------|
-| 默认（新装 EXE） | `文档\简单ERP数据`（`%USERPROFILE%\Documents\简单ERP数据`） |
-| 业务库 | `{数据根}\data\erp.db` |
-| 路径记忆 | `%LOCALAPPDATA%\简单ERP\data_location.json`（只存路径） |
-| 设置 | 侧栏「设置」可查看当前目录；「浏览文件夹」+ 一键迁移 |
+## 5. 备份与升级
 
-开发源码默认仍用**项目根**下 `data\erp.db`，与 EXE 默认 Documents 不同。
+升级前至少备份设置页显示的数据根目录下的 `data` 文件夹。退出程序后，仅替换程序文件（EXE、`_internal` 等）；不要用构建包中的空库覆盖用户现有的 `data\erp.db`。
 
-## 5. 数据备份
+如果旧安装把数据放在 EXE 旁边的 `data\`，整目录覆盖风险更高；应先确认实际数据根目录。无需通过卸载程序完成升级。
 
-备份时至少备份整个**当前数据根**下的 `data` 文件夹（设置页可看完整路径）。
-不要只复制 exe。
+## 6. 打印
 
-## 6. 升级
+- 销售单、退货单、客户货款汇总 PDF 和设置页样张默认使用 A4 竖版（210×297mm）；销售/退货单内容为正向竖版排版，不再放入旧 241×140mm 单据区。
+- 打印驱动建议选 A4 纵向、实际大小/100%，关闭“适合页面/缩放”。历史 `NantianPR-LQ` 记录曾提供 A4 纸型，但当前驱动版本和目标电脑选项未重新核验。
+- 设置页的横纵偏移和缩放只校准销售/退货单及设置样张；账款汇总 PDF 不使用这些偏移。
+- 先检查 HTML/PDF 预览，再在目标电脑/打印机实打校准。生成 PDF 或自动化测试通过不能替代目标打印机人工验收。
 
-1. 退出程序
-2. 备份数据目录
-3. 覆盖程序文件（exe / `_internal` 等）
-4. **不要**覆盖正在使用的 `data\erp.db`
-5. 若用户曾把数据目录选在程序夹旁（旧绿色版习惯），覆盖时尤其不要抹掉该夹下 `data\`
+## 7. 证据与发布状态
 
-## 7. 设置页（桌面）
+每次正式交付分别记录：
 
-- 公司名称、主题、缩放、打印文案：改完点「保存设置」
-- 未保存就点侧栏其它页：会询问是否保存
-- 数据目录：点「浏览文件夹…」打开系统选夹，再「一键迁移并切换」
-- 窗口标题会随公司名称变化
+1. 测试与源码运行结果；
+2. Windows EXE 是否从隔离目录真实启动、`/health` 版本是否正确、业务页是否可用；
+3. ZIP 是否正确生成及其文件名/大小；
+4. Git 是否提交/推送；
+5. GitHub Release 是否存在且包含预期资产。
+
+不得把其中一项推断成其他项已完成。打包流程和 Windows 中文路径冒烟细节见项目技能 references 索引。

@@ -1,6 +1,8 @@
+from datetime import date
 from pathlib import Path
 from uuid import uuid4
-from datetime import date
+
+from pdf_test_utils import assert_a4_portrait_pdf
 
 from erp import create_app
 from erp.db import get_db, init_db
@@ -20,6 +22,7 @@ def test_account_summary_pdf_uses_filtered_order_items_without_grouping():
     assert isinstance(path, Path)
     assert path.exists()
     assert path.stat().st_size > 0
+    assert_a4_portrait_pdf(path.read_bytes())
 
 
 def test_account_summary_rows_merge_same_date_and_order_no_and_show_order_total_once():
@@ -77,14 +80,12 @@ def test_order_print_signatures_share_phone_and_address_rows():
     assert "print_offset_x_mm" in template
     assert "print_offset_y_mm" in template
     assert "print_scale" in template
-    assert "left: 28mm" in template or "left:28mm" in template
-    assert "top: 0" in template or "top:0" in template
-    assert "width: 241mm" in template or "width:241mm" in template
-    assert "height: 140mm" in template or "height:140mm" in template
-    assert "width: 226.4mm" in template or "width:226.4mm" in template
+    assert "max-width: 186mm" in template or "max-width:186mm" in template
+    assert "width: 241mm" not in template and "width:241mm" not in template
+    assert "height: 140mm" not in template and "height:140mm" not in template
     assert "order_pdf_page_width_mm" in template
     assert "order_pdf_page_height_mm" in template
-    assert "width:92mm" in template or "width: 92mm" in template
+    assert "width:38%" in template or "width: 38%" in template
     assert "business-row" not in template
     assert "maker-sign" not in template
     assert "translateX(-15mm)" not in template
@@ -124,39 +125,80 @@ def test_order_pdf_footer_sign_columns_share_fixed_width():
     # Only the page-level calibration translate(...) is allowed — not maker-sign hacks.
     assert "translateX" not in template
     assert "transform: translate({{config.print_offset_x_mm}}mm" in template or "print_offset_x_mm" in template
-    assert "left: 28mm" in template or "left:28mm" in template
-    assert "width: 241mm" in template or "width:241mm" in template
+    assert "max-width: 186mm" in template or "max-width:186mm" in template
 
 
-def test_order_print_preview_uses_standard_a4_with_receipt_centered_at_top():
+def test_print_defaults_are_a4_portrait():
+    from erp.config import _merge_defaults
+
+    config = _merge_defaults({})
+
+    assert config["printer_paper_width_mm"] == 210
+    assert config["printer_paper_height_mm"] == 297
+    assert config["order_pdf_page_width_mm"] == 210
+    assert config["order_pdf_page_height_mm"] == 297
+
+
+def test_order_print_preview_and_sample_pdf_use_a4_portrait():
     from erp.config import load_config, save_config
 
     init_db()
     save_config(
         {
-            "printer_paper_width_mm": 241,
-            "printer_paper_height_mm": 140,
-            "order_pdf_page_width_mm": 297,
-            "order_pdf_page_height_mm": 210,
+            "printer_paper_width_mm": 210,
+            "printer_paper_height_mm": 297,
+            "order_pdf_page_width_mm": 210,
+            "order_pdf_page_height_mm": 297,
         }
     )
     cfg = load_config()
-    assert int(cfg["printer_paper_width_mm"]) == 241
-    assert int(cfg["printer_paper_height_mm"]) == 140
-    assert float(cfg["order_pdf_page_width_mm"]) == 297
-    assert float(cfg["order_pdf_page_height_mm"]) == 210
+    assert int(cfg["printer_paper_width_mm"]) == 210
+    assert int(cfg["printer_paper_height_mm"]) == 297
+    assert float(cfg["order_pdf_page_width_mm"]) == 210
+    assert float(cfg["order_pdf_page_height_mm"]) == 297
     app = create_app()
     client = app.test_client()
     html = client.get("/settings/print-preview").get_data(as_text=True)
-    assert "297mm" in html
-    assert "210mm" in html
-    assert "size: 297mm 210mm" in html or "size:297mm 210mm" in html
-    assert "left: 28mm" in html or "left:28mm" in html
-    assert "top: 0" in html or "top:0" in html
-    assert "width: 241mm" in html or "width:241mm" in html
-    assert "height: 140mm" in html or "height:140mm" in html
-    assert "width: 226.4mm" in html or "width:226.4mm" in html
-    assert "width:92mm" in html or "width: 92mm" in html
+    assert "size: 210mm 297mm" in html or "size:210mm 297mm" in html
+    assert "max-width: 186mm" in html or "max-width:186mm" in html
+    assert "width: 241mm" not in html and "width:241mm" not in html
+    assert "height: 140mm" not in html and "height:140mm" not in html
+    settings_html = client.get("/settings/").get_data(as_text=True)
+    assert "A4 竖向（210×297mm）" in settings_html
+    assert "实际大小/100%" in settings_html
+
+    pdf_response = client.get("/settings/print-preview.pdf")
+    assert pdf_response.status_code == 200
+    assert pdf_response.mimetype == "application/pdf"
+    assert_a4_portrait_pdf(pdf_response.data)
+
+
+def test_sales_and_return_order_pdfs_use_a4_portrait():
+    from erp.utils.pdf import generate_order_pdf
+
+    init_db()
+    suffix = uuid4().hex[:8]
+    customer_id = create_customer(f"竖版打印客户-{suffix}")
+    sale_id = create_order_from_typed_rows(
+        customer_id,
+        f"PORTRAIT-SALE-{suffix}",
+        [{"product_name": "销售闸阀", "unit": "只", "unit_price_yuan": "20", "quantity": "1"}],
+        status="saved",
+        order_type="sale",
+    )
+    return_id = create_order_from_typed_rows(
+        customer_id,
+        f"PORTRAIT-RETURN-{suffix}",
+        [{"product_name": "退货闸阀", "unit": "只", "unit_price_yuan": "20", "quantity": "1"}],
+        status="saved",
+        order_type="return",
+    )
+    app = create_app()
+    with app.app_context():
+        for order_id in (sale_id, return_id):
+            path = generate_order_pdf(order_id)
+            assert path.exists() and path.stat().st_size > 0
+            assert_a4_portrait_pdf(path.read_bytes())
 
 
 def test_order_print_preview_html_includes_configured_offsets():

@@ -42,7 +42,7 @@ def test_account_summary_template_marks_return_rows_red_and_prints_net_formula()
                 "total_cents": 5000,
                 "totals": _account_summary_totals(rows),
             }],
-            config={"shop_name": "测试店", "printer_paper_width_mm": 241, "printer_paper_height_mm": 280},
+            config={"shop_name": "测试店", "printer_paper_width_mm": 210, "printer_paper_height_mm": 297},
             cents_to_yuan=cents_to_yuan,
         )
 
@@ -50,6 +50,12 @@ def test_account_summary_template_marks_return_rows_red_and_prints_net_formula()
     assert "销售总金额 ¥100.00 - 退货总金额 ¥50.00 = 总金额 ¥50.00" in html
     assert html.count("¥-50.00") == 1
     assert "order-no-cell" in html
+    assert "size: 210mm 297mm" in html
+    assert "width: 210mm" in html
+    assert "min-height: 297mm" in html
+    assert "word-break: break-word" not in html
+    assert "word-break: keep-all" not in html
+    assert "overflow-wrap: anywhere" in html
     assert "width:42mm" in html
     assert "white-space: nowrap" not in html.split("order-no-cell")[1][:200]
     assert "break-all" in html

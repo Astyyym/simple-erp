@@ -11,8 +11,8 @@
     .subtitle { text-align: center; font-size: 16px; margin-bottom: 4mm; }
     .meta { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3mm; font-size: 13px; margin-bottom: 4mm; }
     table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
-    td, th { border: 1px solid #333; padding: 1.2mm 1mm; text-align: center; vertical-align: middle; word-break: break-word; overflow-wrap: anywhere; }
-    .date-cell { word-break: keep-all; overflow-wrap: normal; white-space: nowrap; font-size: 11px; }
+    td, th { border: 1px solid #333; padding: 1.2mm 1mm; text-align: center; vertical-align: middle; word-break: normal; overflow-wrap: anywhere; }
+    .date-cell { word-break: normal; overflow-wrap: normal; white-space: nowrap; font-size: 11px; }
     .order-no-cell {
       word-break: break-all;
       overflow-wrap: anywhere;
@@ -21,7 +21,7 @@
       font-size: 10.5px;
       font-family: "Consolas", "Courier New", "Noto Sans CJK SC", "Microsoft YaHei", monospace;
     }
-    .name-cell { text-align: left; word-break: break-word; overflow-wrap: anywhere; }
+    .name-cell { text-align: left; word-break: normal; overflow-wrap: anywhere; }
     .summary { margin-top: 5mm; font-size: 14px; line-height: 1.8; }
     .total { font-size: 16px; font-weight: bold; }
     .return-row, .return-row td { color: #c00000; }

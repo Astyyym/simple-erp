@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import desktop_app as desk
+from pdf_test_utils import assert_a4_portrait_pdf
 from erp import create_app
 from erp.db import init_db
 from erp.services.accounting import create_customer, create_order_from_typed_rows
@@ -93,6 +94,7 @@ def test_browser_pdf_sources_still_return_real_pdf():
         assert response.status_code == 200, path
         assert response.mimetype == "application/pdf", path
         assert response.data.startswith(b"%PDF"), path
+        assert_a4_portrait_pdf(response.data)
 
 
 def test_settings_page_exposes_html_and_pdf_preview_entries(monkeypatch):

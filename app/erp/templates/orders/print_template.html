@@ -3,11 +3,7 @@
 <head>
   <meta charset="utf-8">
   <style>
-    /*
-      标准 A4 横向 PDF：297mm × 210mm。
-      实体二联纸单据区域固定在页面上方居中：241mm × 140mm，241mm 长边先进。
-      左右各留 28mm、下方留白，避免驱动把特殊小尺寸 PDF 再次居中。
-    */
+    /* 销售/退货单统一使用 A4 竖版；内容按竖版页面重新排版，不再沿用旧 241×140mm 版心。 */
     @page {
       size: {{config.order_pdf_page_width_mm}}mm {{config.order_pdf_page_height_mm}}mm;
       margin: 0;
@@ -21,22 +17,22 @@
     .page {
       box-sizing: border-box;
       width: {{config.order_pdf_page_width_mm}}mm;
-      height: {{config.order_pdf_page_height_mm}}mm;
+      min-height: {{config.order_pdf_page_height_mm}}mm;
       position: relative;
-      overflow: hidden;
+      padding: 12mm;
+      overflow: visible;
       transform: translate({{config.print_offset_x_mm}}mm, {{config.print_offset_y_mm}}mm) scale({{config.print_scale}});
       transform-origin: top left;
     }
-    /* 固定对称版心，避免 padding + 表格百分比把右边挤出页 */
+    /* A4 竖版可打印内容宽度：210mm - 左右各 12mm = 186mm。 */
     .sheet {
       box-sizing: border-box;
-      position: absolute;
-      left: 28mm;
-      top: 0;
-      width: 241mm;
-      height: 140mm;
-      padding: 6mm 7.3mm;
-      overflow: hidden;
+      position: relative;
+      width: 100%;
+      max-width: 186mm;
+      margin: 0 auto;
+      padding: 0;
+      overflow: visible;
     }
     .header {
       margin: 0 0 2mm 0;
@@ -69,14 +65,17 @@
     .meta span:nth-child(1) { text-align: left; }
     .meta span:nth-child(2) { text-align: center; }
     .meta span:nth-child(3) { text-align: right; }
+    .meta span { overflow-wrap: anywhere; }
     table.items {
-      width: 226.4mm;
-      max-width: 226.4mm;
+      width: 100%;
+      max-width: 100%;
       border-collapse: collapse;
       font-size: 11px;
       table-layout: fixed;
       margin: 0;
     }
+    table.items thead { display: table-header-group; }
+    table.items tr { break-inside: avoid; page-break-inside: avoid; }
     table.items td, table.items th {
       border: 1px solid #333;
       padding: 0.8mm 0.8mm;
@@ -153,17 +152,20 @@
 
       <table class="items">
         <colgroup>
-          <!-- 固定列宽合计 201mm；表格余下 0.3mm 由 WeasyPrint 稳定分配 -->
-          <col style="width:12mm">
-          <col style="width:92mm">
-          <col style="width:18mm">
-          <col style="width:28mm">
-          <col style="width:36mm">
-          <col style="width:40mm">
+          <!-- A4 竖版：序号、名称规格、单位、数量、单价、小计，列宽合计 100%。 -->
+          <col style="width:8%">
+          <col style="width:38%">
+          <col style="width:8%">
+          <col style="width:12%">
+          <col style="width:16%">
+          <col style="width:18%">
         </colgroup>
+        <thead>
         <tr>
           <th>序号</th><th>名称规格</th><th>单位</th><th>数量</th><th>单价</th><th>小计</th>
         </tr>
+        </thead>
+        <tbody>
         {% for item in items %}
         <tr>
           <td>{{loop.index}}</td>
@@ -178,6 +180,7 @@
           <td colspan="5" style="text-align:right">合计</td>
           <td>¥{{cents_to_yuan(order.total_amount_cents)}}</td>
         </tr>
+        </tbody>
       </table>
 
       <div class="bottom">

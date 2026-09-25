@@ -21,13 +21,12 @@ CONFIG_DEFAULTS: dict[str, Any] = {
     "print_offset_x_mm": 0,
     "print_offset_y_mm": 0,
     "print_scale": 1.0,
-    # 一联二联连续纸撕开后：241×140；两联未撕约 280 高，禁止当单页高度
-    "printer_paper_width_mm": 241,
-    "printer_paper_height_mm": 140,
-    # Nantian PR2 Plus / NantianPR-LQ 仅公开 A4；销售单使用标准 A4 横向 PDF。
-    # 实体纸单据区域为页面上方居中的 241×140mm，避免驱动对特殊逻辑页再次居中。
-    "order_pdf_page_width_mm": 297,
-    "order_pdf_page_height_mm": 210,
+    # 账款汇总表 PDF 默认使用标准 A4 竖版页面。
+    "printer_paper_width_mm": 210,
+    "printer_paper_height_mm": 297,
+    # 销售/退货单及其设置页样张默认使用 A4 竖版 PDF。
+    "order_pdf_page_width_mm": 210,
+    "order_pdf_page_height_mm": 297,
     "local_access_password_enabled": False,
     "local_access_password_hash": "",
     "local_access_username": "",
