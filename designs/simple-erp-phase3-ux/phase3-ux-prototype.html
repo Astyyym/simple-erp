@@ -1,0 +1,951 @@
+<!doctype html>
+<html lang="zh-CN" data-ui-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="design_doc_mode" content="interactive-prototype">
+  <title>简单ERP · Phase 3 交互原型</title>
+  <style>
+    /*
+      Context: extend the existing ERP's compact blue/teal desktop UI and retain its
+      order, status, pricing, and purchase-statistics semantics. The user confirmed
+      server-side pagination at 50 rows per page; filters stay applied, statistics
+      remain independent of the current page, and bulk selection is page-scoped.
+      Bootstrap loading is intentionally unchanged in this phase; offline reliability
+      has not been verified. Every business-looking value below is synthetic demo data.
+    */
+    :root {
+      color-scheme: light;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-soft: #eff6ff;
+      --ink: #172033;
+      --muted: #667085;
+      --border: #dfe3ea;
+      --border-strong: #c8ced8;
+      --bg: #f3f5f8;
+      --surface: #fff;
+      --surface-soft: #f8fafc;
+      --sidebar: #012121;
+      --sidebar-hover: #0a3535;
+      --success: #17803d;
+      --danger: #c73535;
+      --warning: #9a6700;
+      --glass: rgba(255,255,255,.68);
+      --glass-strong: rgba(255,255,255,.88);
+      --glass-border: rgba(255,255,255,.72);
+      --shadow: 0 1px 2px rgba(16,24,40,.05), 0 12px 30px rgba(16,24,40,.08);
+      --wash: linear-gradient(165deg,#d9e6f7 0%,#eef2f8 38%,#e4ebf5 100%);
+      --mesh: radial-gradient(980px 480px at 10% -10%,rgba(37,99,235,.12),transparent 58%),radial-gradient(760px 400px at 92% 6%,rgba(14,116,144,.07),transparent 52%);
+      --radius: 8px;
+      --heat-0: #edf1f5;
+      --heat-1: #c9e3d3;
+      --heat-2: #8fcca6;
+      --heat-3: #4aa56d;
+      --heat-4: #207746;
+    }
+    html[data-ui-theme="dark"] {
+      color-scheme: dark;
+      --primary: #3b82f6;
+      --primary-hover: #60a5fa;
+      --primary-soft: #1e293b;
+      --ink: #e8eef9;
+      --muted: #9aa8c0;
+      --border: #2b3648;
+      --border-strong: #3d4b63;
+      --bg: #0f141d;
+      --surface: #171e2b;
+      --surface-soft: #1c2535;
+      --success: #34d399;
+      --danger: #f87171;
+      --warning: #fbbf24;
+      --glass: rgba(23,30,43,.78);
+      --glass-strong: rgba(23,30,43,.92);
+      --glass-border: rgba(148,163,184,.2);
+      --shadow: 0 1px 2px rgba(0,0,0,.35),0 16px 36px rgba(0,0,0,.3);
+      --wash: linear-gradient(165deg,#0a0f18 0%,#101826 46%,#0d1522 100%);
+      --mesh: radial-gradient(980px 480px at 10% -10%,rgba(59,130,246,.15),transparent 58%),radial-gradient(760px 400px at 92% 6%,rgba(34,211,238,.06),transparent 52%);
+      --heat-0: #202b3b;
+      --heat-1: #264b3a;
+      --heat-2: #28704a;
+      --heat-3: #33915b;
+      --heat-4: #57b878;
+    }
+    @media (prefers-color-scheme: dark) {
+      html[data-ui-theme="system"] {
+        color-scheme: dark;
+        --primary: #3b82f6; --primary-hover: #60a5fa; --primary-soft: #1e293b;
+        --ink: #e8eef9; --muted: #9aa8c0; --border: #2b3648; --border-strong: #3d4b63;
+        --bg: #0f141d; --surface: #171e2b; --surface-soft: #1c2535;
+        --success: #34d399; --danger: #f87171; --warning: #fbbf24;
+        --glass: rgba(23,30,43,.78); --glass-strong: rgba(23,30,43,.92);
+        --glass-border: rgba(148,163,184,.2); --shadow: 0 1px 2px rgba(0,0,0,.35),0 16px 36px rgba(0,0,0,.3);
+        --wash: linear-gradient(165deg,#0a0f18 0%,#101826 46%,#0d1522 100%);
+        --mesh: radial-gradient(980px 480px at 10% -10%,rgba(59,130,246,.15),transparent 58%),radial-gradient(760px 400px at 92% 6%,rgba(34,211,238,.06),transparent 52%);
+        --heat-0: #202b3b; --heat-1: #264b3a; --heat-2: #28704a; --heat-3: #33915b; --heat-4: #57b878;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      min-width: 320px;
+      min-height: 100vh;
+      margin: 0;
+      color: var(--ink);
+      background: var(--wash),var(--bg);
+      font: 14px/1.5 "Microsoft YaHei UI","Segoe UI",system-ui,-apple-system,sans-serif;
+    }
+    button,input,select { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible,input:focus-visible,select:focus-visible {
+      outline: 3px solid rgba(37,99,235,.3);
+      outline-offset: 2px;
+    }
+    .prototype-toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      display: flex;
+      min-height: 58px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 8px 18px;
+      color: var(--ink);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      box-shadow: 0 2px 10px rgba(16,24,40,.05);
+    }
+    .toolbar-intro { display:flex; min-width:0; flex-wrap:wrap; align-items:baseline; gap:8px 12px; }
+    .toolbar-intro strong { font-size:14px; }
+    .toolbar-intro span { color:var(--muted); font-size:12px; }
+    .toolbar-controls { display:flex; flex:0 0 auto; flex-wrap:wrap; align-items:center; gap:10px; }
+    .toolbar-field { display:flex; align-items:center; gap:6px; color:var(--muted); font-size:12px; }
+    .toolbar-field select { min-height:32px; padding:4px 28px 4px 8px; color:var(--ink); background:var(--surface); border:1px solid var(--border-strong); border-radius:5px; }
+    .preview-frame {
+      width:min(1440px,calc(100vw - 28px));
+      height:calc(100vh - 72px);
+      min-height:720px;
+      margin:14px auto;
+      overflow:hidden;
+      background:var(--bg);
+      border:1px solid var(--border);
+      border-radius:10px;
+      box-shadow:var(--shadow);
+      transition:width .18s ease;
+    }
+    .preview-frame[data-viewport="narrow"] { width:min(760px,calc(100vw - 28px)); }
+    .preview-frame[data-viewport="compact"] { width:min(390px,calc(100vw - 28px)); }
+    .app-shell { position:relative; display:flex; width:100%; height:100%; min-height:0; overflow:hidden; }
+    .sidebar {
+      position:relative;
+      z-index:2;
+      display:flex;
+      width:220px;
+      flex:0 0 220px;
+      flex-direction:column;
+      padding:0 12px 16px;
+      overflow:auto;
+      color:#fff;
+      background:var(--sidebar);
+      border-right:1px solid rgba(255,255,255,.12);
+      box-shadow:4px 0 24px rgba(0,0,0,.16);
+    }
+    .brand { display:flex; min-height:70px; align-items:center; gap:10px; padding:10px; border-bottom:1px solid rgba(255,255,255,.1); }
+    .brand-mark { display:grid; width:34px; height:34px; flex:0 0 auto; place-items:center; color:#fff; background:var(--primary); border-radius:7px; font-weight:700; }
+    .brand-name { font-size:14px; font-weight:650; }
+    .brand-subtitle { margin-top:1px; color:#aeb8ca; font-size:10px; letter-spacing:.08em; }
+    .nav-label { margin:14px 4px 6px; padding:7px 10px; color:#dbe7ff; background:rgba(36,50,74,.62); border:1px solid rgba(91,141,239,.35); border-radius:6px; box-shadow:inset 3px 0 #5b8def; font-size:11px; font-weight:650; letter-spacing:.04em; }
+    .nav-item { display:flex; width:100%; min-height:40px; align-items:center; gap:9px; margin:2px 0; padding:8px 12px; color:#cfd6e3; background:transparent; border:0; border-radius:7px; text-align:left; font-size:13px; }
+    .nav-item:hover { color:#fff; background:var(--sidebar-hover); }
+    .nav-item.active { color:#fff; background:var(--primary); font-weight:650; }
+    .nav-item.sub.active { color:#fff; background:rgba(37,99,235,.2); box-shadow:inset 2px 0 var(--primary); }
+    .nav-item.sub { min-height:34px; margin-left:10px; padding-left:20px; color:#aeb8ca; font-size:12px; }
+    .version { margin-top:auto; padding:12px; color:#8290a8; border-top:1px solid rgba(255,255,255,.08); font-size:10px; }
+    .content { position:relative; display:flex; min-width:0; flex:1; flex-direction:column; overflow:hidden; }
+    .content::before { position:absolute; inset:0; z-index:0; background:var(--mesh); content:""; pointer-events:none; }
+    .topbar { position:relative; z-index:1; display:flex; min-height:58px; flex:0 0 auto; align-items:center; justify-content:space-between; gap:14px; padding:0 26px; background:var(--glass); border-bottom:1px solid var(--glass-border); box-shadow:0 8px 22px rgba(16,24,40,.05); backdrop-filter:blur(14px) saturate(1.2); }
+    .shop-name { color:var(--muted); font-size:12px; }
+    .topbar-right { display:flex; align-items:center; gap:14px; }
+    .connected { display:flex; align-items:center; gap:7px; color:var(--success); font-size:11px; }
+    .connected::before { width:7px; height:7px; border-radius:50%; background:#22c55e; box-shadow:0 0 0 3px rgba(34,197,94,.16); content:""; }
+    .page-body { position:relative; z-index:1; min-height:0; flex:1; overflow:auto; padding:22px 26px 38px; }
+    .screen { display:none; width:min(1280px,100%); margin:0 auto; }
+    .screen.active { display:block; }
+    .page-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px; }
+    h1,h2,h3,p { margin-top:0; }
+    h1 { margin-bottom:4px; font-size:24px; font-weight:680; letter-spacing:-.025em; }
+    h2 { margin-bottom:0; font-size:16px; font-weight:670; }
+    h3 { margin-bottom:0; font-size:14px; font-weight:670; }
+    .subtitle { margin:0; color:var(--muted); font-size:12px; }
+    .prototype-tag { flex:0 0 auto; padding:4px 8px; color:var(--muted); background:var(--glass-strong); border:1px solid var(--border); border-radius:5px; font-size:10px; }
+    .surface { background:var(--glass); border:1px solid var(--glass-border); border-radius:var(--radius); box-shadow:var(--shadow); backdrop-filter:blur(12px) saturate(1.12); }
+    .filters { display:grid; grid-template-columns:minmax(150px,1.2fr) minmax(130px,.8fr) minmax(130px,.8fr) minmax(130px,.8fr) auto auto; align-items:end; gap:10px; padding:13px; }
+    .field { position:relative; min-width:0; }
+    .field label { display:block; margin-bottom:5px; color:var(--muted); font-size:11px; font-weight:650; }
+    .control { display:block; width:100%; min-height:38px; padding:7px 9px; color:var(--ink); background:var(--surface); border:1px solid var(--border-strong); border-radius:6px; font-size:12px; }
+    .btn { display:inline-flex; min-height:35px; align-items:center; justify-content:center; gap:6px; padding:6px 11px; color:var(--ink); background:var(--glass-strong); border:1px solid var(--border-strong); border-radius:6px; font-size:12px; font-weight:650; white-space:nowrap; }
+    .btn:hover { background:var(--surface-soft); border-color:#98a2b3; }
+    .btn.primary { color:#fff; background:var(--primary); border-color:var(--primary); }
+    .btn.primary:hover { background:var(--primary-hover); }
+    .btn.danger { color:var(--danger); }
+    .btn.small { min-height:28px; padding:4px 8px; font-size:11px; }
+    .dashboard { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(280px,.85fr); gap:12px; margin-top:12px; }
+    .dashboard-panel { min-width:0; padding:14px; }
+    .section-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px; }
+    .section-head p { margin:3px 0 0; color:var(--muted); font-size:10px; }
+    .calendar-title { color:var(--muted); font-size:11px; font-weight:650; white-space:nowrap; }
+    .weekday-row,.heat-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; }
+    .weekday-row { margin-bottom:4px; }
+    .weekday { display:grid; min-height:20px; place-items:center; color:var(--muted); font-size:9px; font-weight:650; }
+    .heat-cell,.heat-empty { display:grid; min-width:0; aspect-ratio:1; place-items:center; }
+    .heat-cell { padding:0; color:var(--ink); background:var(--heat-0); border:1px solid color-mix(in srgb,var(--border) 72%,transparent); border-radius:4px; font-size:10px; font-variant-numeric:tabular-nums; }
+    .heat-cell.level-1 { background:var(--heat-1); }
+    .heat-cell.level-2 { background:var(--heat-2); color:#123320; }
+    .heat-cell.level-3 { background:var(--heat-3); color:#fff; }
+    .heat-cell.level-4 { background:var(--heat-4); color:#fff; }
+    html[data-ui-theme="dark"] .heat-cell.level-2 { color:#fff; }
+    @media (prefers-color-scheme:dark) { html[data-ui-theme="system"] .heat-cell.level-2 { color:#fff; } }
+    .heat-cell:hover { outline:2px solid var(--primary); outline-offset:1px; }
+    .heat-foot { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin-top:9px; color:var(--muted); font-size:10px; }
+    .heat-legend { display:flex; align-items:center; gap:4px; }
+    .heat-legend i { width:12px; height:12px; border-radius:3px; background:var(--heat-0); }
+    .heat-legend i:nth-of-type(2) { background:var(--heat-1); }
+    .heat-legend i:nth-of-type(3) { background:var(--heat-2); }
+    .heat-legend i:nth-of-type(4) { background:var(--heat-3); }
+    .heat-legend i:nth-of-type(5) { background:var(--heat-4); }
+    .ranking-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+    .ranking-head select { width:auto; min-height:29px; padding:3px 24px 3px 7px; font-size:11px; }
+    #rankChart { display:block; width:100%; height:155px; }
+    .rank-legend { display:flex; flex-wrap:wrap; gap:12px; margin:1px 0 8px; color:var(--muted); font-size:10px; }
+    .legend-item { display:flex; align-items:center; gap:5px; }
+    .legend-dot { width:8px; height:8px; border-radius:50%; background:var(--primary); }
+    .legend-dot.money { background:var(--danger); }
+    .rank-table { width:100%; border-collapse:collapse; color:var(--ink); font-size:10px; }
+    .rank-table th,.rank-table td { padding:5px 6px; border-bottom:1px solid var(--border); text-align:left; }
+    .rank-table th { color:var(--muted); font-weight:650; }
+    .list-heading { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; margin:19px 0 9px; }
+    .list-heading p { margin:3px 0 0; color:var(--muted); font-size:10px; }
+    .list-actions { display:flex; flex-wrap:wrap; align-items:center; gap:7px; }
+    .result-meta { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; color:var(--muted); font-size:11px; }
+    .range-count strong { color:var(--ink); }
+    .table-panel { overflow:hidden; }
+    .table-wrap { overflow:auto; }
+    .orders-table { width:100%; min-width:760px; border-collapse:collapse; color:var(--ink); font-variant-numeric:tabular-nums; }
+    .orders-table th,.orders-table td { padding:9px 10px; border-bottom:1px solid var(--border); text-align:left; vertical-align:middle; }
+    .orders-table th { position:sticky; top:0; z-index:1; height:39px; color:var(--muted); background:var(--glass-strong); font-size:10px; font-weight:680; white-space:nowrap; }
+    .orders-table td { font-size:11px; }
+    .orders-table tbody tr:hover td { background:rgba(37,99,235,.045); }
+    .orders-table tbody tr.return-row td { background:rgba(199,53,53,.035); }
+    .orders-table tbody tr.void-row td { color:var(--muted); opacity:.78; }
+    .order-no { color:var(--muted); font-family:Consolas,"Courier New",monospace; font-size:10px!important; white-space:nowrap; }
+    .amount { font-weight:650; white-space:nowrap; }
+    .amount.negative { color:var(--danger); }
+    .type-pill,.status-pill { display:inline-flex; min-height:21px; align-items:center; padding:2px 7px; border:1px solid var(--border); border-radius:4px; font-size:9px; font-weight:650; white-space:nowrap; }
+    .type-sale { color:#1d4ed8; background:rgba(37,99,235,.07); border-color:rgba(37,99,235,.18); }
+    .type-return { color:var(--danger); background:rgba(199,53,53,.07); border-color:rgba(199,53,53,.18); }
+    .status-draft { color:var(--muted); background:var(--surface-soft); }
+    .status-saved { color:#19703b; background:rgba(23,128,61,.07); border-color:rgba(23,128,61,.17); }
+    .status-printed { color:#1d4ed8; background:rgba(37,99,235,.07); border-color:rgba(37,99,235,.18); }
+    .status-void { color:var(--muted); background:rgba(127,127,127,.08); }
+    .row-actions { display:flex; gap:5px; white-space:nowrap; }
+    .pagination-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border-top:1px solid var(--border); }
+    .pagination-info { color:var(--muted); font-size:10px; }
+    .pagination { display:flex; flex-wrap:wrap; align-items:center; gap:4px; }
+    .page-button { display:inline-flex; min-width:29px; min-height:29px; align-items:center; justify-content:center; padding:3px 7px; color:var(--ink); background:var(--surface); border:1px solid var(--border); border-radius:5px; font-size:10px; }
+    .page-button:hover:not(:disabled) { border-color:var(--primary); }
+    .page-button[aria-current="page"] { color:#fff; background:var(--primary); border-color:var(--primary); }
+    .page-button:disabled { cursor:not-allowed; opacity:.45; }
+    .empty-state { padding:22px; color:var(--muted); text-align:center; }
+    .form-meta { display:grid; grid-template-columns:minmax(220px,1.3fr) minmax(155px,.8fr) minmax(180px,1fr) minmax(145px,.8fr); gap:12px; padding:14px; }
+    .form-hint { margin:8px 0 0; color:var(--muted); font-size:10px; }
+    .combobox-wrap { position:relative; }
+    .suggest-list { position:absolute; top:calc(100% + 3px); left:0; right:0; z-index:8; max-height:220px; overflow:auto; padding:4px; background:var(--surface); border:1px solid var(--border-strong); border-radius:6px; box-shadow:0 12px 28px rgba(16,24,40,.16); }
+    .suggest-list[hidden] { display:none; }
+    .suggest-option { display:flex; width:100%; min-height:38px; flex-direction:column; justify-content:center; gap:1px; padding:5px 8px; color:var(--ink); background:transparent; border:0; border-radius:4px; text-align:left; font-size:11px; }
+    .suggest-option small { color:var(--muted); font-size:9px; }
+    .suggest-option:hover,.suggest-option[aria-selected="true"] { background:var(--primary-soft); }
+    .order-type-switch { display:inline-flex; gap:4px; padding:3px; background:var(--surface-soft); border:1px solid var(--border); border-radius:7px; }
+    .order-type-button { min-height:30px; padding:4px 10px; color:var(--muted); background:transparent; border:0; border-radius:5px; font-size:11px; }
+    .order-type-button[aria-pressed="true"] { color:#fff; background:var(--primary); font-weight:650; }
+    .items-panel { margin-top:14px; overflow:hidden; }
+    .items-panel-head { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; padding:13px 14px; border-bottom:1px solid var(--border); }
+    .item-table-wrap { overflow:visible; }
+    .item-table { width:100%; min-width:770px; border-collapse:collapse; }
+    .item-table th,.item-table td { padding:6px; border-bottom:1px solid var(--border); text-align:left; vertical-align:middle; }
+    .item-table th { color:var(--muted); background:var(--glass-strong); font-size:10px; font-weight:650; }
+    .item-table td { font-size:11px; }
+    .item-table input,.item-table select { min-height:34px; padding:5px 7px; font-size:11px; }
+    .unit-and-custom { display:grid; grid-template-columns:70px minmax(62px,1fr); gap:4px; }
+    .customer-price-note { display:flex; align-items:center; gap:5px; margin-top:3px; color:var(--primary); font-size:9px; }
+    .customer-price-note[hidden] { display:none; }
+    .customer-price-note input { width:13px; min-height:13px; }
+    .line-total { font-weight:650; white-space:nowrap; }
+    .line-total.negative { color:var(--danger); }
+    .items-summary { display:flex; align-items:center; justify-content:flex-end; gap:14px; padding:11px 14px; background:var(--glass-strong); font-size:11px; }
+    .items-summary strong { font-size:18px; font-variant-numeric:tabular-nums; }
+    .items-summary strong.negative { color:var(--danger); }
+    .form-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; margin-top:13px; }
+    .inline-hint { margin:10px 0 0; color:var(--muted); font-size:10px; }
+    .notice { position:fixed; right:18px; bottom:18px; z-index:50; max-width:min(390px,calc(100vw - 32px)); padding:11px 14px; color:var(--ink); background:var(--surface); border:1px solid var(--border); border-radius:7px; box-shadow:var(--shadow); font-size:11px; }
+    .notice[hidden] { display:none; }
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+    @media(max-width:1050px) {
+      .sidebar { width:190px; flex-basis:190px; }
+      .filters { grid-template-columns:repeat(3,minmax(120px,1fr)); }
+      .dashboard { grid-template-columns:1fr; }
+      .ranking-panel { max-width:none; }
+      .form-meta { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    }
+    @media(max-width:760px) {
+      body { min-width:320px; }
+      .prototype-toolbar { align-items:flex-start; flex-direction:column; }
+      .toolbar-controls { width:100%; justify-content:flex-start; }
+      .preview-frame { width:calc(100vw - 16px); height:auto; min-height:calc(100vh - 142px); margin:8px auto; overflow:visible; }
+      .app-shell { min-height:calc(100vh - 142px); height:auto; overflow:visible; }
+      .sidebar { display:none; }
+      .content { min-height:calc(100vh - 142px); overflow:visible; }
+      .topbar { min-height:50px; padding:0 13px; }
+      .page-body { overflow:visible; padding:15px 12px 24px; }
+      .page-heading { align-items:flex-start; }
+      h1 { font-size:20px; }
+      .filters { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .filters .field:first-child { grid-column:1/-1; }
+      .filters .btn { width:100%; }
+      .list-heading { align-items:flex-start; flex-direction:column; }
+      .list-actions { width:100%; }
+      .pagination-row { align-items:flex-start; flex-direction:column; }
+      .pagination { max-width:100%; }
+      .form-meta { grid-template-columns:1fr 1fr; }
+      .items-panel-head { align-items:flex-start; flex-direction:column; }
+      .item-table-wrap { overflow:auto; }
+    }
+    .preview-frame[data-viewport="narrow"] .sidebar { width:172px; flex-basis:172px; }
+    .preview-frame[data-viewport="narrow"] .filters { grid-template-columns:repeat(3,minmax(110px,1fr)); }
+    .preview-frame[data-viewport="narrow"] .dashboard { grid-template-columns:1fr; }
+    .preview-frame[data-viewport="narrow"] .form-meta { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .preview-frame[data-viewport="compact"] .sidebar { display:none; }
+    .preview-frame[data-viewport="compact"] .app-shell { height:auto; min-height:650px; overflow:visible; }
+    .preview-frame[data-viewport="compact"] .content { min-height:650px; overflow:visible; }
+    .preview-frame[data-viewport="compact"] .page-body { overflow:visible; padding:13px 10px 22px; }
+    .preview-frame[data-viewport="compact"] .topbar { min-height:48px; padding:0 10px; }
+    .preview-frame[data-viewport="compact"] .connected { font-size:0; }
+    .preview-frame[data-viewport="compact"] .filters { grid-template-columns:1fr; }
+    .preview-frame[data-viewport="compact"] .filters .field:first-child { grid-column:auto; }
+    .preview-frame[data-viewport="compact"] .form-meta { grid-template-columns:1fr; }
+    .preview-frame[data-viewport="compact"] .dashboard { grid-template-columns:1fr; }
+    .preview-frame[data-viewport="compact"] .section-head { flex-direction:column; }
+    .preview-frame[data-viewport="compact"] .page-heading { flex-direction:column; }
+    .preview-frame[data-viewport="compact"] .items-panel-head { flex-direction:column; }
+    .preview-frame[data-viewport="compact"] .table-wrap { overflow:auto; }
+    @media(prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition:none!important; } }
+  </style>
+</head>
+<body>
+  <header class="prototype-toolbar" aria-label="原型预览控制">
+    <div class="toolbar-intro">
+      <strong>Phase 3 · 查询与高频录入</strong>
+      <span>交互原型 · 演示数据 · 未连接业务库</span>
+    </div>
+    <div class="toolbar-controls">
+      <label class="toolbar-field">主题
+        <select id="themeSelect" aria-label="原型主题">
+          <option value="light">浅色</option>
+          <option value="dark">深色</option>
+          <option value="system">跟随系统</option>
+        </select>
+      </label>
+      <label class="toolbar-field">视口
+        <select id="viewportSelect" aria-label="原型视口">
+          <option value="wide">宽屏</option>
+          <option value="narrow">窄屏</option>
+          <option value="compact">手机宽度</option>
+        </select>
+      </label>
+    </div>
+  </header>
+
+  <div class="preview-frame" id="previewFrame" data-viewport="wide">
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">简</div>
+          <div><div class="brand-name">消防器材门店</div><div class="brand-subtitle">BUSINESS MANAGEMENT</div></div>
+        </div>
+        <div class="nav-label">业务中心</div>
+        <button class="nav-item active" type="button" data-screen="orders" data-nav-kind="primary" aria-current="page">单据管理</button>
+        <button class="nav-item" type="button" data-screen="new-order" data-nav-kind="primary">开单</button>
+        <button class="nav-item sub" type="button" data-screen="new-order" data-nav-kind="sub" data-order-type="sale" aria-pressed="false">销售单</button>
+        <button class="nav-item sub" type="button" data-screen="new-order" data-nav-kind="sub" data-order-type="return" aria-pressed="false">退货单</button>
+        <div class="nav-label">基础资料</div>
+        <button class="nav-item" type="button" data-notice="商品管理不在本次 Phase 3 原型范围内。">商品管理</button>
+        <button class="nav-item" type="button" data-notice="客户管理不在本次 Phase 3 原型范围内。">客户管理</button>
+        <div class="nav-label">系统</div>
+        <button class="nav-item" type="button" data-notice="主题与视口预览请使用页面最上方的原型控制。">设置</button>
+        <div class="version">本地桌面版 · 交互原型</div>
+      </aside>
+
+      <main class="content">
+        <header class="topbar">
+          <div class="shop-name">消防器材门店 · <span id="topbarPageName">单据管理</span></div>
+          <div class="topbar-right"><div class="connected">演示数据 · 未连接业务库</div></div>
+        </header>
+        <div class="page-body">
+          <section class="screen active" id="ordersScreen" data-screen-label="单据管理与采购统计">
+            <div class="page-heading">
+              <div><h1>单据管理</h1><p class="subtitle">按客户、日期和类型筛选；分页只影响列表，不改变同一筛选范围内的采购统计。</p></div>
+              <span class="prototype-tag">原型预览 · 虚构数据</span>
+            </div>
+
+            <form class="surface filters" id="filterForm" autocomplete="off">
+              <div class="field">
+                <label for="customerFilter">客户名称</label>
+                <input class="control" id="customerFilter" list="customerFilterList" placeholder="输入客户名称">
+                <datalist id="customerFilterList"><option value="演示客户甲"></option><option value="演示客户乙"></option><option value="演示客户丙"></option><option value="演示客户丁"></option></datalist>
+              </div>
+              <div class="field"><label for="filterStart">开始日期</label><input class="control" id="filterStart" type="date" value="2026-06-01"></div>
+              <div class="field"><label for="filterEnd">结束日期</label><input class="control" id="filterEnd" type="date" value="2026-06-30"></div>
+              <div class="field"><label for="orderTypeFilter">单据类型</label><select class="control" id="orderTypeFilter"><option value="">全部</option><option value="sale">销售单</option><option value="return">退货单</option></select></div>
+              <button class="btn primary" type="submit">筛选</button>
+              <button class="btn" id="clearFilter" type="button">清除筛选</button>
+            </form>
+
+            <section class="dashboard" aria-label="采购统计">
+              <article class="surface dashboard-panel">
+                <div class="section-head">
+                  <div><h2>采购热力图</h2><p>仅统计有效销售单；列表翻页不会改变本统计范围。</p></div>
+                  <span class="calendar-title">2026年6月 · 示例数据</span>
+                </div>
+                <div class="weekday-row" aria-hidden="true"><span class="weekday">一</span><span class="weekday">二</span><span class="weekday">三</span><span class="weekday">四</span><span class="weekday">五</span><span class="weekday">六</span><span class="weekday">日</span></div>
+                <div class="heat-grid" id="heatGrid" role="group" aria-label="2026年6月逐日采购热力图"></div>
+                <div class="heat-foot">
+                  <span id="heatSelection" aria-live="polite">单击日期可查看当天单据。</span>
+                  <span class="heat-legend" aria-label="金额由低到高"><span>少</span><i></i><i></i><i></i><i></i><i></i><span>多</span></span>
+                </div>
+              </article>
+
+              <article class="surface dashboard-panel ranking-panel">
+                <div class="ranking-head"><h2>商品排行</h2><label class="toolbar-field">显示<select class="control" id="rankingLimit" aria-label="商品排行数量"><option value="5">前5</option><option value="10">前10</option></select></label></div>
+                <div class="rank-legend"><span class="legend-item"><i class="legend-dot"></i>累计数量</span><span class="legend-item"><i class="legend-dot money"></i>累计金额</span></div>
+                <canvas id="rankChart" aria-label="商品累计数量与金额排行图"></canvas>
+                <table class="rank-table"><thead><tr><th>排名</th><th>商品</th><th>数量</th><th>金额</th></tr></thead><tbody id="rankRows"></tbody></table>
+              </article>
+            </section>
+
+            <div class="list-heading">
+              <div><h2>单据列表</h2><p>状态使用中文业务文案；作废与退货继续保留各自语义色。</p></div>
+              <div class="list-actions"><span class="pagination-info" id="selectedCount">未选择记录</span><button class="btn danger" id="bulkDelete" type="button">删除选中</button><button class="btn primary" type="button" data-screen="new-order">新建订单</button></div>
+            </div>
+            <section class="surface table-panel" aria-label="订单列表和分页">
+              <div class="result-meta"><span class="range-count" id="rangeCount" aria-live="polite"></span><span>每页 50 条</span></div>
+              <div class="table-wrap">
+                <table class="orders-table">
+                  <caption class="sr-only">单据列表；批量选择仅作用于当前页</caption>
+                  <thead><tr><th><input type="checkbox" id="selectPage" aria-label="选择当前页所有记录"></th><th>单号</th><th>客户</th><th>日期</th><th>类型</th><th>金额</th><th>状态</th><th>操作</th></tr></thead>
+                  <tbody id="orderRows"></tbody>
+                </table>
+                <div class="empty-state" id="emptyOrders" hidden>没有符合筛选条件的单据。调整客户、日期或类型后再试。</div>
+              </div>
+              <div class="pagination-row">
+                <span class="pagination-info" id="pageInfo" aria-live="polite"></span>
+                <nav class="pagination" id="pagination" aria-label="单据列表分页"></nav>
+              </div>
+            </section>
+            <p class="inline-hint">演示数据仅用于预览分页和状态展示，不连接 ERP，也不会执行真实删除。</p>
+          </section>
+
+          <section class="screen" id="newOrderScreen" data-screen-label="开单联想键盘导航">
+            <div class="page-heading">
+              <div><h1 id="formTitle">新建销售单</h1><p class="subtitle">客户和商品建议可用键盘操作，仍使用 ERP 资料与原有取价规则。</p></div>
+              <span class="prototype-tag">原型预览 · 虚构数据</span>
+            </div>
+            <div class="order-type-switch" role="group" aria-label="单据类型">
+              <button class="order-type-button" type="button" data-form-type="sale" aria-pressed="true">销售单</button>
+              <button class="order-type-button" type="button" data-form-type="return" aria-pressed="false">退货单</button>
+            </div>
+            <div class="surface form-meta" style="margin-top:12px">
+              <div class="field combobox-wrap">
+                <label for="customerName">客户名称</label>
+                <input class="control" id="customerName" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="customerSuggestions" aria-label="客户名称，可用上下箭头选择建议" placeholder="输入一个字即可匹配客户" autocomplete="off">
+                <input type="hidden" id="customerId">
+                <div class="suggest-list" id="customerSuggestions" role="listbox" aria-label="客户建议" hidden></div>
+              </div>
+              <div class="field"><label for="orderDate">单据日期</label><input class="control" id="orderDate" type="date" value="2026-06-26"></div>
+              <div class="field"><label for="orderNumber">单号</label><input class="control" id="orderNumber" value="MD202606260001" readonly></div>
+              <div class="field"><label for="orderStatus">状态</label><select class="control" id="orderStatus"><option value="saved">正式保存</option><option value="draft">草稿</option></select></div>
+            </div>
+            <p class="form-hint">客户与商品联想：↑ / ↓ 移动，Enter 选择，Esc 收起；Tab 可离开，不会误选第一条。</p>
+
+            <section class="surface items-panel" aria-labelledby="itemsTitle">
+              <div class="items-panel-head"><div><h2 id="itemsTitle">订单明细</h2><p class="form-hint">默认一行；选择商品后保留客户价/常规价和单位规则。</p></div><button class="btn" id="addRow" type="button">新增一行</button></div>
+              <div class="item-table-wrap">
+                <table class="item-table">
+                  <thead><tr><th style="width:44px">序号</th><th>产品名称</th><th style="width:175px">单位</th><th style="width:94px">数量</th><th style="width:134px">单价（元）</th><th style="width:110px">金额（元）</th><th style="width:66px">操作</th></tr></thead>
+                  <tbody id="itemRows"></tbody>
+                </table>
+              </div>
+              <div class="items-summary"><span>合计</span><strong id="grandTotal">¥0.00</strong></div>
+            </section>
+            <div class="field" style="margin-top:12px"><label for="orderNotes">备注</label><textarea class="control" id="orderNotes" rows="2" placeholder="备注"></textarea></div>
+            <div class="form-actions"><button class="btn" id="clearOrder" type="button">一键清空</button><button class="btn primary" id="saveOrder" type="button">保存 / 打印</button></div>
+            <p class="inline-hint">保存、打印仅显示原型提示，不会创建单据或写入数据库。</p>
+          </section>
+        </div>
+      </main>
+    </div>
+  </div>
+  <div class="notice" id="notice" role="status" aria-live="polite" hidden></div>
+
+  <template id="itemRowTemplate">
+    <tr>
+      <td class="row-number"></td>
+      <td class="combobox-wrap">
+        <input class="control product-input" role="combobox" aria-autocomplete="list" aria-expanded="false" placeholder="输入产品名" autocomplete="off">
+        <div class="suggest-list product-suggestions" role="listbox" hidden></div>
+      </td>
+      <td><div class="unit-and-custom"><select class="control unit-select" aria-label="常用单位"><option value="">自定义</option><option>个</option><option>套</option><option>件</option></select><input class="control unit-input" aria-label="单位" placeholder="单位"></div></td>
+      <td><input class="control quantity-input" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0" aria-label="数量"></td>
+      <td><input class="control price-input" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" aria-label="单价"></td>
+      <td><div class="line-total">¥0.00</div><label class="customer-price-note" hidden><input class="regular-price-check" type="checkbox">常规价 <span class="regular-price-text"></span></label></td>
+      <td><button class="btn small danger clear-row" type="button">清空</button></td>
+    </tr>
+  </template>
+
+  <script>
+    const demoCustomers = [
+      { id: "c-demo-01", name: "演示客户甲", phone: "示例 · 138****0101" },
+      { id: "c-demo-02", name: "演示客户乙", phone: "示例 · 138****0102" },
+      { id: "c-demo-03", name: "演示客户丙", phone: "示例 · 138****0103" },
+      { id: "c-demo-04", name: "演示客户丁", phone: "示例 · 138****0104" }
+    ];
+    const demoProducts = [
+      { id: "p-demo-01", name: "消防水带", spec: "DN65 · 示例", unit: "卷", price: 128, customerPrice: 120 },
+      { id: "p-demo-02", name: "室内消火栓", spec: "SN65 · 示例", unit: "个", price: 86, customerPrice: null },
+      { id: "p-demo-03", name: "手提式灭火器", spec: "MFZ/ABC4 · 示例", unit: "具", price: 52, customerPrice: 49 },
+      { id: "p-demo-04", name: "消防应急灯", spec: "双头 · 示例", unit: "套", price: 38, customerPrice: null },
+      { id: "p-demo-05", name: "消防栓箱", spec: "800×650 · 示例", unit: "个", price: 210, customerPrice: null }
+    ];
+    const demoRanking = [
+      { name: "消防水带", quantity: 18, amount: 2160 },
+      { name: "室内消火栓", quantity: 12, amount: 1032 },
+      { name: "灭火器", quantity: 10, amount: 490 },
+      { name: "消防应急灯", quantity: 8, amount: 304 },
+      { name: "消防栓箱", quantity: 4, amount: 840 }
+    ];
+    const orderStatuses = {
+      draft: { label: "草稿", className: "status-draft" },
+      saved: { label: "正式保存", className: "status-saved" },
+      printed: { label: "已打印", className: "status-printed" },
+      void: { label: "已作废", className: "status-void" }
+    };
+    const orderTypeLabels = { sale: "销售单", return: "退货单" };
+    const pageSize = 50;
+    const demoOrders = Array.from({ length: 120 }, (_, index) => {
+      const day = String((index % 28) + 1).padStart(2, "0");
+      const date = `2026-06-${day}`;
+      const type = index % 9 === 4 ? "return" : "sale";
+      const base = 7600 + ((index * 1733) % 82500);
+      const status = index % 31 === 0 ? "void" : index % 19 === 0 ? "printed" : index % 13 === 0 ? "draft" : "saved";
+      return {
+        id: index + 1,
+        orderNo: `MD${date.replaceAll("-", "")}${String((index % 9) + 1).padStart(4, "0")}`,
+        customer: demoCustomers[index % demoCustomers.length].name,
+        date,
+        type,
+        amountCents: type === "return" ? -base : base,
+        status
+      };
+    });
+    let currentPage = 1;
+    let visibleOrders = [];
+    let selectedOrders = new Set();
+    let formOrderType = "sale";
+    let currentScreen = "orders";
+    let rowSequence = 0;
+    let noticeTimer = 0;
+
+    const money = (cents) => `¥${(Math.abs(cents) / 100).toFixed(2)}`;
+    const signedMoney = (cents) => cents < 0 ? `−${money(cents)}` : money(cents);
+    const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[char]);
+
+    function toast(message) {
+      const node = document.getElementById("notice");
+      node.textContent = message;
+      node.hidden = false;
+      window.clearTimeout(noticeTimer);
+      noticeTimer = window.setTimeout(() => { node.hidden = true; }, 3000);
+    }
+
+    function showScreen(name) {
+      currentScreen = name;
+      document.querySelectorAll(".screen").forEach((screen) => screen.classList.toggle("active", screen.id === (name === "orders" ? "ordersScreen" : "newOrderScreen")));
+      document.querySelectorAll(".nav-item[data-screen]").forEach((item) => {
+        const isSub = item.dataset.navKind === "sub";
+        const active = isSub
+          ? name === "new-order" && item.dataset.orderType === formOrderType
+          : item.dataset.screen === name;
+        item.classList.toggle("active", active);
+        if (!isSub && active) item.setAttribute("aria-current", "page"); else item.removeAttribute("aria-current");
+        if (isSub) item.setAttribute("aria-pressed", String(active));
+      });
+      document.getElementById("topbarPageName").textContent = name === "orders" ? "单据管理" : document.getElementById("formTitle").textContent;
+      if (name === "new-order") window.setTimeout(() => document.getElementById("customerName").focus(), 0);
+    }
+
+    document.querySelectorAll("[data-screen]").forEach((button) => button.addEventListener("click", () => {
+      if (button.dataset.orderType) setFormType(button.dataset.orderType);
+      showScreen(button.dataset.screen);
+    }));
+    document.querySelectorAll("[data-notice]").forEach((button) => button.addEventListener("click", () => toast(button.dataset.notice)));
+
+    document.getElementById("themeSelect").addEventListener("change", (event) => {
+      document.documentElement.dataset.uiTheme = event.target.value;
+      window.requestAnimationFrame(drawRankingChart);
+    });
+    document.getElementById("viewportSelect").addEventListener("change", (event) => {
+      document.getElementById("previewFrame").dataset.viewport = event.target.value;
+      window.requestAnimationFrame(drawRankingChart);
+    });
+
+    function filteredOrders() {
+      const customer = document.getElementById("customerFilter").value.trim();
+      const start = document.getElementById("filterStart").value;
+      const end = document.getElementById("filterEnd").value;
+      const type = document.getElementById("orderTypeFilter").value;
+      return demoOrders.filter((order) =>
+        (!customer || order.customer.includes(customer)) &&
+        (!start || order.date >= start) &&
+        (!end || order.date <= end) &&
+        (!type || order.type === type)
+      ).sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+    }
+
+    function renderPager(total) {
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(Math.max(currentPage, 1), totalPages);
+      const nav = document.getElementById("pagination");
+      nav.replaceChildren();
+      const addButton = (label, page, disabled = false, current = false, aria = label) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "page-button";
+        button.textContent = label;
+        button.setAttribute("aria-label", aria);
+        if (current) button.setAttribute("aria-current", "page");
+        button.disabled = disabled;
+        button.addEventListener("click", () => { currentPage = page; selectedOrders.clear(); renderOrders(); });
+        nav.appendChild(button);
+      };
+      addButton("上一页", currentPage - 1, currentPage <= 1, false, "上一页");
+      const first = Math.max(1, Math.min(currentPage - 1, totalPages - 2));
+      const last = Math.min(totalPages, Math.max(3, currentPage + 1));
+      for (let page = first; page <= last; page += 1) addButton(String(page), page, false, page === currentPage, `第 ${page} 页`);
+      addButton("下一页", currentPage + 1, currentPage >= totalPages, false, "下一页");
+    }
+
+    function renderOrders() {
+      const filtered = filteredOrders();
+      const total = filtered.length;
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(currentPage, totalPages);
+      const startIndex = total ? (currentPage - 1) * pageSize : 0;
+      visibleOrders = filtered.slice(startIndex, startIndex + pageSize);
+      const tbody = document.getElementById("orderRows");
+      const empty = document.getElementById("emptyOrders");
+      tbody.innerHTML = visibleOrders.map((order) => {
+        const status = orderStatuses[order.status] || orderStatuses.draft;
+        return `<tr class="${order.type === "return" ? "return-row" : ""} ${order.status === "void" ? "void-row" : ""}">
+          <td><input type="checkbox" data-order-checkbox="${order.id}" aria-label="选择 ${escapeHtml(order.orderNo)}" ${selectedOrders.has(order.id) ? "checked" : ""}></td>
+          <td class="order-no">${escapeHtml(order.orderNo)}</td>
+          <td>${escapeHtml(order.customer)}</td>
+          <td>${escapeHtml(order.date)}</td>
+          <td><span class="type-pill ${order.type === "return" ? "type-return" : "type-sale"}">${orderTypeLabels[order.type]}</span></td>
+          <td class="amount ${order.amountCents < 0 ? "negative" : ""}">${signedMoney(order.amountCents)}</td>
+          <td><span class="status-pill ${status.className}">${status.label}</span></td>
+          <td><div class="row-actions"><button class="btn small" type="button" data-row-action="回看">回看</button><button class="btn small" type="button" data-row-action="打印">打印</button></div></td>
+        </tr>`;
+      }).join("");
+      empty.hidden = total > 0;
+      const rangeStart = total ? startIndex + 1 : 0;
+      const rangeEnd = total ? Math.min(startIndex + visibleOrders.length, total) : 0;
+      document.getElementById("rangeCount").innerHTML = `显示 <strong>${rangeStart}–${rangeEnd}</strong> 条，共 <strong>${total}</strong> 条`;
+      document.getElementById("pageInfo").textContent = total ? `第 ${currentPage} / ${totalPages} 页 · 每页 ${pageSize} 条` : "没有可显示的记录";
+      document.getElementById("selectedCount").textContent = selectedOrders.size ? `已选择 ${selectedOrders.size} 条（仅当前页）` : "未选择记录";
+      const selectPage = document.getElementById("selectPage");
+      selectPage.checked = visibleOrders.length > 0 && visibleOrders.every((order) => selectedOrders.has(order.id));
+      selectPage.indeterminate = visibleOrders.some((order) => selectedOrders.has(order.id)) && !selectPage.checked;
+      renderPager(total);
+    }
+
+    document.getElementById("filterForm").addEventListener("submit", (event) => { event.preventDefault(); currentPage = 1; selectedOrders.clear(); renderOrders(); });
+    document.getElementById("clearFilter").addEventListener("click", () => {
+      document.getElementById("customerFilter").value = "";
+      document.getElementById("filterStart").value = "";
+      document.getElementById("filterEnd").value = "";
+      document.getElementById("orderTypeFilter").value = "";
+      currentPage = 1; selectedOrders.clear(); renderOrders();
+    });
+    document.getElementById("selectPage").addEventListener("change", (event) => {
+      visibleOrders.forEach((order) => event.target.checked ? selectedOrders.add(order.id) : selectedOrders.delete(order.id));
+      renderOrders();
+    });
+    document.getElementById("orderRows").addEventListener("change", (event) => {
+      const checkbox = event.target.closest("[data-order-checkbox]");
+      if (!checkbox) return;
+      const id = Number(checkbox.dataset.orderCheckbox);
+      checkbox.checked ? selectedOrders.add(id) : selectedOrders.delete(id);
+      renderOrders();
+    });
+    document.getElementById("bulkDelete").addEventListener("click", () => {
+      toast(selectedOrders.size ? `原型演示：当前页选中的 ${selectedOrders.size} 条记录不会被实际删除。` : "请先选择当前页的记录。");
+    });
+    document.getElementById("orderRows").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-row-action]");
+      if (button) toast(`${button.dataset.rowAction}仅做原型演示，不会打开或修改真实单据。`);
+    });
+
+    const dailyPurchases = new Map([[2,420],[4,980],[7,360],[9,1750],[13,640],[14,520],[18,2250],[20,870],[23,1380],[25,440],[28,1940]]);
+    function renderHeatmap() {
+      const grid = document.getElementById("heatGrid");
+      const year = 2026, monthIndex = 5;
+      const firstDay = new Date(year, monthIndex, 1);
+      const pad = (firstDay.getDay() + 6) % 7;
+      const count = new Date(year, monthIndex + 1, 0).getDate();
+      const maxAmount = Math.max(...dailyPurchases.values());
+      grid.replaceChildren();
+      for (let i = 0; i < pad; i += 1) {
+        const empty = document.createElement("span");
+        empty.className = "heat-empty";
+        empty.setAttribute("aria-hidden", "true");
+        grid.appendChild(empty);
+      }
+      for (let day = 1; day <= count; day += 1) {
+        const amount = dailyPurchases.get(day) || 0;
+        const level = amount === 0 ? 0 : Math.min(4, Math.max(1, Math.ceil(amount / maxAmount * 4)));
+        const cell = document.createElement("button");
+        const date = `2026-06-${String(day).padStart(2,"0")}`;
+        cell.type = "button";
+        cell.className = `heat-cell level-${level}`;
+        cell.textContent = String(day);
+        cell.title = `${date} · 示例采购额 ${money(Math.round(amount * 100))}`;
+        cell.setAttribute("aria-label", `${date}，示例采购额 ${money(Math.round(amount * 100))}`);
+        cell.addEventListener("click", () => {
+          document.getElementById("heatSelection").textContent = amount ? `${date} · 示例采购额 ${money(Math.round(amount * 100))}` : `${date} · 当日无示例采购记录`;
+          document.getElementById("filterStart").value = date;
+          document.getElementById("filterEnd").value = date;
+          currentPage = 1; selectedOrders.clear(); renderOrders();
+        });
+        grid.appendChild(cell);
+      }
+    }
+
+    function drawRankingChart() {
+      const canvas = document.getElementById("rankChart");
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const width = Math.max(220, Math.floor(rect.width || 320));
+      const height = 155;
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = width * ratio;
+      canvas.height = height * ratio;
+      canvas.style.height = `${height}px`;
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(ratio,0,0,ratio,0,0);
+      ctx.clearRect(0,0,width,height);
+      const styles = getComputedStyle(document.documentElement);
+      const grid = styles.getPropertyValue("--border").trim();
+      const muted = styles.getPropertyValue("--muted").trim();
+      const primary = styles.getPropertyValue("--primary").trim();
+      const danger = styles.getPropertyValue("--danger").trim();
+      const limit = Number(document.getElementById("rankingLimit").value);
+      const rows = demoRanking.slice(0,limit);
+      const left = 28, right = 30, top = 12, bottom = 25;
+      const plotW = width - left - right, plotH = height - top - bottom;
+      ctx.strokeStyle = grid; ctx.lineWidth = 1;
+      for (let i=0;i<4;i+=1) { const y=top+(plotH*i/3); ctx.beginPath(); ctx.moveTo(left,y); ctx.lineTo(width-right,y); ctx.stroke(); }
+      const maxQty = Math.max(...rows.map((row)=>row.quantity));
+      const maxAmount = Math.max(...rows.map((row)=>row.amount));
+      const step = plotW / rows.length;
+      rows.forEach((row,index) => {
+        const barH = row.quantity / maxQty * plotH;
+        const x = left + index * step + step * .23;
+        const barW = step * .42;
+        ctx.fillStyle = primary;
+        ctx.fillRect(x,top + plotH - barH,barW,barH);
+      });
+      ctx.beginPath(); ctx.strokeStyle = danger; ctx.lineWidth = 2;
+      rows.forEach((row,index) => {
+        const x = left + index * step + step * .5;
+        const y = top + plotH - row.amount / maxAmount * plotH;
+        index ? ctx.lineTo(x,y) : ctx.moveTo(x,y);
+      });
+      ctx.stroke();
+      ctx.fillStyle = muted; ctx.font = "10px sans-serif";
+      rows.forEach((row,index) => {
+        const x = left + index * step + step * .5;
+        const label = row.name.length > 5 ? `${row.name.slice(0,5)}…` : row.name;
+        ctx.save(); ctx.translate(x, height - 4); ctx.rotate(-.34); ctx.fillText(label,0,0); ctx.restore();
+      });
+      const rankBody = document.getElementById("rankRows");
+      rankBody.innerHTML = rows.map((row,index) => `<tr><td>${index+1}</td><td>${escapeHtml(row.name)}</td><td>${row.quantity}</td><td>${money(row.amount*100)}</td></tr>`).join("");
+    }
+    window.addEventListener("resize", drawRankingChart);
+
+    const customerName = document.getElementById("customerName");
+    const customerList = document.getElementById("customerSuggestions");
+    const customerCombo = createCombobox(customerName, customerList, demoCustomers, (customer) => {
+      customerName.value = customer.name;
+      document.getElementById("customerId").value = customer.id;
+      document.getElementById("orderDate").focus();
+    }, (customer) => `${customer.name} · ${customer.phone}`);
+
+    function createCombobox(input,list,items,pick,labelText) {
+      let matches = [];
+      let activeIndex = -1;
+      const close = () => {
+        list.hidden = true;
+        input.setAttribute("aria-expanded","false");
+        input.removeAttribute("aria-activedescendant");
+        activeIndex = -1;
+      };
+      const setActive = (index) => {
+        const options = [...list.querySelectorAll("[role=option]")];
+        if (!options.length) return;
+        activeIndex = Math.max(0,Math.min(index,options.length-1));
+        options.forEach((option,i) => option.setAttribute("aria-selected",String(i===activeIndex)));
+        input.setAttribute("aria-activedescendant",options[activeIndex].id);
+        options[activeIndex].scrollIntoView({block:"nearest"});
+      };
+      const choose = (item) => { pick(item); close(); };
+      const render = () => {
+        const query = input.value.trim().toLocaleLowerCase("zh-CN");
+        matches = query ? items.filter((item) => `${item.name} ${item.phone || item.spec || ""}`.toLocaleLowerCase("zh-CN").includes(query)) : items.slice();
+        list.replaceChildren();
+        if (!matches.length) {
+          const empty = document.createElement("div"); empty.className="suggest-option"; empty.textContent="无匹配项"; empty.setAttribute("role","option"); empty.setAttribute("aria-disabled","true"); list.appendChild(empty);
+        } else {
+          matches.forEach((item,index) => {
+            const option = document.createElement("button");
+            option.type="button"; option.className="suggest-option"; option.id=`${list.id}-option-${index}`; option.setAttribute("role","option"); option.setAttribute("aria-selected","false");
+            const main=document.createElement("span"); main.textContent=item.name;
+            const sub=document.createElement("small"); sub.textContent=labelText(item);
+            option.append(main,sub);
+            option.addEventListener("mousedown",(event)=>event.preventDefault());
+            option.addEventListener("click",()=>choose(item));
+            list.appendChild(option);
+          });
+        }
+        list.hidden=false; input.setAttribute("aria-expanded","true"); activeIndex=-1; input.removeAttribute("aria-activedescendant");
+      };
+      input.addEventListener("input",()=>{ if(input===customerName) document.getElementById("customerId").value=""; render(); });
+      input.addEventListener("focus",()=>{ if(input.value.trim()) render(); });
+      input.addEventListener("keydown",(event)=>{
+        if(event.key==="ArrowDown") { event.preventDefault(); if(list.hidden) render(); setActive(activeIndex<0?0:activeIndex+1); }
+        else if(event.key==="ArrowUp") { event.preventDefault(); if(list.hidden) render(); setActive(activeIndex<0?matches.length-1:activeIndex-1); }
+        else if(event.key==="Enter" && !list.hidden && activeIndex>=0 && matches[activeIndex]) { event.preventDefault(); choose(matches[activeIndex]); }
+        else if(event.key==="Escape" && !list.hidden) { event.preventDefault(); close(); }
+      });
+      input.addEventListener("blur",()=>window.setTimeout(close,120));
+      return { render, close };
+    }
+
+    function buildItemRow() {
+      rowSequence += 1;
+      const template = document.getElementById("itemRowTemplate");
+      const row = template.content.firstElementChild.cloneNode(true);
+      const input = row.querySelector(".product-input");
+      const list = row.querySelector(".product-suggestions");
+      const rowId = `item-${rowSequence}`;
+      input.id = `${rowId}-product`;
+      list.id = `${rowId}-suggestions`;
+      input.setAttribute("aria-controls",list.id);
+      input.setAttribute("aria-label",`第 ${rowSequence} 行产品名称，可用上下箭头选择建议`);
+      createCombobox(input,list,demoProducts,(product)=>{
+        input.value=product.name;
+        row.dataset.customerPrice=product.customerPrice == null ? "" : String(product.customerPrice);
+        row.dataset.regularPrice=String(product.price);
+        row.querySelector(".unit-input").value=product.unit;
+        const unitSelect=row.querySelector(".unit-select");
+        unitSelect.value=["个","套","件"].includes(product.unit)?product.unit:"";
+        const price=row.querySelector(".price-input");
+        const note=row.querySelector(".customer-price-note");
+        const check=row.querySelector(".regular-price-check");
+        if(product.customerPrice != null) {
+          price.value=product.customerPrice;
+          note.hidden=false;
+          row.querySelector(".regular-price-text").textContent=`${product.price.toFixed(2)} 元`;
+          check.checked=false;
+        } else {
+          price.value=product.price;
+          note.hidden=true;
+          check.checked=false;
+        }
+        row.querySelector(".quantity-input").focus();
+        recalculate();
+      },(product)=>`${product.spec} · 常规价 ${product.price.toFixed(2)} 元${product.customerPrice!=null?` · 客户价 ${product.customerPrice.toFixed(2)} 元`:""}`);
+      row.querySelectorAll(".quantity-input,.price-input").forEach((field)=>field.addEventListener("input",recalculate));
+      row.querySelector(".unit-select").addEventListener("change",(event)=>{ if(event.target.value) row.querySelector(".unit-input").value=event.target.value; });
+      row.querySelector(".regular-price-check").addEventListener("change",(event)=>{
+        const customerPrice=Number(row.dataset.customerPrice);
+        const regularPrice=Number(row.dataset.regularPrice);
+        row.querySelector(".price-input").value=event.target.checked?regularPrice:customerPrice;
+        recalculate();
+      });
+      row.querySelector(".clear-row").addEventListener("click",()=>{
+        row.querySelectorAll("input").forEach((field)=>{ if(field.type==="checkbox") field.checked=false; else field.value=""; });
+        row.querySelector(".unit-select").value="";
+        row.querySelector(".customer-price-note").hidden=true;
+        delete row.dataset.customerPrice; delete row.dataset.regularPrice;
+        recalculate(); input.focus();
+      });
+      return row;
+    }
+
+    function recalculate() {
+      let total=0;
+      const sign=formOrderType==="return"?-1:1;
+      const rows=[...document.querySelectorAll("#itemRows tr")];
+      rows.forEach((row,index)=>{
+        row.querySelector(".row-number").textContent=String(index+1);
+        const quantity=Number(row.querySelector(".quantity-input").value||0);
+        const price=Number(row.querySelector(".price-input").value||0);
+        const cents=Math.round(quantity*price*100)*sign;
+        total+=cents;
+        const line=row.querySelector(".line-total");
+        line.textContent=cents<0?`−${money(Math.abs(cents))}`:money(cents);
+        line.classList.toggle("negative",cents<0);
+      });
+      const totalNode=document.getElementById("grandTotal");
+      totalNode.textContent=total<0?`−${money(Math.abs(total))}`:money(total);
+      totalNode.classList.toggle("negative",total<0);
+    }
+    function setFormType(type) {
+      formOrderType=type;
+      document.querySelectorAll("[data-form-type]").forEach((button)=>button.setAttribute("aria-pressed",String(button.dataset.formType===type)));
+      document.querySelectorAll(".nav-item.sub[data-order-type]").forEach((button)=>{
+        const active=currentScreen==="new-order" && button.dataset.orderType===type;
+        button.classList.toggle("active",active);
+        button.setAttribute("aria-pressed",String(active));
+      });
+      document.getElementById("formTitle").textContent=type==="return"?"新建退货单":"新建销售单";
+      document.getElementById("itemsTitle").textContent=type==="return"?"退货明细":"订单明细";
+      document.getElementById("topbarPageName").textContent=document.getElementById("formTitle").textContent;
+      recalculate();
+    }
+    document.querySelectorAll("[data-form-type]").forEach((button)=>button.addEventListener("click",()=>setFormType(button.dataset.formType)));
+    document.getElementById("addRow").addEventListener("click",()=>{ const row=buildItemRow(); document.getElementById("itemRows").appendChild(row); recalculate(); row.querySelector(".product-input").focus(); });
+    document.getElementById("clearOrder").addEventListener("click",()=>{
+      document.getElementById("customerName").value=""; document.getElementById("customerId").value=""; document.getElementById("orderNotes").value="";
+      setFormType("sale");
+      document.getElementById("itemRows").replaceChildren(buildItemRow());
+      recalculate(); customerName.focus();
+    });
+    document.getElementById("saveOrder").addEventListener("click",()=>toast("原型演示：不会创建订单、打开 PDF 或写入数据库。"));
+    document.getElementById("itemRows").appendChild(buildItemRow());
+
+    document.getElementById("rankingLimit").addEventListener("change",drawRankingChart);
+    renderHeatmap();
+    renderOrders();
+    drawRankingChart();
+  </script>
+</body>
+</html>

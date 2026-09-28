@@ -42,10 +42,15 @@ const customerSearchInput = document.getElementById('customerSearchInput');
 const customerSuggestions = document.getElementById('customer_name_suggestions');
 customerSearchInput.addEventListener('input', async () => {
   const q = customerSearchInput.value.trim();
-  if (!q) { customerSuggestions.innerHTML = ''; return; }
+  if (!q) { customerSuggestions.replaceChildren(); return; }
   const response = await fetch('/customers/api/suggestions?q=' + encodeURIComponent(q));
   const names = await response.json();
-  customerSuggestions.innerHTML = names.map(name => `<option value="${name}"></option>`).join('');
+  customerSuggestions.replaceChildren();
+  names.forEach(name => {
+    const option = document.createElement('option');
+    option.value = name;
+    customerSuggestions.appendChild(option);
+  });
 });
 </script>
 {% endblock %}

@@ -1,0 +1,24 @@
+{
+  "type": "design",
+  "designSystems": [],
+  "primaryDesignSystem": null,
+  "assets": {
+    "Phase 4 工作台真实指标": {
+      "versions": [
+        {
+          "path": "workbench-prototype.html",
+          "createdAt": "2026-09-26T06:48:07.544Z",
+          "status": "approved",
+          "subtitle": "今日净业务额、分开笔数、最近五笔有效销售/退货",
+          "viewport": {
+            "width": 1440,
+            "height": 980
+          },
+          "section": "首页工作台"
+        }
+      ]
+    }
+  },
+  "createdAt": "2026-09-26T06:48:07.545Z",
+  "updatedAt": "2026-09-26T07:12:25.485Z"
+}

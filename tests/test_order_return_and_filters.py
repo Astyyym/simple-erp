@@ -17,7 +17,7 @@ def test_return_order_page_saves_and_prints_instead_of_plain_save():
     assert "fetch(orderForm.action" in html
 
 
-def test_orders_and_accounts_mark_return_orders_red_and_offer_clear_filters():
+def test_orders_mark_return_orders_red_and_account_ledger_preserves_return_sign_and_clear_filter():
     init_db()
     suffix = uuid.uuid4().hex[:8]
     customer_id = create_customer(f"红色退货客户{suffix}")
@@ -35,9 +35,12 @@ def test_orders_and_accounts_mark_return_orders_red_and_offer_clear_filters():
     assert f"SALE-{suffix}" in orders_html
 
     assert 'href="/accounts/"' in accounts_html
-    assert "清除筛选条件" in accounts_html
-    assert f'<tr class="table-danger return-order-row" data-order-type="return"' in accounts_html
+    assert "清除筛选" in accounts_html
+    assert "type-return" in accounts_html
+    assert "退货单" in accounts_html
+    assert "−¥20.00" in accounts_html
     assert f"RETURN-{suffix}" in accounts_html
+    assert f"SALE-{suffix}" in accounts_html
 
 
 def test_products_page_has_similarity_suggestions_and_clear_info_button():

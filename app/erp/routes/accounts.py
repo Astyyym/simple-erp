@@ -1,10 +1,21 @@
 from flask import Blueprint, render_template, request, redirect, url_for, send_file
 from erp.db import get_db
-from erp.services.accounting import add_payment, add_adjustment
+from erp.services.accounting import (
+    add_payment,
+    add_adjustment,
+    get_customer_account_ledger,
+    void_payment as void_payment_record,
+    void_adjustment as void_adjustment_record,
+)
 from erp.utils.money import yuan_to_cents, cents_to_yuan
-from erp.utils.pdf import generate_account_summary_pdf, send_pdf_for_preview
+from erp.utils.pdf import (
+    generate_account_summary_pdf,
+    generate_account_ledger_pdf,
+    send_pdf_for_preview,
+)
 
 accounts_bp = Blueprint("accounts", __name__, url_prefix="/accounts")
+
 
 @accounts_bp.get("/")
 def accounts():
@@ -44,20 +55,29 @@ def accounts():
             """
         ).fetchall()
         balances = {row["id"]: int(row["balance_cents"] or 0) for row in balance_rows}
-        selected_customer = None
-        orders = []
+        selected_row = None
         if customer_id:
-            selected_customer = conn.execute("SELECT * FROM customers WHERE id=?", (customer_id,)).fetchone()
-            conditions = ["customer_id=?", "deleted_at IS NULL"]
-            params = [customer_id]
-            if start_date:
-                conditions.append("order_date >= ?")
-                params.append(start_date)
-            if end_date:
-                conditions.append("order_date <= ?")
-                params.append(end_date)
-            orders = conn.execute(f"SELECT * FROM orders WHERE {' AND '.join(conditions)} ORDER BY order_date ASC, id ASC", params).fetchall()
-    return render_template("accounts/index.html", customers=customers, balances=balances, selected_customer=selected_customer, orders=orders, start_date=start_date, end_date=end_date, cents_to_yuan=cents_to_yuan)
+            selected_row = conn.execute(
+                "SELECT * FROM customers WHERE id=? AND deleted_at IS NULL",
+                (customer_id,),
+            ).fetchone()
+
+    ledger = None
+    selected_customer = None
+    if selected_row is not None:
+        ledger = get_customer_account_ledger(customer_id, start_date, end_date)
+        selected_customer = ledger["customer"]
+
+    return render_template(
+        "accounts/index.html",
+        customers=customers,
+        balances=balances,
+        selected_customer=selected_customer,
+        ledger=ledger,
+        start_date=start_date,
+        end_date=end_date,
+        cents_to_yuan=cents_to_yuan,
+    )
 
 @accounts_bp.get("/summary_pdf")
 def summary_pdf():
@@ -68,6 +88,50 @@ def summary_pdf():
     end_date = request.args.get("end_date", "").strip()
     path = generate_account_summary_pdf(customer_id, start_date, end_date)
     return send_pdf_for_preview(path, "客户货款汇总表.pdf", "客户货款汇总表")
+
+
+@accounts_bp.get("/ledger_pdf")
+def ledger_pdf():
+    customer_id = request.args.get("customer_id", type=int)
+    if not customer_id:
+        return "必须先选择客户", 400
+    start_date = request.args.get("start_date", "").strip()
+    end_date = request.args.get("end_date", "").strip()
+    try:
+        path = generate_account_ledger_pdf(customer_id, start_date, end_date)
+    except ValueError as error:
+        return str(error), 404
+    return send_pdf_for_preview(path, "客户账款流水.pdf", "客户账款流水")
+
+
+def _redirect_to_ledger(customer_id: int | None = None):
+    customer_id = customer_id or request.form.get("customer_id", type=int)
+    params = {}
+    if customer_id:
+        params["customer_id"] = customer_id
+    for key in ("start_date", "end_date"):
+        value = request.form.get(key, "").strip()
+        if value:
+            params[key] = value
+    return redirect(url_for("accounts.accounts", **params))
+
+
+@accounts_bp.post("/payment/<int:payment_id>/void")
+def void_payment(payment_id: int):
+    try:
+        void_payment_record(payment_id, request.form.get("reason", ""))
+    except ValueError as error:
+        return str(error), 400
+    return _redirect_to_ledger()
+
+
+@accounts_bp.post("/adjustment/<int:adjustment_id>/void")
+def void_adjustment(adjustment_id: int):
+    try:
+        void_adjustment_record(adjustment_id, request.form.get("reason", ""))
+    except ValueError as error:
+        return str(error), 400
+    return _redirect_to_ledger()
 
 
 @accounts_bp.post("/bulk_delete_orders")
@@ -82,10 +146,13 @@ def bulk_delete_orders():
 
 @accounts_bp.post("/payment")
 def payment():
-    add_payment(int(request.form["customer_id"]), yuan_to_cents(request.form["amount"]), method=request.form.get("method", "现金"), notes=request.form.get("notes", ""))
-    return redirect(url_for("accounts.accounts"))
+    customer_id = int(request.form["customer_id"])
+    add_payment(customer_id, yuan_to_cents(request.form["amount"]), method=request.form.get("method", "现金"), notes=request.form.get("notes", ""))
+    return _redirect_to_ledger(customer_id)
+
 
 @accounts_bp.post("/adjustment")
 def adjustment():
-    add_adjustment(int(request.form["customer_id"]), yuan_to_cents(request.form["amount"]), request.form["reason"], request.form.get("adjustment_type", "other"))
-    return redirect(url_for("accounts.accounts"))
+    customer_id = int(request.form["customer_id"])
+    add_adjustment(customer_id, yuan_to_cents(request.form["amount"]), request.form["reason"], request.form.get("adjustment_type", "other"))
+    return _redirect_to_ledger(customer_id)

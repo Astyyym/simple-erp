@@ -10,10 +10,11 @@ from erp.utils.exporting import (
     order_line_export_rows,
     workbook_download,
 )
-from erp.utils.money import cents_to_yuan
+from erp.utils.money import cents_to_yuan, line_subtotal_cents, yuan_to_cents
 from erp.utils.pdf import generate_order_pdf, send_pdf_for_preview
 
 orders_bp = Blueprint("orders", __name__, url_prefix="/orders")
+MAX_SQLITE_INTEGER = (1 << 63) - 1
 
 def next_order_no(conn, order_date: str) -> str:
     """Generate MD + yyyymmdd + 4-digit daily sequence. Sale/return share the same sequence."""
@@ -348,9 +349,18 @@ def list_orders():
             conditions.append("o.order_type = ?")
             params.append(order_type)
         where_clause = " AND ".join(conditions)
-        orders = conn.execute(
-            f"SELECT o.*, c.name AS customer_name FROM orders o JOIN customers c ON c.id=o.customer_id WHERE {where_clause} ORDER BY o.id DESC LIMIT 200",
+        total_order_count = int(conn.execute(
+            f"SELECT COUNT(*) AS total_count FROM orders o JOIN customers c ON c.id=o.customer_id WHERE {where_clause}",
             params,
+        ).fetchone()["total_count"])
+        page_size = 50
+        total_pages = max(1, (total_order_count + page_size - 1) // page_size)
+        page = request.args.get("page", 1, type=int) or 1
+        page = min(max(page, 1), total_pages)
+        offset = (page - 1) * page_size
+        orders = conn.execute(
+            f"SELECT o.*, c.name AS customer_name FROM orders o JOIN customers c ON c.id=o.customer_id WHERE {where_clause} ORDER BY o.id DESC LIMIT ? OFFSET ?",
+            [*params, page_size, offset],
         ).fetchall()
 
         purchase_dashboard = None
@@ -378,6 +388,23 @@ def list_orders():
             (f"%{customer_q}%" if customer_q else "%",),
         ).fetchall()
 
+    pagination_query = request.args.to_dict(flat=True)
+    pagination_query.pop("page", None)
+
+    def page_url(target_page: int) -> str:
+        return url_for("orders.list_orders", **{**pagination_query, "page": target_page})
+
+    first_page = max(1, min(page - 1, total_pages - 2))
+    last_page = min(total_pages, max(3, page + 1))
+    pagination_pages = [
+        {"number": page_number, "url": page_url(page_number)}
+        for page_number in range(first_page, last_page + 1)
+    ]
+    previous_page_url = page_url(page - 1) if page > 1 else None
+    next_page_url = page_url(page + 1) if page < total_pages else None
+    range_start = (page - 1) * page_size + 1 if total_order_count else 0
+    range_end = min(page * page_size, total_order_count)
+
     unique_customer = scope == "customer"
     summary_hint = None
     if not unique_customer:
@@ -386,6 +413,15 @@ def list_orders():
     return render_template(
         "orders/list.html",
         orders=orders,
+        total_order_count=total_order_count,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+        range_start=range_start,
+        range_end=range_end,
+        pagination_pages=pagination_pages,
+        previous_page_url=previous_page_url,
+        next_page_url=next_page_url,
         customer_q=customer_q,
         start_date=start_date if date_mode == "range" else args["start_date_raw"],
         end_date=end_date if date_mode == "range" else args["end_date_raw"],
@@ -580,7 +616,19 @@ def _resolve_customer_id() -> int:
     customer_id_text = request.form.get("customer_id", "").strip()
     with get_db() as conn:
         if customer_id_text:
-            return int(customer_id_text)
+            try:
+                customer_id = int(customer_id_text)
+            except (TypeError, ValueError):
+                raise ValueError("客户选择无效")
+            existing = conn.execute(
+                "SELECT id FROM customers WHERE id=? AND deleted_at IS NULL",
+                (customer_id,),
+            ).fetchone()
+            if existing is None:
+                raise ValueError("客户不存在，请重新选择客户")
+            return customer_id
+        if not customer_name:
+            raise ValueError("客户名称不能为空")
         existing = conn.execute("SELECT id FROM customers WHERE name=?", (customer_name,)).fetchone()
         if existing:
             return int(existing["id"])
@@ -598,6 +646,36 @@ def _typed_rows_from_form() -> list[dict]:
         for name, unit, price, qty in zip(product_names, units, unit_prices, quantities)
         if name.strip() and qty.strip()
     ]
+
+
+def _validate_typed_rows(rows: list[dict]) -> str | None:
+    """Reject malformed detail values before a new customer can be created."""
+    total_cents = 0
+    for index, row in enumerate(rows, start=1):
+        try:
+            quantity = Decimal(str(row.get("quantity", "")))
+            unit_price = Decimal(str(row.get("unit_price_yuan", "")))
+        except (InvalidOperation, TypeError, ValueError):
+            return f"第 {index} 行数量或单价不是有效数字"
+        if not quantity.is_finite() or not unit_price.is_finite():
+            return f"第 {index} 行数量或单价不是有效数字"
+        if quantity <= 0:
+            return f"第 {index} 行数量必须大于 0"
+        if unit_price < 0:
+            return f"第 {index} 行单价不能为负数"
+        if quantity > MAX_SQLITE_INTEGER:
+            return "金额或数量超出支持范围"
+        try:
+            unit_price_cents = yuan_to_cents(unit_price)
+            subtotal_cents = line_subtotal_cents(quantity, unit_price_cents)
+        except (InvalidOperation, OverflowError, TypeError, ValueError):
+            return "金额或数量超出支持范围"
+        if unit_price_cents > MAX_SQLITE_INTEGER or subtotal_cents > MAX_SQLITE_INTEGER:
+            return "金额或数量超出支持范围"
+        total_cents += subtotal_cents
+        if total_cents > MAX_SQLITE_INTEGER:
+            return "金额或数量超出支持范围"
+    return None
 
 
 def _resolve_create_order_date() -> str:
@@ -619,8 +697,17 @@ def create_return_order_view():
 
 
 def _create_order_view(order_type: str):
-    customer_id = _resolve_customer_id()
+    status = request.form.get("status", "saved").strip()
+    if status not in {"draft", "saved"}:
+        return "订单状态无效，请选择“草稿”或“正式保存”", 400
     rows = _typed_rows_from_form()
+    detail_error = _validate_typed_rows(rows)
+    if detail_error:
+        return detail_error, 400
+    try:
+        customer_id = _resolve_customer_id()
+    except ValueError as exc:
+        return str(exc), 400
     order_date = _resolve_create_order_date()
     with get_db() as conn:
         # Never trust client-supplied order_no; number follows chosen business date.
@@ -629,7 +716,7 @@ def _create_order_view(order_type: str):
         customer_id,
         order_no,
         rows,
-        status=request.form.get("status", "saved"),
+        status=status,
         order_date=order_date,
         notes=request.form.get("notes", ""),
         order_type=order_type,
@@ -670,25 +757,40 @@ def edit_order(order_id: int):
 
 @orders_bp.post("/<int:order_id>/edit")
 def update_order_view(order_id: int):
-    customer_id = _resolve_customer_id()
-    rows = _typed_rows_from_form()
     with get_db() as conn:
         existing = conn.execute(
-            "SELECT order_no, order_date FROM orders WHERE id=? AND deleted_at IS NULL",
+            "SELECT order_no, order_date, order_type, status FROM orders WHERE id=? AND deleted_at IS NULL",
             (order_id,),
         ).fetchone()
     if existing is None:
         return "订单不存在", 404
-    # Re-edit keeps original order number and date; only business fields change.
-    update_order_from_typed_rows(
-        order_id,
-        customer_id,
-        existing["order_no"],
-        rows,
-        status=request.form.get("status", "saved"),
-        order_date=existing["order_date"],
-        notes=request.form.get("notes", ""),
-    )
+    if existing["status"] == "void":
+        return "已作废订单不能重编辑", 400
+    status = request.form.get("status", "saved").strip()
+    if status not in {"draft", "saved", "printed"}:
+        return "订单状态无效，请选择“草稿”“正式保存”或“已打印”", 400
+    rows = _typed_rows_from_form()
+    detail_error = _validate_typed_rows(rows)
+    if detail_error:
+        return detail_error, 400
+    try:
+        customer_id = _resolve_customer_id()
+    except ValueError as exc:
+        return str(exc), 400
+    # Re-edit keeps original order number/date/type; only business fields change.
+    try:
+        update_order_from_typed_rows(
+            order_id,
+            customer_id,
+            existing["order_no"],
+            rows,
+            status=status,
+            order_date=existing["order_date"],
+            notes=request.form.get("notes", ""),
+            order_type=existing["order_type"],
+        )
+    except ValueError as exc:
+        return str(exc), 400
     return redirect(url_for("orders.view_order", order_id=order_id))
 
 
@@ -746,6 +848,15 @@ def order_pdf(order_id: int):
 @orders_bp.post("/<int:order_id>/confirm_print")
 def confirm_print(order_id: int):
     mark_order_printed(order_id); return redirect(url_for("orders.list_orders"))
+
+
+@orders_bp.post("/<int:order_id>/void")
+def void_order_view(order_id: int):
+    try:
+        void_order(order_id, request.form.get("reason", ""))
+    except ValueError as exc:
+        return str(exc), 400
+    return redirect(url_for("orders.view_order", order_id=order_id))
 
 @orders_bp.post("/bulk_delete")
 def bulk_delete_orders():

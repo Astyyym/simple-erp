@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="zh-CN" data-ui-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="design_doc_mode" content="interactive-prototype">
+  <title>简单ERP · Phase 4 工作台原型</title>
+  <style>
+    /*
+      Context: the existing home page has four working shortcuts and a daily-flow panel,
+      but no live business metrics or recent-order list. This prototype preserves both
+      existing areas and adds only the confirmed Phase 4 MVP. It follows the ERP's blue
+      primary, deep teal sidebar, restrained surfaces, and light/dark/system themes.
+      All order data below is synthetic; this page is not connected to any ERP database.
+    */
+    :root {
+      color-scheme: light;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-soft: #eff6ff;
+      --ink: #172033;
+      --muted: #667085;
+      --border: #dfe3ea;
+      --border-strong: #c8ced8;
+      --bg: #f3f5f8;
+      --surface: #ffffff;
+      --surface-soft: #f8fafc;
+      --sidebar: #012121;
+      --sidebar-hover: #0a3535;
+      --success: #17803d;
+      --danger: #c73535;
+      --warning: #9a6700;
+      --shadow: 0 1px 2px rgba(16,24,40,.04), 0 8px 24px rgba(16,24,40,.05);
+      --radius: 8px;
+    }
+    html[data-ui-theme="dark"] {
+      color-scheme: dark;
+      --primary: #3b82f6;
+      --primary-hover: #60a5fa;
+      --primary-soft: #1e293b;
+      --ink: #e8eef9;
+      --muted: #9aa8c0;
+      --border: #2b3648;
+      --border-strong: #3d4b63;
+      --bg: #0f141d;
+      --surface: #171e2b;
+      --surface-soft: #1c2535;
+      --success: #34d399;
+      --danger: #f87171;
+      --warning: #fbbf24;
+      --shadow: 0 1px 2px rgba(0,0,0,.30), 0 8px 24px rgba(0,0,0,.22);
+    }
+    @media (prefers-color-scheme: dark) {
+      html[data-ui-theme="system"] {
+        color-scheme: dark;
+        --primary: #3b82f6;
+        --primary-hover: #60a5fa;
+        --primary-soft: #1e293b;
+        --ink: #e8eef9;
+        --muted: #9aa8c0;
+        --border: #2b3648;
+        --border-strong: #3d4b63;
+        --bg: #0f141d;
+        --surface: #171e2b;
+        --surface-soft: #1c2535;
+        --success: #34d399;
+        --danger: #f87171;
+        --warning: #fbbf24;
+        --shadow: 0 1px 2px rgba(0,0,0,.30), 0 8px 24px rgba(0,0,0,.22);
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; margin: 0; }
+    body {
+      min-width: 320px;
+      color: var(--ink);
+      background: #e9edf3;
+      font: 14px/1.55 "Microsoft YaHei UI", "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+    button, select { font: inherit; }
+    button, a, select { -webkit-tap-highlight-color: transparent; }
+    button:focus-visible, a:focus-visible, select:focus-visible {
+      outline: 3px solid color-mix(in srgb, var(--primary) 34%, transparent);
+      outline-offset: 2px;
+    }
+    a { color: inherit; }
+    .prototype-toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      min-height: 58px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 8px 18px;
+      color: var(--ink);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      box-shadow: 0 2px 10px rgba(16,24,40,.05);
+    }
+    .toolbar-intro { display: flex; min-width: 0; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+    .toolbar-intro strong { font-size: 14px; font-weight: 700; }
+    .toolbar-intro span { color: var(--muted); font-size: 12px; }
+    .toolbar-controls { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; gap: 10px; }
+    .toolbar-field { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+    .toolbar-field select {
+      min-height: 32px;
+      padding: 4px 26px 4px 8px;
+      color: var(--ink);
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: 5px;
+    }
+    .preview-frame {
+      width: min(1440px, calc(100vw - 28px));
+      height: calc(100vh - 74px);
+      min-height: 700px;
+      margin: 14px auto;
+      overflow: hidden;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      box-shadow: var(--shadow);
+      transition: width .18s ease;
+    }
+    .preview-frame[data-viewport="narrow"] { width: min(900px, calc(100vw - 28px)); }
+    .preview-frame[data-viewport="compact"] {
+      width: min(390px, calc(100vw - 16px));
+      height: auto;
+      min-height: calc(100vh - 90px);
+      overflow: visible;
+    }
+    .app-shell { display: flex; width: 100%; height: 100%; min-height: 0; overflow: hidden; }
+    .sidebar {
+      display: flex;
+      width: 218px;
+      flex: 0 0 218px;
+      flex-direction: column;
+      padding: 0 12px 14px;
+      overflow: auto;
+      color: #fff;
+      background: var(--sidebar);
+      border-right: 1px solid rgba(255,255,255,.12);
+    }
+    .brand { display: flex; min-height: 70px; align-items: center; gap: 10px; padding: 10px; border-bottom: 1px solid rgba(255,255,255,.1); }
+    .brand-mark { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; color: #fff; background: var(--primary); border-radius: 7px; font-weight: 700; }
+    .brand-name { font-size: 14px; font-weight: 650; }
+    .brand-subtitle { margin-top: 1px; color: #aeb8ca; font-size: 10px; letter-spacing: .06em; }
+    .nav-label { margin: 14px 4px 6px; padding: 7px 10px; color: #dbe7ff; background: rgba(36,50,74,.62); border: 1px solid rgba(91,141,239,.35); border-radius: 6px; box-shadow: inset 3px 0 #5b8def; font-size: 11px; font-weight: 650; letter-spacing: .04em; }
+    .nav-item {
+      display: flex;
+      width: 100%;
+      min-height: 39px;
+      align-items: center;
+      gap: 9px;
+      margin: 2px 0;
+      padding: 8px 12px;
+      color: #cfd6e3;
+      background: transparent;
+      border: 0;
+      border-radius: 7px;
+      text-align: left;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .nav-item:hover { color: #fff; background: var(--sidebar-hover); }
+    .nav-item.active { color: #fff; background: var(--primary); font-weight: 650; }
+    .nav-item.sub { min-height: 34px; margin-left: 10px; padding-left: 20px; color: #aeb8ca; font-size: 12px; }
+    .nav-item.sub:hover { color: #fff; }
+    .version { margin-top: auto; padding: 12px; color: #8290a8; border-top: 1px solid rgba(255,255,255,.08); font-size: 10px; }
+    .content { position: relative; display: flex; min-width: 0; flex: 1; flex-direction: column; overflow: hidden; background: var(--bg); }
+    .topbar {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      min-height: 58px;
+      flex: 0 0 auto;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 25px;
+      background: color-mix(in srgb, var(--surface) 90%, transparent);
+      border-bottom: 1px solid var(--border);
+      box-shadow: 0 3px 12px rgba(16,24,40,.04);
+      backdrop-filter: blur(10px);
+    }
+    .shop-name { color: var(--muted); font-size: 12px; }
+    .topbar-right { display: flex; align-items: center; gap: 10px; }
+    .local-label { color: var(--success); font-size: 11px; white-space: nowrap; }
+    .local-label::before { display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: currentColor; content: ""; }
+    .page-body { position: relative; min-height: 0; flex: 1; overflow: auto; padding: 24px 26px 34px; }
+    .screen { width: min(1230px, 100%); margin: 0 auto; }
+    .page-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 4px; font-size: 25px; font-weight: 700; letter-spacing: -.025em; }
+    h2 { margin-bottom: 0; font-size: 17px; font-weight: 680; }
+    h3 { margin-bottom: 0; font-size: 14px; font-weight: 680; }
+    .eyebrow { margin-bottom: 3px; color: var(--muted); font-size: 10px; font-weight: 650; letter-spacing: .04em; }
+    .subtitle { margin: 0; color: var(--muted); font-size: 12px; }
+    .day-chip { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; gap: 2px; color: var(--muted); font-size: 10px; }
+    .day-chip strong { color: var(--ink); font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
+    .demo-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      margin-bottom: 14px;
+      padding: 9px 11px;
+      color: var(--muted);
+      background: var(--surface-soft);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 11px;
+    }
+    .demo-note strong { flex: 0 0 auto; color: var(--ink); font-weight: 700; }
+    .metric-grid { display: grid; grid-template-columns: minmax(0,1.45fr) repeat(2,minmax(0,1fr)); gap: 12px; margin-bottom: 15px; }
+    .metric-card {
+      min-width: 0;
+      min-height: 124px;
+      padding: 15px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .metric-card.net-card { border-color: color-mix(in srgb, var(--primary) 32%, var(--border)); }
+    .metric-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 11px; font-weight: 650; }
+    .metric-period { padding: 2px 6px; color: var(--primary); background: var(--primary-soft); border-radius: 4px; font-size: 10px; font-weight: 650; }
+    .metric-value { margin: 12px 0 4px; color: var(--ink); font-size: 27px; font-weight: 720; line-height: 1.15; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
+    .metric-value.count { font-size: 25px; }
+    .metric-help { margin: 0; color: var(--muted); font-size: 10px; }
+    .quick-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; margin-bottom: 17px; }
+    .quick-card {
+      display: flex;
+      min-height: 82px;
+      flex-direction: column;
+      justify-content: center;
+      gap: 2px;
+      padding: 12px 14px;
+      color: var(--ink);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      text-decoration: none;
+      box-shadow: 0 1px 2px rgba(16,24,40,.03);
+      transition: border-color .15s, background .15s;
+    }
+    .quick-card:hover { background: var(--surface-soft); border-color: var(--primary); }
+    .quick-card.primary { color: #fff; background: var(--primary); border-color: var(--primary); }
+    .quick-card.primary:hover { background: var(--primary-hover); }
+    .quick-card strong { font-size: 14px; font-weight: 680; }
+    .quick-card span { color: var(--muted); font-size: 10px; }
+    .quick-card.primary span { color: #dbeafe; }
+    .surface { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+    .recent-panel { overflow: hidden; }
+    .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding: 14px 15px 11px; }
+    .section-head p { margin: 4px 0 0; color: var(--muted); font-size: 10px; }
+    .text-link { display: inline-flex; min-height: 32px; align-items: center; gap: 5px; padding: 4px 7px; color: var(--primary); border-radius: 5px; font-size: 11px; font-weight: 650; text-decoration: none; white-space: nowrap; }
+    .text-link:hover { background: var(--primary-soft); }
+    .table-wrap { overflow-x: auto; }
+    .orders-table { width: 100%; min-width: 700px; border-collapse: collapse; color: var(--ink); font-variant-numeric: tabular-nums; }
+    .orders-table th, .orders-table td { padding: 9px 11px; border-top: 1px solid var(--border); text-align: left; vertical-align: middle; }
+    .orders-table th { color: var(--muted); background: var(--surface-soft); font-size: 10px; font-weight: 650; white-space: nowrap; }
+    .orders-table td { font-size: 11px; }
+    .orders-table tbody tr:hover td { background: color-mix(in srgb, var(--primary-soft) 48%, var(--surface)); }
+    .order-cell { min-width: 154px; }
+    .order-link { padding: 0; color: var(--primary); background: transparent; border: 0; font-family: Consolas, "Courier New", monospace; font-size: 10px; text-align: left; cursor: pointer; }
+    .order-link:hover { text-decoration: underline; }
+    .type-pill { display: inline-flex; min-height: 21px; align-items: center; padding: 2px 7px; border: 1px solid var(--border); border-radius: 4px; font-size: 9px; font-weight: 650; white-space: nowrap; }
+    .type-sale { color: #1d4ed8; background: rgba(37,99,235,.07); border-color: rgba(37,99,235,.18); }
+    .type-return { color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); border-color: color-mix(in srgb, var(--danger) 24%, var(--border)); }
+    .order-date, .entry-time { color: var(--muted); white-space: nowrap; }
+    .amount { font-weight: 680; white-space: nowrap; }
+    .amount.negative { color: var(--danger); }
+    .row-action { min-height: 28px; padding: 4px 8px; color: var(--ink); background: var(--surface); border: 1px solid var(--border-strong); border-radius: 5px; font-size: 10px; cursor: pointer; }
+    .row-action:hover { color: var(--primary); border-color: var(--primary); }
+    .detail-panel { margin: 0 12px 12px; padding: 12px 14px; background: var(--surface-soft); border: 1px solid var(--border); border-radius: 6px; }
+    .detail-panel[hidden] { display: none; }
+    .detail-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
+    .detail-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px 16px; margin: 0; }
+    .detail-grid div { min-width: 0; }
+    .detail-grid dt { color: var(--muted); font-size: 10px; }
+    .detail-grid dd { margin: 2px 0 0; overflow-wrap: anywhere; font-size: 11px; font-weight: 600; }
+    .empty-state { padding: 24px 12px; color: var(--muted); text-align: center; font-size: 11px; }
+    .empty-state[hidden] { display: none; }
+    .workspace-panel { margin-top: 14px; padding: 14px 15px; }
+    .workspace-panel > p { margin: 4px 0 11px; color: var(--muted); font-size: 10px; }
+    .flow { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); }
+    .flow-step { min-width: 0; padding: 9px 11px; background: var(--surface-soft); border: 1px solid var(--border); }
+    .flow-step:not(:last-child) { border-right: 0; }
+    .flow-step:first-child { border-radius: 6px 0 0 6px; }
+    .flow-step:last-child { border-radius: 0 6px 6px 0; }
+    .flow-step b { display: block; margin-bottom: 2px; font-size: 11px; }
+    .flow-step small { color: var(--muted); font-size: 9px; }
+    .notice { position: fixed; right: 18px; bottom: 18px; z-index: 40; max-width: min(390px,calc(100vw - 32px)); padding: 10px 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 7px; box-shadow: var(--shadow); font-size: 11px; }
+    .notice[hidden] { display: none; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    @media (max-width: 1050px) {
+      .sidebar { width: 190px; flex-basis: 190px; }
+      .metric-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
+      .quick-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    }
+    @media (max-width: 760px) {
+      .prototype-toolbar { align-items: flex-start; flex-direction: column; }
+      .toolbar-controls { width: 100%; justify-content: flex-start; }
+      .preview-frame { width: calc(100vw - 16px); height: auto; min-height: calc(100vh - 144px); margin: 8px auto; overflow: visible; }
+      .app-shell { height: auto; min-height: calc(100vh - 144px); overflow: visible; }
+      .sidebar { display: none; }
+      .content { min-height: calc(100vh - 144px); overflow: visible; }
+      .topbar { min-height: 49px; padding: 0 12px; }
+      .page-body { overflow: visible; padding: 15px 11px 22px; }
+      .page-heading { align-items: flex-start; }
+      h1 { font-size: 21px; }
+      .metric-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+      .metric-card { min-height: 112px; padding: 12px; }
+      .metric-card.net-card { grid-column: 1 / -1; }
+      .metric-value { font-size: 24px; }
+      .quick-grid { gap: 8px; }
+      .quick-card { min-height: 75px; padding: 10px; }
+      .section-head { align-items: flex-start; }
+      .detail-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+      .flow { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 6px; }
+      .flow-step, .flow-step:first-child, .flow-step:last-child { border: 1px solid var(--border); border-radius: 5px; }
+    }
+    #previewFrame[data-viewport="narrow"] .sidebar { width: 178px; flex-basis: 178px; }
+    #previewFrame[data-viewport="narrow"] .page-body { padding-right: 18px; padding-left: 18px; }
+    #previewFrame[data-viewport="narrow"] .metric-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
+    #previewFrame[data-viewport="narrow"] .quick-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    #previewFrame[data-viewport="compact"] .sidebar { display: none; }
+    #previewFrame[data-viewport="compact"] .app-shell { height: auto; min-height: 680px; overflow: visible; }
+    #previewFrame[data-viewport="compact"] .content { min-height: 680px; overflow: visible; }
+    #previewFrame[data-viewport="compact"] .topbar { min-height: 49px; padding: 0 11px; }
+    #previewFrame[data-viewport="compact"] .page-body { overflow: visible; padding: 14px 10px 22px; }
+    #previewFrame[data-viewport="compact"] .page-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
+    #previewFrame[data-viewport="compact"] .day-chip { align-items: flex-start; }
+    #previewFrame[data-viewport="compact"] .metric-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+    #previewFrame[data-viewport="compact"] .metric-card { min-height: 108px; padding: 11px; }
+    #previewFrame[data-viewport="compact"] .metric-card.net-card { grid-column: 1 / -1; }
+    #previewFrame[data-viewport="compact"] .metric-value { font-size: 23px; }
+    #previewFrame[data-viewport="compact"] .quick-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; }
+    #previewFrame[data-viewport="compact"] .quick-card { min-height: 74px; padding: 9px; }
+    #previewFrame[data-viewport="compact"] .section-head { align-items: flex-start; flex-direction: column; }
+    #previewFrame[data-viewport="compact"] .table-wrap { overflow: visible; }
+    #previewFrame[data-viewport="compact"] .orders-table { min-width: 0; }
+    #previewFrame[data-viewport="compact"] .orders-table thead { display: none; }
+    #previewFrame[data-viewport="compact"] .orders-table,
+    #previewFrame[data-viewport="compact"] .orders-table tbody { display: block; width: 100%; }
+    #previewFrame[data-viewport="compact"] .orders-table tbody tr {
+      display: grid;
+      grid-template-columns: minmax(0,1fr) auto;
+      gap: 3px 9px;
+      padding: 10px;
+      border-top: 1px solid var(--border);
+    }
+    #previewFrame[data-viewport="compact"] .orders-table tbody td { min-width: 0; padding: 2px 0; border: 0; }
+    #previewFrame[data-viewport="compact"] .orders-table tbody td:nth-child(1) { grid-column: 1 / -1; }
+    #previewFrame[data-viewport="compact"] .orders-table tbody td:nth-child(2) { grid-column: 1 / -1; color: var(--muted); }
+    #previewFrame[data-viewport="compact"] .orders-table tbody td:nth-child(3) { grid-column: 1; color: var(--muted); font-size: 10px; }
+    #previewFrame[data-viewport="compact"] .orders-table tbody td:nth-child(4) { grid-column: 2; color: var(--muted); text-align: right; font-size: 10px; }
+    #previewFrame[data-viewport="compact"] .orders-table tbody td:nth-child(5) { grid-column: 1; }
+    #previewFrame[data-viewport="compact"] .orders-table tbody td:nth-child(6) { grid-column: 2; text-align: right; }
+    #previewFrame[data-viewport="compact"] .order-cell { display: flex; align-items: center; gap: 8px; }
+    #previewFrame[data-viewport="compact"] .workspace-panel { padding: 12px; }
+    #previewFrame[data-viewport="compact"] .flow { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 6px; }
+    #previewFrame[data-viewport="compact"] .flow-step,
+    #previewFrame[data-viewport="compact"] .flow-step:first-child,
+    #previewFrame[data-viewport="compact"] .flow-step:last-child { border: 1px solid var(--border); border-radius: 5px; }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="prototype-toolbar" aria-label="原型预览控制">
+    <div class="toolbar-intro">
+      <strong>Phase 4 · 工作台真实指标</strong>
+      <span>交互原型 · 虚构示例数据 · 未连接业务库</span>
+    </div>
+    <div class="toolbar-controls">
+      <label class="toolbar-field" for="themeSelect">主题
+        <select id="themeSelect" aria-label="原型主题">
+          <option value="light">浅色</option>
+          <option value="dark">深色</option>
+          <option value="system">跟随系统</option>
+        </select>
+      </label>
+      <label class="toolbar-field" for="viewportSelect">视口
+        <select id="viewportSelect" aria-label="原型视口">
+          <option value="wide">宽屏</option>
+          <option value="narrow">窄屏</option>
+          <option value="compact">手机宽度</option>
+        </select>
+      </label>
+    </div>
+  </header>
+
+  <div class="preview-frame" id="previewFrame" data-viewport="wide">
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="主要导航">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">简</div>
+          <div><div class="brand-name">消防器材门店</div><div class="brand-subtitle">BUSINESS MANAGEMENT</div></div>
+        </div>
+        <div class="nav-label">业务中心</div>
+        <button class="nav-item active" type="button" aria-current="page">业务工作台</button>
+        <button class="nav-item" type="button" data-route="/orders/">单据管理</button>
+        <button class="nav-item sub" type="button" data-route="/orders/new">新建销售单</button>
+        <button class="nav-item sub" type="button" data-route="/orders/return/new">新建退货单</button>
+        <div class="nav-label">财务</div>
+        <button class="nav-item" type="button" data-route="/accounts/">账款管理</button>
+        <div class="nav-label">基础资料</div>
+        <button class="nav-item" type="button" data-route="/customers/">客户管理</button>
+        <button class="nav-item" type="button" data-route="/products/">商品管理</button>
+        <div class="nav-label">系统</div>
+        <button class="nav-item" type="button" data-route="/settings/">设置</button>
+        <div class="version">本地桌面版 · 原型预览</div>
+      </aside>
+
+      <div class="content">
+        <header class="topbar">
+          <div class="shop-name">消防器材门店 · 业务工作台</div>
+          <div class="topbar-right"><span class="local-label">演示页面</span></div>
+        </header>
+        <main class="page-body">
+          <section class="screen" data-screen-label="业务工作台首屏">
+            <div class="page-heading">
+              <div>
+                <p class="eyebrow">业务中心 / 工作台</p>
+                <h1>业务工作台</h1>
+                <p class="subtitle">快速查看当天销售与退货，以及最近处理的单据。</p>
+              </div>
+              <div class="day-chip"><span>统计日期</span><strong id="businessDate"></strong></div>
+            </div>
+
+            <div class="demo-note" role="note">
+              <strong>示例数据</strong>
+              <span>页面中的客户、单号和金额均为虚构，仅用于核对统计口径与交互，不会写入 ERP。</span>
+            </div>
+
+            <section class="metric-grid" aria-label="今日经营指标">
+              <article class="metric-card net-card">
+                <div class="metric-head"><span>今日净业务额</span><span class="metric-period">今日</span></div>
+                <p class="metric-value" id="netAmount" aria-live="polite">¥0.00</p>
+                <p class="metric-help">按单据日期统计；销售为正，退货为负</p>
+              </article>
+              <article class="metric-card">
+                <div class="metric-head"><span>销售单</span><span class="metric-period">今日</span></div>
+                <p class="metric-value count" id="salesCount" aria-live="polite">0 笔</p>
+                <p class="metric-help">正式保存或已打印</p>
+              </article>
+              <article class="metric-card">
+                <div class="metric-head"><span>退货单</span><span class="metric-period">今日</span></div>
+                <p class="metric-value count" id="returnsCount" aria-live="polite">0 笔</p>
+                <p class="metric-help">正式保存或已打印</p>
+              </article>
+            </section>
+
+            <section aria-label="常用业务入口">
+              <h2 class="sr-only">常用业务入口</h2>
+              <div class="quick-grid">
+                <a class="quick-card primary" href="/orders/new" data-route="/orders/new"><strong>新建销售单</strong><span>录入商品并保存打印</span></a>
+                <a class="quick-card" href="/orders/return/new" data-route="/orders/return/new"><strong>新建退货单</strong><span>沿用销售单录入流程</span></a>
+                <a class="quick-card" href="/orders/" data-route="/orders/"><strong>单据管理</strong><span>筛选、汇总导出、回看编辑</span></a>
+                <a class="quick-card" href="/accounts/" data-route="/accounts/"><strong>账款管理</strong><span>客户余额、收款与汇总</span></a>
+              </div>
+            </section>
+
+            <section class="surface recent-panel" aria-labelledby="recentTitle">
+              <div class="section-head">
+                <div>
+                  <h2 id="recentTitle">最近业务</h2>
+                  <p>最近 5 笔有效销售/退货单 · 按录入时间倒序 · 包含不同单据日期</p>
+                </div>
+                <a class="text-link" href="/orders/" data-route="/orders/">查看全部单据 <span aria-hidden="true">→</span></a>
+              </div>
+              <div class="table-wrap">
+                <table class="orders-table">
+                  <caption class="sr-only">最近五笔有效销售和退货单，按录入时间倒序</caption>
+                  <thead><tr><th>单据</th><th>客户</th><th>单据日期</th><th>录入时间</th><th>金额</th><th>查看</th></tr></thead>
+                  <tbody id="recentRows"></tbody>
+                </table>
+                <div class="empty-state" id="emptyRecent" hidden>暂无有效销售或退货单。</div>
+              </div>
+              <section class="detail-panel" id="detailPanel" aria-label="单据详情" hidden>
+                <div class="detail-head">
+                  <h3>单据详情 <span class="metric-period">虚构数据</span></h3>
+                  <button class="row-action" id="closeDetail" type="button">收起</button>
+                </div>
+                <dl class="detail-grid">
+                  <div><dt>单号</dt><dd id="detailOrderNo"></dd></div>
+                  <div><dt>单据类型</dt><dd id="detailType"></dd></div>
+                  <div><dt>客户</dt><dd id="detailCustomer"></dd></div>
+                  <div><dt>单据日期</dt><dd id="detailOrderDate"></dd></div>
+                  <div><dt>录入时间</dt><dd id="detailCreatedAt"></dd></div>
+                  <div><dt>金额 / 状态</dt><dd id="detailAmountStatus"></dd></div>
+                </dl>
+              </section>
+            </section>
+
+            <section class="surface workspace-panel" aria-labelledby="flowTitle">
+              <h2 id="flowTitle">日常业务流程</h2>
+              <p>沿用当前首页的流程提示，不改变现有业务路径。</p>
+              <div class="flow">
+                <div class="flow-step"><b>1. 维护资料</b><small>客户与商品字典</small></div>
+                <div class="flow-step"><b>2. 销售 / 退货</b><small>Excel 式逐行录入</small></div>
+                <div class="flow-step"><b>3. 打印单据</b><small>保存后打开打印页</small></div>
+                <div class="flow-step"><b>4. 核对账款</b><small>查询余额与汇总表</small></div>
+              </div>
+            </section>
+          </section>
+        </main>
+      </div>
+    </div>
+  </div>
+
+  <div class="notice" id="notice" role="status" aria-live="polite" hidden></div>
+
+  <script>
+    const pad = (value) => String(value).padStart(2, "0");
+    const localDateKey = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    const now = new Date();
+    const todayKey = localDateKey(now);
+    const previousDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const previousKey = localDateKey(previousDay);
+    const todayNumber = todayKey.replaceAll("-", "");
+    const atLocalTime = (daysAgo, hour, minute) => new Date(
+      now.getFullYear(), now.getMonth(), now.getDate() - daysAgo, hour, minute, 0, 0
+    );
+    const demoOrders = [
+      { orderNo: `MD${todayNumber}0007`, customer: "示例客户甲", orderDate: todayKey, createdAt: atLocalTime(0, 14, 20), orderType: "sale", totalAmountCents: 200000, status: "printed", deletedAt: null },
+      { orderNo: `MD${todayNumber}0006`, customer: "示例客户乙", orderDate: todayKey, createdAt: atLocalTime(0, 10, 11), orderType: "return", totalAmountCents: -30000, status: "saved", deletedAt: null },
+      { orderNo: `MD${todayNumber}0005`, customer: "示例客户丙", orderDate: todayKey, createdAt: atLocalTime(0, 9, 25), orderType: "sale", totalAmountCents: 80000, status: "saved", deletedAt: null },
+      { orderNo: `MD${previousKey.replaceAll("-", "")}0004`, customer: "示例客户甲", orderDate: previousKey, createdAt: atLocalTime(1, 18, 50), orderType: "sale", totalAmountCents: 150000, status: "printed", deletedAt: null },
+      { orderNo: `MD${previousKey.replaceAll("-", "")}0003`, customer: "示例客户丁", orderDate: previousKey, createdAt: atLocalTime(1, 15, 20), orderType: "return", totalAmountCents: -40000, status: "saved", deletedAt: null },
+      { orderNo: `MD${todayNumber}D001`, customer: "示例草稿客户", orderDate: todayKey, createdAt: atLocalTime(0, 16, 10), orderType: "sale", totalAmountCents: 99000, status: "draft", deletedAt: null },
+      { orderNo: `MD${todayNumber}V001`, customer: "示例作废客户", orderDate: todayKey, createdAt: atLocalTime(0, 16, 0), orderType: "return", totalAmountCents: -50000, status: "void", deletedAt: null },
+      { orderNo: `MD${todayNumber}X001`, customer: "示例删除客户", orderDate: todayKey, createdAt: atLocalTime(0, 15, 50), orderType: "sale", totalAmountCents: 60000, status: "saved", deletedAt: todayKey }
+    ];
+    const validOrder = (order) =>
+      ["saved", "printed"].includes(order.status) &&
+      order.deletedAt === null &&
+      ["sale", "return"].includes(order.orderType);
+    const validOrders = demoOrders.filter(validOrder);
+    const todayOrders = validOrders.filter((order) => order.orderDate === todayKey);
+    const todayNetCents = todayOrders.reduce((sum, order) => sum + order.totalAmountCents, 0);
+    const todaySales = todayOrders.filter((order) => order.orderType === "sale").length;
+    const todayReturns = todayOrders.filter((order) => order.orderType === "return").length;
+    const recentOrders = [...validOrders]
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+      .slice(0, 5);
+
+    const formatMoney = (cents) => {
+      const absolute = `¥${(Math.abs(cents) / 100).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      return cents < 0 ? `−${absolute}` : absolute;
+    };
+    const formatDate = (key) => {
+      const [year, month, day] = key.split("-").map(Number);
+      return `${year}年${month}月${day}日`;
+    };
+    const formatClock = (date) => `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    const formatDateTime = (date) => `${localDateKey(date)} ${formatClock(date)}`;
+    const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[char]);
+
+    document.getElementById("businessDate").textContent = formatDate(todayKey);
+    document.getElementById("netAmount").textContent = formatMoney(todayNetCents);
+    document.getElementById("salesCount").textContent = `${todaySales} 笔`;
+    document.getElementById("returnsCount").textContent = `${todayReturns} 笔`;
+
+    function renderRecentOrders() {
+      const tbody = document.getElementById("recentRows");
+      const empty = document.getElementById("emptyRecent");
+      tbody.replaceChildren();
+      empty.hidden = recentOrders.length > 0;
+      recentOrders.forEach((order) => {
+        const row = document.createElement("tr");
+        const typeLabel = order.orderType === "return" ? "退货单" : "销售单";
+        const typeCell = document.createElement("td");
+        const orderCell = document.createElement("div");
+        orderCell.className = "order-cell";
+        const type = document.createElement("span");
+        type.className = `type-pill ${order.orderType === "return" ? "type-return" : "type-sale"}`;
+        type.textContent = typeLabel;
+        const orderButton = document.createElement("button");
+        orderButton.className = "order-link";
+        orderButton.type = "button";
+        orderButton.textContent = order.orderNo;
+        orderButton.setAttribute("aria-label", `查看单据 ${order.orderNo}`);
+        orderButton.addEventListener("click", () => showOrderDetail(order));
+        orderCell.append(type, orderButton);
+        typeCell.append(orderCell);
+
+        const customerCell = document.createElement("td");
+        customerCell.textContent = order.customer;
+        const dateCell = document.createElement("td");
+        dateCell.className = "order-date";
+        dateCell.textContent = order.orderDate;
+        const timeCell = document.createElement("td");
+        timeCell.className = "entry-time";
+        timeCell.textContent = formatDateTime(order.createdAt);
+        const amountCell = document.createElement("td");
+        amountCell.className = `amount${order.totalAmountCents < 0 ? " negative" : ""}`;
+        amountCell.textContent = formatMoney(order.totalAmountCents);
+        const actionCell = document.createElement("td");
+        const viewButton = document.createElement("button");
+        viewButton.className = "row-action";
+        viewButton.type = "button";
+        viewButton.textContent = "查看";
+        viewButton.setAttribute("aria-label", `查看 ${order.orderNo} 示例详情`);
+        viewButton.addEventListener("click", () => showOrderDetail(order));
+        actionCell.append(viewButton);
+        row.append(typeCell, customerCell, dateCell, timeCell, amountCell, actionCell);
+        tbody.append(row);
+      });
+    }
+
+    function showOrderDetail(order) {
+      document.getElementById("detailOrderNo").textContent = order.orderNo;
+      document.getElementById("detailType").textContent = order.orderType === "return" ? "退货单" : "销售单";
+      document.getElementById("detailCustomer").textContent = order.customer;
+      document.getElementById("detailOrderDate").textContent = order.orderDate;
+      document.getElementById("detailCreatedAt").textContent = formatDateTime(order.createdAt);
+      const statusLabel = order.status === "printed" ? "已打印" : "正式保存";
+      document.getElementById("detailAmountStatus").textContent = `${formatMoney(order.totalAmountCents)} · ${statusLabel}`;
+      const panel = document.getElementById("detailPanel");
+      panel.hidden = false;
+      document.getElementById("closeDetail").focus();
+    }
+    document.getElementById("closeDetail").addEventListener("click", () => {
+      document.getElementById("detailPanel").hidden = true;
+    });
+    document.getElementById("themeSelect").addEventListener("change", (event) => {
+      document.documentElement.dataset.uiTheme = event.target.value;
+    });
+    document.getElementById("viewportSelect").addEventListener("change", (event) => {
+      document.getElementById("previewFrame").dataset.viewport = event.target.value;
+    });
+
+    let noticeTimer = 0;
+    function toast(message) {
+      const notice = document.getElementById("notice");
+      notice.textContent = message;
+      notice.hidden = false;
+      window.clearTimeout(noticeTimer);
+      noticeTimer = window.setTimeout(() => { notice.hidden = true; }, 2800);
+    }
+    document.querySelectorAll("[data-route]").forEach((link) => {
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        toast(`正式页面入口：${link.dataset.route}。此原型不连接 ERP，也不执行真实业务操作。`);
+      });
+    });
+    renderRecentOrders();
+  </script>
+</body>
+</html>

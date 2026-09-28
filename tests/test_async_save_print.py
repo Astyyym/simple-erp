@@ -1,5 +1,6 @@
 from uuid import uuid4
 from datetime import date
+import re
 
 import pytest
 
@@ -66,8 +67,11 @@ def test_order_entry_disables_browser_history_but_keeps_erp_suggestions():
     for path in ("/orders/new", "/orders/return/new"):
         html = client.get(path).get_data(as_text=True)
         assert 'id="orderForm" autocomplete="off"' in html
-        assert 'id="customer_name" name="customer_name" autocomplete="new-password"' in html
-        assert 'name="product_name" class="product-name" autocomplete="new-password"' in html
+        input_tags = re.findall(r'<input[^>]*>', html)
+        customer_input = next(tag for tag in input_tags if 'id="customer_name"' in tag)
+        product_input = next(tag for tag in input_tags if 'name="product_name"' in tag and 'class="product-name"' in tag)
+        assert 'autocomplete="new-password"' in customer_input
+        assert 'autocomplete="new-password"' in product_input
         assert 'name="quantity" class="quantity" autocomplete="new-password"' in html
         assert 'name="unit_price" class="unit-price" autocomplete="new-password"' in html
         assert 'data-lpignore="true"' in html

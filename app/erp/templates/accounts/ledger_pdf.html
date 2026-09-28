@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>客户账款流水</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #17212b; font-family: "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; font-size: 10px; }
+    h1 { margin: 0; text-align: center; font-size: 19px; letter-spacing: 1px; }
+    .title { margin: 3px 0 12px; text-align: center; font-size: 14px; font-weight: 700; }
+    .meta { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 9px; font-size: 10px; }
+    .summary { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 12px; }
+    .summary-card { padding: 9px 10px; border: 1px solid #aab4be; border-radius: 3px; break-inside: avoid; }
+    .summary-label { color: #5a6875; font-size: 9px; font-weight: 700; }
+    .summary-value { margin: 3px 0 5px; font-size: 17px; font-weight: 700; }
+    .summary-help { color: #5a6875; font-size: 8px; }
+    .breakdown { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; padding-top: 5px; border-top: 1px solid #d6dce1; color: #53616e; font-size: 8px; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    thead { display: table-header-group; }
+    th, td { padding: 5px 4px; border: 1px solid #aab4be; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+    th { background: #edf1f4; font-size: 9px; }
+    td { font-size: 8.5px; }
+    .col-date { width: 18mm; white-space: nowrap; }
+    .col-type { width: 20mm; }
+    .col-ref { width: 25mm; }
+    .col-amount { width: 22mm; text-align: right; }
+    .col-impact { width: 22mm; text-align: right; }
+    .col-status { width: 16mm; text-align: center; }
+    .reference { font-family: Consolas, "Courier New", monospace; font-size: 8px; }
+    .amount { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .void-row td { color: #6f7a84; background: #f5f6f7; }
+    .void-reason { margin-top: 2px; font-size: 7.5px; }
+    .empty { padding: 14px; color: #62707c; text-align: center; }
+    .footnote { margin-top: 8px; color: #596774; font-size: 8px; }
+    @media print { tr { break-inside: avoid; } }
+  </style>
+</head>
+<body>
+  {% macro money(value) -%}¥{{ cents_to_yuan(value|abs) }}{%- endmacro %}
+  {% macro signed_money(value) -%}{% if value > 0 %}+{% elif value < 0 %}−{% endif %}{{ money(value) }}{%- endmacro %}
+  {% macro balance_money(value) -%}{% if value < 0 %}−{% endif %}{{ money(value) }}{%- endmacro %}
+  {% set type_names = {"sale": "销售单", "return": "退货单", "payment": "收款", "adjustment": "账务调整"} %}
+  <h1>{{ config.shop_name }}</h1>
+  <div class="title">客户账款流水</div>
+  <div class="meta">
+    <span>客户：{{ ledger.customer.name }}</span>
+    <span>筛选期间：{% if ledger.period.start_date or ledger.period.end_date %}{{ ledger.period.start_date or '最早' }} 至 {{ ledger.period.end_date or '最新' }}{% else %}全部日期{% endif %}</span>
+  </div>
+
+  <section class="summary">
+    <div class="summary-card">
+      <div class="summary-label">当前余额 · 全历史，不受日期筛选影响</div>
+      <div class="summary-value">{{ balance_money(ledger.current_balance_cents) }}</div>
+      <div class="summary-help">正数表示客户尚欠；已作废记录不计入余额。</div>
+      <div class="breakdown">
+        <span>期初 {{ balance_money(ledger.opening_balance_cents) }}</span>
+        <span>单据净额 {{ signed_money(ledger.document_net_cents) }}</span>
+        <span>调整 {{ signed_money(ledger.adjustment_cents) }}</span>
+        <span>收款 −{{ money(ledger.payment_cents) }}</span>
+      </div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">筛选区间净变动 · 期初余额不计入</div>
+      <div class="summary-value">{{ signed_money(ledger.period.net_change_cents) }}</div>
+      <div class="summary-help">只合计生效的销售、退货、收款和调整流水。</div>
+      <div class="breakdown">
+        <span>销售 {{ signed_money(ledger.period.sales_cents) }}</span>
+        <span>退货 {{ signed_money(ledger.period.returns_cents) }}</span>
+        <span>收款 {{ signed_money(ledger.period.payments_cents) }}</span>
+        <span>调整 {{ signed_money(ledger.period.adjustments_cents) }}</span>
+      </div>
+    </div>
+  </section>
+
+  <table>
+    <colgroup><col class="col-date"><col class="col-type"><col><col class="col-ref"><col class="col-amount"><col class="col-impact"><col class="col-status"></colgroup>
+    <thead><tr><th>日期</th><th>类型</th><th>摘要</th><th>单号 / 方式</th><th class="col-amount">发生金额</th><th class="col-impact">余额影响</th><th class="col-status">状态</th></tr></thead>
+    <tbody>
+      {% for entry in ledger.entries %}
+      <tr class="{{ 'void-row' if entry.status == 'void' else '' }}">
+        <td>{{ entry.date }}</td>
+        <td>{{ type_names.get(entry.type, entry.type) }}</td>
+        <td>{{ entry.description }}{% if entry.status == 'void' and entry.void_reason %}<div class="void-reason">作废原因：{{ entry.void_reason }}</div>{% endif %}</td>
+        <td class="reference">{{ entry.reference or '—' }}</td>
+        <td class="amount">{% if entry.type == 'payment' %}{{ money(entry.amount_cents) }}{% else %}{{ signed_money(entry.amount_cents) }}{% endif %}</td>
+        <td class="amount">{{ signed_money(entry.balance_delta_cents) }}</td>
+        <td class="col-status">{{ '已作废' if entry.status == 'void' else '生效' }}</td>
+      </tr>
+      {% else %}<tr><td class="empty" colspan="7">所选日期范围内没有流水记录。</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <p class="footnote">作废记录保留用于追溯，发生金额仍展示原值，余额影响为 ¥0.00。更正记录请作废原记录后重新登记。</p>
+</body>
+</html>

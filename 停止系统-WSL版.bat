@@ -2,7 +2,7 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 set "ERP_URL=http://127.0.0.1:5001"
-set "WSL_PROJECT=/mnt/d/wenjian/Hermes/简单ERP"
+
 
 where wsl.exe >nul 2>nul
 if errorlevel 1 (

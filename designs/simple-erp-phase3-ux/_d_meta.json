@@ -1,0 +1,24 @@
+{
+  "type": "design",
+  "designSystems": [],
+  "primaryDesignSystem": null,
+  "assets": {
+    "Phase 3 查询与高频录入": {
+      "versions": [
+        {
+          "path": "phase3-ux-prototype.html",
+          "createdAt": "2026-09-26T02:33:46.827Z",
+          "status": "approved",
+          "subtitle": "单据服务端分页、采购热力日期轴、开单联想键盘操作",
+          "viewport": {
+            "width": 1440,
+            "height": 980
+          },
+          "section": "单据管理与开单"
+        }
+      ]
+    }
+  },
+  "createdAt": "2026-09-26T02:33:46.828Z",
+  "updatedAt": "2026-09-26T02:33:46.828Z"
+}

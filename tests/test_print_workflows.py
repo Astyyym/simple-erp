@@ -315,12 +315,8 @@ def test_desktop_print_links_stay_in_shell_without_blank_target(monkeypatch):
     assert 'id="settingsPrintPreviewPdf" href="/settings/print-preview.pdf?desktop_preview=1" target="_blank"' not in settings_html
 
     accounts_html = client.get(f"/accounts/?customer_id={customer_id}").get_data(as_text=True)
-    assert "打印汇总表" in accounts_html
-    assert 'target="_blank" href="/accounts/summary_pdf' not in accounts_html
-    assert 'href="/accounts/summary_pdf' in accounts_html
-    assert 'target="_blank"' not in accounts_html or 'summary_pdf' in accounts_html
-    # Stronger: the summary link itself has no target=_blank
-    assert 'summary_pdf?customer_id=' in accounts_html
-    assert 'summary_pdf?customer_id=' + str(customer_id) in accounts_html or f"customer_id={customer_id}" in accounts_html
-    assert 'target="_blank" rel="noopener">打印汇总表' not in accounts_html
-    assert 'target="_blank">打印汇总表' not in accounts_html
+    assert "打印账款流水 PDF" in accounts_html
+    assert f'id="ledgerPdfLink" href="/accounts/ledger_pdf?customer_id={customer_id}' in accounts_html
+    assert "&amp;desktop_preview=1" in accounts_html
+    assert 'id="ledgerPdfLink" href="/accounts/summary_pdf' not in accounts_html
+    assert 'id="ledgerPdfLink" href="/accounts/ledger_pdf?customer_id=' + str(customer_id) + '" target="_blank"' not in accounts_html

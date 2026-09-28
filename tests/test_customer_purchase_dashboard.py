@@ -196,3 +196,50 @@ def test_dashboard_safely_converts_text_quantity_and_exposes_offline_interaction
     assert 'name="date_mode"' in html
     assert "按年" in html and "按月" in html and "按日到日" in html
     assert "purchase-month-grid" in html or "month-calendar" in html
+
+
+def test_heatmap_has_monday_first_weekday_labels_and_visible_calendar_dates():
+    init_db()
+    suffix = uuid4().hex[:8]
+    customer_name = f"日期轴客户{suffix}"
+    customer_id = create_customer(customer_name)
+    create_order_from_typed_rows(
+        customer_id,
+        f"AXIS-{suffix}",
+        [{"product_name": "日历商品", "unit": "个", "unit_price_yuan": "8", "quantity": "1"}],
+        status="saved",
+        order_date="2026-07-01",
+    )
+
+    html = create_app().test_client().get(
+        "/orders/", query_string={"customer": customer_name}
+    ).get_data(as_text=True)
+
+    assert "weekdays.className = 'month-weekdays'" in html
+    assert "星期一" in html and "星期日" in html
+    assert "cell.textContent = String(dayNum)" in html
+
+
+def test_heatmap_surface_and_intensity_levels_follow_theme_tokens():
+    init_db()
+    suffix = uuid4().hex[:8]
+    customer_name = f"主题客户{suffix}"
+    customer_id = create_customer(customer_name)
+    create_order_from_typed_rows(
+        customer_id,
+        f"THEME-{suffix}",
+        [{"product_name": "主题商品", "unit": "个", "unit_price_yuan": "8", "quantity": "1"}],
+        status="saved",
+        order_date="2026-07-01",
+    )
+
+    html = create_app().test_client().get(
+        "/orders/", query_string={"customer": customer_name}
+    ).get_data(as_text=True)
+
+    assert "--erp-heat-0:" in html and "--erp-heat-4:" in html
+    assert ".month-calendar{border:1px solid var(--erp-border)" in html
+    assert "background:var(--erp-surface)" in html
+    assert "var(--erp-heat-0)" in html and "var(--erp-heat-4)" in html
+    assert "cell.dataset.level = String(level(day.amount_cents))" in html
+    assert "cell.style.backgroundColor = colors" not in html

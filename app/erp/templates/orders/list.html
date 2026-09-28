@@ -130,11 +130,20 @@
 <div class="d-flex gap-2 mb-3"><a class="btn btn-primary" href="/orders/new">新建订单</a><button class="btn btn-danger" type="button" onclick="submitSelected('bulkOrdersForm','确认删除选中的单据吗？')">删除选中</button></div>
 <form id="bulkOrdersForm" method="post" action="/orders/bulk_delete"></form>
 <table class="table table-striped align-middle stable-table">
-  <colgroup><col style="width:44px"><col style="width:17%"><col style="width:19%"><col style="width:13%"><col style="width:11%"><col style="width:10%"><col style="width:300px"></colgroup>
-  <tr><th><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>单号</th><th>客户</th><th>日期</th><th>金额</th><th>状态</th><th class="action-cell">操作</th></tr>
+  <colgroup><col style="width:44px"><col style="width:16%"><col style="width:18%"><col style="width:11%"><col style="width:10%"><col style="width:12%"><col style="width:12%"><col style="width:300px"></colgroup>
+  <tr><th><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>单号</th><th>客户</th><th>日期</th><th>类型</th><th>金额</th><th>状态</th><th class="action-cell">操作</th></tr>
   {% for o in orders %}
   <tr class="{{ 'table-danger return-order-row' if o.order_type == 'return' else '' }}" data-order-type="{{o.order_type}}">
-    <td><input form="bulkOrdersForm" type="checkbox" name="ids" value="{{o.id}}"></td><td title="{{o.order_no}}">{{o.order_no}}</td><td title="{{o.customer_name}}">{{o.customer_name}}</td><td>{{o.order_date}}</td><td>{{cents_to_yuan(o.total_amount_cents)}}</td><td>{{o.status}}</td>
+    <td><input form="bulkOrdersForm" type="checkbox" name="ids" value="{{o.id}}"></td><td title="{{o.order_no}}">{{o.order_no}}</td><td title="{{o.customer_name}}">{{o.customer_name}}</td><td>{{o.order_date}}</td>
+    <td><span class="badge {{ 'bg-danger' if o.order_type == 'return' else 'bg-primary' }}">{{ '退货单' if o.order_type == 'return' else '销售单' }}</span></td>
+    <td>{{cents_to_yuan(o.total_amount_cents)}}</td>
+    <td>
+      {% if o.status == 'draft' %}<span class="badge bg-secondary">草稿</span>
+      {% elif o.status == 'saved' %}<span class="badge bg-success">正式保存</span>
+      {% elif o.status == 'printed' %}<span class="badge bg-info text-dark">已打印</span>
+      {% elif o.status == 'void' %}<span class="badge bg-danger">已作废</span>
+      {% else %}<span class="badge bg-secondary">{{o.status}}</span>{% endif %}
+    </td>
     <td class="action-cell"><div class="action-wrap">
       <a class="btn btn-sm btn-secondary" href="/orders/{{o.id}}">回看</a>
       <a class="btn btn-sm btn-primary" href="/orders/{{o.id}}/edit">重编辑</a>
@@ -144,6 +153,35 @@
   </tr>
   {% endfor %}
 </table>
+<div class="orders-pagination d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3 mb-4" aria-label="单据分页">
+  <div class="small text-muted" id="ordersRangeCount">
+    显示 <strong>{{range_start}}–{{range_end}}</strong> 条，共 <strong>{{total_order_count}}</strong> 条
+    <span class="ms-2">第 {{page}} / {{total_pages}} 页 · 每页 {{page_size}} 条</span>
+  </div>
+  <nav aria-label="单据列表分页">
+    <ul class="pagination pagination-sm mb-0">
+      {% if previous_page_url %}
+      <li class="page-item"><a class="page-link" aria-label="上一页" href="{{previous_page_url}}" rel="prev">上一页</a></li>
+      {% else %}
+      <li class="page-item disabled"><span class="page-link" aria-label="上一页" aria-disabled="true">上一页</span></li>
+      {% endif %}
+      {% for item in pagination_pages %}
+      <li class="page-item {{ 'active' if item.number == page else '' }}">
+        {% if item.number == page %}
+        <span class="page-link" aria-label="第 {{item.number}} 页" aria-current="page">{{item.number}}</span>
+        {% else %}
+        <a class="page-link" aria-label="第 {{item.number}} 页" href="{{item.url}}">{{item.number}}</a>
+        {% endif %}
+      </li>
+      {% endfor %}
+      {% if next_page_url %}
+      <li class="page-item"><a class="page-link" aria-label="下一页" href="{{next_page_url}}" rel="next">下一页</a></li>
+      {% else %}
+      <li class="page-item disabled"><span class="page-link" aria-label="下一页" aria-disabled="true">下一页</span></li>
+      {% endif %}
+    </ul>
+  </nav>
+</div>
 <style>
 .purchase-dashboard-layout{
   display:grid;
@@ -164,11 +202,17 @@
   height:250px;
 }
 .purchase-month-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}
-.month-calendar{border:1px solid #dee2e6;border-radius:8px;padding:8px;background:#fff}
-.month-calendar h5{font-size:.9rem;margin:0 0 6px;color:#495057}
+.month-calendar{border:1px solid var(--erp-border);border-radius:8px;padding:8px;background:var(--erp-surface);color:var(--erp-ink)}
+.month-calendar h5{font-size:.9rem;margin:0 0 6px;color:var(--erp-ink)}
+.month-weekdays{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:3px;text-align:center}
+.weekday-label{font-size:10px;line-height:1.4;color:var(--erp-muted);user-select:none}
 .month-days{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
-.heat-day{aspect-ratio:1;min-width:0;border:1px solid rgba(27,31,36,.08);border-radius:3px;cursor:pointer;padding:0;background:#ebedf0}
-.heat-day.selected{outline:2px solid #0d6efd;outline-offset:1px}
+.heat-day{display:grid;place-items:center;aspect-ratio:1;min-width:0;border:1px solid var(--erp-border);border-radius:3px;cursor:pointer;padding:0;font-size:10px;line-height:1;background-color:var(--erp-heat-0);color:var(--erp-heat-ink-0)}
+.heat-day[data-level="1"]{background-color:var(--erp-heat-1);color:var(--erp-heat-ink-1)}
+.heat-day[data-level="2"]{background-color:var(--erp-heat-2);color:var(--erp-heat-ink-2)}
+.heat-day[data-level="3"]{background-color:var(--erp-heat-3);color:var(--erp-heat-ink-3)}
+.heat-day[data-level="4"]{background-color:var(--erp-heat-4);color:var(--erp-heat-ink-4)}
+.heat-day.selected{outline:2px solid var(--erp-primary);outline-offset:1px}
 .heat-day.out-of-range{visibility:hidden;pointer-events:none}
 .purchase-range-actions{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
 .ranking-limit{width:82px}
@@ -237,11 +281,16 @@
       clearTimeout(timer);
       timer = setTimeout(async () => {
         const q = customerInput.value.trim();
-        if (!q) { suggestions.innerHTML = ''; return; }
+        if (!q) { suggestions.replaceChildren(); return; }
         try {
           const response = await fetch('/orders/api/customers?q=' + encodeURIComponent(q));
           const rows = await response.json();
-          suggestions.innerHTML = rows.map(row => `<option value="${row.name}"></option>`).join('');
+          suggestions.replaceChildren();
+          rows.forEach(row => {
+            const option = document.createElement('option');
+            option.value = row.name;
+            suggestions.appendChild(option);
+          });
         } catch (_) {}
       }, 180);
     });
@@ -253,7 +302,6 @@
   const heatmap = document.getElementById('purchaseHeatmap');
   const amounts = data.days.map(day => day.amount_cents).filter(value => value > 0);
   const maxAmount = Math.max(0, ...amounts);
-  const colors = ['#ebedf0','#c6e48b','#7bc96f','#239a3b','#196127'];
   const level = amount => amount <= 0 || maxAmount <= 0 ? 0 : Math.max(1, Math.ceil(amount / maxAmount * 4));
   const money = cents => `¥${(cents / 100).toFixed(2)}`;
   const cells = [];
@@ -288,12 +336,29 @@
     cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
   }
 
+  const weekdayLabels = [
+    {short: '一', full: '星期一'}, {short: '二', full: '星期二'},
+    {short: '三', full: '星期三'}, {short: '四', full: '星期四'},
+    {short: '五', full: '星期五'}, {short: '六', full: '星期六'},
+    {short: '日', full: '星期日'}
+  ];
   months.forEach(({year, month}) => {
     const card = document.createElement('div');
     card.className = 'month-calendar';
     const title = document.createElement('h5');
     title.textContent = `${year}年${month}月`;
     card.appendChild(title);
+    const weekdays = document.createElement('div');
+    weekdays.className = 'month-weekdays';
+    weekdayLabels.forEach(({short, full}) => {
+      const label = document.createElement('span');
+      label.className = 'weekday-label';
+      label.textContent = short;
+      label.setAttribute('aria-label', full);
+      label.title = full;
+      weekdays.appendChild(label);
+    });
+    card.appendChild(weekdays);
     const grid = document.createElement('div');
     grid.className = 'month-days';
     const first = new Date(year, month - 1, 1);
@@ -311,11 +376,12 @@
       cell.type = 'button';
       cell.className = 'heat-day';
       cell.dataset.date = iso;
+      cell.textContent = String(dayNum);
       if (!day) {
         cell.classList.add('out-of-range');
         cell.tabIndex = -1;
       } else {
-        cell.style.backgroundColor = colors[level(day.amount_cents)];
+        cell.dataset.level = String(level(day.amount_cents));
         const productSummary = (() => {
           if (!day.products.length) return '无';
           const shown = day.products.slice(0, 3);

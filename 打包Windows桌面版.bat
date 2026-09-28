@@ -39,5 +39,5 @@ if not exist dist\简单ERP\config.json copy config.json dist\简单ERP\config.j
 
 echo.
 echo 打包完成：dist\简单ERP\简单ERP.exe
-echo 可以把整个 dist\简单ERP 文件夹复制到父母电脑使用。
+echo 可以把整个 dist\简单ERP 文件夹复制到目标电脑使用。
 pause

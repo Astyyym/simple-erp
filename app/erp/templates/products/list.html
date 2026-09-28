@@ -48,10 +48,15 @@ const productSearchInput = document.getElementById('productSearchInput');
 const productSuggestions = document.getElementById('product_name_suggestions');
 productSearchInput.addEventListener('input', async () => {
   const q = productSearchInput.value.trim();
-  if (!q) { productSuggestions.innerHTML = ''; return; }
+  if (!q) { productSuggestions.replaceChildren(); return; }
   const response = await fetch('/products/api/suggestions?q=' + encodeURIComponent(q));
   const names = await response.json();
-  productSuggestions.innerHTML = names.map(name => `<option value="${name}"></option>`).join('');
+  productSuggestions.replaceChildren();
+  names.forEach(name => {
+    const option = document.createElement('option');
+    option.value = name;
+    productSuggestions.appendChild(option);
+  });
 });
 </script>
 {% endblock %}

@@ -1,23 +1,129 @@
 {% extends "base.html" %}
+{% macro money(value) -%}¥{{ cents_to_yuan(value|abs) }}{%- endmacro %}
+{% macro signed_money(value) -%}{% if value > 0 %}+{% elif value < 0 %}−{% endif %}{{ money(value) }}{%- endmacro %}
+{% macro balance_money(value) -%}{% if value < 0 %}−{% endif %}{{ money(value) }}{%- endmacro %}
+{% set type_names = {"sale": "销售单", "return": "退货单", "payment": "收款", "adjustment": "账务调整"} %}
 {% block content %}
+<style>
+  .account-subtitle,.ledger-hint,.entry-note { color:var(--erp-muted);font-size:12px; }
+  .account-filter { display:grid;grid-template-columns:minmax(210px,1.3fr) minmax(135px,.8fr) minmax(135px,.8fr) auto auto;align-items:end;gap:10px;margin-bottom:14px; }
+  .account-filter label,.entry-card label { display:block;margin-bottom:5px;color:var(--erp-muted);font-size:12px;font-weight:650; }
+  .account-summary-grid,.entry-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:14px 0 20px; }
+  .account-summary-card,.entry-card { padding:16px; }
+  .summary-label { display:flex;justify-content:space-between;gap:10px;color:var(--erp-muted);font-size:12px;font-weight:650; }
+  .summary-value { margin-top:7px;font-size:30px;font-weight:700;font-variant-numeric:tabular-nums; }
+  .summary-value.positive { color:var(--erp-success); }.summary-value.negative,.amount.negative { color:var(--erp-danger); }
+  .summary-help,.ledger-hint,.entry-note { margin-top:6px;color:var(--erp-muted);font-size:11px; }
+  .breakdown { display:flex;flex-wrap:wrap;gap:5px 13px;margin-top:9px;padding-top:8px;border-top:1px solid var(--erp-border);color:var(--erp-muted);font-size:11px; }
+  .ledger-heading { display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 9px; }.ledger-heading h3 { margin:0;font-size:17px; }
+  .ledger-table { min-width:900px; }.ledger-table td { font-size:12px; }.ledger-date,.reference { white-space:nowrap;color:var(--erp-muted); }.reference { font-family:Consolas,"Courier New",monospace;font-size:11px; }
+  .description-main { font-weight:600; }.description-sub { margin-top:2px;color:var(--erp-muted);font-size:10px; }
+  .amount { font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums; }.amount.positive { color:var(--erp-success); }.amount.zero { color:var(--erp-muted); }
+  .badge-ledger { display:inline-flex;align-items:center;min-height:22px;padding:2px 7px;border:1px solid var(--erp-border);border-radius:4px;font-size:10px;font-weight:650;white-space:nowrap; }
+  .type-sale { color:#1d4ed8;background:rgba(37,99,235,.08); }.type-return { color:var(--erp-danger);background:rgba(199,53,53,.08); }.type-payment { color:var(--erp-success);background:rgba(23,128,61,.08); }.type-adjustment { color:#9a6700;background:rgba(245,158,11,.1); }
+  .status-active { color:var(--erp-success); }.status-void { color:var(--erp-muted); }.row-void td { color:var(--erp-muted);background:rgba(127,127,127,.045); }.empty-ledger { padding:24px;text-align:center;color:var(--erp-muted); }
+  .entry-grid { margin-top:18px; }.entry-card h4 { margin:0 0 10px;font-size:14px; }.entry-form { display:grid;grid-template-columns:minmax(120px,.7fr) minmax(150px,1fr) auto;align-items:end;gap:9px; }.entry-form .form-control { min-height:37px; }.entry-note { margin-bottom:0; }
+  .void-dialog { width:min(420px,calc(100vw - 28px));padding:0;color:var(--erp-ink);background:var(--erp-surface);border:1px solid var(--erp-border);border-radius:9px;box-shadow:0 24px 64px rgba(0,0,0,.25); }.void-dialog::backdrop { background:rgba(15,23,42,.42);backdrop-filter:blur(2px); }.void-body { padding:20px; }.void-body h3 { margin:0 0 5px;font-size:17px; }.void-body p { color:var(--erp-muted);font-size:12px; }.dialog-actions { display:flex;justify-content:flex-end;gap:8px;margin-top:14px; }
+  @media(max-width:1050px) { .account-filter { grid-template-columns:repeat(4,minmax(115px,1fr)); }.customer-field { grid-column:span 2; } }
+  @media(max-width:760px) { .account-filter { grid-template-columns:repeat(2,minmax(0,1fr)); }.customer-field { grid-column:1/-1; }.account-summary-grid,.entry-grid { grid-template-columns:1fr;gap:10px; }.account-filter .btn { width:100%; }.summary-value { font-size:27px; } }
+  @media(max-width:420px) { .account-filter { grid-template-columns:1fr; }.customer-field { grid-column:auto; }.entry-form { grid-template-columns:1fr 1fr; }.entry-form .field:first-child { grid-column:1/-1; }.entry-form .btn { grid-column:2;justify-self:end; } }
+</style>
+
 <h2>账款管理</h2>
-<form class="row g-2 mb-3" method="get" action="/accounts/">
-  <select class="form-select col" name="customer_id"><option value="">按客户查找订单</option>{% for c in customers %}<option value="{{c.id}}" {% if selected_customer and selected_customer.id == c.id %}selected{% endif %}>{{c.name}}</option>{% endfor %}</select>
-  <input class="form-control col" type="date" name="start_date" value="{{start_date}}" title="开始日期">
-  <input class="form-control col" type="date" name="end_date" value="{{end_date}}" title="结束日期">
-  <button class="btn btn-primary col-2">查询订单</button>
-  <a class="btn btn-outline-secondary col-2" href="/accounts/">清除筛选条件</a>
+<p class="account-subtitle">当前余额与筛选期间发生额分开展示；销售、退货、收款和调整统一留在客户往来流水中。</p>
+<form class="card card-body account-filter" method="get" action="{{ url_for('accounts.accounts') }}">
+  <div class="customer-field"><label for="ledgerCustomer">客户</label><select class="form-select" id="ledgerCustomer" name="customer_id" required>
+    <option value="" {% if not selected_customer %}selected{% endif %}>请选择客户</option>
+    {% for customer in customers %}<option value="{{ customer.id }}" {% if selected_customer and selected_customer.id == customer.id %}selected{% endif %}>{{ customer.name }}</option>{% endfor %}
+  </select></div>
+  <div><label for="ledgerStartDate">开始日期</label><input class="form-control" id="ledgerStartDate" type="date" name="start_date" value="{{ start_date }}"></div>
+  <div><label for="ledgerEndDate">结束日期</label><input class="form-control" id="ledgerEndDate" type="date" name="end_date" value="{{ end_date }}"></div>
+  <button class="btn btn-primary" type="submit">查询流水</button><a class="btn btn-outline-secondary" href="{{ url_for('accounts.accounts') }}">清除筛选</a>
 </form>
-{% if selected_customer %}
-<h4>{{selected_customer.name}} 的订单{% if start_date or end_date %}（{{start_date or '最早'}} 至 {{end_date or '最新'}}）{% endif %}</h4>
-<div class="d-flex gap-2 mb-2">
-  <a class="btn btn-info" href="/accounts/summary_pdf?customer_id={{selected_customer.id}}&start_date={{start_date}}&end_date={{end_date}}{% if is_desktop %}&desktop_preview=1{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>打印汇总表</a>
-  <button class="btn btn-danger" type="button" onclick="submitSelected('bulkAccountOrdersForm','确认删除选中的订单吗？')">删除选中</button>
-</div>
-<form id="bulkAccountOrdersForm" method="post" action="/accounts/bulk_delete_orders"><input type="hidden" name="customer_id" value="{{selected_customer.id}}">
-<table class="table table-bordered stable-table"><colgroup><col style="width:44px"><col><col><col><col><col></colgroup><tr><th><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>单号</th><th>日期</th><th>金额</th><th>状态</th><th>操作</th></tr>{% for o in orders %}<tr class="{{ 'table-danger return-order-row' if o.order_type == 'return' else '' }}" data-order-type="{{o.order_type}}"><td><input type="checkbox" name="ids" value="{{o.id}}"></td><td>{{o.order_no}}</td><td>{{o.order_date}}</td><td>{{cents_to_yuan(o.total_amount_cents)}}</td><td>{{o.status}}</td><td><a class="btn btn-sm btn-secondary" href="/orders/{{o.id}}">回看</a></td></tr>{% endfor %}</table></form>
+
+{% if selected_customer and ledger %}
+<section class="account-summary-grid" aria-label="客户账款摘要">
+  <article class="card account-summary-card">
+    <div class="summary-label"><span>当前余额</span><span>全历史 · 不受日期筛选影响</span></div>
+    <div class="summary-value {% if ledger.current_balance_cents < 0 %}negative{% endif %}" id="currentBalance">{{ balance_money(ledger.current_balance_cents) }}</div>
+    <div class="summary-help">正数表示客户尚欠；作废记录不计入余额。</div>
+    <div class="breakdown"><span>期初 {{ balance_money(ledger.opening_balance_cents) }}</span><span>单据净额 {{ signed_money(ledger.document_net_cents) }}</span><span>调整 {{ signed_money(ledger.adjustment_cents) }}</span><span>收款 −{{ money(ledger.payment_cents) }}</span></div>
+  </article>
+  <article class="card account-summary-card">
+    <div class="summary-label"><span>筛选区间净变动</span><span id="rangeLabel">{% if start_date or end_date %}{{ start_date or '最早' }} 至 {{ end_date or '最新' }}{% else %}全部日期{% endif %}</span></div>
+    <div class="summary-value {% if ledger.period.net_change_cents > 0 %}positive{% elif ledger.period.net_change_cents < 0 %}negative{% endif %}" id="periodChange">{{ signed_money(ledger.period.net_change_cents) }}</div>
+    <div class="summary-help">只合计有效流水；期初余额不计入区间发生额。</div>
+    <div class="breakdown"><span>销售 {{ signed_money(ledger.period.sales_cents) }}</span><span>退货 {{ signed_money(ledger.period.returns_cents) }}</span><span>收款 {{ signed_money(ledger.period.payments_cents) }}</span><span>调整 {{ signed_money(ledger.period.adjustments_cents) }}</span></div>
+  </article>
+</section>
+
+<section aria-labelledby="ledgerHeading">
+  <div class="ledger-heading"><div><h3 id="ledgerHeading">{{ selected_customer.name }} · 客户往来流水</h3><div class="ledger-hint">收款按余额减少显示；退货按负数显示。作废记录保留查看，余额影响为 ¥0.00。</div></div>
+    <a class="btn btn-info" id="ledgerPdfLink" href="{{ url_for('accounts.ledger_pdf', customer_id=selected_customer.id, start_date=start_date, end_date=end_date) }}{% if is_desktop %}&amp;desktop_preview=1{% endif %}"{% if not is_desktop %} target="_blank" rel="noopener"{% endif %}>打印账款流水 PDF</a>
+  </div>
+  <div class="table-responsive"><table class="table align-middle ledger-table">
+    <caption class="visually-hidden">按筛选日期展示销售、退货、收款和账务调整流水</caption>
+    <thead><tr><th scope="col">日期</th><th scope="col">类型</th><th scope="col">摘要</th><th scope="col">单号 / 方式</th><th scope="col">发生金额</th><th scope="col">余额影响</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead>
+    <tbody id="ledgerRows">
+      {% for entry in ledger.entries %}<tr class="{% if entry.status == 'void' %}row-void{% endif %}">
+        <td class="ledger-date">{{ entry.date }}</td><td><span class="badge-ledger type-{{ entry.type }}">{{ type_names.get(entry.type, entry.type) }}</span></td>
+        <td><div class="description-main">{{ entry.description }}</div>{% if entry.status == 'void' and entry.void_reason %}<div class="description-sub">原因：{{ entry.void_reason }}</div>{% endif %}</td>
+        <td class="reference">{{ entry.reference or '—' }}</td>
+        <td class="amount {% if entry.amount_cents > 0 %}positive{% elif entry.amount_cents < 0 %}negative{% else %}zero{% endif %}">{% if entry.type == 'payment' %}{{ money(entry.amount_cents) }}{% else %}{{ signed_money(entry.amount_cents) }}{% endif %}</td>
+        <td class="amount {% if entry.balance_delta_cents > 0 %}positive{% elif entry.balance_delta_cents < 0 %}negative{% else %}zero{% endif %}">{{ signed_money(entry.balance_delta_cents) }}</td>
+        <td><span class="badge-ledger status-{{ 'void' if entry.status == 'void' else 'active' }}">{{ '已作废' if entry.status == 'void' else '生效' }}</span></td>
+        <td>{% if entry.status == 'active' and entry.source == 'payment' %}<button class="btn btn-sm btn-outline-danger" type="button" data-void-url="{{ url_for('accounts.void_payment', payment_id=entry.source_id) }}" data-void-title="作废这条收款记录？">作废</button>{% elif entry.status == 'active' and entry.source == 'adjustment' %}<button class="btn btn-sm btn-outline-danger" type="button" data-void-url="{{ url_for('accounts.void_adjustment', adjustment_id=entry.source_id) }}" data-void-title="作废这条调整记录？">作废</button>{% else %}—{% endif %}</td>
+      </tr>{% else %}<tr><td colspan="8" class="empty-ledger">所选日期范围内没有流水记录。</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="entry-grid" aria-label="新增账务记录">
+  <article class="card entry-card"><h4>登记收款</h4>
+    <form class="entry-form" method="post" action="{{ url_for('accounts.payment') }}">
+      <input type="hidden" name="customer_id" value="{{ selected_customer.id }}"><input type="hidden" name="start_date" value="{{ start_date }}"><input type="hidden" name="end_date" value="{{ end_date }}">
+      <div class="field"><label for="paymentAmount">收款金额（元）</label><input class="form-control" id="paymentAmount" name="amount" type="number" min="0.01" step="0.01" placeholder="例如 500.00" required></div>
+      <div class="field"><label for="paymentMethod">收款方式</label><input class="form-control" id="paymentMethod" name="method" value="现金" required></div><button class="btn btn-success" type="submit">保存收款</button>
+    </form><p class="entry-note">收款金额按正数录入，保存后作为一条可追溯流水；余额影响为负数。</p>
+  </article>
+  <article class="card entry-card"><h4>账务调整</h4>
+    <form class="entry-form" method="post" action="{{ url_for('accounts.adjustment') }}">
+      <input type="hidden" name="customer_id" value="{{ selected_customer.id }}"><input type="hidden" name="start_date" value="{{ start_date }}"><input type="hidden" name="end_date" value="{{ end_date }}">
+      <div class="field"><label for="adjustmentAmount">调整金额（元）</label><input class="form-control" id="adjustmentAmount" name="amount" type="number" step="0.01" placeholder="可输入负数" required></div>
+      <div class="field"><label for="adjustmentReason">调整原因</label><input class="form-control" id="adjustmentReason" name="reason" placeholder="填写可追溯原因" required></div><button class="btn btn-warning" type="submit">保存调整</button>
+    </form><p class="entry-note">调整日期按记录创建时的本地日期；更正请先作废原记录，再新增正确记录。</p>
+  </article>
+</section>
+
+<dialog class="void-dialog" id="voidDialog" aria-labelledby="voidHeading"><form class="void-body" id="voidForm" method="post">
+  <h3 id="voidHeading">作废这条记录？</h3><p>原记录会保留并标记为已作废，不再影响余额；请填写原因。</p>
+  <input type="hidden" name="customer_id" value="{{ selected_customer.id }}"><input type="hidden" name="start_date" value="{{ start_date }}"><input type="hidden" name="end_date" value="{{ end_date }}">
+  <div><label for="voidReason">作废原因</label><input class="form-control" id="voidReason" name="reason" maxlength="200" required placeholder="例如：金额录入错误"></div>
+  <div class="dialog-actions"><button class="btn btn-outline-secondary" id="cancelVoid" type="button">返回</button><button class="btn btn-danger" type="submit">确认作废</button></div>
+</form></dialog>
+<script>
+(() => {
+  const dialog = document.getElementById('voidDialog');
+  const form = document.getElementById('voidForm');
+  const reason = document.getElementById('voidReason');
+  if (!dialog || !form) return;
+  document.getElementById('ledgerRows')?.addEventListener('click', event => {
+    const button = event.target.closest('[data-void-url]');
+    if (!button) return;
+    form.action = button.dataset.voidUrl;
+    document.getElementById('voidHeading').textContent = button.dataset.voidTitle || '作废这条记录？';
+    reason.value = '';
+    dialog.showModal();
+    reason.focus();
+  });
+  document.getElementById('cancelVoid').addEventListener('click', () => dialog.close());
+})();
+</script>
+{% else %}
+<section class="mt-4" aria-labelledby="customerBalancesHeading"><h3 id="customerBalancesHeading">客户当前余额</h3>
+  {% if customers %}<div class="table-responsive"><table class="table align-middle"><thead><tr><th scope="col">客户</th><th scope="col">当前余额</th><th scope="col">操作</th></tr></thead><tbody>
+    {% for customer in customers %}<tr><td>{{ customer.name }}</td><td class="amount">{{ balance_money(balances.get(customer.id, 0)) }}</td><td><a class="btn btn-sm btn-primary" href="{{ url_for('accounts.accounts', customer_id=customer.id) }}">查看流水</a></td></tr>{% endfor %}
+  </tbody></table></div>{% else %}<p class="text-muted">还没有客户资料。</p>{% endif %}
+</section>
 {% endif %}
-<table class="table"><tr><th>客户</th><th>余额</th></tr>{% for c in customers %}<tr><td>{{c.name}}</td><td class="fw-bold">{{cents_to_yuan(balances[c.id])}}</td></tr>{% endfor %}</table>
-<h3>登记收款</h3><form class="row g-2" method="post" action="/accounts/payment"><select class="form-select col" name="customer_id">{% for c in customers %}<option value="{{c.id}}">{{c.name}}</option>{% endfor %}</select><input class="form-control col" name="amount" placeholder="金额"><input class="form-control col" name="method" value="现金"><button class="btn btn-success col-2">收款</button></form>
-<h3 class="mt-4">账务调整</h3><form class="row g-2" method="post" action="/accounts/adjustment"><select class="form-select col" name="customer_id">{% for c in customers %}<option value="{{c.id}}">{{c.name}}</option>{% endfor %}</select><input class="form-control col" name="amount" placeholder="金额，可负数"><input class="form-control col" name="reason" placeholder="原因"><button class="btn btn-warning col-2">调整</button></form>
 {% endblock %}

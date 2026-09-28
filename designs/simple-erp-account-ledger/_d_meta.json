@@ -1,0 +1,24 @@
+{
+  "type": "design",
+  "designSystems": [],
+  "primaryDesignSystem": null,
+  "assets": {
+    "账款流水原型": {
+      "versions": [
+        {
+          "path": "ledger-prototype.html",
+          "createdAt": "2026-09-26T00:07:21.964Z",
+          "status": "approved",
+          "subtitle": "Phase 2 UI review",
+          "viewport": {
+            "width": 1440,
+            "height": 1000
+          },
+          "section": "账款管理"
+        }
+      ]
+    }
+  },
+  "createdAt": "2026-09-26T00:07:21.965Z",
+  "updatedAt": "2026-09-26T00:40:32.845Z"
+}

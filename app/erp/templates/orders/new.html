@@ -16,8 +16,9 @@
   .order-table tfoot th { background: var(--erp-glass-bg-strong); color: var(--erp-ink); }
   .suggest-wrap { position: relative; }
   .suggest-list { position: absolute; z-index: 20; left: 0; right: 0; top: 100%; background: var(--erp-surface); border: 1px solid var(--erp-border-strong); max-height: 220px; overflow-y: auto; border-radius: 0 0 7px 7px; box-shadow: 0 12px 28px rgba(16,24,40,.14); }
-  .suggest-item { padding: 9px 11px; cursor: pointer; border-bottom: 1px solid var(--erp-border); color: var(--erp-ink); }
-  .suggest-item:hover { background: var(--erp-primary-soft); }
+  .suggest-item { display: block; width: 100%; padding: 9px 11px; cursor: pointer; border: 0; border-bottom: 1px solid var(--erp-border); background: transparent; color: var(--erp-ink); text-align: left; font: inherit; }
+  .suggest-item:hover, .suggest-item[aria-selected="true"] { background: var(--erp-primary-soft); }
+  .suggest-item:focus-visible { outline: 2px solid var(--erp-primary); outline-offset: -2px; }
   .readonly-total { background: var(--erp-glass-bg-strong); padding: 10px; min-height: 42px; font-variant-numeric: tabular-nums; color: var(--erp-ink); }
   .unit-cell { display: flex; gap: 4px; padding: 4px; }
   .unit-cell select { width: 74px; }
@@ -48,8 +49,8 @@
   <div class="row g-3">
     <div class="col-4 suggest-wrap">
       <label class="form-label">客户名称</label>
-      <input class="form-control form-control-lg" id="customer_name" name="customer_name" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="输入一个字即可匹配客户" value="{{order.customer_name if is_edit else ''}}" required>
-      <div class="suggest-list d-none" id="customer_suggestions"></div>
+      <input class="form-control form-control-lg" id="customer_name" name="customer_name" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="customer_suggestions" aria-haspopup="listbox" aria-label="客户名称，可用上下箭头选择建议" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="输入一个字即可匹配客户" value="{{order.customer_name if is_edit else ''}}" required>
+      <div class="suggest-list d-none" id="customer_suggestions" role="listbox" aria-label="客户建议"></div>
     </div>
     <div class="col-3">
       <label class="form-label">{{ '退货日期' if is_return else '销售日期' }}</label>
@@ -64,7 +65,9 @@
     <div class="col-2">
       <label class="form-label">状态</label>
       <select class="form-select form-select-lg" name="status">
-        {% for s, label in [('saved','正式保存'), ('draft','草稿'), ('printed','已打印'), ('void','已作废')] %}
+        {% set status_options = [('saved','正式保存'), ('draft','草稿')] %}
+        {% if is_edit %}{% set status_options = status_options + [('printed','已打印')] %}{% endif %}
+        {% for s, label in status_options %}
         <option value="{{s}}" {% if is_edit and order.status == s %}selected{% endif %}>{{label}}</option>
         {% endfor %}
       </select>
@@ -80,7 +83,7 @@
       {% for item in rows %}
       <tr>
         <td class="text-center row-no">{{loop.index}}</td>
-        <td class="suggest-wrap"><input name="product_name" class="product-name" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="输入产品名" value="{{item.product_name if item else ''}}"><div class="suggest-list d-none product-suggestions"></div></td>
+        <td class="suggest-wrap"><input name="product_name" id="product_name_{{loop.index}}" class="product-name" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="product_suggestions_{{loop.index}}" aria-haspopup="listbox" aria-label="第 {{loop.index}} 行产品名称，可用上下箭头选择建议" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="输入产品名" value="{{item.product_name if item else ''}}"><div class="suggest-list d-none product-suggestions" id="product_suggestions_{{loop.index}}" role="listbox" aria-label="第 {{loop.index}} 行商品建议"></div></td>
         <td><div class="unit-cell"><select class="form-select form-select-sm unit-select"><option value="">自定义</option>{% for u in ['个','套','件'] %}<option value="{{u}}" {% if item and item.unit == u %}selected{% endif %}>{{u}}</option>{% endfor %}</select><input name="unit" class="unit" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="自定义" value="{{item.unit if item else ''}}"></div></td>
         <td><input name="quantity" class="quantity" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0" value="{{item.quantity if item else ''}}"></td>
         <td class="price-cell"><input name="unit_price" class="unit-price" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.00" value="{{cents_to_yuan(item.unit_price_cents) if item else ''}}"><label class="regular-price-option"><input type="checkbox" class="regular-price-check">常规价 <span class="regular-price-text"></span></label></td>
@@ -113,13 +116,14 @@
 
 <script>
 function money(n) { return (Math.round((Number(n) || 0) * 100) / 100).toFixed(2); }
+const orderSign = {{ -1 if is_return else 1 }};
 function recalc() {
   let total = 0;
   document.querySelectorAll('#orderBody tr').forEach((tr, idx) => {
     tr.querySelector('.row-no').textContent = idx + 1;
     const qty = Number(tr.querySelector('.quantity').value || 0);
     const price = Number(tr.querySelector('.unit-price').value || 0);
-    const line = qty * price;
+    const line = qty * price * orderSign;
     tr.querySelector('.line-total').textContent = money(line);
     total += line;
   });
@@ -168,30 +172,128 @@ function addRow() {
   recalc();
 }
 async function fetchJson(url) { const res = await fetch(url); return await res.json(); }
-function showSuggestions(box, items, render, onPick) {
+function closeSuggestions(input, box) {
+  box.classList.add('d-none');
+  input.setAttribute('aria-expanded', 'false');
+  input.removeAttribute('aria-activedescendant');
+  box.querySelectorAll('[role="option"]').forEach(option => option.setAttribute('aria-selected', 'false'));
+}
+function showSuggestions(input, box, items, render, onPick) {
   box.innerHTML = '';
-  if (!items.length) { box.classList.add('d-none'); return; }
-  items.forEach(item => {
-    const div = document.createElement('div');
-    div.className = 'suggest-item';
-    div.innerHTML = render(item);
-    div.onclick = () => { onPick(item); box.classList.add('d-none'); };
-    box.appendChild(div);
+  if (!items.length) {
+    const empty = document.createElement('div');
+    empty.className = 'suggest-item text-muted';
+    empty.textContent = '无匹配项';
+    empty.setAttribute('role', 'option');
+    empty.setAttribute('aria-disabled', 'true');
+    box.appendChild(empty);
+  } else items.forEach((item, index) => {
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = 'suggest-item';
+    option.id = `${box.id}_option_${index}`;
+    option.setAttribute('role', 'option');
+    option.setAttribute('aria-selected', 'false');
+    option.appendChild(render(item));
+    option.addEventListener('mousedown', event => event.preventDefault());
+    option.addEventListener('click', () => { onPick(item); closeSuggestions(input, box); });
+    box.appendChild(option);
   });
   box.classList.remove('d-none');
+  input.setAttribute('aria-expanded', 'true');
+  input.removeAttribute('aria-activedescendant');
 }
+
+function bindAutocomplete(input, box, loadItems, renderOption, onPick, onInputChange = () => {}) {
+  let matches = [];
+  let activeIndex = -1;
+  let requestSequence = 0;
+  const isOpen = () => !box.classList.contains('d-none');
+  const close = () => {
+    requestSequence += 1;
+    closeSuggestions(input, box);
+    activeIndex = -1;
+  };
+  const setActive = index => {
+    const options = [...box.querySelectorAll('[role="option"]:not([aria-disabled="true"])')];
+    if (!options.length) return;
+    activeIndex = Math.max(0, Math.min(index, options.length - 1));
+    options.forEach((option, optionIndex) => option.setAttribute('aria-selected', String(optionIndex === activeIndex)));
+    input.setAttribute('aria-activedescendant', options[activeIndex].id);
+    options[activeIndex].scrollIntoView({block: 'nearest'});
+  };
+  const choose = item => { onPick(item); close(); };
+  const refresh = async (query = input.value.trim(), initialDirection = '') => {
+    const sequence = ++requestSequence;
+    try {
+      const result = await loadItems(query);
+      if (sequence !== requestSequence) return;
+      matches = Array.isArray(result) ? result : [];
+      showSuggestions(input, box, matches, renderOption, choose);
+      if (matches.length && initialDirection === 'down') setActive(0);
+      else if (matches.length && initialDirection === 'up') setActive(matches.length - 1);
+    } catch (_) {
+      if (sequence === requestSequence) { matches = []; close(); }
+    }
+  };
+
+  input.setAttribute('role', 'combobox');
+  input.setAttribute('aria-autocomplete', 'list');
+  input.setAttribute('aria-expanded', 'false');
+  input.setAttribute('aria-controls', box.id);
+  input.setAttribute('aria-haspopup', 'listbox');
+  input.addEventListener('input', () => {
+    onInputChange();
+    const query = input.value.trim();
+    if (!query) { requestSequence += 1; matches = []; close(); return; }
+    refresh(query);
+  });
+  input.addEventListener('focus', () => {
+    if (input.value.trim()) refresh(input.value.trim());
+  });
+  input.addEventListener('keydown', event => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (!isOpen()) { refresh(input.value.trim(), event.key === 'ArrowDown' ? 'down' : 'up'); return; }
+      const nextIndex = event.key === 'ArrowDown'
+        ? (activeIndex < 0 ? 0 : activeIndex + 1)
+        : (activeIndex < 0 ? matches.length - 1 : activeIndex - 1);
+      setActive(nextIndex);
+      return;
+    }
+    if (event.key === 'Escape' && isOpen()) { event.preventDefault(); close(); return; }
+    if (event.key === 'Enter' && isOpen()) {
+      event.preventDefault();
+      if (activeIndex >= 0 && matches[activeIndex]) choose(matches[activeIndex]);
+    }
+  });
+  input.addEventListener('blur', () => window.setTimeout(close, 120));
+  input._closeSuggestions = close;
+}
+
 const customerInput = document.getElementById('customer_name');
-customerInput.addEventListener('input', async () => {
-  document.getElementById('customer_id').value = '';
-  const q = customerInput.value.trim();
-  const box = document.getElementById('customer_suggestions');
-  if (!q) { box.classList.add('d-none'); return; }
-  const items = await fetchJson('/orders/api/customers?q=' + encodeURIComponent(q));
-  showSuggestions(box, items, c => `<strong>${c.name}</strong> <small>${c.phone || ''}</small>`, c => {
+const customerSuggestions = document.getElementById('customer_suggestions');
+bindAutocomplete(
+  customerInput,
+  customerSuggestions,
+  query => fetchJson('/orders/api/customers?q=' + encodeURIComponent(query)),
+  c => {
+    const fragment = document.createDocumentFragment();
+    const nameNode = document.createElement('strong');
+    nameNode.textContent = c.name;
+    const detailsNode = document.createElement('small');
+    detailsNode.textContent = c.phone || '';
+    fragment.append(nameNode, document.createTextNode(' '), detailsNode);
+    return fragment;
+  },
+  c => {
     customerInput.value = c.name;
     document.getElementById('customer_id').value = c.id;
-  });
-});
+    document.getElementById('orderDateInput').focus();
+  },
+  () => { document.getElementById('customer_id').value = ''; },
+);
+let productSuggestionSequence = 0;
 function bindRow(tr) {
   tr.querySelectorAll('.quantity,.unit-price').forEach(input => input.addEventListener('input', recalc));
   const unitSelect = tr.querySelector('.unit-select');
@@ -214,11 +316,26 @@ function bindRow(tr) {
     });
   }
   const box = tr.querySelector('.product-suggestions');
-  productInput.addEventListener('input', async () => {
-    const q = productInput.value.trim();
-    if (!q) { box.classList.add('d-none'); return; }
-    const items = await fetchJson('/orders/api/products?q=' + encodeURIComponent(q) + '&customer_id=' + encodeURIComponent(document.getElementById('customer_id').value || '0'));
-    showSuggestions(box, items, p => `<strong>${p.name}</strong> <small>${p.spec || ''} / ${p.unit || ''} / ${p.is_customer_price ? '客户价：' + p.unit_price + '元 / 常规价：' + p.regular_price + '元' : '常规价：' + p.regular_price + '元'}</small>`, p => {
+  const productRowNumber = ++productSuggestionSequence;
+  productInput.id = `product_name_${productRowNumber}`;
+  box.id = `product_suggestions_${productRowNumber}`;
+  box.setAttribute('aria-label', `第 ${productRowNumber} 行商品建议`);
+  productInput.setAttribute('aria-label', `第 ${productRowNumber} 行产品名称，可用上下箭头选择建议`);
+  bindAutocomplete(
+    productInput,
+    box,
+    query => fetchJson('/orders/api/products?q=' + encodeURIComponent(query) + '&customer_id=' + encodeURIComponent(document.getElementById('customer_id').value || '0')),
+    p => {
+      const fragment = document.createDocumentFragment();
+      const nameNode = document.createElement('strong');
+      nameNode.textContent = p.name;
+      const detailsNode = document.createElement('small');
+      const details = `${p.spec || ''} / ${p.unit || ''} / ${p.is_customer_price ? '客户价：' + p.unit_price + '元 / 常规价：' + p.regular_price + '元' : '常规价：' + p.regular_price + '元'}`;
+      detailsNode.textContent = details;
+      fragment.append(nameNode, document.createTextNode(' '), detailsNode);
+      return fragment;
+    },
+    p => {
       productInput.value = p.name;
       unitInput.value = p.unit || '';
       if (['个','套','件'].includes(p.unit)) unitSelect.value = p.unit; else unitSelect.value = '';
@@ -238,11 +355,15 @@ function bindRow(tr) {
       }
       tr.querySelector('.quantity').focus();
       recalc();
-    });
-  });
+    },
+  );
 }
 document.querySelectorAll('#orderBody tr').forEach(bindRow);
-document.addEventListener('click', e => { if (!e.target.closest('.suggest-wrap')) document.querySelectorAll('.suggest-list').forEach(x => x.classList.add('d-none')); });
+document.addEventListener('click', event => {
+  document.querySelectorAll('[role="combobox"]').forEach(input => {
+    if (!input.closest('.suggest-wrap')?.contains(event.target)) input._closeSuggestions?.();
+  });
+});
 {% if not is_edit %}
 const orderDateInput = document.getElementById('orderDateInput');
 const orderNoInput = document.getElementById('orderNoInput');

@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from urllib.parse import urlencode
 from flask import render_template, request, send_file
@@ -5,6 +6,7 @@ from weasyprint import HTML
 
 from erp.config import load_config, project_path, runtime_root
 from erp.db import get_db
+from erp.services.accounting import get_customer_account_ledger
 from erp.utils.money import cents_to_yuan
 
 
@@ -257,3 +259,22 @@ def resolve_summary_customer_ids(customer_q: str, start_date: str, end_date: str
             params,
         ).fetchall()
         return [int(row["id"]) for row in rows]
+
+
+def generate_account_ledger_pdf(customer_id: int, start_date: str = "", end_date: str = "") -> Path:
+    """Render the same current-balance and period-ledger model used by the account page."""
+    ledger = get_customer_account_ledger(customer_id, start_date, end_date)
+    config = load_config()
+    html = render_template(
+        "accounts/ledger_pdf.html",
+        ledger=ledger,
+        config=config,
+        cents_to_yuan=cents_to_yuan,
+    )
+    safe_range = "_".join(
+        re.sub(r"[^0-9A-Za-z_-]+", "-", value or "all")[:40]
+        for value in (start_date, end_date)
+    )
+    out = project_path("temp_pdf", f"account_ledger_{int(customer_id)}_{safe_range}.pdf")
+    HTML(string=html, base_url=str(runtime_root())).write_pdf(out)
+    return out

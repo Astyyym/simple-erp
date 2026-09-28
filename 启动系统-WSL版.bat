@@ -3,7 +3,13 @@ chcp 65001 >nul
 cd /d "%~dp0"
 if not exist logs mkdir logs
 set "ERP_URL=http://127.0.0.1:5001"
-set "WSL_PROJECT=/mnt/d/wenjian/Hermes/简单ERP"
+for /f "delims=" %%I in ('wsl.exe wslpath -u "%CD%"') do set "WSL_PROJECT=%%I"
+if not defined WSL_PROJECT (
+  echo 无法解析项目的 WSL 路径。
+  echo [%date% %time%] 无法解析项目的 WSL 路径。 >> logs\startup.log
+  pause
+  exit /b 1
+)
 
 echo [%date% %time%] 正在启动简单ERP（WSL版）... >> logs\startup.log
 
