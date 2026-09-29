@@ -2,7 +2,7 @@
 
 面向本地单机门店的轻量进销存/开单系统，当前覆盖销售与退货开单、客户和商品资料、账款、采购统计、打印及本地数据管理。
 
-- 当前源码版本：以根目录 [`VERSION`](./VERSION) 为准；本次发版版本为 `v0.10.0`。
+- 当前源码版本：以根目录 [`VERSION`](./VERSION) 为准；`v0.10.0` 包含账款流水与经营工作台改造。
 - GitHub 仓库：`Astyyym/simple-erp`；[Releases 页面](https://github.com/Astyyym/simple-erp/releases)。README 不代表远端最新 Release/安装包已经核实。
 - 当前权威需求和实现边界：[`docs/需求/消防器材店ERP系统-需求文档.md`](./docs/需求/消防器材店ERP系统-需求文档.md)。全部文档入口见 [`docs/README.md`](./docs/README.md)。
 
@@ -29,7 +29,7 @@
 
 - 工作台展示今日有效销售/退货净额与笔数，并列出最近 5 笔有效单据。
 - 单据管理支持每页 50 条服务端分页、总数/范围提示和筛选条件保留。
-- 客户/商品联想可用键盘选择；订单状态使用中文业务文案；退货重编辑保留负数金额。
+- 客户/商品联想可用键盘选择，建议内容按文本安全显示；订单状态使用中文业务文案；退货重编辑保留负数金额，订单明细金额在建立新客户前校验。
 
 ### 设置、打印与桌面版
 
@@ -63,7 +63,7 @@ setup.bat
 .venv\Scripts\python.exe -m pytest tests\ -q
 ```
 
-打包环境 `.venv-win` 与源码环境分开；本次文档盘点使用 `.venv-win\Scripts\python.exe -m pytest tests\ -q` 。测试通过不代替 Windows 用户侧流程、EXE 打包产物或实体打印机验收。
+打包环境 `.venv-win` 与源码环境分开；`v0.10.0` 发布前在 Windows 运行全量测试，结果为 **140 passed**。测试通过不代替 Windows 用户侧流程、EXE 打包产物或实体打印机验收。
 
 ## 可选 WSL 交叉测试
 
