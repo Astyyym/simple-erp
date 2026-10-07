@@ -253,25 +253,53 @@ def test_new_order_save_print_button_uses_async_save_and_success_actions():
 
     assert "保存/打印订单" in html
     assert "fetch(orderForm.action" in html
-    assert "openPrintUrl(result.pdf_url)" in html
+    assert "openPrintUrl(openPrintLink.href)" in html
     assert "function openPrintUrl(url)" in html
     assert 'id="openPrintLink"' in html
     assert 'id="continueOrderLink" href="/orders/new"' in html
     assert "e.currentTarget.target = '_blank';" not in html
 
 
-def test_browser_print_links_keep_blank_target_when_not_desktop():
-    """Ordinary browser keeps target=_blank so PDF does not replace the ERP page."""
+def test_new_sales_and_return_use_shared_pdf_preview_without_side_panel():
+    """Order entry sends the original PDF to the shared preview instead of embedding a side panel."""
     init_db()
-    app = create_app()
-    client = app.test_client()
-    html = client.get("/orders/new").get_data(as_text=True)
-    assert 'data-desktop="0"' in html
-    assert "openPrintUrl(result.pdf_url)" in html
-    # Manual fallback link still opens a new tab in browser mode.
-    assert 'id="openPrintLink"' in html
-    assert 'target="_blank"' in html
-    assert "function isDesktopShell()" in html
+    client = create_app().test_client()
+    for path in ("/orders/new", "/orders/return/new"):
+        html = client.get(path).get_data(as_text=True)
+        assert 'id="previewPages"' not in html
+        assert 'id="pdfPrintFrame"' not in html
+        assert 'id="previewPanel"' not in html
+        assert '/static/js/pdf-pan-preview.mjs' not in html
+        assert "openPrintUrl(openPrintLink.href)" in html
+        assert "保存成功后进入统一打印预览" in html
+
+
+def test_pdf_pan_preview_assets_are_local_and_packaged():
+    from pathlib import Path
+
+    client = create_app().test_client()
+    for path in (
+        "/static/js/pdf-pan-preview.mjs",
+        "/static/vendor/pdfjs/build/pdf.min.mjs",
+        "/static/vendor/pdfjs/build/pdf.worker.min.mjs",
+        "/static/vendor/pdfjs/wasm/qcms_bg.wasm",
+        "/static/vendor/pdfjs/cmaps/UniGB-UTF16-H.bcmap",
+        "/static/vendor/pdfjs/standard_fonts/LiberationSans-Regular.ttf",
+    ):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.data
+        if path.endswith(".mjs"):
+            assert "javascript" in response.content_type
+    project = Path(__file__).resolve().parents[1]
+    module = (project / "app/erp/static/js/pdf-pan-preview.mjs").read_text(encoding="utf-8")
+    assert "scrollTop" not in module and "scrollLeft" not in module
+    assert "setPointerCapture" in module
+    assert "lostpointercapture" in module
+    assert "getDocument" in module
+    assert "cMapUrl" in module and "wasmUrl" in module
+    assert "https://" not in module
+    assert "'erp/static'" in (project / "简单ERP.spec").read_text(encoding="utf-8")
 
 
 def test_desktop_print_links_stay_in_shell_without_blank_target(monkeypatch):
@@ -292,31 +320,31 @@ def test_desktop_print_links_stay_in_shell_without_blank_target(monkeypatch):
 
     new_html = client.get("/orders/new").get_data(as_text=True)
     assert 'data-desktop="1"' in new_html
-    assert "openPrintUrl(result.pdf_url)" in new_html
+    assert "openPrintUrl(openPrintLink.href)" in new_html
     assert 'id="openPrintLink"' in new_html
     # Desktop: openPrintLink must not set target=_blank
     assert 'id="openPrintLink" href="#"' in new_html
     assert 'id="openPrintLink" href="#" target="_blank"' not in new_html
 
     list_html = client.get("/orders/").get_data(as_text=True)
-    assert f'href="/orders/{order_id}/pdf?desktop_preview=1"' in list_html
-    assert f'href="/orders/{order_id}/pdf?desktop_preview=1" target="_blank"' not in list_html
+    assert f'href="/orders/{order_id}/pdf?desktop_preview=1&amp;return_to=/orders/%3F"' in list_html
+    assert f'href="/orders/{order_id}/pdf?desktop_preview=1&amp;return_to=/orders/%3F" target="_blank"' not in list_html
     assert 'id="exportSummaryBtn"' in list_html
     assert 'id="exportSummaryBtn" class="btn btn-info" href="/orders/summary_pdf" target="_blank"' not in list_html
 
     detail_html = client.get(f"/orders/{order_id}").get_data(as_text=True)
-    assert f'href="/orders/{order_id}/pdf?desktop_preview=1"' in detail_html
+    assert f'href="/orders/{order_id}/pdf?desktop_preview=1&amp;return_to=/orders/{order_id}%3F"' in detail_html
     assert f'href="/orders/{order_id}/pdf?desktop_preview=1" target="_blank"' not in detail_html
 
     settings_html = client.get("/settings/").get_data(as_text=True)
     assert 'id="settingsPrintPreview"' in settings_html
     assert 'id="settingsPrintPreview" href="/settings/print-preview" target="_blank"' not in settings_html
-    assert 'id="settingsPrintPreviewPdf" href="/settings/print-preview.pdf?desktop_preview=1"' in settings_html
+    assert 'id="settingsPrintPreviewPdf" href="/settings/print-preview.pdf?desktop_preview=1&amp;return_to=/settings/?"' in settings_html
     assert 'id="settingsPrintPreviewPdf" href="/settings/print-preview.pdf?desktop_preview=1" target="_blank"' not in settings_html
 
     accounts_html = client.get(f"/accounts/?customer_id={customer_id}").get_data(as_text=True)
     assert "打印账款流水 PDF" in accounts_html
     assert f'id="ledgerPdfLink" href="/accounts/ledger_pdf?customer_id={customer_id}' in accounts_html
-    assert "&amp;desktop_preview=1" in accounts_html
+    assert "&amp;desktop_preview=1&amp;return_to=/accounts/%3Fcustomer_id%3D" in accounts_html
     assert 'id="ledgerPdfLink" href="/accounts/summary_pdf' not in accounts_html
     assert 'id="ledgerPdfLink" href="/accounts/ledger_pdf?customer_id=' + str(customer_id) + '" target="_blank"' not in accounts_html

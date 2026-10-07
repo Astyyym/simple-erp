@@ -2,7 +2,7 @@
 {% macro money(value) -%}¥{{ cents_to_yuan(value|abs) }}{%- endmacro %}
 {% macro signed_money(value) -%}{% if value > 0 %}+{% elif value < 0 %}−{% endif %}{{ money(value) }}{%- endmacro %}
 {% macro balance_money(value) -%}{% if value < 0 %}−{% endif %}{{ money(value) }}{%- endmacro %}
-{% set type_names = {"sale": "销售单", "return": "退货单", "payment": "收款", "adjustment": "账务调整"} %}
+{% set type_names = {"sale": "销售单", "return": "退货单", "purchase": "拿货单", "purchase_return": "退拿货单", "payment": "收款", "adjustment": "账务调整"} %}
 {% block content %}
 <style>
   .account-subtitle,.ledger-hint,.entry-note { color:var(--erp-muted);font-size:12px; }
@@ -15,12 +15,20 @@
   .summary-value.positive { color:var(--erp-success); }.summary-value.negative,.amount.negative { color:var(--erp-danger); }
   .summary-help,.ledger-hint,.entry-note { margin-top:6px;color:var(--erp-muted);font-size:11px; }
   .breakdown { display:flex;flex-wrap:wrap;gap:5px 13px;margin-top:9px;padding-top:8px;border-top:1px solid var(--erp-border);color:var(--erp-muted);font-size:11px; }
-  .ledger-heading { display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 9px; }.ledger-heading h3 { margin:0;font-size:17px; }
+  .ledger-heading { display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 9px; }.ledger-heading h3 { margin:0;font-size:17px; }
+  .ledger-type-filter { display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto; }
+  .ledger-type-filter .filter-label { color:var(--erp-muted);font-size:12px;font-weight:650; }
+  .type-chip { display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border:1px solid var(--erp-border-strong);border-radius:4px;font-size:12px;color:var(--erp-ink);background:var(--erp-glass-bg-strong);cursor:pointer;white-space:nowrap; }
+  .type-chip:hover { border-color:var(--erp-primary); }
+  .type-chip input[type=checkbox] { width:14px;height:14px;margin:0;accent-color:var(--erp-primary); }
   .ledger-table { min-width:900px; }.ledger-table td { font-size:12px; }.ledger-date,.reference { white-space:nowrap;color:var(--erp-muted); }.reference { font-family:Consolas,"Courier New",monospace;font-size:11px; }
   .description-main { font-weight:600; }.description-sub { margin-top:2px;color:var(--erp-muted);font-size:10px; }
   .amount { font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums; }.amount.positive { color:var(--erp-success); }.amount.zero { color:var(--erp-muted); }
   .badge-ledger { display:inline-flex;align-items:center;min-height:22px;padding:2px 7px;border:1px solid var(--erp-border);border-radius:4px;font-size:10px;font-weight:650;white-space:nowrap; }
   .type-sale { color:#1d4ed8;background:rgba(37,99,235,.08); }.type-return { color:var(--erp-danger);background:rgba(199,53,53,.08); }.type-payment { color:var(--erp-success);background:rgba(23,128,61,.08); }.type-adjustment { color:#9a6700;background:rgba(245,158,11,.1); }
+  .type-purchase { color:#0e7490;background:rgba(14,116,144,.1); }.type-purchase_return { color:#7c3aed;background:rgba(124,58,237,.1); }
+  html[data-ui-theme="dark"] .type-sale{color:#93c5fd;background:rgba(59,130,246,.16)}html[data-ui-theme="dark"] .type-return{color:#fca5a5;background:rgba(248,113,113,.14)}html[data-ui-theme="dark"] .type-payment{color:#6ee7b7;background:rgba(52,211,153,.14)}html[data-ui-theme="dark"] .type-adjustment{color:#fcd34d;background:rgba(245,158,11,.16)}html[data-ui-theme="dark"] .type-purchase{color:#67e8f9;background:rgba(34,211,238,.14)}html[data-ui-theme="dark"] .type-purchase_return{color:#c4b5fd;background:rgba(167,139,250,.16)}
+  @media (prefers-color-scheme: dark){html[data-ui-theme="system"] .type-sale{color:#93c5fd;background:rgba(59,130,246,.16)}html[data-ui-theme="system"] .type-return{color:#fca5a5;background:rgba(248,113,113,.14)}html[data-ui-theme="system"] .type-payment{color:#6ee7b7;background:rgba(52,211,153,.14)}html[data-ui-theme="system"] .type-adjustment{color:#fcd34d;background:rgba(245,158,11,.16)}html[data-ui-theme="system"] .type-purchase{color:#67e8f9;background:rgba(34,211,238,.14)}html[data-ui-theme="system"] .type-purchase_return{color:#c4b5fd;background:rgba(167,139,250,.16)}}
   .status-active { color:var(--erp-success); }.status-void { color:var(--erp-muted); }.row-void td { color:var(--erp-muted);background:rgba(127,127,127,.045); }.empty-ledger { padding:24px;text-align:center;color:var(--erp-muted); }
   .entry-grid { margin-top:18px; }.entry-card h4 { margin:0 0 10px;font-size:14px; }.entry-form { display:grid;grid-template-columns:minmax(120px,.7fr) minmax(150px,1fr) auto;align-items:end;gap:9px; }.entry-form .form-control { min-height:37px; }.entry-note { margin-bottom:0; }
   .void-dialog { width:min(420px,calc(100vw - 28px));padding:0;color:var(--erp-ink);background:var(--erp-surface);border:1px solid var(--erp-border);border-radius:9px;box-shadow:0 24px 64px rgba(0,0,0,.25); }.void-dialog::backdrop { background:rgba(15,23,42,.42);backdrop-filter:blur(2px); }.void-body { padding:20px; }.void-body h3 { margin:0 0 5px;font-size:17px; }.void-body p { color:var(--erp-muted);font-size:12px; }.dialog-actions { display:flex;justify-content:flex-end;gap:8px;margin-top:14px; }
@@ -30,7 +38,7 @@
 </style>
 
 <h2>账款管理</h2>
-<p class="account-subtitle">当前余额与筛选期间发生额分开展示；销售、退货、收款和调整统一留在客户往来流水中。</p>
+<p class="account-subtitle">当前余额与筛选期间发生额分开展示；销售、退货、拿货、退拿货、收款和调整统一留在客户往来流水中。</p>
 <form class="card card-body account-filter" method="get" action="{{ url_for('accounts.accounts') }}">
   <div class="customer-field"><label for="ledgerCustomer">客户</label><select class="form-select" id="ledgerCustomer" name="customer_id" required>
     <option value="" {% if not selected_customer %}selected{% endif %}>请选择客户</option>
@@ -46,20 +54,29 @@
   <article class="card account-summary-card">
     <div class="summary-label"><span>当前余额</span><span>全历史 · 不受日期筛选影响</span></div>
     <div class="summary-value {% if ledger.current_balance_cents < 0 %}negative{% endif %}" id="currentBalance">{{ balance_money(ledger.current_balance_cents) }}</div>
-    <div class="summary-help">正数表示客户尚欠；作废记录不计入余额。</div>
-    <div class="breakdown"><span>期初 {{ balance_money(ledger.opening_balance_cents) }}</span><span>单据净额 {{ signed_money(ledger.document_net_cents) }}</span><span>调整 {{ signed_money(ledger.adjustment_cents) }}</span><span>收款 −{{ money(ledger.payment_cents) }}</span></div>
+    <div class="summary-help">正数表示客户净欠；已并入拿货/退拿货抵扣。作废记录不计入余额。</div>
+    <div class="breakdown"><span>期初 {{ balance_money(ledger.opening_balance_cents) }}</span><span>销售退货净额 {{ signed_money(ledger.document_net_cents) }}</span><span>拿货退拿货净额 {{ signed_money(ledger.purchase_net_cents) }}</span><span>调整 {{ signed_money(ledger.adjustment_cents) }}</span><span>收款 −{{ money(ledger.payment_cents) }}</span></div>
   </article>
   <article class="card account-summary-card">
     <div class="summary-label"><span>筛选区间净变动</span><span id="rangeLabel">{% if start_date or end_date %}{{ start_date or '最早' }} 至 {{ end_date or '最新' }}{% else %}全部日期{% endif %}</span></div>
     <div class="summary-value {% if ledger.period.net_change_cents > 0 %}positive{% elif ledger.period.net_change_cents < 0 %}negative{% endif %}" id="periodChange">{{ signed_money(ledger.period.net_change_cents) }}</div>
     <div class="summary-help">只合计有效流水；期初余额不计入区间发生额。</div>
-    <div class="breakdown"><span>销售 {{ signed_money(ledger.period.sales_cents) }}</span><span>退货 {{ signed_money(ledger.period.returns_cents) }}</span><span>收款 {{ signed_money(ledger.period.payments_cents) }}</span><span>调整 {{ signed_money(ledger.period.adjustments_cents) }}</span></div>
+    <div class="breakdown"><span>销售 {{ signed_money(ledger.period.sales_cents) }}</span><span>退货 {{ signed_money(ledger.period.returns_cents) }}</span><span>拿货 {{ signed_money(ledger.period.purchases_cents) }}</span><span>退拿货 {{ signed_money(ledger.period.purchase_returns_cents) }}</span><span>收款 {{ signed_money(ledger.period.payments_cents) }}</span><span>调整 {{ signed_money(ledger.period.adjustments_cents) }}</span></div>
   </article>
 </section>
 
 <section aria-labelledby="ledgerHeading">
-  <div class="ledger-heading"><div><h3 id="ledgerHeading">{{ selected_customer.name }} · 客户往来流水</h3><div class="ledger-hint">收款按余额减少显示；退货按负数显示。作废记录保留查看，余额影响为 ¥0.00。</div></div>
-    <a class="btn btn-info" id="ledgerPdfLink" href="{{ url_for('accounts.ledger_pdf', customer_id=selected_customer.id, start_date=start_date, end_date=end_date) }}{% if is_desktop %}&amp;desktop_preview=1{% endif %}"{% if not is_desktop %} target="_blank" rel="noopener"{% endif %}>打印账款流水 PDF</a>
+  <div class="ledger-heading"><div><h3 id="ledgerHeading">{{ selected_customer.name }} · 客户往来流水</h3><div class="ledger-hint">收款按余额减少显示；退货、拿货为负向；退拿货为正向。作废记录保留查看，余额影响为 ¥0.00。</div></div>
+    <form class="ledger-type-filter" id="ledgerTypeFilter" method="get" action="{{ url_for('accounts.accounts') }}">
+      <input type="hidden" name="customer_id" value="{{ selected_customer.id }}">
+      <input type="hidden" name="start_date" value="{{ start_date }}"><input type="hidden" name="end_date" value="{{ end_date }}">
+      <span class="filter-label">单据类型</span>
+      {% set active_types = type_filter or ['sale','return','purchase','purchase_return'] %}
+      {% for key,label in [('sale','销售'),('return','退货'),('purchase','拿货'),('purchase_return','退拿货')] %}
+      <label class="type-chip"><input type="checkbox" name="type" value="{{ key }}" {{ 'checked' if key in active_types else '' }} onchange="document.getElementById('ledgerTypeFilter').submit()">{{ label }}</label>
+      {% endfor %}
+    </form>
+    <a class="btn btn-info" id="ledgerPdfLink" href="{{ url_for('accounts.ledger_pdf', customer_id=selected_customer.id, start_date=start_date, end_date=end_date) }}{% if is_desktop %}&amp;desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}"{% if not is_desktop %} target="_blank" rel="noopener"{% endif %}>打印账款流水 PDF</a>
   </div>
   <div class="table-responsive"><table class="table align-middle ledger-table">
     <caption class="visually-hidden">按筛选日期展示销售、退货、收款和账务调整流水</caption>

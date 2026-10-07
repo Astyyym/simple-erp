@@ -1,80 +1,104 @@
 {% extends "base.html" %}
 {% block content %}
 <style>
-  .dashboard-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:16px}.dashboard-head h1{margin:0 0 5px}.dashboard-head p{margin:0;color:var(--erp-muted)}
-  .day-chip{display:flex;flex-direction:column;align-items:flex-end;gap:2px;color:var(--erp-muted);font-size:11px}.day-chip strong{color:var(--erp-ink);font-size:13px;font-variant-numeric:tabular-nums}
+  .dashboard-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:16px}.dashboard-head h1{margin:0}
+  .day-chip{display:flex;flex-direction:column;align-items:flex-end;gap:2px;color:var(--erp-muted);font-size:12px}.day-chip strong{color:var(--erp-ink);font-size:13px;font-variant-numeric:tabular-nums}
   .metric-grid{display:grid;grid-template-columns:minmax(0,1.45fr) repeat(2,minmax(0,1fr));gap:12px;margin-bottom:15px}
   .metric-card{min-width:0;min-height:120px;padding:15px 16px;background:var(--erp-glass-bg-strong);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);box-shadow:var(--erp-shadow);-webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.15);backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.15)}
-  .metric-card.net-card{border-color:color-mix(in srgb,var(--erp-primary) 32%,var(--erp-border))}.metric-head{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--erp-muted);font-size:12px;font-weight:650}.metric-period{padding:2px 6px;color:var(--erp-primary);background:var(--erp-primary-soft);border-radius:4px;font-size:10px}.metric-value{margin:12px 0 4px;color:var(--erp-ink);font-size:27px;font-weight:720;line-height:1.15;font-variant-numeric:tabular-nums}.metric-value.count{font-size:25px}.metric-help{margin:0;color:var(--erp-muted);font-size:11px}
-  .quick-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:24px}
-  .quick-card{
-    display:block;padding:18px;background:var(--erp-glass-bg);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);
-    color:var(--erp-ink);text-decoration:none;box-shadow:var(--erp-glass-shadow);
-    -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);
+  .metric-card.net-card{border-color:color-mix(in srgb,var(--erp-primary) 32%,var(--erp-border))}.metric-head{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--erp-muted);font-size:12px;font-weight:650}.metric-period{padding:2px 6px;color:var(--erp-primary);background:var(--erp-primary-soft);border-radius:4px;font-size:11px}.metric-value{margin:12px 0 4px;color:var(--erp-ink);font-size:27px;font-weight:720;line-height:1.15;font-variant-numeric:tabular-nums}.metric-value.count{font-size:25px}.metric-help{margin:0;color:var(--erp-muted);font-size:12px}
+  .dashboard-layout{width:100%;margin:0 auto}
+  .dashboard-main{display:grid;grid-template-columns:minmax(0,1fr) 250px;grid-template-areas:"head actions" "metrics actions" "recent actions" "flow actions";align-items:start;gap:20px;min-width:0}
+  .dashboard-head{grid-area:head}
+  .metric-grid{grid-area:metrics}
+  .recent-panel{grid-area:recent}
+  .workspace-panel{grid-area:flow}
+  .quick-actions{
+    position:sticky;top:12px;grid-area:actions;align-self:start;padding:16px;border:1px solid var(--erp-glass-border);border-radius:16px;
+    background:var(--erp-glass-bg);box-shadow:var(--erp-glass-shadow);
+    -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25)
+  }
+  .quick-actions h2{margin:0;font-size:16px}
+  .dashboard-alert{display:flex;align-items:flex-start;gap:9px;margin-top:12px;padding:10px;border:1px solid color-mix(in srgb,var(--erp-danger) 35%,var(--erp-border));border-radius:8px;background:color-mix(in srgb,var(--erp-danger) 7%,var(--erp-surface));color:var(--erp-ink);font-size:12px}
+  .dashboard-alert strong{display:block;margin-bottom:2px}.dashboard-alert p{margin:0;color:var(--erp-muted);line-height:1.45}.dashboard-alert a{display:inline-block;margin-top:5px;color:var(--erp-primary);font-weight:650;text-decoration:none}.dashboard-alert a:hover{text-decoration:underline}
+  .dashboard-alert-mark{flex:0 0 24px;display:grid;place-items:center;width:24px;height:24px;border-radius:6px;background:var(--erp-danger);color:#fff;font-weight:700}
+  .quick-action-list{display:grid;gap:8px;margin-top:12px}
+  .quick-action{
+    min-height:48px;display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--erp-border);
+    border-radius:8px;color:var(--erp-ink);background:var(--erp-surface);font-size:13px;font-weight:600;text-decoration:none;
     transition:transform .15s,border-color .15s,background .15s
   }
-  .quick-card:hover{transform:translateY(-1px);border-color:var(--erp-primary);color:var(--erp-ink)}
-  .quick-card.primary{
-    background:var(--erp-primary);border-color:var(--erp-primary);color:#fff;
-    -webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:var(--erp-shadow)
-  }
-  .quick-card.primary:hover{color:#fff;background:var(--erp-primary-hover)}
-  .quick-card .eyebrow{font-size:12px;color:var(--erp-muted);margin-bottom:12px}
-  .quick-card.primary .eyebrow{color:#dbeafe}
-  .quick-card strong{display:block;font-size:17px;margin-bottom:5px}
-  .quick-card span{font-size:13px;color:var(--erp-muted)}
-  .quick-card.primary span{color:#dbeafe}
+  .quick-action:hover{transform:translateY(-1px);border-color:var(--erp-primary);color:var(--erp-ink)}
+  .quick-action.primary{border-color:var(--erp-primary);color:#fff;background:var(--erp-primary)}
+  .quick-action.primary:hover{border-color:var(--erp-primary-hover);color:#fff;background:var(--erp-primary-hover)}
+  .quick-action-mark{width:24px;height:24px;flex:0 0 24px;display:grid;place-items:center;border-radius:6px;color:var(--erp-primary);background:var(--erp-primary-soft);font-size:13px}
+  .quick-action.primary .quick-action-mark{color:#fff;background:rgba(255,255,255,.16)}
+  .quick-action-arrow{margin-left:auto;color:var(--erp-muted);font-size:15px}
+  .quick-action.primary .quick-action-arrow{color:rgba(255,255,255,.75)}
   .workspace-panel{
     background:var(--erp-glass-bg);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);padding:20px;
     box-shadow:var(--erp-glass-shadow);-webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25)
   }
-  .workspace-panel h3{margin:0 0 8px}.workspace-panel p{color:var(--erp-muted);margin:0 0 18px}
+  .workspace-panel h3{margin:0 0 12px}
   .flow{display:grid;grid-template-columns:repeat(4,1fr);gap:0}
   .flow-step{position:relative;padding:14px 16px;background:var(--erp-glass-bg-strong);border:1px solid var(--erp-glass-border)}
   .flow-step:not(:last-child){border-right:0}
   .flow-step:first-child{border-radius:7px 0 0 7px}.flow-step:last-child{border-radius:0 7px 7px 0}
-  .flow-step b{display:block;font-size:13px;margin-bottom:3px}.flow-step small{color:var(--erp-muted)}
+  .flow-step b{display:block;font-size:13px}
   .recent-panel{margin-bottom:14px;overflow:hidden;background:var(--erp-glass-bg);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);box-shadow:var(--erp-glass-shadow);-webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.15);backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.15)}
-  .recent-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding:14px 15px 11px}.recent-head h2{margin:0;font-size:16px}.recent-head p{margin:4px 0 0;color:var(--erp-muted);font-size:11px}.recent-link{display:inline-flex;min-height:32px;align-items:center;gap:5px;padding:4px 7px;color:var(--erp-primary);border-radius:5px;font-size:11px;font-weight:650;text-decoration:none;white-space:nowrap}.recent-link:hover{background:var(--erp-primary-soft)}
-  .recent-table-wrap{overflow-x:auto;overflow-y:hidden}.recent-table{width:100%;min-width:700px;border-collapse:collapse;color:var(--erp-ink);font-variant-numeric:tabular-nums}.recent-table th,.recent-table td{padding:9px 11px;border-top:1px solid var(--erp-border);text-align:left;vertical-align:middle}.recent-table th{color:var(--erp-muted);background:var(--erp-glass-bg-strong);font-size:10px;font-weight:650;white-space:nowrap}.recent-table td{font-size:11px}.recent-table tbody tr:hover td{background:rgba(37,99,235,.045)}
-  .recent-order-cell{display:flex;min-width:160px;align-items:center;gap:8px}.recent-type{display:inline-flex;min-height:21px;align-items:center;padding:2px 7px;border:1px solid var(--erp-border);border-radius:4px;font-size:9px;font-weight:650;white-space:nowrap}.recent-type.sale{color:var(--erp-primary);background:var(--erp-primary-soft);border-color:color-mix(in srgb,var(--erp-primary) 18%,var(--erp-border))}.recent-type.return{color:var(--erp-danger);background:rgba(199,53,53,.07);border-color:rgba(199,53,53,.18)}.recent-order-no{color:var(--erp-primary);font-family:Consolas,"Courier New",monospace;font-size:10px;text-decoration:none;white-space:nowrap}.recent-order-no:hover{text-decoration:underline}.recent-muted{color:var(--erp-muted);white-space:nowrap}.recent-amount{font-weight:680;white-space:nowrap}.recent-amount.negative{color:var(--erp-danger)}.recent-view{color:var(--erp-primary);font-weight:650;text-decoration:none;white-space:nowrap}.recent-view:hover{text-decoration:underline}.recent-empty{padding:20px 12px!important;color:var(--erp-muted);text-align:center!important}
-  @media(max-width:1100px){.quick-grid{grid-template-columns:repeat(2,1fr)}.metric-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
-  @media(max-width:760px){.sidebar{display:none}.page-topbar{padding:0 12px}.page-topbar .company{min-width:0;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.page-body{padding:15px 11px 22px}.dashboard-head{align-items:flex-start;flex-direction:column;gap:8px}.day-chip{align-items:flex-start}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.metric-card{min-height:108px;padding:12px}.metric-card.net-card{grid-column:1/-1}.metric-value{font-size:24px}.recent-head{align-items:flex-start;flex-direction:column}.recent-table-wrap{overflow:visible}.recent-table{min-width:0}.recent-table thead{display:none}.recent-table,.recent-table tbody{display:block;width:100%}.recent-table tbody tr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 9px;padding:10px;border-top:1px solid var(--erp-border)}.recent-table tbody td{min-width:0;padding:2px 0;border:0}.recent-table tbody td:nth-child(1){grid-column:1/-1}.recent-table tbody td:nth-child(2){grid-column:1/-1;color:var(--erp-muted)}.recent-table tbody td:nth-child(3){grid-column:1;color:var(--erp-muted);font-size:10px}.recent-table tbody td:nth-child(4){grid-column:2;color:var(--erp-muted);text-align:right;font-size:10px}.recent-table tbody td:nth-child(5){grid-column:1}.recent-table tbody td:nth-child(6){grid-column:2;text-align:right}}
+  .recent-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding:14px 15px 11px}.recent-head h2{margin:0;font-size:16px}.recent-link{display:inline-flex;min-height:32px;align-items:center;gap:5px;padding:4px 7px;color:var(--erp-primary);border-radius:5px;font-size:12px;font-weight:650;text-decoration:none;white-space:nowrap}.recent-link:hover{background:var(--erp-primary-soft)}
+  .recent-table-wrap{overflow-x:auto;overflow-y:hidden}.recent-table{width:100%;min-width:700px;border-collapse:collapse;color:var(--erp-ink);font-variant-numeric:tabular-nums}.recent-table th,.recent-table td{padding:9px 11px;border-top:1px solid var(--erp-border);text-align:left;vertical-align:middle}.recent-table th{color:var(--erp-muted);background:var(--erp-glass-bg-strong);font-size:12px;font-weight:650;white-space:nowrap}.recent-table td{font-size:13px}.recent-table tbody tr:hover td{background:rgba(37,99,235,.045)}
+  .recent-order-cell{display:flex;min-width:160px;align-items:center;gap:8px}.recent-type{display:inline-flex;min-height:21px;align-items:center;padding:2px 7px;border:1px solid var(--erp-border);border-radius:4px;font-size:11px;font-weight:650;white-space:nowrap}.recent-type.sale{color:var(--erp-primary);background:var(--erp-primary-soft);border-color:color-mix(in srgb,var(--erp-primary) 18%,var(--erp-border))}.recent-type.return{color:var(--erp-danger);background:rgba(199,53,53,.07);border-color:rgba(199,53,53,.18)}.recent-order-no{color:var(--erp-primary);font-family:Consolas,"Courier New",monospace;font-size:12px;text-decoration:none;white-space:nowrap}.recent-order-no:hover{text-decoration:underline}.recent-muted{color:var(--erp-muted);white-space:nowrap}.recent-amount{font-weight:680;white-space:nowrap}.recent-amount.negative{color:var(--erp-danger)}.recent-view{color:var(--erp-primary);font-weight:650;text-decoration:none;white-space:nowrap}.recent-view:hover{text-decoration:underline}.recent-empty{padding:20px 12px!important;color:var(--erp-muted);text-align:center!important}
+  @media(max-width:1100px){.dashboard-main{grid-template-columns:minmax(0,1fr) 220px;grid-template-areas:"head actions" "metrics actions" "recent actions" "flow actions";gap:14px}.quick-actions{padding:14px}.dashboard-head{align-items:flex-start;flex-direction:column;gap:8px}.day-chip{align-items:flex-start;text-align:left}.metric-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.flow{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.flow-step,.flow-step:first-child,.flow-step:last-child{border:1px solid var(--erp-border);border-radius:7px}}
+  @media(max-width:760px){.sidebar{display:none}.content{height:calc(100% - 20px);margin:10px;border-radius:18px}.page-topbar{padding:0 12px}.page-topbar .company{min-width:0;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.page-body{padding:15px 11px 22px}.dashboard-main{grid-template-columns:minmax(0,1fr);grid-template-areas:"head" "metrics" "actions" "recent" "flow";gap:14px}.quick-actions{position:static}.quick-action-list{grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-head{align-items:flex-start;flex-direction:column;gap:8px}.day-chip{align-items:flex-start}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.metric-card{min-height:108px;padding:12px}.metric-card.net-card{grid-column:1/-1}.metric-value{font-size:24px}.recent-head{align-items:flex-start;flex-direction:column}.recent-table-wrap{overflow:visible}.recent-table{min-width:0}.recent-table thead{display:none}.recent-table,.recent-table tbody{display:block;width:100%}.recent-table tbody tr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 9px;padding:10px;border-top:1px solid var(--erp-border)}.recent-table tbody td{min-width:0;padding:2px 0;border:0}.recent-table tbody td:nth-child(1){grid-column:1/-1}.recent-table tbody td:nth-child(2){grid-column:1/-1;color:var(--erp-muted)}.recent-table tbody td:nth-child(3){grid-column:1;color:var(--erp-muted);font-size:12px}.recent-table tbody td:nth-child(4){grid-column:2;color:var(--erp-muted);text-align:right;font-size:12px}.recent-table tbody td:nth-child(5){grid-column:1}.recent-table tbody td:nth-child(6){grid-column:2;text-align:right}}
   @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
-    .quick-card:not(.primary),.workspace-panel,.metric-card,.recent-panel{background:var(--erp-surface)}
+    .quick-actions,.quick-action:not(.primary),.workspace-panel,.metric-card,.recent-panel{background:var(--erp-surface)}
     .flow-step{background:var(--erp-surface-soft)}
   }
 </style>
-<div class="dashboard-head">
-  <div><h1>业务工作台</h1><p>快速查看当天销售与退货，以及最近处理的单据。</p></div>
-  <div class="day-chip"><span>{{ shop_name or '简单ERP' }}</span><strong>统计日期 · {{ today_display }}</strong></div>
-</div>
-<section class="metric-grid" aria-label="今日经营指标">
-  <article class="metric-card net-card">
-    <div class="metric-head"><span>今日净业务额</span><span class="metric-period">今日</span></div>
-    <p class="metric-value" id="netAmount">¥{{ cents_to_yuan(today_net_amount_cents) }}</p>
-    <p class="metric-help">按单据日期统计；销售为正，退货为负</p>
-  </article>
-  <article class="metric-card">
-    <div class="metric-head"><span>销售单</span><span class="metric-period">今日</span></div>
-    <p class="metric-value count" id="salesCount">{{ today_sales_count }} 笔</p>
-    <p class="metric-help">正式保存或已打印</p>
-  </article>
-  <article class="metric-card">
-    <div class="metric-head"><span>退货单</span><span class="metric-period">今日</span></div>
-    <p class="metric-value count" id="returnsCount">{{ today_returns_count }} 笔</p>
-    <p class="metric-help">正式保存或已打印</p>
-  </article>
-</section>
-<div class="quick-grid">
-  <a class="quick-card primary" href="/orders/new"><div class="eyebrow">快捷开单</div><strong>新建销售单</strong><span>录入商品并保存打印</span></a>
-  <a class="quick-card" href="/orders/return/new"><div class="eyebrow">退货业务</div><strong>新建退货单</strong><span>沿用销售单录入流程</span></a>
-  <a class="quick-card" href="/orders/"><div class="eyebrow">业务查询</div><strong>单据管理</strong><span>筛选、汇总导出、回看编辑</span></a>
-  <a class="quick-card" href="/accounts/"><div class="eyebrow">应收管理</div><strong>账款管理</strong><span>客户余额、收款与汇总</span></a>
-</div>
-<section class="recent-panel" aria-labelledby="recentTitle">
+<div class="dashboard-layout">
+  <section class="dashboard-main" aria-label="工作台概况、快捷操作与最近业务">
+    <div class="dashboard-head">
+      <div><h1>业务工作台</h1></div>
+      <div class="day-chip"><span>{{ shop_name or '简单ERP' }}</span><strong>统计日期 · {{ today_display }}</strong></div>
+    </div>
+    <section class="metric-grid" aria-label="今日经营指标">
+      <article class="metric-card net-card">
+        <div class="metric-head"><span>今日净业务额</span><span class="metric-period">今日</span></div>
+        <p class="metric-value" id="netAmount">¥{{ cents_to_yuan(today_net_amount_cents) }}</p>
+        <p class="metric-help">按单据日期统计；销售为正，退货为负</p>
+      </article>
+      <article class="metric-card">
+        <div class="metric-head"><span>销售单</span><span class="metric-period">今日</span></div>
+        <p class="metric-value count" id="salesCount">{{ today_sales_count }} 笔</p>
+        <p class="metric-help">正式保存或已打印</p>
+      </article>
+      <article class="metric-card">
+        <div class="metric-head"><span>退货单</span><span class="metric-period">今日</span></div>
+        <p class="metric-value count" id="returnsCount">{{ today_returns_count }} 笔</p>
+        <p class="metric-help">正式保存或已打印</p>
+      </article>
+    </section>
+    <aside class="quick-actions" id="dashboardQuickActions" aria-labelledby="quickActionsTitle">
+      <h2 id="quickActionsTitle">快捷操作</h2>
+      <section class="dashboard-alert" id="dashboardAlerts" aria-label="经营提醒">
+        <span class="dashboard-alert-mark" aria-hidden="true">!</span>
+        <div>
+          <strong>库存提醒</strong>
+          {% if inventory_alert_count %}<p>{{ inventory_alert_count }} 个商品需要关注</p>{% else %}<p>当前没有库存告急商品</p>{% endif %}
+          <a href="/analytics/#inventoryAlert">查看数据分析</a>
+        </div>
+      </section>
+      <div class="quick-action-list">
+        <a class="quick-action primary" href="/orders/new"><span class="quick-action-mark" aria-hidden="true">＋</span>新建销售单<span class="quick-action-arrow" aria-hidden="true">→</span></a>
+        <a class="quick-action" href="/orders/return/new"><span class="quick-action-mark" aria-hidden="true">↩</span>新建退货单<span class="quick-action-arrow" aria-hidden="true">→</span></a>
+        <a class="quick-action" href="/orders/"><span class="quick-action-mark" aria-hidden="true">≡</span>单据管理<span class="quick-action-arrow" aria-hidden="true">→</span></a>
+        <a class="quick-action" href="/accounts/"><span class="quick-action-mark" aria-hidden="true">¥</span>账款管理<span class="quick-action-arrow" aria-hidden="true">→</span></a>
+        <a class="quick-action" href="/analytics/"><span class="quick-action-mark" aria-hidden="true">↗</span>数据分析<span class="quick-action-arrow" aria-hidden="true">→</span></a>
+      </div>
+    </aside>
+    <section class="recent-panel" aria-labelledby="recentTitle">
   <div class="recent-head">
-    <div><h2 id="recentTitle">最近业务</h2><p>最近 5 笔有效销售/退货单 · 按录入时间倒序 · 包含不同单据日期</p></div>
+    <div><h2 id="recentTitle">最近业务</h2></div>
     <a class="recent-link" href="/orders/">查看全部单据 <span aria-hidden="true">→</span></a>
   </div>
   <div class="recent-table-wrap">
@@ -97,14 +121,16 @@
       </tbody>
     </table>
   </div>
-</section>
-<div class="workspace-panel">
-  <h3>日常业务流程</h3><p>界面按小型 ERP 的高频操作组织，保留原有功能和数据结构。</p>
-  <div class="flow">
-    <div class="flow-step"><b>1. 维护资料</b><small>客户与商品字典</small></div>
-    <div class="flow-step"><b>2. 销售 / 退货</b><small>Excel 式逐行录入</small></div>
-    <div class="flow-step"><b>3. 打印单据</b><small>保存后打开打印页</small></div>
-    <div class="flow-step"><b>4. 核对账款</b><small>查询余额与汇总表</small></div>
+    </section>
+    <div class="workspace-panel">
+      <h3>日常业务流程</h3>
+      <div class="flow">
+        <div class="flow-step"><b>1. 维护资料</b></div>
+        <div class="flow-step"><b>2. 销售 / 退货</b></div>
+        <div class="flow-step"><b>3. 打印单据</b></div>
+        <div class="flow-step"><b>4. 核对账款</b></div>
+      </div>
+    </div>
+  </section>
   </div>
-</div>
 {% endblock %}

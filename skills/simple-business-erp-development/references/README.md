@@ -15,6 +15,8 @@
 | [print-offset-calibration.md](./print-offset-calibration.md) | 当前 A4 竖版输出、驱动选项与偏移校准边界 |
 | [master-data-cleaning-before-import.md](./master-data-cleaning-before-import.md) | 在项目外安全清洗客户/商品资料的流程，不含真实客户清单 |
 | [erp-ui-redesign.md](./erp-ui-redesign.md) | UI 改版约束与视觉回归检查 |
+| [purchase-return-decoupling.md](./purchase-return-decoupling.md) | 四类开单解耦、两级商品选择器、手工退拿货与 schema13 迁移；NH 共用日流水取号 |
+| [analytics-visualization.md](./analytics-visualization.md) | 数据分析页月历热力图、条形排行、成本诊断三层图与顶部筛选口径 |
 
 ## 开发、部署与排障流程
 

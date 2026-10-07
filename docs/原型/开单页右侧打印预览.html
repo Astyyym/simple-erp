@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>简单ERP · 开单页右侧打印预览</title>
+  <style>
+    :root{--primary:#2563eb;--primary-hover:#1d4ed8;--ink:#172033;--muted:#667085;--border:#dfe3ea;--border-strong:#c8ced8;--surface:#fff;--surface-soft:#f8fafc;--sidebar:#f1f3f6;--sidebar-ink:#475467;--sidebar-muted:#778397;--active:#e4ecfb;--wash:linear-gradient(165deg,#d9e6f7 0%,#eef2f8 38%,#e4ebf5 100%);--shadow:0 1px 2px rgba(16,24,40,.05),0 12px 30px rgba(16,24,40,.09);--motion:cubic-bezier(.22,.61,.36,1)}
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0}
+    body{font:14px/1.5 "Microsoft YaHei UI","Segoe UI",system-ui,sans-serif;color:var(--ink);background:var(--wash);overflow:hidden}
+    button,input,textarea{font:inherit;color:inherit}
+    button{cursor:pointer}
+    button:focus-visible,a:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+    .app-shell{display:flex;width:100%;height:100vh;overflow:hidden}
+    .sidebar{width:200px;flex:0 0 200px;padding:0 10px 18px;background:var(--sidebar);border-right:1px solid rgba(23,32,51,.1);display:flex;flex-direction:column;color:var(--sidebar-ink)}
+    .brand{height:72px;flex:none;display:flex;align-items:center;gap:11px;padding:10px;border-bottom:1px solid rgba(23,32,51,.1);margin-bottom:10px}
+    .brand-mark{width:34px;height:34px;display:grid;place-items:center;background:var(--primary);border-radius:7px;color:white;font-weight:700;font-size:17px}
+    .brand-name{font-weight:650}.brand-subtitle{font-size:10px;letter-spacing:.08em;color:var(--sidebar-muted)}
+    .nav-section,.nav-item{display:flex;align-items:center;min-height:40px;margin:2px 0;padding:8px 12px;border-radius:7px;text-decoration:none;color:var(--sidebar-ink)}
+    .nav-section{font-weight:650}.nav-item.sub{min-height:32px;margin-left:14px;padding-left:20px;font-size:13px;color:var(--sidebar-muted);position:relative}
+    .nav-item.sub:before{content:"";position:absolute;left:7px;width:5px;height:5px;border-radius:50%;background:var(--sidebar-muted)}
+    .nav-divider{height:1px;background:rgba(23,32,51,.1);margin:12px 10px}
+    .nav-active{background:var(--active);color:#1e4fae;font-weight:600}
+    .app-version{margin-top:auto;padding:12px;color:var(--sidebar-muted);border-top:1px solid rgba(23,32,51,.1);font-size:12px}
+    .content{position:relative;flex:1;min-width:0;height:calc(100% - 28px);margin:14px;display:flex;flex-direction:column;overflow:hidden;border:1px solid rgba(255,255,255,.88);border-radius:26px;background:var(--surface);box-shadow:var(--shadow)}
+    .topbar{height:58px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 26px;border-bottom:1px solid var(--border);background:rgba(255,255,255,.78);color:var(--muted)}
+    .topbar strong{font-size:13px;font-weight:500}
+    .page-body{flex:1;min-height:0;overflow:auto;padding:22px 26px 32px}
+    .workspace-grid{display:grid;grid-template-columns:minmax(0,1fr) 0fr;gap:0;align-items:start;transition:grid-template-columns 280ms var(--motion),gap 280ms var(--motion)}
+    .workspace-grid.is-open{grid-template-columns:minmax(0,1fr) minmax(360px,420px);gap:16px}
+    .order-area{min-width:0;transition:opacity 180ms ease}
+    .order-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:16px}
+    .order-heading h1{font-size:24px;line-height:1.3;margin:0 0 4px;font-weight:650;letter-spacing:-.02em}
+    .order-heading p{margin:0;color:var(--muted);font-size:13px}
+    .btn{min-height:36px;padding:7px 12px;border:1px solid var(--border-strong);border-radius:6px;background:#fff;font-size:13px;font-weight:600;white-space:nowrap}
+    .btn-primary{background:var(--primary);border-color:var(--primary);color:#fff}.btn-primary:hover{background:var(--primary-hover)}
+    .btn-info{background:#eaf2ff;border-color:#c9dcff;color:#1d4ed8}.btn-quiet{background:transparent}
+    .order-meta,.order-table-wrap,.saved-note,.preview-panel{background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(16,24,40,.045)}
+    .order-meta{padding:14px;margin-bottom:15px}
+    .meta-grid{display:grid;grid-template-columns:1.2fr .9fr .95fr .75fr;gap:12px}
+    label{display:block;margin-bottom:5px;font-size:12px;font-weight:600;color:var(--muted)}
+    input,textarea{width:100%;min-height:38px;padding:8px 10px;border:1px solid var(--border-strong);border-radius:6px;background:#fff}
+    input[readonly]{background:var(--surface-soft);color:#475467}
+    .table-scroll{overflow-x:auto}
+    table{width:100%;border-collapse:collapse;min-width:570px;font-size:12px}
+    th,td{padding:9px 8px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap}
+    th{background:var(--surface-soft);color:var(--muted);font-weight:650}
+    td input{min-width:52px;min-height:32px;padding:5px 7px;border:0;background:transparent}
+    .total-row{display:flex;justify-content:flex-end;gap:16px;padding:12px;font-weight:650}
+    .notes{margin-top:12px;min-height:56px;resize:vertical}
+    .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px;flex-wrap:wrap}
+    .saved-note{margin-top:12px;padding:12px 14px;border-color:#a7dfbc;background:#f1fbf4;color:#17663a}
+    .saved-note[hidden],.error-note[hidden]{display:none}
+    .saved-note p{margin:0 0 9px;font-weight:650}
+    .saved-actions{display:flex;gap:8px;flex-wrap:wrap}
+    .error-note{margin-top:12px;padding:10px 13px;border:1px solid #efb3b3;border-radius:7px;background:#fff5f5;color:#a52a2a}
+    .history{margin-top:22px;padding:14px;border:1px solid var(--border);border-radius:8px}
+    .history h2{font-size:16px;margin:0 0 10px}
+    .history tr:last-child td{border-bottom:0}
+    .preview-panel{min-width:0;overflow:hidden;opacity:0;transform:translateX(16px);pointer-events:none;transition:opacity 220ms ease,transform 280ms var(--motion);}
+    .is-open .preview-panel{opacity:1;transform:translateX(0);pointer-events:auto}
+    .preview-head{min-height:52px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;border-bottom:1px solid var(--border);background:#fff}
+    .preview-head strong{font-size:14px}
+    .preview-meta{padding:8px 12px;color:var(--muted);font-size:11px;background:#f8fafc;border-bottom:1px solid var(--border)}
+    .zoom-tools{min-height:42px;display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:5px 12px;border-bottom:1px solid var(--border);background:#fff}
+    .zoom-tools .btn{min-height:30px;padding:4px 9px;font-size:12px}
+    .zoom-level{min-width:48px;text-align:center;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+    .preview-scroll{height:auto;max-height:min(560px,calc(100vh - 330px));overflow:auto;padding:14px;background:#edf0f4}
+    .paper{width:min(100%,330px);min-height:455px;margin:0 auto;padding:25px 23px;background:#fff;box-shadow:0 2px 8px rgba(15,23,42,.15);color:#202938;font-family:"Microsoft YaHei UI",sans-serif;font-size:10px}
+    .paper h2{margin:0;text-align:center;font-size:18px;letter-spacing:.12em}
+    .paper-brand{text-align:center;color:#657084;font-size:9px;margin:5px 0 15px}
+    .paper-info{display:grid;grid-template-columns:1fr 1fr;gap:5px 10px;margin-bottom:10px}
+    .paper-info div{border-bottom:1px solid #d8dee7;padding:4px 0}
+    .paper table{min-width:0;width:100%;font-size:9px}
+    .paper th,.paper td{padding:6px 4px;border:1px solid #cfd5dd;white-space:normal}
+    .paper th{background:#f6f7f9;text-align:center}
+    .paper .paper-total{text-align:right;font-size:13px;font-weight:700;margin-top:10px}
+    .paper-notes{margin-top:14px;padding-top:8px;border-top:1px solid #cfd5dd;min-height:42px}
+    .signatures{display:flex;justify-content:space-between;margin-top:16px;padding-top:10px;border-top:1px solid #cfd5dd}
+    .preview-actions{display:flex;align-items:center;gap:8px}
+    .preview-foot{padding:9px 12px;border-top:1px solid var(--border);font-size:11px;color:var(--muted)}
+    @media(max-width:1100px){.page-body{padding:18px}.workspace-grid.is-open{grid-template-columns:minmax(0,1fr) minmax(320px,40%);gap:12px}.meta-grid{grid-template-columns:1fr 1fr}.preview-scroll{padding:10px}.preview-scroll{max-height:min(520px,calc(100vh - 300px))}.paper{padding:18px 16px}}
+    @media(max-width:760px){.sidebar{display:none}.content{margin:8px;height:calc(100% - 16px);border-radius:18px}.topbar{padding:0 16px}.page-body{padding:14px}.workspace-grid.is-open{grid-template-columns:minmax(0,1fr) minmax(280px,44%);gap:8px}.order-heading h1{font-size:20px}.order-heading p{display:none}.preview-head{padding:7px}.preview-head .btn{padding:6px 8px}.meta-grid{grid-template-columns:1fr 1fr}}
+    @media(max-width:560px){.workspace-grid.is-open{grid-template-columns:minmax(0,1fr) 0fr;gap:0}.workspace-grid.is-open .order-area{opacity:.18;pointer-events:none}.workspace-grid.is-open .preview-panel{position:fixed;inset:12px;z-index:10;opacity:1;transform:translateX(0);box-shadow:0 12px 50px rgba(15,23,42,.25)}.preview-scroll{max-height:calc(100vh - 250px)}.paper{width:min(100%,360px)}}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important}}
+    @page{size:A4 portrait;margin:12mm}
+    @media print{html,body{height:auto;overflow:visible;background:#fff}.app-shell,.app-shell *{visibility:hidden!important}.paper,.paper *{visibility:visible!important}.paper{position:absolute;left:0;top:0;width:186mm;min-height:0;margin:0;padding:0;box-shadow:none;color:#111}.paper h2{font-size:18pt}.paper table{font-size:9pt}.paper th,.paper td{padding:5pt}.paper-notes,.signatures{break-inside:avoid}}
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <nav class="sidebar" aria-label="主导航">
+      <div class="brand"><div class="brand-mark">简</div><div><div class="brand-name">简单ERP</div><div class="brand-subtitle">BUSINESS MANAGEMENT</div></div></div>
+      <a class="nav-section nav-active" href="#workbench">工作台</a>
+      <a class="nav-item" href="#sale">开单</a><a class="nav-item sub" href="#sale">销售单</a><a class="nav-item sub" href="#return">退货单</a>
+      <a class="nav-item" href="#orders">单据管理</a><a class="nav-item" href="#accounts">账款管理</a>
+      <div class="nav-divider" aria-hidden="true"></div><div class="nav-section">基础资料</div>
+      <a class="nav-item" href="#products">商品管理</a><a class="nav-item" href="#customers">客户管理</a>
+      <div class="nav-divider" aria-hidden="true"></div><a class="nav-section" href="#recycle">回收站</a>
+      <div class="nav-divider" aria-hidden="true"></div><a class="nav-section" href="#settings">系统设置</a>
+      <div class="app-version">本地桌面版 · V1.0.0</div>
+    </nav>
+    <main class="content">
+      <header class="topbar"><strong>简单ERP</strong><span>本地数据已连接</span></header>
+      <div class="page-body">
+        <div class="workspace-grid" id="workspaceGrid">
+          <section class="order-area" aria-labelledby="orderTitle">
+            <div class="order-heading"><div><h1 id="orderTitle">新建销售单</h1><p>按行录入商品，完成后保存并打开打印单。</p></div><button class="btn btn-quiet" type="button">返回单据管理</button></div>
+            <div class="order-meta">
+              <div class="meta-grid">
+                <div><label for="customer">客户名称</label><input id="customer" value="演示客户甲"></div>
+                <div><label for="date">销售日期</label><input id="date" type="date" value="2026-09-29"></div>
+                <div><label for="number">单号</label><input id="number" value="MD202609290013" readonly></div>
+                <div><label for="status">状态</label><input id="status" value="正式保存" readonly></div>
+              </div>
+            </div>
+            <div class="order-table-wrap"><div class="table-scroll"><table><thead><tr><th>序号</th><th>产品名称</th><th>单位</th><th>数量</th><th>单价(元)</th><th>金额</th><th>操作</th></tr></thead><tbody><tr><td>1</td><td><input aria-label="产品名称" value="灭火器箱"></td><td><input aria-label="单位" value="个"></td><td><input aria-label="数量" value="2"></td><td><input aria-label="单价" value="85.00"></td><td>170.00</td><td>清空</td></tr></tbody></table></div><div class="total-row"><span>合计</span><span>170.00 元</span></div></div>
+            <textarea class="notes" aria-label="备注" placeholder="备注">样张演示内容</textarea>
+            <div class="actions" id="orderActions"><button class="btn" type="button">一键清空</button><button class="btn" type="button">新增一行</button><button class="btn btn-primary" id="saveSuccess" type="button">模拟保存成功并预览</button><button class="btn btn-quiet" id="saveFailure" type="button">模拟保存失败</button></div>
+            <div class="saved-note" id="savedNote" hidden><p>订单 MD202609290013 已保存成功</p><div class="saved-actions"><button class="btn btn-info" type="button" id="reopenPreview">重新打开预览</button><button class="btn" type="button">查看订单</button><button class="btn btn-primary" type="button">继续开单</button></div></div>
+            <div class="error-note" id="errorNote" hidden>演示：订单未保存，请检查输入后重试。开单内容仍保留，右侧预览不打开。</div>
+            <div class="history"><h2>当天历史开单</h2><div class="table-scroll"><table><thead><tr><th>单号</th><th>客户</th><th>类型</th><th>金额</th><th>状态</th><th>操作</th></tr></thead><tbody><tr><td>MD202609290012</td><td>演示客户乙</td><td>销售单</td><td>¥240.00</td><td>正式保存</td><td>回看　重编辑</td></tr></tbody></table></div></div>
+          </section>
+          <aside class="preview-panel" id="previewPanel" aria-label="打印预览" aria-hidden="true" inert>
+            <div class="preview-head"><strong>打印预览</strong><div class="preview-actions"><button class="btn" type="button" id="closePreview">关闭预览</button><button class="btn btn-info" type="button" id="savePdfDemo">保存 PDF</button><button class="btn btn-primary" type="button" id="printDemo">打印</button></div></div>
+            <div class="preview-meta">销售单 · A4 竖版（样张仅用于交互演示）</div>
+            <div class="zoom-tools" aria-label="预览缩放"><button class="btn" type="button" id="zoomOut">缩小</button><button class="btn btn-quiet zoom-level" type="button" id="zoomReset" aria-label="恢复100%缩放">100%</button><button class="btn" type="button" id="zoomIn">放大</button></div>
+            <div class="preview-scroll"><article class="paper" aria-label="A4销售单打印样张"><h2>销售单</h2><div class="paper-brand">简单ERP · 订单打印预览</div><div class="paper-info"><div>单号：MD202609290013</div><div>日期：2026-09-29</div><div>客户：演示客户甲</div><div>单位：人民币（元）</div></div><table><thead><tr><th>序号</th><th>商品名称</th><th>单位</th><th>数量</th><th>单价</th><th>金额</th></tr></thead><tbody><tr><td>1</td><td>灭火器箱</td><td>个</td><td>2</td><td>85.00</td><td>170.00</td></tr></tbody></table><div class="paper-total">合计：¥170.00</div><div class="paper-notes">备注：样张演示内容</div><div class="signatures"><span>经手人：</span><span>客户签字：</span></div></article></div>
+            <div class="preview-foot">关闭预览会回到当前已保存的开单页，不会清空单据。</div>
+          </aside>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script>
+    const grid=document.getElementById('workspaceGrid');
+    const panel=document.getElementById('previewPanel');
+    const savedNote=document.getElementById('savedNote');
+    const errorNote=document.getElementById('errorNote');
+    function openPreview(){grid.classList.add('is-open');panel.inert=false;panel.setAttribute('aria-hidden','false');document.getElementById('closePreview').focus({preventScroll:true});}
+    function closePreview(){grid.classList.remove('is-open');panel.inert=true;panel.setAttribute('aria-hidden','true');document.getElementById('reopenPreview').focus({preventScroll:true});}
+    document.getElementById('saveSuccess').addEventListener('click',()=>{errorNote.hidden=true;savedNote.hidden=false;document.getElementById('orderActions').hidden=true;openPreview();});
+    document.getElementById('saveFailure').addEventListener('click',()=>{errorNote.hidden=false;errorNote.scrollIntoView({block:'nearest'});});
+    document.getElementById('reopenPreview').addEventListener('click',openPreview);
+    document.getElementById('closePreview').addEventListener('click',closePreview);
+    document.getElementById('printDemo').addEventListener('click',()=>window.print());
+    const paper=document.querySelector('.paper');
+    const zoomLevel=document.getElementById('zoomReset');
+    let previewZoom=1;
+    function setPreviewZoom(value){previewZoom=Math.max(.6,Math.min(1.6,value));paper.style.zoom=String(previewZoom);zoomLevel.textContent=`${Math.round(previewZoom*100)}%`;}
+    document.getElementById('zoomOut').addEventListener('click',()=>setPreviewZoom(previewZoom-.1));
+    document.getElementById('zoomIn').addEventListener('click',()=>setPreviewZoom(previewZoom+.1));
+    zoomLevel.addEventListener('click',()=>setPreviewZoom(1));
+    document.getElementById('savePdfDemo').addEventListener('click',()=>{document.querySelector('.preview-foot').textContent='原型不执行真实文件保存；正式实现沿用 PyWebView 的原生 PDF 保存能力。';});
+    window.addEventListener('keydown',event=>{if(event.key==='Escape'&&grid.classList.contains('is-open'))closePreview();});
+    if(location.hash==='#preview'){savedNote.hidden=false;document.getElementById('orderActions').hidden=true;grid.classList.add('is-open');panel.inert=false;panel.setAttribute('aria-hidden','false');}
+  </script>
+</body>
+</html>

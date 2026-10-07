@@ -1,4 +1,5 @@
 import os
+import json
 import sys
 from pathlib import Path
 
@@ -35,7 +36,7 @@ def isolate_test_database(tmp_path, monkeypatch):
     monkeypatch.setattr(db_module, "db_path", lambda: test_db)
 
     (test_root / "config.json").write_text(
-        (PROJECT_ROOT / "config.json").read_text(encoding="utf-8"),
+        json.dumps(config_module.CONFIG_DEFAULTS, ensure_ascii=False),
         encoding="utf-8",
     )
     # Remember data_root as test_root so project_path aligns with db layout under data/.

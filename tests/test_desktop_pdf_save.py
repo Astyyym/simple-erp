@@ -1,6 +1,7 @@
 """Regression coverage for Issue #8 desktop PDF previews and native PDF saving."""
 
 import base64
+import re
 import sys
 import types
 from pathlib import Path
@@ -73,8 +74,28 @@ def test_desktop_preview_covers_order_summaries_and_settings_sample(monkeypatch)
         assert response.mimetype == "text/html", path
         html = response.get_data(as_text=True)
         assert 'id="savePdf"' in html, path
+        assert re.search(
+            r'<a\b(?=[^>]*id="returnToErp")(?=[^>]*href="/")[^>]*>\s*返回上一级\s*</a>',
+            html,
+        ), path
         assert "window.pywebview.api.save_pdf" in html, path
         assert "desktop_preview" not in html.split("fetch(", 1)[1].split(")", 1)[0], path
+
+
+def test_desktop_preview_uses_explicit_internal_source_return(monkeypatch):
+    monkeypatch.setenv("ERP_DESKTOP", "1")
+    init_db()
+    client = create_app().test_client()
+    response = client.get("/settings/print-preview.pdf?desktop_preview=1&return_to=%2Forders%2F%3Fpage%3D2")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert 'id="returnToErp" href="/orders/?page=2"' in html
+    assert "返回上一级" in html
+    assert "返回开单" not in html
+
+    entry = client.get("/orders/new")
+    assert entry.status_code == 200
+    assert "新建销售单" in entry.get_data(as_text=True)
 
 
 def test_browser_pdf_sources_still_return_real_pdf():

@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>简单ERP · 侧栏与工作区预览</title>
+  <style>
+    :root{--blue:#2563eb;--ink:#172033;--muted:#667085;--sidebar:#f1f3f6;--sidebar-ink:#475467;--sidebar-muted:#778397;--line:rgba(23,32,51,.11);--surface:#fff;--soft:#e4ecfb;--field:#c8ced8;--wash:linear-gradient(165deg,#d9e6f7 0%,#eef2f8 38%,#e4ebf5 100%)}
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0}
+    body{font:15px/1.5 "Microsoft YaHei UI","Segoe UI",system-ui,sans-serif;color:var(--ink);background:var(--wash);overflow:hidden}
+    button,input{font:inherit}
+    button{cursor:pointer}
+    button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+    .app-shell{display:flex;width:100%;height:100vh;min-height:440px;overflow:hidden;background:radial-gradient(980px 480px at 10% -10%,rgba(37,99,235,.14),transparent 58%)}
+    .sidebar{width:224px;flex:0 0 224px;min-width:0;display:flex;flex-direction:column;overflow-y:auto;padding:0 12px 18px;background:var(--sidebar);color:var(--sidebar-ink);border-right:1px solid var(--line)}
+    .brand{height:73px;min-height:73px;display:flex;align-items:center;gap:11px;padding:8px 10px 10px;border-bottom:1px solid var(--line);margin-bottom:14px}
+    .brand-mark{width:34px;height:34px;display:grid;place-items:center;flex:none;border-radius:7px;background:var(--blue);color:#fff;font-size:17px;font-weight:700}
+    .brand-name{font-weight:650;line-height:1.25}.brand-subtitle{color:var(--sidebar-muted);font-size:11px;letter-spacing:.08em}
+    .nav-section{display:block;width:100%;margin:0 0 2px;padding:11px 12px 7px;color:var(--sidebar-ink);font-size:14px;font-weight:650;text-decoration:none}
+    a.nav-section:hover{color:#1e4fae}
+    .nav-section.current{color:#1e4fae}
+    .nav-item{display:flex;align-items:center;min-height:42px;margin:2px 0;padding:9px 12px;border-radius:7px;text-decoration:none;color:var(--sidebar-ink);font-size:14px;font-weight:500;transition:background .15s,color .15s}
+    .nav-item:hover{background:#e7ebf1;color:#172033}
+    .nav-item.active,.nav-section.active{color:#1e4fae;background:var(--soft);border-radius:7px;font-weight:650}
+    .nav-section.active{padding-top:10px;padding-bottom:10px}
+    .nav-sub{min-height:34px;margin-left:14px;padding:6px 12px 6px 20px;font-size:13px;color:var(--sidebar-muted);position:relative}
+    .nav-sub:before{content:"";position:absolute;left:7px;width:5px;height:5px;border-radius:50%;background:var(--sidebar-muted)}
+    .nav-sub.active:before{background:var(--blue)}
+    .nav-divider{height:1px;flex:none;background:var(--line);margin:15px 10px 11px}
+    .app-version{margin-top:auto;padding:12px;color:var(--sidebar-muted);border-top:1px solid var(--line);font-size:12px}
+    .content{position:relative;flex:1 1 auto;min-width:0;height:calc(100% - 28px);margin:14px 14px 14px 16px;display:flex;flex-direction:column;overflow:hidden;background:var(--surface);border:1px solid rgba(255,255,255,.88);border-radius:26px;box-shadow:0 1px 2px rgba(16,24,40,.05),0 14px 36px rgba(16,24,40,.10)}
+    .topbar{min-height:58px;display:flex;flex:none;align-items:center;justify-content:space-between;gap:16px;padding:0 30px;background:rgba(255,255,255,.58);border-bottom:1px solid rgba(255,255,255,.55);box-shadow:0 8px 24px rgba(16,24,40,.06);color:var(--muted);font-size:13px}
+    .preview-state{display:flex;align-items:center;gap:8px;white-space:nowrap}
+    .preview-state:before{content:"";width:7px;height:7px;border-radius:50%;background:#d69b20;box-shadow:0 0 0 3px rgba(214,155,32,.16)}
+    .page-body{flex:1 1 auto;min-width:0;min-height:0;overflow:auto;padding:26px 30px 48px}
+    h1{font-size:28px;letter-spacing:-.02em;line-height:1.3;margin:0 0 18px}
+    h2{font-size:18px;margin:0 0 12px}
+    .toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:9px}
+    .btn{min-height:40px;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;padding:7px 14px;border:1px solid var(--field);border-radius:6px;background:#fff;color:var(--ink);font-size:14px;font-weight:600}
+    .btn.blue{background:var(--blue);border-color:var(--blue);color:#fff}
+    .btn.outline-blue{border-color:var(--blue);color:var(--blue)}
+    .btn.green{border-color:#25945e;color:#168152}
+    .btn.danger{background:#c73535;border-color:#c73535;color:#fff}
+    .btn:hover{filter:brightness(.96)}
+    .file-sample{width:304px;height:40px;display:flex;align-items:center;border:1px solid var(--field);border-radius:6px;color:#485363;font-size:14px}
+    .file-sample span:first-child{padding:8px 12px;border-right:1px solid var(--field)}
+    .file-sample span:last-child{padding:8px 10px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+    .help{font-size:13px;color:var(--muted);margin:0 0 9px}
+    .panel{padding:14px 15px;margin:8px 0;background:#fff;border:1px solid #e8ecf2;border-radius:8px;box-shadow:0 8px 24px rgba(16,24,40,.07)}
+    .panel-row{display:flex;align-items:center;gap:0;min-width:0}
+    .panel-row input{min-height:40px;min-width:0;flex:1;padding:8px 11px;border:1px solid var(--field);border-radius:6px;background:#fff;font-size:14px}
+    .panel-row .btn{min-width:126px}
+    .item-fields{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) 156px;gap:0}
+    .item-fields input{width:100%;min-width:0;min-height:40px;padding:8px 11px;border:1px solid var(--field);border-radius:6px}
+    .item-fields .btn{margin-left:1px}
+    .delete-row{margin:14px 0 15px}
+    .table-shell{width:100%;overflow-x:auto;box-shadow:0 8px 24px rgba(16,24,40,.08)}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    thead{background:#f1f3f6;color:#667085}
+    th{text-align:left;font-weight:650;padding:16px 13px;white-space:nowrap}
+    .empty{padding:40px 12px;text-align:center;color:#778397;font-size:13px}
+    .dashboard-grid{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:18px}
+    .metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+    .metric,.quick-card{background:#fff;border:1px solid #e8ecf2;border-radius:8px;padding:16px;box-shadow:0 8px 24px rgba(16,24,40,.07)}
+    .metric small{display:block;color:var(--muted);margin-bottom:9px}
+    .metric strong{font-size:23px}
+    .quick-card h2{margin-bottom:11px}.quick-card a{display:block;border:1px solid #e1e6ee;border-radius:7px;padding:10px 12px;margin-top:7px;text-decoration:none;color:var(--ink);font-size:13px;font-weight:600}
+    .quick-card a:first-of-type{background:var(--blue);border-color:var(--blue);color:#fff}
+    .simple-panel{min-height:190px;padding:22px;border:1px solid #e8ecf2;border-radius:8px;box-shadow:0 8px 24px rgba(16,24,40,.06)}
+    .simple-panel p{color:var(--muted);margin:8px 0 0}
+    [hidden]{display:none!important}
+    #toast{position:absolute;bottom:20px;right:20px;max-width:min(360px,calc(100% - 40px));padding:9px 14px;border-radius:7px;background:#172033;color:#fff;box-shadow:0 8px 24px #17203333;font-size:13px}
+    @media(max-width:980px){.sidebar{width:190px;flex-basis:190px}.content{margin-left:14px}.page-body{padding:20px}.topbar{padding:0 20px}.dashboard-grid{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.item-fields{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.item-fields .btn{margin-left:0}}
+    @media(max-width:650px){.sidebar{width:152px;flex-basis:152px;padding:0 7px 12px}.brand{padding:8px 4px;gap:6px}.brand-mark{width:29px;height:29px}.brand-name{font-size:13px}.brand-subtitle{font-size:9px}.nav-section,.nav-item{font-size:12px;padding-left:8px;padding-right:8px}.nav-sub{font-size:11px;margin-left:7px}.app-version{font-size:10px;padding:9px 4px}.content{margin:10px 10px 10px 12px;height:calc(100% - 20px);border-radius:19px}.topbar{padding:0 15px}.page-body{padding:18px 15px}.preview-state{font-size:11px}h1{font-size:22px}.metrics{grid-template-columns:1fr}.toolbar .file-sample{width:100%}.item-fields{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <nav class="sidebar" aria-label="主导航">
+      <div class="brand"><div class="brand-mark">简</div><div><div class="brand-name">简单ERP</div><div class="brand-subtitle">BUSINESS MANAGEMENT</div></div></div>
+      <a class="nav-section" href="#workbench" data-page="workbench">工作台</a>
+      <a class="nav-item" href="#sales" data-page="sales">开单</a>
+      <a class="nav-item nav-sub" href="#sales" data-page="sales">销售单</a>
+      <a class="nav-item nav-sub" href="#return" data-page="return">退货单</a>
+      <a class="nav-item" href="#orders" data-page="orders">单据管理</a>
+      <a class="nav-item" href="#accounts" data-page="accounts">账款管理</a>
+      <div class="nav-divider" aria-hidden="true"></div>
+      <div class="nav-section" id="master-data-label">基础资料</div>
+      <a class="nav-item" href="#products" data-page="products">商品管理</a>
+      <a class="nav-item" href="#customers" data-page="customers">客户管理</a>
+      <div class="nav-divider" aria-hidden="true"></div>
+      <a class="nav-section" href="#recycle" data-page="recycle">回收站</a>
+      <div class="nav-divider" aria-hidden="true"></div>
+      <a class="nav-section" href="#settings" data-page="settings">系统设置</a>
+      <div class="app-version">本地桌面版 · V1.0.0</div>
+    </nav>
+    <main class="content">
+      <header class="topbar"><span>简单ERP</span><span class="preview-state">原型预览 · 不连接业务数据</span></header>
+      <div class="page-body">
+        <section data-screen-label="商品管理" id="products-screen">
+          <h1>商品管理</h1>
+          <div class="toolbar"><button class="btn outline-blue" type="button" data-demo>下载Excel模板</button><button class="btn green" type="button" data-demo>导出Excel</button><div class="file-sample"><span>选择文件</span><span>未选择文件</span></div><button class="btn blue" type="button" data-demo>批量导入</button></div>
+          <p class="help">支持 .xlsx/.csv，最大5MB；重复名称自动跳过；模板未填写单位，导入商品默认单位为“个”</p>
+          <div class="panel"><div class="panel-row"><input type="search" aria-label="查找商品" placeholder="输入相似字符查找商品"><button class="btn blue" type="button" data-demo>查找商品</button><button class="btn" type="button" data-demo>清除信息</button></div></div>
+          <div class="panel"><div class="item-fields"><input aria-label="商品名" placeholder="商品名"><input aria-label="规格" placeholder="规格"><input aria-label="单位" placeholder="单位"><input aria-label="默认单价" placeholder="默认单价(元)"><button class="btn blue" type="button" data-demo>新增商品</button></div></div>
+          <div class="delete-row"><button class="btn danger" type="button" data-demo>删除选中</button></div>
+          <div class="table-shell"><table><thead><tr><th>□</th><th>名称</th><th>规格</th><th>单位</th><th>默认价</th><th>操作</th></tr></thead></table></div>
+        </section>
+        <section data-screen-label="业务工作台" id="workbench-screen" hidden>
+          <h1>业务工作台</h1><div class="dashboard-grid"><div><div class="metrics"><div class="metric"><small>今日净业务额</small><strong>—</strong></div><div class="metric"><small>销售单</small><strong>—</strong></div><div class="metric"><small>退货单</small><strong>—</strong></div></div><div class="simple-panel" style="margin-top:18px"><h2>最近业务</h2><p>预览不读取真实单据。</p></div></div><div class="quick-card"><h2>快捷操作</h2><a href="#sales" data-page="sales">新建销售单</a><a href="#return" data-page="return">新建退货单</a><a href="#orders" data-page="orders">单据管理</a><a href="#accounts" data-page="accounts">账款管理</a></div></div>
+        </section>
+        <section data-screen-label="导航示意" id="generic-screen" hidden><h1 id="generic-title"></h1><div class="simple-panel"><h2>页面内容保持原样</h2><p>这里仅演示侧栏分区、选中状态与圆角工作区的间距；不连接或修改真实业务数据。</p></div></section>
+      </div>
+      <div id="toast" role="status" hidden>此按钮仅用于版式预览，不执行真实操作。</div>
+    </main>
+  </div>
+  <script>
+    const labels={sales:'新建销售单',return:'新建退货单',orders:'单据管理',accounts:'账款管理',customers:'客户管理',recycle:'回收站',settings:'系统设置'};
+    function render(){
+      const page=location.hash.slice(1) || 'products';
+      const current=page==='products'||page==='workbench'||labels[page]?page:'products';
+      document.getElementById('products-screen').hidden=current!=='products';
+      document.getElementById('workbench-screen').hidden=current!=='workbench';
+      document.getElementById('generic-screen').hidden=current==='products'||current==='workbench';
+      document.getElementById('generic-title').textContent=labels[current]||'';
+      document.querySelectorAll('.sidebar [data-page]').forEach(link=>{
+        const active=link.dataset.page===current && (current!=='sales'||link.textContent.trim()==='销售单');
+        link.classList.toggle('active',active);
+        if(active)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');
+      });
+      document.querySelector('.sidebar [data-page="workbench"]').classList.toggle('current',['workbench','sales','return','orders','accounts'].includes(current));
+      document.querySelector('.page-body').scrollTop=0;
+      document.getElementById('toast').hidden=true;
+    }
+    window.addEventListener('hashchange',render);
+    render();
+    document.querySelectorAll('[data-demo]').forEach(button=>button.addEventListener('click',()=>{const toast=document.getElementById('toast');toast.hidden=false;clearTimeout(window.toastTimer);window.toastTimer=setTimeout(()=>toast.hidden=true,3000)}));
+  </script>
+</body>
+</html>

@@ -1,7 +1,10 @@
 import re
+from pathlib import Path
 
 from erp import create_app
 from erp.db import init_db
+
+PICKER_JS = Path(__file__).resolve().parents[1] / "app" / "erp" / "static" / "order-product-picker.js"
 
 
 def _tag_with_attribute(markup: str, tag: str, attribute: str, value: str) -> str:
@@ -11,7 +14,7 @@ def _tag_with_attribute(markup: str, tag: str, attribute: str, value: str) -> st
     return match.group(0)
 
 
-def test_order_entry_autocomplete_exposes_keyboard_accessible_comboboxes():
+def test_order_entry_exposes_accessible_customer_combobox_and_product_picker():
     init_db()
     response = create_app().test_client().get("/orders/new")
     assert response.status_code == 200
@@ -25,17 +28,12 @@ def test_order_entry_autocomplete_exposes_keyboard_accessible_comboboxes():
     customer_list = _tag_with_attribute(page, "div", "id", "customer_suggestions")
     assert 'role="listbox"' in customer_list
 
-    product_match = re.search(
-        r'<input\b(?=[^>]*\bclass=["\'][^"\']*\bproduct-name\b[^"\']*["\'])[^>]*>',
-        page,
-    )
-    assert product_match is not None, "missing product-name input"
-    product_input = product_match.group(0)
-    assert 'role="combobox"' in product_input
-    assert 'aria-autocomplete="list"' in product_input
-    assert 'aria-controls="product_suggestions_1"' in product_input
-    product_list = _tag_with_attribute(page, "div", "id", "product_suggestions_1")
-    assert 'role="listbox"' in product_list
+    # 商品改为"产品名称 → 型号"两级原生下拉，键盘/读屏天然可用
+    assert 'class="form-select form-select-sm picker-name"' in page
+    assert 'class="form-select form-select-sm picker-spec"' in page
+    assert 'name="product_name"' in page and 'class="product-name"' in page
+    assert 'id="productCatalog"' in page
+    assert 'order-product-picker.js' in page
 
     assert "ArrowDown" in page
     assert "ArrowUp" in page
@@ -68,8 +66,10 @@ def test_order_autocomplete_renders_untrusted_values_as_text_not_html():
     assert "option.innerHTML = render(item)" not in page
     assert "nameNode.textContent = c.name;" in page
     assert "detailsNode.textContent = c.phone || '';" in page
-    assert "nameNode.textContent = p.name;" in page
-    assert "detailsNode.textContent = details;" in page
+    # 商品名/型号改由两级原生下拉呈现：目录 JSON 只喂数据，选项文本用 textContent，不拼接 HTML
+    picker = PICKER_JS.read_text(encoding="utf-8")
+    assert "o.textContent = text;" in picker
+    assert "innerHTML" not in picker
 
 
 def test_customer_product_and_order_suggestions_do_not_parse_stored_names_as_html():

@@ -22,6 +22,7 @@ def accounts():
     customer_id = request.args.get("customer_id", type=int)
     start_date = request.args.get("start_date", "").strip()
     end_date = request.args.get("end_date", "").strip()
+    type_filter = [t for t in request.args.getlist("type") if t]
     with get_db() as conn:
         customers = conn.execute("SELECT * FROM customers WHERE deleted_at IS NULL ORDER BY name").fetchall()
         balance_rows = conn.execute(
@@ -31,7 +32,9 @@ def accounts():
                 COALESCE(c.opening_balance_cents, 0)
                 + COALESCE(o.order_total, 0)
                 + COALESCE(a.adjustment_total, 0)
-                - COALESCE(p.payment_total, 0) AS balance_cents
+                - COALESCE(p.payment_total, 0)
+                - COALESCE(po.purchase_total, 0)
+                + COALESCE(pr.purchase_return_total, 0) AS balance_cents
             FROM customers c
             LEFT JOIN (
                 SELECT customer_id, SUM(total_amount_cents) AS order_total
@@ -51,6 +54,18 @@ def accounts():
                 WHERE status='active'
                 GROUP BY customer_id
             ) a ON a.customer_id = c.id
+            LEFT JOIN (
+                SELECT customer_id, SUM(total_amount_cents) AS purchase_total
+                FROM purchase_orders
+                WHERE status='saved' AND deleted_at IS NULL
+                GROUP BY customer_id
+            ) po ON po.customer_id = c.id
+            LEFT JOIN (
+                SELECT customer_id, SUM(total_amount_cents) AS purchase_return_total
+                FROM purchase_return_orders
+                WHERE status='saved' AND deleted_at IS NULL
+                GROUP BY customer_id
+            ) pr ON pr.customer_id = c.id
             WHERE c.deleted_at IS NULL
             """
         ).fetchall()
@@ -65,7 +80,7 @@ def accounts():
     ledger = None
     selected_customer = None
     if selected_row is not None:
-        ledger = get_customer_account_ledger(customer_id, start_date, end_date)
+        ledger = get_customer_account_ledger(customer_id, start_date, end_date, type_filter)
         selected_customer = ledger["customer"]
 
     return render_template(
@@ -76,6 +91,7 @@ def accounts():
         ledger=ledger,
         start_date=start_date,
         end_date=end_date,
+        type_filter=type_filter,
         cents_to_yuan=cents_to_yuan,
     )
 

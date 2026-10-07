@@ -1,16 +1,18 @@
 from flask import Blueprint, render_template, request, redirect, url_for, send_file, jsonify, Response
 from datetime import date, datetime, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import re
+import uuid
 from erp.db import get_db
-from erp.services.accounting import create_order_from_typed_rows, update_order_from_typed_rows, mark_order_printed, void_order
+from erp.services.accounting import create_order_from_typed_rows, create_return_order_from_source, delete_order, mark_order_printed, update_return_draft_from_source, update_order_from_typed_rows, void_order
 from erp.utils.exporting import (
     export_filename,
     order_line_export_headers,
     order_line_export_rows,
     workbook_download,
 )
-from erp.utils.money import cents_to_yuan, line_subtotal_cents, yuan_to_cents
+from erp.utils.errors import error_response
+from erp.utils.money import cents_to_yuan, line_subtotal_cents, micro_to_yuan, yuan_to_cents
 from erp.utils.pdf import generate_order_pdf, send_pdf_for_preview
 
 orders_bp = Blueprint("orders", __name__, url_prefix="/orders")
@@ -203,77 +205,6 @@ def _resolve_customer_scope(conn, customer_q: str):
     return "none", None, "未匹配到客户，请确认名称或清空客户后查看全店统计。", []
 
 
-def _purchase_dashboard(conn, scope: str, customer_row, start_date: str, end_date: str, start_day: date, end_day: date, date_mode: str, year: int, month: int, order_type: str, start_year: int, start_month: int, end_year: int, end_month: int):
-    params = [start_date, end_date]
-    customer_sql = ""
-    if scope == "customer":
-        customer_sql = " AND o.customer_id=?"
-        params.append(customer_row["id"])
-
-    rows = conn.execute(
-        f"""SELECT o.id AS order_id, o.order_date, o.order_type,
-                  oi.product_name, oi.quantity, oi.subtotal_cents
-           FROM orders o
-           JOIN order_items oi ON oi.order_id=o.id
-           WHERE o.deleted_at IS NULL
-             AND o.order_date>=? AND o.order_date<=?
-             AND o.order_type='sale'
-             AND o.status IN ('saved', 'printed')
-             {customer_sql}
-           ORDER BY o.order_date, o.id, oi.id""",
-        params,
-    ).fetchall()
-
-    daily = {}
-    ranking = {}
-    for row in rows:
-        day = daily.setdefault(row["order_date"], {"amount_cents": 0, "orders": set(), "products": []})
-        day["amount_cents"] += int(row["subtotal_cents"] or 0)
-        day["orders"].add(int(row["order_id"]))
-        if row["product_name"] not in day["products"]:
-            day["products"].append(row["product_name"])
-        product = ranking.setdefault(row["product_name"], {"quantity": 0.0, "amount_cents": 0})
-        product["quantity"] += _safe_quantity(row["quantity"])
-        product["amount_cents"] += int(row["subtotal_cents"] or 0)
-
-    days = []
-    cursor = start_day
-    last = end_day
-    while cursor <= last:
-        key = cursor.isoformat()
-        item = daily.get(key)
-        days.append({
-            "date": key,
-            "amount_cents": item["amount_cents"] if item else 0,
-            "order_count": len(item["orders"]) if item else 0,
-            "products": item["products"] if item else [],
-        })
-        if cursor == last:
-            break
-        cursor += timedelta(days=1)
-
-    ranked = sorted(ranking.items(), key=lambda item: (-item[1]["quantity"], -item[1]["amount_cents"], item[0]))
-    return {
-        "scope": scope,
-        "customer": customer_row["name"] if customer_row is not None else "",
-        "start_date": start_date,
-        "end_date": end_date,
-        "date_mode": date_mode,
-        "year": year,
-        "month": month,
-        "start_year": start_year,
-        "start_month": start_month,
-        "end_year": end_year,
-        "end_month": end_month,
-        "order_type": order_type,
-        "days": days,
-        "ranking": [
-            {"name": name, "quantity": values["quantity"], "amount_cents": values["amount_cents"]}
-            for name, values in ranked[:10]
-        ],
-    }
-
-
 def _filter_args_from_request():
     return {
         "customer_q": request.args.get("customer", "").strip(),
@@ -294,21 +225,28 @@ def _filter_args_from_request():
 def list_orders():
     args = _filter_args_from_request()
     customer_q = args["customer_q"]
-    order_type = args["order_type"] if args["order_type"] in {"sale", "return"} else ""
+    order_type = args["order_type"] if args["order_type"] in {"sale", "return", "purchase", "purchase_return"} else ""
+    # Document-type filter is multi-select (all / some / one); legacy single value still works.
+    order_types = [t for t in request.args.getlist("order_type") if t in {"sale", "return", "purchase", "purchase_return"}]
+    if not order_types and order_type:
+        order_types = [order_type]
+    type_filter = set(order_types)
 
     with get_db() as conn:
         scope, customer_row, dashboard_notice, matched_names = _resolve_customer_scope(conn, customer_q)
-        if scope == "customer":
-            bounds = conn.execute(
-                """SELECT MIN(order_date) AS first_date, MAX(order_date) AS last_date
-                   FROM orders WHERE customer_id=? AND deleted_at IS NULL""",
-                (customer_row["id"],),
-            ).fetchone()
-        else:
-            bounds = conn.execute(
-                """SELECT MIN(order_date) AS first_date, MAX(order_date) AS last_date
-                   FROM orders WHERE deleted_at IS NULL"""
-            ).fetchone()
+        bound_conditions = ['1=1']
+        bound_params = []
+        if scope == 'customer':
+            bound_conditions.append('customer_id=?')
+            bound_params.append(customer_row['id'])
+        if len(type_filter) == 1:
+            bound_conditions.append('document_type=?')
+            bound_params.append(next(iter(type_filter)))
+        bounds = conn.execute(f"""SELECT MIN(business_date) AS first_date,MAX(business_date) AS last_date FROM (
+            SELECT order_date AS business_date,customer_id,order_type AS document_type FROM orders WHERE deleted_at IS NULL
+            UNION ALL SELECT business_date,customer_id,'purchase' FROM purchase_orders WHERE deleted_at IS NULL
+            UNION ALL SELECT business_date,customer_id,'purchase_return' FROM purchase_return_orders WHERE deleted_at IS NULL
+        ) WHERE {' AND '.join(bound_conditions)}""",bound_params).fetchone()
 
         (
             date_mode,
@@ -336,53 +274,102 @@ def list_orders():
             args["end_month_raw"],
         )
 
-        conditions = ["o.deleted_at IS NULL"]
-        params = []
-        if customer_q:
-            conditions.append("c.name LIKE ?")
-            params.append(f"%{customer_q}%")
-        conditions.append("o.order_date >= ?")
-        params.append(start_date)
-        conditions.append("o.order_date <= ?")
-        params.append(end_date)
-        if order_type:
-            conditions.append("o.order_type = ?")
-            params.append(order_type)
-        where_clause = " AND ".join(conditions)
+        def type_condition(column, document_type):
+            if type_filter and document_type not in type_filter:
+                return "1=0"
+            return f"{column} IS NOT NULL"
+
+        sale_condition = "1=1" if (not type_filter or "sale" in type_filter) else "1=0"
+        return_condition = "1=1" if (not type_filter or "return" in type_filter) else "1=0"
+        purchase_condition = "1=1" if (not type_filter or "purchase" in type_filter) else "1=0"
+        purchase_return_condition = "1=1" if (not type_filter or "purchase_return" in type_filter) else "1=0"
+
+        def order_side_conditions():
+            conditions = ["o.deleted_at IS NULL", "o.order_date >= ?", "o.order_date <= ?"]
+            params = [start_date, end_date]
+            if scope == "customer":
+                conditions.append("o.customer_id=?")
+                params.append(customer_row["id"])
+            elif customer_q:
+                conditions.append("c.name LIKE ?")
+                params.append(f"%{customer_q}%")
+            return " AND ".join(conditions), params
+
+        def purchase_side_conditions():
+            conditions = ["deleted_at IS NULL", "business_date >= ?", "business_date <= ?"]
+            params = [start_date, end_date]
+            if scope == "customer":
+                conditions.append("customer_id=?")
+                params.append(customer_row["id"])
+            elif customer_q:
+                conditions.append("customer_name LIKE ?")
+                params.append(f"%{customer_q}%")
+            return " AND ".join(conditions), params
+
+        order_where, order_params = order_side_conditions()
+        name_where, name_params = purchase_side_conditions()
+
+        # orders stores no name snapshot: join customers for display and filtering.
+        union_sql = f"""
+            SELECT o.id, o.order_no, o.customer_id, COALESCE(c.name, '') AS customer_name,
+                   o.order_date AS business_date, o.order_type, o.total_amount_cents, o.status
+              FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
+             WHERE {order_where} AND o.order_type='sale' AND {sale_condition}
+            UNION ALL
+            SELECT o.id, o.order_no, o.customer_id, COALESCE(c.name, '') AS customer_name,
+                   o.order_date AS business_date, o.order_type, o.total_amount_cents, o.status
+              FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
+             WHERE {order_where} AND o.order_type='return' AND {return_condition}
+            UNION ALL
+            SELECT id, order_no, customer_id, customer_name, business_date,
+                   'purchase' AS order_type, total_amount_cents, status
+              FROM purchase_orders WHERE {name_where} AND {purchase_condition}
+            UNION ALL
+            SELECT id, order_no, customer_id, customer_name, business_date,
+                   'purchase_return' AS order_type, total_amount_cents, status
+              FROM purchase_return_orders WHERE {name_where} AND {purchase_return_condition}
+        """
+        union_params = [*order_params, *order_params, *name_params, *name_params]
         total_order_count = int(conn.execute(
-            f"SELECT COUNT(*) AS total_count FROM orders o JOIN customers c ON c.id=o.customer_id WHERE {where_clause}",
-            params,
+            f"SELECT COUNT(*) AS total_count FROM ({union_sql})", union_params
         ).fetchone()["total_count"])
         page_size = 50
         total_pages = max(1, (total_order_count + page_size - 1) // page_size)
         page = request.args.get("page", 1, type=int) or 1
         page = min(max(page, 1), total_pages)
         offset = (page - 1) * page_size
-        orders = conn.execute(
-            f"SELECT o.*, c.name AS customer_name FROM orders o JOIN customers c ON c.id=o.customer_id WHERE {where_clause} ORDER BY o.id DESC LIMIT ? OFFSET ?",
-            [*params, page_size, offset],
+        documents = conn.execute(
+            f"SELECT * FROM ({union_sql}) ORDER BY business_date DESC, order_type, id DESC LIMIT ? OFFSET ?",
+            [*union_params, page_size, offset],
         ).fetchall()
-
-        purchase_dashboard = None
-        if scope in {"customer", "all"}:
-            purchase_dashboard = _purchase_dashboard(
-                conn,
-                scope,
-                customer_row,
-                start_date,
-                end_date,
-                start_day,
-                end_day,
-                date_mode,
-                year,
-                month,
-                order_type,
-                start_year,
-                start_month,
-                end_year,
-                end_month,
-            )
-
+        documents = [
+            dict(row) | {
+                "type_label": {"sale": "销售单", "return": "退货单", "purchase": "拿货单", "purchase_return": "退拿货单"}[row["order_type"]],
+                "type_badge": {"sale": "bg-primary", "return": "bg-danger", "purchase": "bg-warning text-dark", "purchase_return": "bg-info text-dark"}[row["order_type"]],
+                "status_label": {
+                    "draft": "草稿", "saved": "正式保存", "printed": "已打印", "void": "已作废",
+                }.get(row["status"], row["status"]),
+                "status_badge": {
+                    "draft": "bg-secondary", "saved": "bg-success", "printed": "bg-info text-dark", "void": "bg-danger",
+                }.get(row["status"], "bg-secondary"),
+                # 全部单据都可勾选删除：正式单据删除时由后端先自动冲回（作废）再进回收站。
+                "deletable": True,
+                "detail_url": {
+                    "sale": f"/orders/{row['id']}", "return": f"/orders/{row['id']}",
+                    "purchase": f"/purchases/{row['id']}", "purchase_return": f"/purchases/return/{row['id']}",
+                }[row["order_type"]],
+                "delete_url": {
+                    "sale": f"/orders/{row['id']}/delete", "return": f"/orders/{row['id']}/delete",
+                    "purchase": f"/purchases/{row['id']}/delete", "purchase_return": f"/purchases/return/{row['id']}/delete",
+                }[row["order_type"]],
+                "edit_url": {
+                    "sale": f"/orders/{row['id']}/edit", "return": f"/orders/{row['id']}/edit",
+                    "purchase": f"/purchases/{row['id']}/edit", "purchase_return": f"/purchases/return/{row['id']}/edit",
+                }[row["order_type"]],
+                "document_key": f"{row['order_type']}:{row['id']}",
+            }
+            for row in documents
+        ]
         customer_suggestions = conn.execute(
             "SELECT DISTINCT name FROM customers WHERE deleted_at IS NULL AND name LIKE ? ORDER BY name LIMIT 20",
             (f"%{customer_q}%" if customer_q else "%",),
@@ -412,7 +399,7 @@ def list_orders():
 
     return render_template(
         "orders/list.html",
-        orders=orders,
+        documents=documents,
         total_order_count=total_order_count,
         page=page,
         page_size=page_size,
@@ -428,6 +415,7 @@ def list_orders():
         filter_start_date=start_date,
         filter_end_date=end_date,
         order_type=order_type,
+        order_types=sorted(type_filter),
         date_mode=date_mode,
         filter_year=year,
         filter_month=month,
@@ -435,10 +423,9 @@ def list_orders():
         filter_start_month=start_month,
         filter_end_year=end_year,
         filter_end_month=end_month,
-        purchase_dashboard=purchase_dashboard,
-        dashboard_notice=dashboard_notice,
         matched_customer_names=matched_names,
         customer_suggestions=customer_suggestions,
+        dashboard_notice=dashboard_notice,
         unique_customer=unique_customer,
         summary_hint=summary_hint,
         cents_to_yuan=cents_to_yuan,
@@ -602,13 +589,127 @@ def new_return_order():
     return _new_order_form("return")
 
 
+def _today_history(conn, today: str) -> list[dict]:
+    rows = conn.execute(
+        """SELECT o.id, o.order_no, o.order_date, o.order_type, o.status,
+                  o.total_amount_cents, COALESCE(c.name, '（未知客户）') AS customer_name
+           FROM orders o LEFT JOIN customers c ON c.id=o.customer_id
+           WHERE o.order_date=? AND o.deleted_at IS NULL
+             AND o.status IN ('saved', 'printed')
+             AND o.order_type IN ('sale', 'return')
+           ORDER BY o.id DESC""",
+        (today,),
+    ).fetchall()
+    return [
+        {**dict(row), "amount_display": cents_to_yuan(row["total_amount_cents"])}
+        for row in rows
+    ]
+
+
+def _return_source_orders(conn) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT o.id, o.order_no, o.order_date, o.customer_id, c.name AS customer_name,
+               o.total_amount_cents
+        FROM orders o JOIN customers c ON c.id=o.customer_id
+        WHERE o.order_type='sale' AND o.status IN ('saved', 'printed') AND o.deleted_at IS NULL
+          AND EXISTS (
+              SELECT 1 FROM order_items oi
+              WHERE oi.order_id=o.id AND oi.unit_cost_micro IS NOT NULL AND oi.cost_total_micro IS NOT NULL
+          )
+        ORDER BY o.order_date DESC, o.id DESC
+        LIMIT 100
+        """
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+@orders_bp.get("/api/today_history")
+def api_today_history():
+    today = date.today().isoformat()
+    with get_db() as conn:
+        orders = _today_history(conn, today)
+    return jsonify({"date": today, "orders": orders})
+
+
+@orders_bp.get("/api/return_sources/<int:source_order_id>")
+def api_return_source(source_order_id: int):
+    with get_db() as conn:
+        source = conn.execute(
+            """
+            SELECT o.id, o.order_no, o.order_date, o.customer_id, c.name AS customer_name,
+                   o.total_amount_cents
+            FROM orders o JOIN customers c ON c.id=o.customer_id
+            WHERE o.id=? AND o.order_type='sale' AND o.status IN ('saved', 'printed')
+              AND o.deleted_at IS NULL
+            """,
+            (source_order_id,),
+        ).fetchone()
+        if source is None:
+            return jsonify({"message": "退货来源必须是有效销售单"}), 404
+        items = conn.execute(
+            "SELECT * FROM order_items WHERE order_id=? ORDER BY id",
+            (source_order_id,),
+        ).fetchall()
+        returned_rows = conn.execute(
+            """
+            SELECT oi.source_item_id, oi.quantity
+            FROM order_items oi JOIN orders r ON r.id=oi.order_id
+            WHERE r.source_order_id=? AND r.order_type='return'
+              AND r.status IN ('saved', 'printed') AND r.deleted_at IS NULL
+            """,
+            (source_order_id,),
+        ).fetchall()
+    returned: dict[int, Decimal] = {}
+    for row in returned_rows:
+        if row["source_item_id"] is None:
+            continue
+        try:
+            returned[int(row["source_item_id"])] = returned.get(int(row["source_item_id"]), Decimal("0")) + Decimal(str(row["quantity"]))
+        except (InvalidOperation, TypeError, ValueError):
+            continue
+    payload_items = []
+    for item in items:
+        try:
+            original_quantity = Decimal(str(item["quantity"]))
+            returned_quantity = returned.get(int(item["id"]), Decimal("0"))
+            available = max(Decimal("0"), original_quantity - returned_quantity)
+        except (InvalidOperation, TypeError, ValueError):
+            original_quantity = returned_quantity = available = Decimal("0")
+        payload_items.append({
+            "source_item_id": int(item["id"]),
+            "product_id": item["product_id"],
+            "product_name": item["product_name"],
+            "spec": item["spec"] or "",
+            "unit": item["unit"],
+            "original_quantity": format(original_quantity, "f"),
+            "returned_quantity": format(returned_quantity, "f"),
+            "available_quantity": format(available, "f"),
+            "unit_price": cents_to_yuan(item["unit_price_cents"]),
+            "cost_available": item["unit_cost_micro"] is not None and item["cost_total_micro"] is not None,
+            "unit_cost": micro_to_yuan(int((Decimal(int(item["cost_total_micro"])) / original_quantity).quantize(Decimal("1"), rounding=ROUND_HALF_UP)), precision=6) if item["cost_total_micro"] is not None and original_quantity > 0 else None,
+        })
+    return jsonify({"source": dict(source), "items": payload_items})
+
+
 def _new_order_form(order_type: str):
     today = date.today().isoformat()
     with get_db() as conn:
         customers = conn.execute("SELECT * FROM customers WHERE deleted_at IS NULL ORDER BY name").fetchall()
         products = conn.execute("SELECT * FROM products WHERE deleted_at IS NULL ORDER BY usage_count DESC, name").fetchall()
         order_no = next_order_no(conn, today)
-    return render_template("orders/new.html", customers=customers, products=products, today=today, order_no=order_no, order_type=order_type, cents_to_yuan=cents_to_yuan)
+        today_history = _today_history(conn, today)
+        return_sources = _return_source_orders(conn) if order_type == "return" else []
+    return render_template("orders/new.html", customers=customers, products=products, product_catalog=_product_catalog(products), today=today, order_no=order_no, request_key=uuid.uuid4().hex, order_type=order_type, today_history=today_history, return_sources=return_sources, cents_to_yuan=cents_to_yuan)
+
+
+def _product_catalog(products) -> list[dict]:
+    """Compact product list for the shared two-level picker (名称 → 型号)."""
+    return [
+        {"id": int(p["id"]), "name": p["name"], "spec": p["spec"] or "",
+         "unit": p["unit"], "default_price_cents": int(p["default_price_cents"] or 0)}
+        for p in products
+    ]
 
 
 def _resolve_customer_id() -> int:
@@ -637,13 +738,16 @@ def _resolve_customer_id() -> int:
 
 
 def _typed_rows_from_form() -> list[dict]:
+    product_ids = request.form.getlist("product_id")
     product_names = request.form.getlist("product_name")
     units = request.form.getlist("unit")
     unit_prices = request.form.getlist("unit_price")
     quantities = request.form.getlist("quantity")
+    if len(product_ids) < len(product_names):
+        product_ids.extend([""] * (len(product_names) - len(product_ids)))
     return [
-        {"product_name": name, "unit": unit, "unit_price_yuan": price, "quantity": qty}
-        for name, unit, price, qty in zip(product_names, units, unit_prices, quantities)
+        {"product_id": product_id, "product_name": name, "unit": unit, "unit_price_yuan": price, "quantity": qty}
+        for product_id, name, unit, price, qty in zip(product_ids, product_names, units, unit_prices, quantities)
         if name.strip() and qty.strip()
     ]
 
@@ -700,10 +804,26 @@ def _create_order_view(order_type: str):
     status = request.form.get("status", "saved").strip()
     if status not in {"draft", "saved"}:
         return "订单状态无效，请选择“草稿”或“正式保存”", 400
-    rows = _typed_rows_from_form()
-    detail_error = _validate_typed_rows(rows)
-    if detail_error:
-        return detail_error, 400
+    source_order_id_text = request.form.get("source_order_id", "").strip() if order_type == "return" else ""
+    if source_order_id_text:
+        source_item_ids = request.form.getlist("source_item_id")
+        quantities = request.form.getlist("quantity")
+        rows = [
+            {"source_item_id": source_item_id, "quantity": quantity}
+            for source_item_id, quantity in zip(source_item_ids, quantities)
+            if str(source_item_id).strip() and str(quantity).strip()
+        ]
+        try:
+            source_order_id = int(source_order_id_text)
+        except ValueError:
+            return "退货来源销售单无效", 400
+        if not rows:
+            return "退货至少选择一行并填写数量", 400
+    else:
+        rows = _typed_rows_from_form()
+        detail_error = _validate_typed_rows(rows)
+        if detail_error:
+            return detail_error, 400
     try:
         customer_id = _resolve_customer_id()
     except ValueError as exc:
@@ -712,18 +832,32 @@ def _create_order_view(order_type: str):
     with get_db() as conn:
         # Never trust client-supplied order_no; number follows chosen business date.
         order_no = next_order_no(conn, order_date)
-    create_order_from_typed_rows(
-        customer_id,
-        order_no,
-        rows,
-        status=status,
-        order_date=order_date,
-        notes=request.form.get("notes", ""),
-        order_type=order_type,
-    )
-    with get_db() as conn:
-        created = conn.execute("SELECT id FROM orders WHERE order_no=?", (order_no,)).fetchone()
-        order_id = int(created["id"])
+    try:
+        if order_type == "return" and source_order_id_text:
+            created_id = create_return_order_from_source(
+                customer_id,
+                order_no,
+                source_order_id,
+                rows,
+                status=status,
+                order_date=order_date,
+                notes=request.form.get("notes", ""),
+                request_key=request.form.get("request_key", ""),
+            )
+        else:
+            created_id = create_order_from_typed_rows(
+                customer_id,
+                order_no,
+                rows,
+                status=status,
+                order_date=order_date,
+                notes=request.form.get("notes", ""),
+                order_type=order_type,
+                request_key=request.form.get("request_key", ""),
+            )
+    except ValueError as exc:
+        return str(exc), 400
+    order_id = int(created_id)
     if request.form.get("save_action") == "save_print":
         pdf_path = url_for("orders.order_pdf", order_id=order_id)
         if request.headers.get("X-Requested-With") == "fetch":
@@ -742,24 +876,37 @@ def _create_order_view(order_type: str):
 @orders_bp.get("/<int:order_id>")
 def view_order(order_id: int):
     with get_db() as conn:
-        order = conn.execute("SELECT o.*, c.name AS customer_name FROM orders o JOIN customers c ON c.id=o.customer_id WHERE o.id=?", (order_id,)).fetchone()
+        order = conn.execute("SELECT o.*, c.name AS customer_name, source.order_no AS source_order_no FROM orders o JOIN customers c ON c.id=o.customer_id LEFT JOIN orders source ON source.id=o.source_order_id WHERE o.id=?", (order_id,)).fetchone()
         items = conn.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (order_id,)).fetchall()
-    return render_template("orders/detail.html", order=order, items=items, cents_to_yuan=cents_to_yuan)
+        # 原销售单可能已被删除（删除销售单不再被有效退货阻止），此时只展示单号快照、不做死链接。
+        source_order_available = bool(order["source_order_id"]) and conn.execute(
+            "SELECT 1 FROM orders WHERE id=? AND deleted_at IS NULL", (order["source_order_id"],)
+        ).fetchone() is not None
+    known_cost = bool(items) and all(item["cost_total_micro"] is not None for item in items)
+    if known_cost:
+        cost_micro = sum(int(item["cost_total_micro"]) for item in items)
+        cost_cents = int((Decimal(cost_micro) / Decimal("10000")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        signed_cost_cents = -cost_cents if order["order_type"] == "return" else cost_cents
+        profit_cents = int(order["total_amount_cents"]) - signed_cost_cents
+    else:
+        profit_cents = None
+    return render_template("orders/detail.html", order=order, items=items, profit_cents=profit_cents, source_order_available=source_order_available, cents_to_yuan=cents_to_yuan, micro_to_yuan=micro_to_yuan)
 
 
 @orders_bp.get("/<int:order_id>/edit")
 def edit_order(order_id: int):
     with get_db() as conn:
-        order = conn.execute("SELECT o.*, c.name AS customer_name FROM orders o JOIN customers c ON c.id=o.customer_id WHERE o.id=?", (order_id,)).fetchone()
+        order = conn.execute("SELECT o.*, c.name AS customer_name, source.order_no AS source_order_no FROM orders o JOIN customers c ON c.id=o.customer_id LEFT JOIN orders source ON source.id=o.source_order_id WHERE o.id=?", (order_id,)).fetchone()
         items = conn.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (order_id,)).fetchall()
-    return render_template("orders/new.html", order=order, items=items, today=date.today().isoformat(), order_type=order["order_type"] if "order_type" in order.keys() else "sale", cents_to_yuan=cents_to_yuan)
+        products = conn.execute("SELECT * FROM products WHERE deleted_at IS NULL ORDER BY usage_count DESC, name").fetchall()
+    return render_template("orders/new.html", order=order, items=items, products=products, product_catalog=_product_catalog(products), today=date.today().isoformat(), order_type=order["order_type"] if "order_type" in order.keys() else "sale", cents_to_yuan=cents_to_yuan, micro_to_yuan=micro_to_yuan)
 
 
 @orders_bp.post("/<int:order_id>/edit")
 def update_order_view(order_id: int):
     with get_db() as conn:
         existing = conn.execute(
-            "SELECT order_no, order_date, order_type, status FROM orders WHERE id=? AND deleted_at IS NULL",
+            "SELECT order_no, order_date, order_type, status, source_order_id FROM orders WHERE id=? AND deleted_at IS NULL",
             (order_id,),
         ).fetchone()
     if existing is None:
@@ -769,6 +916,32 @@ def update_order_view(order_id: int):
     status = request.form.get("status", "saved").strip()
     if status not in {"draft", "saved", "printed"}:
         return "订单状态无效，请选择“草稿”“正式保存”或“已打印”", 400
+    if existing["source_order_id"] is not None:
+        if existing["status"] != "draft":
+            return "正式退货单经济字段已锁定", 400
+        source_item_ids = request.form.getlist("source_item_id")
+        quantities = request.form.getlist("quantity")
+        rows = [
+            {"source_item_id": source_item_id, "quantity": quantity}
+            for source_item_id, quantity in zip(source_item_ids, quantities)
+            if str(source_item_id).strip() and str(quantity).strip()
+        ]
+        if not rows:
+            return "退货至少选择一行并填写数量", 400
+        if status == "printed":
+            return "退货单只能保存为草稿或正式保存", 400
+        try:
+            update_return_draft_from_source(
+                order_id,
+                rows,
+                status=status,
+                order_date=existing["order_date"],
+                notes=request.form.get("notes", ""),
+                expected_version=request.form.get("version", type=int),
+            )
+        except ValueError as exc:
+            return str(exc), 400
+        return redirect(url_for("orders.view_order", order_id=order_id))
     rows = _typed_rows_from_form()
     detail_error = _validate_typed_rows(rows)
     if detail_error:
@@ -788,6 +961,7 @@ def update_order_view(order_id: int):
             order_date=existing["order_date"],
             notes=request.form.get("notes", ""),
             order_type=existing["order_type"],
+            expected_version=request.form.get("version", type=int),
         )
     except ValueError as exc:
         return str(exc), 400
@@ -815,9 +989,11 @@ def api_products():
             SELECT p.id, p.name, p.spec, p.unit,
                    COALESCE(cp.price_cents, p.default_price_cents) AS effective_price_cents,
                    p.default_price_cents,
-                   cp.price_cents AS customer_price_cents
+                   cp.price_cents AS customer_price_cents,
+                   s.avg_cost_micro, s.enabled, s.quantity_3dp
             FROM products p
             LEFT JOIN customer_prices cp ON cp.product_id=p.id AND cp.customer_id=?
+            LEFT JOIN product_inventory_state s ON s.product_id=p.id
             WHERE p.deleted_at IS NULL AND (p.name LIKE ? OR p.spec LIKE ? OR p.pinyin_initials LIKE ?)
             ORDER BY CASE WHEN cp.price_cents IS NULL THEN 1 ELSE 0 END, p.usage_count DESC, p.name
             LIMIT 20
@@ -825,7 +1001,7 @@ def api_products():
             (customer_id, f"%{q}%", f"%{q}%", f"%{q}%"),
         ).fetchall()
     return jsonify([
-        {"id": row["id"], "name": row["name"], "spec": row["spec"], "unit": row["unit"], "unit_price": cents_to_yuan(row["effective_price_cents"]), "regular_price": cents_to_yuan(row["default_price_cents"]), "customer_price": cents_to_yuan(row["customer_price_cents"]) if row["customer_price_cents"] is not None else None, "is_customer_price": row["customer_price_cents"] is not None}
+        {"id": row["id"], "name": row["name"], "spec": row["spec"], "unit": row["unit"], "unit_price": cents_to_yuan(row["effective_price_cents"]), "regular_price": cents_to_yuan(row["default_price_cents"]), "customer_price": cents_to_yuan(row["customer_price_cents"]) if row["customer_price_cents"] is not None else None, "is_customer_price": row["customer_price_cents"] is not None, "cost_available": bool(row["enabled"] and row["avg_cost_micro"] is not None and row["quantity_3dp"]), "unit_cost": micro_to_yuan(row["avg_cost_micro"], precision=6) if row["enabled"] and row["avg_cost_micro"] is not None and row["quantity_3dp"] else None}
         for row in rows
     ])
 
@@ -853,23 +1029,62 @@ def confirm_print(order_id: int):
 @orders_bp.post("/<int:order_id>/void")
 def void_order_view(order_id: int):
     try:
-        void_order(order_id, request.form.get("reason", ""))
+        void_order(order_id, request.form.get("reason", ""), request.form.get("version", type=int))
     except ValueError as exc:
         return str(exc), 400
     return redirect(url_for("orders.view_order", order_id=order_id))
 
 @orders_bp.post("/bulk_delete")
 def bulk_delete_orders():
-    ids = [int(x) for x in request.form.getlist("ids")]
-    with get_db() as conn:
-        conn.executemany("UPDATE orders SET deleted_at=CURRENT_TIMESTAMP, delete_reason='批量删除' WHERE id=?", [(i,) for i in ids])
+    """Delete selected documents across all four types.
+
+    Live documents are reversed first (void → recycle bin) so the ledger and stock
+    stay conserved; drafts go straight to the recycle bin. A document that cannot be
+    reversed (not the last stock posting, has a live dependent return, would drive
+    stock negative) is reported back instead of being skipped silently.
+    """
+    from erp.services.accounting import AUTO_REVERSE_REASON, void_then_delete_order
+    from erp.services.inventory import void_then_delete_purchase_order
+    from erp.services import purchase_returns as return_service
+
+    raw_ids = request.form.getlist("ids")
+    failures: list[str] = []
+    for raw in raw_ids:
+        kind, _, raw_id = str(raw).partition(":")
+        try:
+            if kind in {"sale", "return"}:
+                void_then_delete_order(int(raw_id), AUTO_REVERSE_REASON)
+            elif kind == "purchase":
+                void_then_delete_purchase_order(int(raw_id), AUTO_REVERSE_REASON)
+            elif kind == "purchase_return":
+                with get_db() as conn:
+                    order = conn.execute("SELECT version FROM purchase_return_orders WHERE id=? AND deleted_at IS NULL", (int(raw_id),)).fetchone()
+                if order is None:
+                    failures.append(f"退拿货单 {raw_id} 不存在")
+                    continue
+                return_service.void_then_delete(int(raw_id), expected_version=order["version"], reason=AUTO_REVERSE_REASON)
+            else:
+                failures.append(f"未知单据类型：{raw}")
+        except ValueError as exc:
+            failures.append(f"{raw}：{exc}")
+    if failures:
+        return error_response(
+            "；".join(failures),
+            title="部分单据未能删除",
+            back_url=url_for("orders.list_orders"),
+        )
     return redirect(url_for("orders.list_orders"))
 
 
 @orders_bp.post("/<int:order_id>/delete")
 def delete_order_view(order_id: int):
-    with get_db() as conn:
-        conn.execute("UPDATE orders SET deleted_at=CURRENT_TIMESTAMP, delete_reason='用户删除' WHERE id=?", (order_id,))
-    if request.headers.get("X-Requested-With") or "fetch" in request.headers.get("Sec-Fetch-Mode", ""):
+    """Row-level delete: same auto-reverse semantics as the bulk action."""
+    from erp.services.accounting import AUTO_REVERSE_REASON, void_then_delete_order
+
+    try:
+        void_then_delete_order(order_id, AUTO_REVERSE_REASON)
+    except ValueError as exc:
+        return error_response(str(exc), title="单据未能删除", back_url=url_for("orders.list_orders"))
+    if request.headers.get("X-Requested-With") == "fetch":
         return Response(status=204)
     return redirect(url_for("orders.list_orders"))

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+{% set is_warning = severity == 'warning' %}
+<header class="page-header">
+  <h2>{{ error_title }}</h2>
+  <div class="page-actions">
+    <a class="btn btn-primary page-return" href="{{ back_url or '/' }}">返回</a>
+  </div>
+</header>
+<div class="error-panel{{ ' error-panel-warning' if is_warning else '' }}" role="alert">
+  <div class="error-panel-mark" aria-hidden="true">{{ '!' if not is_warning else 'i' }}</div>
+  <div class="error-panel-body">
+    <p class="error-panel-text">{{ error_message }}</p>
+    <p class="error-panel-hint">
+      {% if is_warning %}
+        上面列出的记录已被保留，其余内容已按操作处理。被保留的原因就在对应条目里。
+      {% else %}
+        该操作没有生效，相关数据未发生改变。请按上面的原因处理后重试；也可以返回上一页继续其他操作。
+      {% endif %}
+    </p>
+  </div>
+</div>
+<style>
+  .error-panel{
+    display:flex;gap:14px;align-items:flex-start;
+    max-width:860px;padding:18px 20px;
+    border:1px solid color-mix(in srgb,var(--erp-danger) 34%,var(--erp-border));
+    border-radius:var(--erp-radius);
+    background:color-mix(in srgb,var(--erp-danger) 6%,var(--erp-surface));
+    box-shadow:var(--erp-glass-shadow);
+  }
+  .error-panel-warning{
+    border-color:var(--erp-border-strong);
+    background:var(--erp-surface-soft);
+  }
+  .error-panel-mark{
+    flex:0 0 30px;width:30px;height:30px;display:grid;place-items:center;
+    border-radius:50%;font-weight:700;font-size:16px;
+    color:#fff;background:var(--erp-danger);
+  }
+  .error-panel-warning .error-panel-mark{background:var(--erp-muted)}
+  .error-panel-body{min-width:0}
+  .error-panel-text{margin:0;font-size:15px;font-weight:600;color:var(--erp-ink);overflow-wrap:anywhere;line-height:1.7}
+  .error-panel-hint{margin:8px 0 0;font-size:13px;color:var(--erp-muted);line-height:1.6}
+</style>
+{% endblock %}

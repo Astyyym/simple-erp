@@ -8,12 +8,15 @@ from flask import Flask, render_template, request
 from .auth import ensure_auth_defaults, current_username, is_desktop_shell
 from .config import ensure_data_location_initialized, load_config, bundled_root, runtime_root
 from .db import get_db, init_db, integrity_check
-from .utils.money import cents_to_yuan
+from .utils.money import cents_to_yuan, micro_to_yuan
+from .utils.quantity import format_quantity, format_quantity_3dp
 from .routes.accounts import accounts_bp
+from .routes.analytics import analytics_bp
 from .routes.auth import auth_bp
 from .routes.customers import customers_bp
 from .routes.orders import orders_bp
 from .routes.products import products_bp
+from .routes.purchases import purchases_bp
 from .routes.recycle import recycle_bp
 from .routes.settings import settings_bp
 from .utils.logging import setup_logging
@@ -75,10 +78,14 @@ def create_app() -> Flask:
             "shop_name": cfg_now.get("shop_name", ""),
             "ui_theme": cfg_now.get("ui_theme", "light"),
             "ui_scale": cfg_now.get("ui_scale", "100"),
+            "ui_font_weight": cfg_now.get("ui_font_weight", "standard"),
             "current_user": current_username(),
             "is_desktop": is_desktop_shell(),
             # Permanent no-login product default.
             "auth_enabled": False,
+            "format_quantity": format_quantity,
+            "format_quantity_3dp": format_quantity_3dp,
+            "micro_to_yuan": micro_to_yuan,
         }
 
     @app.before_request
@@ -98,9 +105,11 @@ def create_app() -> Flask:
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(products_bp)
+    app.register_blueprint(purchases_bp)
     app.register_blueprint(customers_bp)
     app.register_blueprint(orders_bp)
     app.register_blueprint(accounts_bp)
+    app.register_blueprint(analytics_bp)
     app.register_blueprint(recycle_bp)
     app.register_blueprint(settings_bp)
 
@@ -136,6 +145,16 @@ def create_app() -> Flask:
                 LIMIT 5
                 """
             ).fetchall()
+            inventory_alert_count = conn.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM products AS p
+                JOIN product_inventory_state AS s ON s.product_id = p.id
+                WHERE p.deleted_at IS NULL
+                  AND s.enabled = 1
+                  AND s.quantity_3dp <= p.safety_stock_3dp
+                """
+            ).fetchone()["count"]
         recent_orders = []
         for row in recent_rows:
             order = dict(row)
@@ -154,6 +173,7 @@ def create_app() -> Flask:
             today_sales_count=metrics["sales_count"],
             today_returns_count=metrics["returns_count"],
             recent_orders=recent_orders,
+            inventory_alert_count=inventory_alert_count,
             cents_to_yuan=cents_to_yuan,
         )
 

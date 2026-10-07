@@ -1,0 +1,28 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+@page { size: A4 portrait; margin: 9mm 11mm; @bottom-center { content: counter(page) " / " counter(pages); font-size:10px; } }
+body { font-family: "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; margin: 0; color: #000; }
+.page { box-sizing: border-box; }
+h1 { text-align:center; margin:0 0 3mm; font-size:22px; } .subtitle{text-align:center;font-size:16px;margin-bottom:4mm}
+.meta{display:grid;grid-template-columns:1fr 1fr;gap:2mm;font-size:13px;margin-bottom:4mm}
+table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}td,th{border:1px solid #333;padding:1.3mm 1mm;text-align:center;vertical-align:middle;overflow-wrap:anywhere}.name{text-align:left}.return-row,.return-row td{color:#c00000}
+/* 整单交易金额＝该单只计一次的口径，加深加粗以示区别。
+   注意：不要在会跨页拆分的 td 上加 background —— WeasyPrint 会在
+   layout_backgrounds 里崩（详见 print-offset-calibration reference）。
+   这里只保留合计行（document-total，属 tbody 末行、不拆分）的底色。 */
+.document-head td{background:#f3f3f3;font-weight:600}
+.document-total td{text-align:right;font-weight:700;background:#e2ecf8;color:#0f2b46}
+.summary{margin-top:5mm;font-size:14px;line-height:1.8}.total{font-size:16px;font-weight:bold}.signatures{display:grid;grid-template-columns:1fr 1fr;gap:25mm;margin-top:18mm;font-size:13px}thead{display:table-header-group}tbody.document{break-inside:avoid}.notes td{text-align:left;font-size:11px}
+</style></head><body><section class="page">
+<h1>{{ config.shop_name }}</h1><div class="subtitle">往来交易对账单</div>
+<div class="meta"><span>往来对象：{{ snapshot.customer.name }}</span><span>对账期间：{{ snapshot.start_date or '最早' }} 至 {{ snapshot.end_date or '最新' }}</span></div>
+<table><colgroup><col><col style="width:28mm"><col style="width:12mm"><col style="width:20mm"><col style="width:24mm"><col style="width:28mm"></colgroup>
+<thead><tr><th>商品名称</th><th>型号</th><th>单位</th><th>数量</th><th>业务单价</th><th>明细金额</th></tr></thead>
+{% for doc in documents %}<tbody class="document {{ 'return-row' if doc.order.total_amount_cents < 0 else '' }}">
+<tr class="document-head"><td colspan="6">{{ doc.order.order_date }} · {{ doc.order.order_no }} · {{ doc.order.type_label }} · {{ doc.order.direction }}</td></tr>
+{% for item in doc['items'] %}<tr><td class="name">{{ item.product_name }}</td><td>{{ item.spec }}</td><td>{{ item.unit }}</td><td>{{ format_quantity(item.quantity, item.unit) }}</td><td>{{ cents_to_yuan(item.unit_price_cents) }}</td><td>{{ cents_to_yuan(item.subtotal_cents) }}</td></tr>{% endfor %}
+<tr class="document-total"><td colspan="5">整单交易金额</td><td>{{ cents_to_yuan(doc.order.total_amount_cents) }}</td></tr>
+{% if doc.order.notes %}<tr class="notes"><td colspan="6">备注：{{ doc.order.notes }}</td></tr>{% endif %}</tbody>{% endfor %}</table>
+<div class="summary"><div>选中单据：{{ snapshot.selected_count }} / {{ snapshot.scope_count }} 笔</div><div>销售（+）：{{ cents_to_yuan(snapshot.type_totals_cents.sale) }}　客户退货（−）：{{ cents_to_yuan(snapshot.type_totals_cents.customer_return) }}</div><div>拿货（−）：{{ cents_to_yuan(snapshot.type_totals_cents.purchase) }}　退拿货（+）：{{ cents_to_yuan(snapshot.type_totals_cents.purchase_return) }}</div><div class="total">交易对账净额：¥{{ cents_to_yuan(snapshot.selected_total_cents) }}</div><div>仅供交易核对，不代表应收、应付或已结清。</div></div>
+<div class="signatures"><span>对方确认：________________</span><span>日期：________________</span></div>
+</section></body></html>

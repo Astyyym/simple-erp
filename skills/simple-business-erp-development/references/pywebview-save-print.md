@@ -40,6 +40,16 @@ Confirm all layers before editing:
 - Against the EXE, POST with the fetch header for both sale and return, then GET each returned PDF URL and check for `%PDF`.
 - For the final acceptance, manually click save/print inside the real desktop WebView; HTTP probes alone do not exercise `NewWindowRequested`.
 
+## Scrollbar-free in-page PDF display
+
+- Use an application-controlled rendering layer for the real PDF pages when the screen preview needs hand panning; hiding the native reader's outer scrollbar does not control its internal mouse/scroll behavior. Keep the original PDF bytes separately for download, native save and print; never print the ERP page or rasterize the canvas back into the authoritative PDF.
+- Vendor the display library and matching worker/resources with their licenses locally, and include the entire Flask static directory in the PyInstaller spec. Verify `.mjs` responses have a JavaScript MIME type; a source preview passing does not prove a frozen build contains its assets.
+- Clip the preview viewport, capture the pointer on press, release on up/cancel/lost capture/close, and clamp each translation axis so all paper edges remain reachable. Center an axis when the paper fits; reset to the top on an overflowing vertical axis. Confirm pan/zoom using real mouse events, not only DOM string assertions.
+- Render all original pages. Use a clearly labelled real generated multi-page PDF fixture to test multi-page panning if the business generator currently produces one page; do not describe the fixture as a saved multi-page order.
+- Report native print dispatch, the native dialog, and actual printer output separately. A hidden original-PDF frame or a mocked `print()` invocation proves only its code path, not the desktop print dialog or physical output.
+- Treat a `%PDF` header check as insufficient for validity. Evict cached bytes/object URLs and reset native-print readiness when parsing/rendering fails, then verify explicit retry fetches and renders the recovered server PDF without saving another order. Use a deliberately truncated real PDF fixture with the real renderer, not only a mock throwing an error.
+- Reveal the existing panel before an in-flight-load guard, so close/reopen does not drop the reopen click or start duplicate render tasks. Test both reopening and remaining closed until rendering completes; completion text must follow the actual panel state.
+
 ## Packaging pitfall
 
 Before rebuilding or recompressing `dist/消防ERP`, terminate every running packaged ERP process. Otherwise PyInstaller or `Compress-Archive` can fail on locked files such as `logs/app.log` or bundled DLLs. Preserve and restore writable `data/`, `logs/`, `temp_pdf/`, `backups/`, and `imports/` around smoke tests.

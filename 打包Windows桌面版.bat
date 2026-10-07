@@ -30,12 +30,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-if not exist dist\简单ERP\data mkdir dist\简单ERP\data
-if not exist dist\简单ERP\logs mkdir dist\简单ERP\logs
-if not exist dist\简单ERP\temp_pdf mkdir dist\简单ERP\temp_pdf
-if not exist dist\简单ERP\backups mkdir dist\简单ERP\backups
-if not exist dist\简单ERP\imports mkdir dist\简单ERP\imports
-if not exist dist\简单ERP\config.json copy config.json dist\简单ERP\config.json >nul
+if not exist dist\简单ERP\config.json copy packaging\default_config.json dist\简单ERP\config.json >nul
 
 echo.
 echo 打包完成：dist\简单ERP\简单ERP.exe

@@ -52,7 +52,7 @@ def excel_template(headers: list[str], filename: str):
     )
 
 
-def read_upload(upload, expected_headers: list[str]) -> list[tuple[int, list[object]]]:
+def read_upload(upload, expected_headers: list[str] | tuple[list[str], ...]) -> list[tuple[int, list[object]]]:
     filename = (upload.filename or "").strip()
     suffix = Path(filename).suffix.lower()
     if suffix not in {".xlsx", ".csv"}:
@@ -71,8 +71,10 @@ def read_upload(upload, expected_headers: list[str]) -> list[tuple[int, list[obj
     if not rows:
         raise ImportFileError("文件为空")
     headers = [str(value).strip() if value is not None else "" for value in rows[0]]
-    if headers != expected_headers:
-        raise ImportFileError(f"表头错误，应为：{'、'.join(expected_headers)}")
+    accepted_headers = (expected_headers,) if expected_headers and isinstance(expected_headers[0], str) else expected_headers
+    if headers not in accepted_headers:
+        expected = " 或 ".join("、".join(candidate) for candidate in accepted_headers)
+        raise ImportFileError(f"表头错误，应为：{expected}")
     if len(rows) == 1:
         raise ImportFileError("没有可导入的数据行")
     return [(number, list(row)) for number, row in enumerate(rows[1:], start=2)]

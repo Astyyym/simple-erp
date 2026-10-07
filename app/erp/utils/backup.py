@@ -30,8 +30,17 @@ def create_backup(reason: str = "manual") -> Path:
     config_path = config_module.writable_config_path()
     if config_path.exists():
         (work_dir / "config.json").write_text(config_path.read_text(encoding="utf-8"), encoding="utf-8")
+    image_dir = config_module.data_root() / "product_images"
+    if image_dir.exists():
+        for image in image_dir.rglob("*"):
+            if image.is_file():
+                relative = image.relative_to(config_module.data_root())
+                destination = work_dir / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(image.read_bytes())
     zip_path = backup_dir / f"backup_{timestamp}_{reason}.zip"
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for file in work_dir.iterdir():
-            zf.write(file, arcname=file.name)
+        for file in work_dir.rglob("*"):
+            if file.is_file():
+                zf.write(file, arcname=file.relative_to(work_dir))
     return zip_path

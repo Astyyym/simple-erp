@@ -46,8 +46,15 @@ ERP_DATA_ROOT="$preview_data" ERP_PORT=5001 PYTHONPATH=app .venv/bin/python app/
 1. 核对端口监听 PID、进程启动参数和当前工作目录。
 2. 请求 `http://127.0.0.1:5001/health`，检查状态、版本与 `auth: disabled`。
 3. 请求本次改动涉及的页面，核对独特的功能标记与真实行为；`/health` 单独通过不代表页面正确。
-4. 浏览器页面与服务重启后再验证；`debug=False` 时 Python 路由改动需重启。
+4. 浏览器页面与服务重启后再验证；`debug=False` 时 Python 路由改动需重启，Jinja 模板也可能继续使用缓存。模板改动后先比对 HTTP 实际响应里的独特样式/标记与当前源码，再操作页面；不能只刷新浏览器或看健康检查。临时源码验收要热加载模板时，在 `app.run(...)` 前显式设 `app.config['TEMPLATES_AUTO_RELOAD'] = True`；仅设置 `app.jinja_env.auto_reload` 可能被 `app.run(debug=False)` 的 debug setter 重置，不作为可靠启用方式。
 5. 桌面 EXE、浏览器和 WSL 服务是不同验收对象，不能互相代替。
 6. 回答中给可点击 Markdown 链接，并附纯 URL，避免客户端把链接格式拼坏。
 
 当前版本永久免登录，不需要 cookie 才能访问业务页面。免登录不代表可开放到局域网；预览默认仅绑定回环地址。打印页/销售单 PDF 与普通页面的用户体验不同，按对应任务验收。
+
+## Windows Edge/CDP PDF 下载验收
+
+- 给 Chromium 的 `Browser.setDownloadBehavior.downloadPath` 传 Windows 原生反斜杠绝对路径，并使用独立 scratch 下载目录；不能因 Node/Python 接受 `C:/...` 就推定浏览器下载实现也接受同一形式。下载中断时先核对下载记录的实际目标及中断状态，再判断应用是否有问题。
+- 触发下载时使用真实点击或 CDP `Runtime.evaluate` 的 `userGesture: true`，等待目标文件真正完成，再核对 `%PDF`、A4 页框、字节/哈希。页面显示「已请求下载」不是文件落盘的证据。
+- 每次验收使用新的下载目录，或确认目标文件本轮新建，避免复用同名单号旧 PDF 冒充下载成功。只检查本次隔离浏览器的文件，不读取用户日常浏览历史。
+- 未保存的验收表单可能留下 `beforeunload` 确认，使下一次导航或重新附加 CDP 卡住。只对已核实的隔离测试页显式放行导航，或关闭并重建该隔离 target；不关闭用户真实窗口，也不把自动化导航卡住直接诊断为业务/渲染故障。

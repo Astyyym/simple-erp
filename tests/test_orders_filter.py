@@ -80,20 +80,11 @@ def test_orders_list_paginates_full_filtered_result_and_preserves_filter_scope()
     assert last_response.status_code == 200
     assert "显示 <strong>201–201</strong> 条，共 <strong>201</strong> 条" in last_html
     assert "MD202607100001" in last_html
-    assert len(re.findall(r'<input form="bulkOrdersForm" type="checkbox" name="ids" value="\d+">', first_html)) == 50
-    assert len(re.findall(r'<input form="bulkOrdersForm" type="checkbox" name="ids" value="\d+">', last_html)) == 1
-
-    def purchase_statistics(html):
-        match = re.search(
-            r'<script id="customerPurchaseData" type="application/json">(.*?)</script>',
-            html,
-            re.DOTALL,
-        )
-        assert match is not None
-        return json.loads(match.group(1))
-
-    assert purchase_statistics(first_html) == purchase_statistics(second_html)
-    assert purchase_statistics(first_html) == purchase_statistics(last_html)
+    # 只有草稿/已作废单据可勾选删除的旧契约已废止：现在全部单据可勾选，正式单据删除走自动冲回。
+    assert len(re.findall(r'<input form="bulkOrdersForm" type="checkbox" name="ids" value="(?:sale|return):\d+">', first_html)) == 50
+    assert "正式单据会先按原流水自动冲回库存与账款" in first_html
+    # 全店拿货统计已迁出单据管理，单据管理不再输出该数据块。
+    assert 'id="customerPurchaseData"' not in first_html
 
 
 def test_orders_list_shows_business_status_labels_and_document_types():

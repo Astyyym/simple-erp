@@ -18,6 +18,22 @@ def test_sidebar_exposes_sale_and_return_order_shortcuts():
     assert ">退货单<" in html
 
 
+def test_sidebar_has_four_sections_and_a_gap_before_the_workspace():
+    from erp import create_app
+
+    response = create_app().test_client().get("/")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert ">业务中心<" not in html
+    assert 'class="nav-section active current" href="/">工作台</a>' in html
+    assert 'class="nav-label">基础资料</div>' in html
+    assert 'href="/recycle/">回收站</a>' in html
+    assert 'href="/settings/">系统设置</a>' in html
+    assert html.count('class="nav-divider"') == 3
+    assert 'height:calc(100% - 28px);margin:14px;' in html
+
+
 def test_return_order_page_uses_same_entry_table_with_return_labels():
     from erp import create_app
 

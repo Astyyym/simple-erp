@@ -32,6 +32,7 @@ CONFIG_DEFAULTS: dict[str, Any] = {
     "local_access_username": "",
     "ui_theme": "light",  # light | dark | system
     "ui_scale": "100",  # 100 | 125 | 150
+    "ui_font_weight": "standard",  # standard | medium | strong (UI only)
     "print_order_phone": "",
     "print_order_address": "",
     "print_main_business": "软密封闸阀，蝶阀，铜芯硬密封（国，韩标）过滤器，止回阀等消防闸门",
@@ -42,7 +43,9 @@ CONFIG_DEFAULTS: dict[str, Any] = {
 
 UI_SCALE_CHOICES = ("100", "125", "150")
 UI_THEME_CHOICES = ("light", "dark", "system")
-MIGRATE_DIRNAMES = ("data", "backups", "imports", "logs")
+UI_FONT_WEIGHT_CHOICES = ("standard", "medium", "strong")
+UI_FONT_WEIGHT_LABELS = {"standard": "标准", "medium": "稍粗", "strong": "加粗"}
+MIGRATE_DIRNAMES = ("data", "backups", "imports", "logs", "product_images")
 APP_STORAGE_DIRNAME = "简单ERP"
 DEFAULT_DATA_ROOT_DIRNAME = "简单ERP数据"
 
@@ -145,7 +148,7 @@ def project_path(*parts: str) -> Path:
 
 def ensure_runtime_dirs(root: Path | None = None) -> None:
     base = Path(root) if root is not None else data_root()
-    for dirname in ["data", "backups", "logs", "imports", "temp_pdf"]:
+    for dirname in ["data", "backups", "logs", "imports", "temp_pdf", "product_images"]:
         (base / dirname).mkdir(parents=True, exist_ok=True)
 
 
@@ -189,6 +192,10 @@ def _merge_defaults(raw: dict[str, Any]) -> dict[str, Any]:
     if theme not in UI_THEME_CHOICES:
         theme = "light"
     merged["ui_theme"] = theme
+    font_weight = str(merged.get("ui_font_weight", "standard")).strip().lower()
+    if font_weight not in UI_FONT_WEIGHT_CHOICES:
+        font_weight = "standard"
+    merged["ui_font_weight"] = font_weight
     return merged
 
 
@@ -241,6 +248,11 @@ def save_config(updates: dict[str, Any], *, base: dict[str, Any] | None = None) 
         if theme not in UI_THEME_CHOICES:
             raise ValueError("主题仅支持 浅色 / 深色 / 跟随系统")
         payload["ui_theme"] = theme
+    if "ui_font_weight" in payload:
+        font_weight = str(payload["ui_font_weight"]).strip().lower()
+        if font_weight not in UI_FONT_WEIGHT_CHOICES:
+            raise ValueError("字体粗细仅支持 标准 / 稍粗 / 加粗")
+        payload["ui_font_weight"] = font_weight
 
     # Never persist derived keys.
     payload.pop("project_root", None)

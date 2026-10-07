@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import logging
+import queue
 import socket
 import threading
 import time
@@ -94,14 +96,30 @@ def _port_is_open(host: str = "127.0.0.1", port: int = 5000) -> bool:
         return sock.connect_ex((host, port)) == 0
 
 
-def _run_server() -> None:
-    app = create_app()
-    serve(app, host="127.0.0.1", port=5000, threads=8)
+def _run_server(startup_errors: queue.Queue[Exception] | None = None) -> None:
+    try:
+        app = create_app()
+        serve(app, host="127.0.0.1", port=5000, threads=8)
+    except Exception as exc:
+        logging.getLogger(__name__).exception("本地服务启动失败")
+        if startup_errors is None:
+            raise
+        startup_errors.put(exc)
 
 
-def _wait_for_server(timeout_seconds: int = 20) -> None:
+def _wait_for_server(
+    timeout_seconds: int = 20,
+    startup_errors: queue.Queue[Exception] | None = None,
+) -> None:
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
+        if startup_errors is not None:
+            try:
+                error = startup_errors.get_nowait()
+            except queue.Empty:
+                pass
+            else:
+                raise RuntimeError(f"简单ERP启动失败：{error}") from error
         if _port_is_open():
             return
         time.sleep(0.2)
@@ -120,9 +138,10 @@ def main() -> None:
     global _window
     os.environ.setdefault("ERP_PORT", "5000")
     if not _port_is_open():
-        server_thread = threading.Thread(target=_run_server, daemon=True)
+        startup_errors: queue.Queue[Exception] = queue.Queue()
+        server_thread = threading.Thread(target=_run_server, args=(startup_errors,), daemon=True)
         server_thread.start()
-        _wait_for_server()
+        _wait_for_server(startup_errors=startup_errors)
 
     title = _window_title()
     try:

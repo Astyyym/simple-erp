@@ -5,9 +5,8 @@
 {% set is_return = order_type == 'return' %}
 <style>
   .order-table {
-    background: var(--erp-glass-bg); border: 1px solid var(--erp-glass-border); border-radius: var(--erp-radius);
-    overflow: visible; box-shadow: var(--erp-glass-shadow);
-    -webkit-backdrop-filter: blur(var(--erp-glass-blur)) saturate(1.25); backdrop-filter: blur(var(--erp-glass-blur)) saturate(1.25);
+    background: transparent; border: 1px solid var(--erp-border);
+    overflow: visible;
   }
   .order-table input { border: 0; width: 100%; min-height: 42px; padding: 8px 10px; background: transparent; color: var(--erp-ink); }
   .order-table input:focus { outline: 2px solid var(--erp-primary); outline-offset: -2px; background: var(--erp-surface); }
@@ -26,26 +25,56 @@
   .price-cell input { border: 0; width: 100%; padding: 4px 6px; background: transparent; }
   .regular-price-option { display: none; margin: 3px 6px 4px; font-size: 12px; color: var(--erp-primary); cursor: pointer; user-select: none; }
   .regular-price-option input { width: auto; min-height: auto; margin-right: 3px; }
-  .order-heading { display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:20px; }
-  .order-heading h2 { margin:0 0 4px; }.order-heading p{margin:0;color:var(--erp-muted);font-size:13px}
-  .order-meta {
-    background: var(--erp-glass-bg); border: 1px solid var(--erp-glass-border); border-radius: var(--erp-radius); padding: 16px;
-    box-shadow: var(--erp-glass-shadow); -webkit-backdrop-filter: blur(var(--erp-glass-blur)) saturate(1.25); backdrop-filter: blur(var(--erp-glass-blur)) saturate(1.25);
-  }
-  .section-title{font-size:14px;font-weight:650;color:var(--erp-ink);margin:22px 0 10px}
+  .today-history{margin-top:24px;padding:18px;background:var(--erp-glass-bg);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);box-shadow:var(--erp-glass-shadow)}
+  .today-history h3{font-size:18px;margin:0 0 4px}
+  .today-history .table-responsive{overflow-x:auto;overflow-y:hidden}
+  .today-history table{min-width:700px;margin:0}
+  .today-history .history-actions{display:flex;gap:8px;white-space:nowrap}
+  .order-workspace{display:block}
+  .order-entry-area{min-width:0}
+  .order-table-scroll{overflow-x:auto;max-width:100%}
+  .suggest-list[popover]{position:fixed;inset:auto;margin:0;padding:0;box-sizing:border-box;color:var(--erp-ink);height:auto;min-width:min(240px,calc(100vw - 24px));max-width:calc(100vw - 24px)}
+
   @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
-    .order-table,.order-meta{background:var(--erp-surface)}
     .order-table thead th,.order-table tfoot th,.readonly-total{background:var(--erp-surface-soft)}
   }
 </style>
 
-<div class="order-heading">
+<div class="order-workspace" id="orderWorkspace"><div class="order-entry-area"><div class="order-heading page-header">
   <div><h2>{{ ('重编辑退货单' if is_return else '重编辑销售单') if is_edit else ('新建退货单' if is_return else '新建销售单') }}</h2><p>{{ '登记客户退回商品，金额将冲减应收账款。' if is_return else '按行录入商品，完成后保存并打开打印单。' }}</p></div>
-  <a class="btn btn-outline-secondary" href="/orders/">返回单据管理</a>
+  <div class="page-actions"><a class="btn btn-outline-secondary page-return" href="/orders/">返回单据管理</a></div>
 </div>
 <form method="post" action="{{ '/orders/' ~ order.id ~ '/edit' if is_edit else ('/orders/return/create' if is_return else '/orders/create') }}" id="orderForm" autocomplete="off">
   <input type="hidden" name="customer_id" id="customer_id" value="{{order.customer_id if is_edit else ''}}">
+  <input type="hidden" name="request_key" value="{{order.request_key if is_edit else request_key|default('')}}">
+  {% if is_edit %}<input type="hidden" name="version" value="{{order.version}}">{% endif %}
   <div class="order-meta">
+  {% if is_return and not is_edit %}
+  <div class="order-source-row">
+    <label class="form-label" for="returnSourceSelect">原销售单（可选）</label>
+    <select class="form-select" id="returnSourceSelect" autocomplete="off">
+      <option value="">不关联，直接手工录入</option>
+      {% for source in return_sources %}
+      <option value="{{source.id}}">{{source.order_no}} · {{source.customer_name}} · {{source.order_date}}</option>
+      {% endfor %}
+    </select>
+    <div class="form-text">选择后先在下方显示原单预览，再把商品行带入明细；仍可自由加行、改数量与单价，不影响计价规则。</div>
+  </div>
+  <section class="source-preview d-none" id="sourcePreview" aria-live="polite" aria-labelledby="sourcePreviewTitle">
+    <div class="source-preview-head">
+      <h3 class="section-title" id="sourcePreviewTitle">原销售单预览</h3>
+      <span class="source-preview-meta" id="sourcePreviewMeta"></span>
+    </div>
+    <div class="table-responsive"><table class="table table-sm source-preview-table">
+      <thead><tr><th>商品</th><th>型号</th><th>单位</th><th class="numeric-cell">原数量</th><th class="numeric-cell">可退上限</th><th class="numeric-cell">单价</th><th class="numeric-cell">金额</th></tr></thead>
+      <tbody id="sourcePreviewRows"></tbody>
+    </table></div>
+    <div class="source-preview-actions">
+      <button type="button" class="btn btn-sm btn-outline-primary" id="sourcePreviewApply">按预览带入商品行</button>
+      <span class="form-text" id="sourcePreviewHint">带入后仍可自由修改。</span>
+    </div>
+  </section>
+  {% endif %}
   <div class="row g-3">
     <div class="col-4 suggest-wrap">
       <label class="form-label">客户名称</label>
@@ -75,26 +104,30 @@
   </div>
   </div>
 
-  <div class="section-title">{{ '退货信息' if is_return else '订单信息' }}</div>
-  <table class="table table-bordered order-table" id="orderTable">
-    <thead class="table-light"><tr><th style="width:50px">序号</th><th>产品名称</th><th style="width:190px">单位</th><th style="width:120px">数量</th><th style="width:140px">单价(元)</th><th style="width:140px">金额</th><th style="width:80px">操作</th></tr></thead>
+  <section class="order-details-card" id="orderDetailsCard" aria-labelledby="orderDetailsTitle">
+  <h3 class="section-title" id="orderDetailsTitle">{{ '退货信息' if is_return else '订单信息' }}</h3>
+  <div class="order-table-scroll"><table class="table table-bordered order-table" id="orderTable">
+    <thead class="table-light"><tr><th style="width:50px">序号</th><th style="min-width:340px">产品名称</th><th style="width:190px">单位</th><th style="width:120px">数量</th><th style="width:140px">单价(元)</th><th style="width:140px">金额</th><th style="min-width:140px">{{ '退货回冲成本' if is_return else ('销售时成本' if is_edit else '移动平均成本') }}(元)</th><th style="width:80px">操作</th></tr></thead>
     <tbody id="orderBody">
       {% set rows = items if is_edit else [none] %}
       {% for item in rows %}
-      <tr>
+      <tr{% if item and item.unit_cost_micro is not none %} data-unit-cost="{{ micro_to_yuan(item.unit_cost_micro, precision=6) }}"{% endif %}>
         <td class="text-center row-no">{{loop.index}}</td>
-        <td class="suggest-wrap"><input name="product_name" id="product_name_{{loop.index}}" class="product-name" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="product_suggestions_{{loop.index}}" aria-haspopup="listbox" aria-label="第 {{loop.index}} 行产品名称，可用上下箭头选择建议" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="输入产品名" value="{{item.product_name if item else ''}}"><div class="suggest-list d-none product-suggestions" id="product_suggestions_{{loop.index}}" role="listbox" aria-label="第 {{loop.index}} 行商品建议"></div></td>
+        <td class="product-picker"><div class="picker-row"><input type="hidden" name="product_id" class="product-id" value="{{item.product_id if item else ''}}"><input type="hidden" name="source_item_id" class="source-item-id" value="{{item.source_item_id if item else ''}}"><input type="hidden" name="product_name" class="product-name" value="{{item.product_name if item else ''}}"><select class="form-select form-select-sm picker-name" aria-label="第 {{loop.index}} 行产品名称"></select><select class="form-select form-select-sm picker-spec" aria-label="第 {{loop.index}} 行型号"></select></div></td>
         <td><div class="unit-cell"><select class="form-select form-select-sm unit-select"><option value="">自定义</option>{% for u in ['个','套','件'] %}<option value="{{u}}" {% if item and item.unit == u %}selected{% endif %}>{{u}}</option>{% endfor %}</select><input name="unit" class="unit" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="自定义" value="{{item.unit if item else ''}}"></div></td>
         <td><input name="quantity" class="quantity" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0" value="{{item.quantity if item else ''}}"></td>
         <td class="price-cell"><input name="unit_price" class="unit-price" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.00" value="{{cents_to_yuan(item.unit_price_cents) if item else ''}}"><label class="regular-price-option"><input type="checkbox" class="regular-price-check">常规价 <span class="regular-price-text"></span></label></td>
         <td><div class="readonly-total line-total">0.00</div></td>
+        <td><div class="readonly-total unit-cost-display" aria-label="只读成本">{{ micro_to_yuan(item.unit_cost_micro) if item and item.unit_cost_micro is not none else ('成本未知' if item else '未选择商品') }}</div></td>
         <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="clearRow(this)">清空</button></td>
       </tr>
       {% endfor %}
     </tbody>
-    <tfoot><tr><th colspan="5" class="text-end p-2">合计</th><th class="p-2" id="grandTotal">0.00</th><th></th></tr></tfoot>
-  </table>
-  <textarea class="form-control my-3" name="notes" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="备注">{{order.notes if is_edit else ''}}</textarea>
+    <tfoot><tr><th colspan="5" class="text-end p-2">合计</th><th class="p-2" id="grandTotal">0.00</th><th colspan="2"></th></tr></tfoot>
+  </table></div>
+  <div class="small text-muted mt-2" id="profitPreview" role="status">预计毛利润：成本完整的商品才会计算，历史成本缺失时显示不完整。</div>
+  <textarea class="form-control mt-3" name="notes" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="备注">{{order.notes if is_edit else ''}}</textarea>
+  </section>
   <div class="d-flex gap-2 align-items-center justify-content-end" id="orderActions">
     <button type="button" class="btn btn-outline-secondary btn-lg" onclick="clearAllRows()">一键清空</button>
     <button type="button" class="btn btn-outline-primary btn-lg" onclick="addRow()">新增一行</button>
@@ -104,35 +137,93 @@
   <div class="alert alert-success mt-3 d-none" id="saveSuccessPanel" role="status">
     <div class="fw-bold" id="saveSuccessMessage">订单已保存成功</div>
     <div class="mt-3 d-flex flex-wrap gap-2">
-      <a class="btn btn-info" id="openPrintLink" href="#" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>打开打印页</a>
+      <a class="btn btn-info" id="openPrintLink" href="#">打开打印预览</a>
       <a class="btn btn-secondary" id="viewOrderLink" href="#">查看订单</a>
       <a class="btn btn-primary" id="continueOrderLink" href="{{ '/orders/return/new' if is_return else '/orders/new' }}">继续开单</a>
     </div>
-    <div class="small mt-2" id="printHint">如果浏览器没有自动打开打印页，请点击“打开打印页”。</div>
+    <div class="small mt-2" id="printHint">保存成功后进入统一打印预览。</div>
   </div>
   <div class="alert alert-danger mt-3 d-none" id="saveErrorPanel" role="alert"></div>
   {% endif %}
 </form>
+{% if not is_edit %}
+<section class="today-history" aria-labelledby="todayHistoryTitle">
+  <h3 id="todayHistoryTitle">当天历史开单</h3>
+  <p class="small text-muted mb-3" id="todayHistoryDate">业务日期 · {{today}}（与录入、修改时间无关）</p>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>单号</th><th>客户</th><th>类型</th><th>金额</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody id="todayHistoryRows">
+        {% for history_order in today_history %}
+        <tr>
+          <td>{{history_order.order_no}}</td><td>{{history_order.customer_name}}</td>
+          <td>{{'退货单' if history_order.order_type == 'return' else '销售单'}}</td>
+          <td>{{history_order.amount_display}}</td>
+          <td>{{'已打印' if history_order.status == 'printed' else '正式保存'}}</td>
+          <td><div class="history-actions">
+            <a class="btn btn-sm btn-outline-secondary" href="{{url_for('orders.view_order', order_id=history_order.id)}}">回看</a>
+            <a class="btn btn-sm btn-outline-primary" href="{{url_for('orders.edit_order', order_id=history_order.id)}}">重编辑</a>
+          </div></td>
+        </tr>
+        {% else %}
+        <tr><td class="text-muted py-3" colspan="6">今天还没有正式保存或已打印的单据</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+</div>
+</div>
 
+<script type="application/json" id="productCatalog">{{ product_catalog|tojson }}</script>
+<script src="{{ url_for('static', filename='order-product-picker.js') }}?v=1"></script>
 <script>
 function money(n) { return (Math.round((Number(n) || 0) * 100) / 100).toFixed(2); }
+function costMoney(costText) {
+  // Format the six-decimal payload without binary-float rounding or changing it.
+  const negative = String(costText).startsWith('-');
+  const [whole, fraction = ''] = String(costText).replace(/^-/, '').split('.');
+  const micro = BigInt(whole) * 1000000n + BigInt((fraction + '000000').slice(0, 6));
+  const cents = (micro + 5000n) / 10000n;
+  return (negative && cents !== 0n ? '-' : '') + String(cents / 100n) + '.' + String(cents % 100n).padStart(2, '0');
+}
 const orderSign = {{ -1 if is_return else 1 }};
 function recalc() {
   let total = 0;
+  let knownCost = 0;
+  let unknownCost = false;
   document.querySelectorAll('#orderBody tr').forEach((tr, idx) => {
     tr.querySelector('.row-no').textContent = idx + 1;
     const qty = Number(tr.querySelector('.quantity').value || 0);
     const price = Number(tr.querySelector('.unit-price').value || 0);
     const line = qty * price * orderSign;
+    // Absence is unknown, not the numeric zero produced by Number('').
+    const hasCost = tr.dataset.unitCost !== undefined && tr.dataset.unitCost !== '';
+    const unitCost = hasCost ? Number(tr.dataset.unitCost) : NaN;
+    const costDisplay = tr.querySelector('.unit-cost-display');
+    if (costDisplay) costDisplay.textContent = Number.isFinite(unitCost)
+      ? costMoney(tr.dataset.unitCost)
+      : (tr.querySelector('.product-id').value ? '成本未知' : '未选择商品');
+    if (qty > 0 && Number.isFinite(unitCost)) knownCost += qty * unitCost * orderSign;
+    else if (qty > 0) unknownCost = true;
     tr.querySelector('.line-total').textContent = money(line);
     total += line;
   });
   document.getElementById('grandTotal').textContent = money(total);
+  const preview = document.getElementById('profitPreview');
+  if (preview) {
+    if (unknownCost) preview.textContent = '预计毛利润：成本不完整，不能完整计算';
+    else if (total > 0) preview.textContent = `预计毛利润：${money(total - knownCost)} 元，毛利率：${((total - knownCost) / total * 100).toFixed(1)}%（{{ '按当前成本参考' if is_return else ('按销售时成本参考' if is_edit else '按当前成本估算') }}；保存时以实际分摊为准）`;
+    else preview.textContent = `预计毛利润：${money(total - knownCost)} 元，毛利率：不适用（净额不大于 0）`;
+  }
 }
 function clearRow(btn) {
   const tr = btn.closest('tr');
   tr.querySelectorAll('input').forEach(i => i.value = '');
+  delete tr.dataset.unitCost;
   tr.querySelector('.unit-select').value = '';
+  if (tr.__picker) tr.__picker.reset();
   const regularOption = tr.querySelector('.regular-price-option');
   if (regularOption) regularOption.style.display = 'none';
   recalc();
@@ -152,6 +243,8 @@ function clearAllRows() {
     delete input.dataset.customerPrice;
   });
   firstRow.querySelector('.unit-select').value = '';
+  if (firstRow.__picker) firstRow.__picker.reset();
+  delete firstRow.dataset.unitCost;
   firstRow.querySelector('.line-total').textContent = '0.00';
   const regularOption = firstRow.querySelector('.regular-price-option');
   if (regularOption) regularOption.style.display = 'none';
@@ -163,6 +256,7 @@ function addRow() {
   const tbody = document.getElementById('orderBody');
   const tr = tbody.rows[0].cloneNode(true);
   tr.querySelectorAll('input').forEach(i => i.value = '');
+  delete tr.dataset.unitCost;
   tr.querySelector('.unit-select').value = '';
   tr.querySelector('.line-total').textContent = '0.00';
   const regularOption = tr.querySelector('.regular-price-option');
@@ -173,6 +267,7 @@ function addRow() {
 }
 async function fetchJson(url) { const res = await fetch(url); return await res.json(); }
 function closeSuggestions(input, box) {
+  if (box.hasAttribute('popover') && box.matches(':popover-open')) box.hidePopover();
   box.classList.add('d-none');
   input.setAttribute('aria-expanded', 'false');
   input.removeAttribute('aria-activedescendant');
@@ -200,6 +295,21 @@ function showSuggestions(input, box, items, render, onPick) {
     box.appendChild(option);
   });
   box.classList.remove('d-none');
+  if (typeof box.showPopover === 'function') {
+    // Both customer and product lists must escape glass-card stacking and
+    // table clipping, while keeping their ARIA/keyboard relationship intact.
+    box.setAttribute('popover', 'manual');
+    const anchor = input.getBoundingClientRect();
+    const below = Math.max(0, window.innerHeight - anchor.bottom - 12);
+    const above = Math.max(0, anchor.top - 12);
+    const upwards = below < 120 && above > below;
+    box.style.width = `${anchor.width}px`;
+    box.style.left = `${anchor.left}px`;
+    box.style.maxHeight = `${Math.min(220, upwards ? above : below)}px`;
+    if (!box.matches(':popover-open')) box.showPopover();
+    box.style.left = `${Math.max(12, Math.min(anchor.left, window.innerWidth - box.offsetWidth - 12))}px`;
+    box.style.top = `${upwards ? anchor.top - box.offsetHeight - 4 : anchor.bottom + 4}px`;
+  }
   input.setAttribute('aria-expanded', 'true');
   input.removeAttribute('aria-activedescendant');
 }
@@ -267,7 +377,9 @@ function bindAutocomplete(input, box, loadItems, renderOption, onPick, onInputCh
       if (activeIndex >= 0 && matches[activeIndex]) choose(matches[activeIndex]);
     }
   });
-  input.addEventListener('blur', () => window.setTimeout(close, 120));
+  input.addEventListener('blur', () => window.setTimeout(() => {
+    if (document.activeElement !== input) close();
+  }, 120));
   input._closeSuggestions = close;
 }
 
@@ -293,13 +405,49 @@ bindAutocomplete(
   },
   () => { document.getElementById('customer_id').value = ''; },
 );
-let productSuggestionSequence = 0;
+const productCatalog = JSON.parse(document.getElementById('productCatalog').textContent || '[]');
+function hideRegularPriceOption(regularOption, regularCheck, regularText) {
+  if (!regularOption) return;
+  regularText.textContent = '';
+  regularCheck.dataset.price = '';
+  regularCheck.dataset.customerPrice = '';
+  regularCheck.checked = false;
+  regularOption.style.display = 'none';
+}
+async function refineProductRow(tr, product) {
+  const customerId = document.getElementById('customer_id').value || '0';
+  let list;
+  try {
+    list = await fetchJson('/orders/api/products?q=' + encodeURIComponent(product.name) + '&customer_id=' + encodeURIComponent(customerId));
+  } catch (_) { return; }
+  const match = (Array.isArray(list) ? list : []).find(item => String(item.id) === String(product.id));
+  // A stale response must not overwrite a row that already moved to another product.
+  if (!match || String(tr.querySelector('.product-id').value) !== String(product.id)) return;
+  const priceInput = tr.querySelector('.unit-price');
+  const regularOption = tr.querySelector('.regular-price-option');
+  const regularCheck = tr.querySelector('.regular-price-check');
+  const regularText = tr.querySelector('.regular-price-text');
+  priceInput.value = match.unit_price || priceInput.value;
+  if (match.cost_available && match.unit_cost) tr.dataset.unitCost = match.unit_cost;
+  else delete tr.dataset.unitCost;
+  if (match.is_customer_price && match.regular_price) {
+    regularText.textContent = match.regular_price + '元';
+    regularCheck.dataset.price = match.regular_price;
+    regularCheck.dataset.customerPrice = match.unit_price;
+    regularCheck.checked = false;
+    regularOption.style.display = 'block';
+  } else {
+    hideRegularPriceOption(regularOption, regularCheck, regularText);
+  }
+  recalc();
+}
 function bindRow(tr) {
   tr.querySelectorAll('.quantity,.unit-price').forEach(input => input.addEventListener('input', recalc));
   const unitSelect = tr.querySelector('.unit-select');
   const unitInput = tr.querySelector('.unit');
   unitSelect.addEventListener('change', () => { if (unitSelect.value) unitInput.value = unitSelect.value; });
-  const productInput = tr.querySelector('.product-name');
+  const productIdField = tr.querySelector('.product-id');
+  const productNameField = tr.querySelector('.product-name');
   const priceInput = tr.querySelector('.unit-price');
   const regularOption = tr.querySelector('.regular-price-option');
   const regularCheck = tr.querySelector('.regular-price-check');
@@ -315,48 +463,32 @@ function bindRow(tr) {
       }
     });
   }
-  const box = tr.querySelector('.product-suggestions');
-  const productRowNumber = ++productSuggestionSequence;
-  productInput.id = `product_name_${productRowNumber}`;
-  box.id = `product_suggestions_${productRowNumber}`;
-  box.setAttribute('aria-label', `第 ${productRowNumber} 行商品建议`);
-  productInput.setAttribute('aria-label', `第 ${productRowNumber} 行产品名称，可用上下箭头选择建议`);
-  bindAutocomplete(
-    productInput,
-    box,
-    query => fetchJson('/orders/api/products?q=' + encodeURIComponent(query) + '&customer_id=' + encodeURIComponent(document.getElementById('customer_id').value || '0')),
-    p => {
-      const fragment = document.createDocumentFragment();
-      const nameNode = document.createElement('strong');
-      nameNode.textContent = p.name;
-      const detailsNode = document.createElement('small');
-      const details = `${p.spec || ''} / ${p.unit || ''} / ${p.is_customer_price ? '客户价：' + p.unit_price + '元 / 常规价：' + p.regular_price + '元' : '常规价：' + p.regular_price + '元'}`;
-      detailsNode.textContent = details;
-      fragment.append(nameNode, document.createTextNode(' '), detailsNode);
-      return fragment;
-    },
-    p => {
-      productInput.value = p.name;
-      unitInput.value = p.unit || '';
-      if (['个','套','件'].includes(p.unit)) unitSelect.value = p.unit; else unitSelect.value = '';
-      priceInput.value = p.unit_price || '';
-      if (p.is_customer_price && p.regular_price) {
-        regularText.textContent = p.regular_price + '元';
-        regularCheck.dataset.price = p.regular_price;
-        regularCheck.dataset.customerPrice = p.unit_price;
-        regularCheck.checked = false;
-        regularOption.style.display = 'block';
-      } else {
-        regularText.textContent = '';
-        regularCheck.dataset.price = '';
-        regularCheck.dataset.customerPrice = '';
-        regularCheck.checked = false;
-        regularOption.style.display = 'none';
-      }
-      tr.querySelector('.quantity').focus();
+  const picker = ErpProductPicker.mountRow(tr, productCatalog, product => {
+    if (!product) {
+      productIdField.value = '';
+      productNameField.value = '';
+      delete tr.dataset.unitCost;
+      hideRegularPriceOption(regularOption, regularCheck, regularText);
       recalc();
-    },
-  );
+      return;
+    }
+    productIdField.value = product.id;
+    productNameField.value = product.name;
+    unitInput.value = product.unit || '';
+    unitSelect.value = ['个','套','件'].includes(product.unit) ? product.unit : '';
+    priceInput.value = (Number(product.default_price_cents || 0) / 100).toFixed(2);
+    delete tr.dataset.unitCost;
+    hideRegularPriceOption(regularOption, regularCheck, regularText);
+    recalc();
+    refineProductRow(tr, product);
+    tr.querySelector('.quantity').focus();
+  });
+  tr.__picker = picker;
+  // Re-edit: restore the picked name/model from the stored product id.
+  if (productIdField.value) {
+    const existing = productCatalog.find(p => String(p.id) === String(productIdField.value));
+    if (existing) picker.set(existing);
+  }
 }
 document.querySelectorAll('#orderBody tr').forEach(bindRow);
 document.addEventListener('click', event => {
@@ -364,6 +496,98 @@ document.addEventListener('click', event => {
     if (!input.closest('.suggest-wrap')?.contains(event.target)) input._closeSuggestions?.();
   });
 });
+
+{% if is_return and not is_edit %}
+// A 方案：选原销售单只做关联追溯——先在下方显示原单预览，再按按钮带入商品行，仍可自由改。
+const returnSourceSelect = document.getElementById('returnSourceSelect');
+if (returnSourceSelect) {
+  const preview = document.getElementById('sourcePreview');
+  const previewRows = document.getElementById('sourcePreviewRows');
+  const previewMeta = document.getElementById('sourcePreviewMeta');
+  const previewApply = document.getElementById('sourcePreviewApply');
+  const previewHint = document.getElementById('sourcePreviewHint');
+  let previewItems = [];
+
+  const hidePreview = () => {
+    preview.classList.add('d-none');
+    previewRows.replaceChildren();
+    previewMeta.textContent = '';
+    previewItems = [];
+  };
+
+  const renderPreview = (payload) => {
+    const source = payload.source || {};
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    previewItems = items;
+    previewRows.replaceChildren();
+    items.forEach(item => {
+      const tr = document.createElement('tr');
+      const cells = [
+        item.product_name || '',
+        item.spec || '未填写型号',
+        item.unit || '—',
+        item.original_quantity || '0',
+        item.available_quantity || '0',
+        item.unit_price || '0.00',
+        money((Number(item.original_quantity) || 0) * (Number(item.unit_price) || 0)),
+      ];
+      cells.forEach((text, index) => {
+        const td = document.createElement('td');
+        if (index >= 3) td.className = 'numeric-cell';
+        td.textContent = text;
+        tr.appendChild(td);
+      });
+      previewRows.appendChild(tr);
+    });
+    const total = items.reduce((sum, item) => sum + (Number(item.original_quantity) || 0) * (Number(item.unit_price) || 0), 0);
+    previewMeta.textContent = `${source.order_no || ''} · ${source.order_date || ''} · 合计 ¥${money(total)} · ${items.length} 行`;
+    previewHint.textContent = '带入的是可退上限，仍可自由加行、改数量与单价，不影响计价规则。';
+    preview.classList.remove('d-none');
+  };
+
+  returnSourceSelect.addEventListener('change', async () => {
+    const sourceId = returnSourceSelect.value;
+    if (!sourceId) { hidePreview(); return; }
+    let payload;
+    try { payload = await fetchJson('/orders/api/return_sources/' + encodeURIComponent(sourceId)); }
+    catch (_) { hidePreview(); return; }
+    if (!payload || !Array.isArray(payload.items)) { hidePreview(); return; }
+    renderPreview(payload);
+  });
+
+  previewApply.addEventListener('click', () => {
+    if (!previewItems.length) return;
+    const tbody = document.getElementById('orderBody');
+    previewItems.forEach((item, index) => {
+      const tr = index === 0 ? tbody.rows[0] : (addRow(), tbody.rows[tbody.rows.length - 1]);
+      if (!tr) return;
+      tr.querySelector('.product-id').value = item.product_id || '';
+      tr.querySelector('.product-name').value = item.product_name || '';
+      const existing = productCatalog.find(p => String(p.id) === String(item.product_id));
+      if (existing && tr.__picker) tr.__picker.set(existing);
+      tr.querySelector('.unit').value = item.unit || '';
+      const unitSelect = tr.querySelector('.unit-select');
+      unitSelect.value = ['个', '套', '件'].includes(item.unit) ? item.unit : '';
+      tr.querySelector('.quantity').value = item.available_quantity || '';
+      tr.querySelector('.unit-price').value = item.unit_price || '';
+      tr.dataset.sourceLimit = item.available_quantity || '';
+      recalc();
+    });
+    document.getElementById('profitPreview').textContent = '已按预览带入原销售单商品行与可退上限；仍可自由加行与修改，不影响计价规则。';
+  });
+}
+{% endif %}
+function closeFloatingProductSuggestions(event) {
+  document.querySelectorAll('.suggest-list[popover]').forEach(box => {
+    // Scrolling within the menu keeps it open; moving the form/table closes it
+    // so the floating list cannot drift away from the original field.
+    if (box.matches(':popover-open') && !(event.type === 'scroll' && box.contains(event.target))) {
+      document.querySelector(`[aria-controls="${box.id}"]`)?._closeSuggestions?.();
+    }
+  });
+}
+document.addEventListener('scroll', closeFloatingProductSuggestions, true);
+window.addEventListener('resize', closeFloatingProductSuggestions);
 {% if not is_edit %}
 const orderDateInput = document.getElementById('orderDateInput');
 const orderNoInput = document.getElementById('orderNoInput');
@@ -395,6 +619,78 @@ const openPrintLink = document.getElementById('openPrintLink');
 const viewOrderLink = document.getElementById('viewOrderLink');
 const continueOrderLink = document.getElementById('continueOrderLink');
 const originalButtonText = submitButton.textContent;
+const todayHistoryRows = document.getElementById('todayHistoryRows');
+let formDirty = false;
+let orderSaved = false;
+let allowHistoryNavigation = false;
+orderForm.addEventListener('input', () => { formDirty = true; });
+orderForm.addEventListener('change', () => { formDirty = true; });
+window.addEventListener('beforeunload', event => {
+  if (!formDirty || orderSaved || allowHistoryNavigation) return;
+  event.preventDefault();
+  event.returnValue = '';
+});
+todayHistoryRows.addEventListener('click', event => {
+  const link = event.target.closest('a');
+  if (!link || !todayHistoryRows.contains(link) || !formDirty || orderSaved) return;
+  if (!confirm('当前单据尚未保存，离开后填写内容将丢失。确定继续吗？')) {
+    event.preventDefault();
+  } else {
+    allowHistoryNavigation = true;
+  }
+});
+
+async function refreshTodayHistory() {
+  try {
+    const response = await fetch('/orders/api/today_history');
+    if (!response.ok) throw new Error('刷新失败');
+    const data = await response.json();
+    const cells = (row, values) => values.forEach(value => {
+      const cell = document.createElement('td');
+      cell.textContent = value;
+      row.appendChild(cell);
+    });
+    todayHistoryRows.replaceChildren();
+    document.getElementById('todayHistoryDate').textContent = `业务日期 · ${data.date}（与录入、修改时间无关）`;
+    if (!data.orders.length) {
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = 6;
+      cell.className = 'text-muted py-3';
+      cell.textContent = '今天还没有正式保存或已打印的单据';
+      row.appendChild(cell);
+      todayHistoryRows.appendChild(row);
+      return;
+    }
+    data.orders.forEach(item => {
+      const row = document.createElement('tr');
+      cells(row, [item.order_no, item.customer_name, item.order_type === 'return' ? '退货单' : '销售单', item.amount_display, item.status === 'printed' ? '已打印' : '正式保存']);
+      const actionCell = document.createElement('td');
+      const actions = document.createElement('div');
+      actions.className = 'history-actions';
+      [['回看', '', 'secondary'], ['重编辑', '/edit', 'primary']].forEach(([label, suffix, color]) => {
+        const link = document.createElement('a');
+        link.className = `btn btn-sm btn-outline-${color}`;
+        link.href = `/orders/${item.id}${suffix}`;
+        link.textContent = label;
+        actions.appendChild(link);
+      });
+      actionCell.appendChild(actions);
+      row.appendChild(actionCell);
+      todayHistoryRows.appendChild(row);
+    });
+  } catch (_) {
+    document.getElementById('todayHistoryDate').textContent += ' · 刷新失败，请重新打开开单页查看最新单据';
+  }
+}
+
+openPrintLink.addEventListener('click', event => {
+  event.preventDefault();
+  if (orderSaved) {
+    openPrintUrl(openPrintLink.href);
+    document.getElementById('printHint').textContent = '已打开统一打印预览。';
+  }
+});
 
 orderForm.addEventListener('submit', async event => {
   const submitter = event.submitter;
@@ -416,21 +712,24 @@ orderForm.addEventListener('submit', async event => {
       body: formData,
       headers: {'X-Requested-With': 'fetch'},
     });
-    const result = await response.json();
+    const result = response.headers.get('content-type')?.includes('application/json')
+      ? await response.json() : {ok: false, message: await response.text()};
     if (!response.ok || !result.ok) throw new Error(result.message || '订单保存失败');
 
+    orderSaved = true;
     successMessage.textContent = `订单 ${result.order_no} 已保存成功`;
+    successMessage.dataset.orderNo = result.order_no;
     openPrintLink.href = result.pdf_url;
     viewOrderLink.href = result.detail_url;
     continueOrderLink.href = result.next_url;
     successPanel.classList.remove('d-none');
     document.getElementById('orderActions').classList.add('d-none');
+    refreshTodayHistory();
 
-    const printWindow = openPrintUrl(result.pdf_url);
-    if (!isDesktopShell() && !printWindow) {
-      document.getElementById('printHint').textContent = '打印页被浏览器拦截，请点击“打开打印页”。';
-    }
+    openPrintLink.href = new URL(result.pdf_url, window.location.href).href;
+    openPrintUrl(openPrintLink.href);
   } catch (error) {
+    if (orderSaved) return;
     errorPanel.textContent = `订单未保存：${error.message || '请检查输入后重试'}`;
     errorPanel.classList.remove('d-none');
     submitButton.disabled = false;

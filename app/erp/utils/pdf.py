@@ -1,13 +1,17 @@
 import re
 from pathlib import Path
-from urllib.parse import urlencode
-from flask import render_template, request, send_file
+from collections import defaultdict
+from urllib.parse import urlencode, urlsplit, urlunsplit
+from flask import current_app, render_template, request, send_file
+from jinja2 import Environment, select_autoescape
 from weasyprint import HTML
 
 from erp.config import load_config, project_path, runtime_root
 from erp.db import get_db
 from erp.services.accounting import get_customer_account_ledger
+from erp.services.reconciliation import get_reconciliation_print_context
 from erp.utils.money import cents_to_yuan
+from erp.utils.quantity import format_quantity
 
 
 def settings_print_preview_context() -> tuple[dict, list[dict], dict]:
@@ -50,6 +54,7 @@ def generate_settings_print_preview_pdf() -> Path:
         items=items,
         config=config,
         cents_to_yuan=cents_to_yuan,
+        document_title="销售清单",
     )
     out = project_path("temp_pdf", "settings_print_preview.pdf")
     HTML(string=html, base_url=str(runtime_root())).write_pdf(out)
@@ -57,18 +62,32 @@ def generate_settings_print_preview_pdf() -> Path:
 
 
 def send_pdf_for_preview(path: Path, filename: str, title: str):
-    """Keep desktop PDFs in-session while exposing a native save action."""
+    """Render every desktop PDF in one shared in-session preview page."""
     if request.args.get("desktop_preview") == "1":
         args = request.args.to_dict(flat=True)
         args.pop("desktop_preview", None)
+        return_url = _safe_internal_return_url(args.pop("return_to", ""))
+        if not return_url:
+            return_url = _safe_internal_return_url(request.referrer or "") or "/"
         pdf_url = request.path + (f"?{urlencode(args)}" if args else "")
         return render_template(
             "desktop_pdf_preview.html",
             pdf_url=pdf_url,
             filename=filename,
             title=title,
+            return_url=return_url,
         )
     return send_file(path, as_attachment=False, download_name=filename)
+
+
+def _safe_internal_return_url(value: str) -> str:
+    """Keep the shared preview's return link inside this local ERP app."""
+    if not value:
+        return ""
+    parsed = urlsplit(value)
+    if parsed.scheme or parsed.netloc or not parsed.path.startswith("/") or parsed.path.startswith("//"):
+        return ""
+    return urlunsplit(("", "", parsed.path, parsed.query, ""))
 
 
 def generate_order_pdf(order_id: int) -> Path:
@@ -78,7 +97,35 @@ def generate_order_pdf(order_id: int) -> Path:
     if order is None:
         raise ValueError(f"订单不存在: {order_id}")
     config = load_config()
-    html = render_template("orders/print_template.html", order=order, items=items, config=config, cents_to_yuan=cents_to_yuan)
+    public_order = {
+        "id": int(order["id"]),
+        "order_no": order["order_no"],
+        "order_date": order["order_date"],
+        "order_type": order["order_type"],
+        "customer_name": order["customer_name"],
+        "notes": order["notes"] or "",
+        "total_amount_cents": int(order["total_amount_cents"]),
+    }
+    public_items = [
+        {
+            "product_name": item["product_name"],
+            "spec": item["spec"] or "",
+            "unit": item["unit"],
+            "quantity": item["quantity"],
+            "unit_price_cents": int(item["unit_price_cents"]),
+            "subtotal_cents": int(item["subtotal_cents"]),
+        }
+        for item in items
+    ]
+    document_title = "退货清单" if order["order_type"] == "return" else "销售清单"
+    html = render_template(
+        "orders/print_template.html",
+        order=public_order,
+        items=public_items,
+        config=config,
+        cents_to_yuan=cents_to_yuan,
+        document_title=document_title,
+    )
     out = project_path("temp_pdf", f"order_{order_id}.pdf")
     HTML(string=html, base_url=str(runtime_root())).write_pdf(out)
     return out
@@ -261,13 +308,65 @@ def resolve_summary_customer_ids(customer_q: str, start_date: str, end_date: str
         return [int(row["id"]) for row in rows]
 
 
+def _account_ledger_print_context(ledger: dict) -> dict:
+    """Add public item snapshots without recomputing the accounting ledger.
+
+    One order stays in a single block so a short order never gets a fake
+    「第 N/M 段」 split, and a long one lets the layout engine break the page
+    naturally. Every item row carries the document amount, so a continued
+    page still shows which order the rows belong to.
+    """
+    details = defaultdict(list)
+    order_ids = {entry["source_id"] for entry in ledger["entries"] if entry["source"] == "order"}
+    if order_ids:
+        conditions = ["o.customer_id=?", "o.deleted_at IS NULL", "o.status IN ('saved','printed','void')"]
+        params = [ledger["customer"]["id"]]
+        for key, operator in (("start_date", ">="), ("end_date", "<=")):
+            if ledger["period"][key]:
+                conditions.append(f"o.order_date {operator} ?")
+                params.append(ledger["period"][key])
+        with get_db() as conn:
+            rows = conn.execute(
+                f"""SELECT oi.order_id, oi.product_name, oi.spec, oi.unit, oi.quantity,
+                           oi.unit_price_cents, oi.subtotal_cents
+                    FROM orders o JOIN order_items oi ON oi.order_id=o.id
+                    WHERE {' AND '.join(conditions)} ORDER BY o.id, oi.id""", params,
+            ).fetchall()
+        for row in rows:
+            if row["order_id"] in order_ids:
+                details[row["order_id"]].append({
+                    "product_name": row["product_name"], "spec": row["spec"] or "",
+                    "unit": row["unit"], "quantity": row["quantity"],
+                    "unit_price_cents": int(row["unit_price_cents"]),
+                    "subtotal_cents": int(row["subtotal_cents"]),
+                })
+    public = {key: ledger[key] for key in (
+        "opening_balance_cents", "document_net_cents", "purchase_net_cents",
+        "adjustment_cents", "payment_cents", "current_balance_cents",
+    )}
+    public["customer"] = {"name": ledger["customer"]["name"]}
+    public["period"] = dict(ledger["period"])
+    entry_fields = ("source", "source_id", "type", "date", "reference", "description", "amount_cents", "status", "void_reason")
+    entries = []
+    for entry in ledger["entries"]:
+        base = {key: entry[key] for key in entry_fields}
+        items = details.get(entry["source_id"], []) if entry["source"] == "order" else []
+        base["items"] = items
+        # 单据金额按业务方向显示：销售 +、退货 −、拿货 −、退拿货 +。
+        # 库中退货已是负数、拿货恒为正，故只有拿货需要翻转符号。
+        base["doc_amount_cents"] = -entry["amount_cents"] if entry["type"] == "purchase" else entry["amount_cents"]
+        entries.append(base)
+    public["entries"] = entries
+    return public
+
+
 def generate_account_ledger_pdf(customer_id: int, start_date: str = "", end_date: str = "") -> Path:
     """Render the same current-balance and period-ledger model used by the account page."""
     ledger = get_customer_account_ledger(customer_id, start_date, end_date)
     config = load_config()
     html = render_template(
         "accounts/ledger_pdf.html",
-        ledger=ledger,
+        ledger=_account_ledger_print_context(ledger),
         config=config,
         cents_to_yuan=cents_to_yuan,
     )
@@ -276,5 +375,27 @@ def generate_account_ledger_pdf(customer_id: int, start_date: str = "", end_date
         for value in (start_date, end_date)
     )
     out = project_path("temp_pdf", f"account_ledger_{int(customer_id)}_{safe_range}.pdf")
+    HTML(string=html, base_url=str(runtime_root())).write_pdf(out)
+    return out
+
+
+def _render_reconciliation_template(template: str, **context) -> str:
+    """An isolated print environment: no Flask config/request/context processors."""
+    environment = Environment(loader=current_app.jinja_loader, autoescape=select_autoescape(("html", "xml")))
+    return environment.get_template(template).render(**context)
+
+
+def generate_reconciliation_pdf(snapshot_id: int) -> Path:
+    context = get_reconciliation_print_context(snapshot_id)
+    settings = load_config()
+    config = {key: settings[key] for key in ("shop_name",)}
+    html = _render_reconciliation_template(
+        "analytics/reconciliation_pdf.html",
+        **context,
+        config=config,
+        cents_to_yuan=cents_to_yuan,
+        format_quantity=format_quantity,
+    )
+    out = project_path("temp_pdf", f"reconciliation_{int(snapshot_id)}.pdf")
     HTML(string=html, base_url=str(runtime_root())).write_pdf(out)
     return out

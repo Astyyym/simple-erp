@@ -36,6 +36,15 @@
 - 主操作只有一个高强调色；危险、成功、警告使用语义色。
 - 不用 Emoji 充当正式 ERP 导航图标；没有统一图标库时宁可用纯文字。
 
+## 客户/商品联想与玻璃卡片、表格滚动容器
+
+- 保留表格横向滚动时，先实测默认单行中的多条建议能否越过表格边界并被鼠标命中；`overflow-x:auto` 会影响另一轴，仅添加 `overflow-y:visible` 不能当作修复证据。
+- 在支持的目标 Chromium/WebView2，客户和商品共同使用 top-layer 浮层、定位和关闭控制器；只给商品接入会留下客户菜单被兄弟玻璃卡片盖住的问题。保持原 DOM 和 ARIA 关联，约束浮层宽度/高度与屏幕边界，表格/正文移动或窗口变化时收起，菜单内部滚动不应触发误关。
+- 用 `elementFromPoint` 核对菜单跨越下方卡片位置的命中目标，再真实点击读取稳定ID；高 `z-index`、菜单节点存在或接口返回结果都不是遮挡修复证据。EXE验收需操作该EXE的实际WebView2，不拿独立源码浏览器代替。
+- 明确两行动作要求时，普通标题动作与危险表单使用两个独立容器；不要依赖flex自动换行。分别测宽窄视口的按钮坐标、最右返回和第二行危险操作，保留必填/version/确认语义。
+- 验证鼠标末项、连续方向键移至末项、Enter/Esc、价格/单位及快速重新聚焦。延迟失焦回调须检查当前焦点，关闭菜单须使未完成的网络建议失效。
+- 区分商品长列表允许的内部滚动与 PDF 预览完全无横纵滚动条，不能为了统一外观删掉访问列表尾部的能力。
+
 ## 毛玻璃（glassmorphism）— 克制企业版（Issue #1 实测）
 
 用户明确要毛玻璃时才做；默认仍偏实色企业后台。目标是**层次感**，不是营销站毛玻璃。
@@ -164,6 +173,14 @@
 - 长列表往下滚：顶栏贴顶不动；顶栏矩形内**看不到**正文文字/卡片边
 - 顶栏仍有 glass 质感（半透明 + blur），侧栏若指定 HEX 则为实色
 - 硬刷新 Ctrl+F5；Flask `debug=False` 缓存模板 → **改 CSS 后必须重启 5001** 再探针
+
+## 侧栏宽度与品牌图标（v3.1.0 统一）
+
+- **侧栏宽度全局只有一个值（224px）**。历史上 4 个开单页为给右侧 PDF 预览腾宽度被单独收窄到 200px（`.order-entry-page .sidebar{...}`），导致点开单入口与点其他入口宽度跳变 24px。用户要求一致 → 已删除该覆盖。**不要再引入任何按页面收窄侧栏的规则**；`tests/test_order_entry_visual_structure.py::test_all_pages_share_one_sidebar_width` 会断言 `.order-entry-page .sidebar{` 不出现。
+- **`body.order-entry-page` 仍保留**（标记开单页），但**不得再用于侧栏宽度**；如需开单页专属样式，先确认不与侧栏宽度冲突。
+- **品牌图标**：`brand-mark` 是 34×34 蓝底圆角方块，内含 20×20 内联 SVG（Keyline Icons `file-spreadsheet`，MIT，`stroke="currentColor"`、`stroke-width="2"`，`color:#fff`）。**不加图标库依赖、不引 CDN**，直接内联 `<path>`；三处保持一致：侧栏 `brand-mark`、favicon（内联 data URI）、EXE 图标（`packaging/简单ERP.ico`）。
+- **EXE 图标生成**：`packaging/简单ERP.ico` 由同一 SVG 渲染（headless Edge `--screenshot` + `--default-background-color=00000000` → Pillow 存多尺寸 16/24/32/48/64/128/256）。spec 里 `app_icon = project_root/'packaging'/'简单ERP.ico'` 并给 `EXE(icon=str(app_icon))`。
+- **验收方式**：CDP 逐路由读 `.sidebar` 与 `.content` 的 `getBoundingClientRect().width/x`，断言**所有页面 × 所有宽度取值集合为单值**；改 CSS 后必须禁用缓存（`Network.setCacheDisabled`）再读 computed。
 
 ## 验证清单
 

@@ -1,6 +1,8 @@
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
+
 from erp import create_app
 from erp import config as config_module
 from erp.config import load_config, migrate_data_root, data_root, save_config
@@ -41,6 +43,60 @@ def test_settings_page_renders_and_nav_link():
     assert "浏览文件夹" in html
     assert "settingsBrowseFolder" in html
     assert "choose_folder" in html
+
+
+def test_settings_page_hides_explanatory_microcopy_but_keeps_operation_guidance():
+    init_db()
+    html = create_app().test_client().get("/settings/").get_data(as_text=True)
+
+    assert "公司信息、数据目录、界面显示与打印单文案" not in html
+    assert "只改这一处" not in html
+    assert "仅网页界面，不影响打印" not in html
+    assert "正文大小与布局保持不变" not in html
+    assert "保存后页面自动更新" in html
+    assert "会询问是否先保存" in html
+    assert "版式位置固定" in html
+    assert "迁移包含 data / backups / imports / logs" in html
+
+
+def test_settings_page_exposes_font_weight_choices_with_legacy_default():
+    init_db()
+    app = create_app()
+    client = app.test_client()
+    html = client.get("/settings/").get_data(as_text=True)
+
+    assert 'data-ui-font-weight="standard"' in html
+    assert 'name="ui_font_weight" value="standard"' in html
+    assert 'name="ui_font_weight" value="medium"' in html
+    assert 'name="ui_font_weight" value="strong"' in html
+    assert 'id="displaySettings"' in html
+    assert "字体粗细" in html
+    assert "字体粗细（仅网页界面，不影响打印）" not in html
+    assert "document.documentElement.dataset.uiFontWeight = input.value" in html
+    assert config_module._merge_defaults({})["ui_font_weight"] == "standard"
+
+
+def test_save_settings_persists_font_weight_and_rejects_unknown_choice():
+    init_db()
+    app = create_app()
+    client = app.test_client()
+    response = client.post(
+        "/settings/save",
+        data={
+            "shop_name": "字体粗细测试店",
+            "ui_theme": "light",
+            "ui_scale": "100",
+            "ui_font_weight": "strong",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert load_config()["ui_font_weight"] == "strong"
+    assert 'data-ui-font-weight="strong"' in response.get_data(as_text=True)
+
+    with pytest.raises(ValueError, match="字体粗细"):
+        save_config({"ui_font_weight": "ultra"})
 
 
 def test_settings_page_marks_desktop_copy_when_env_set(monkeypatch):
@@ -230,6 +286,7 @@ def test_print_preview_uses_config_and_does_not_create_orders():
     assert "预览电话-XYZ" in html
     assert "制单人：预览制单人" in html
     assert "收货人：预览线" in html
+    assert "-webkit-text-stroke" not in html
     assert "销售清单" in html
     assert "MD202607120001" in html
 

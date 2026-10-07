@@ -98,5 +98,5 @@ def test_desktop_shell_marker_and_in_shell_print_helpers(monkeypatch):
     html = client.get("/orders/new").get_data(as_text=True)
     assert 'data-desktop="1"' in html
     assert "function openPrintUrl(url)" in html
-    assert "desktop_preview=1" in html
-    assert "openPrintUrl(result.pdf_url)" in html
+    assert "searchParams.set('desktop_preview', '1')" in html
+    assert "openPrintUrl(openPrintLink.href)" in html

@@ -69,12 +69,13 @@ def test_order_entry_disables_browser_history_but_keeps_erp_suggestions():
         assert 'id="orderForm" autocomplete="off"' in html
         input_tags = re.findall(r'<input[^>]*>', html)
         customer_input = next(tag for tag in input_tags if 'id="customer_name"' in tag)
-        product_input = next(tag for tag in input_tags if 'name="product_name"' in tag and 'class="product-name"' in tag)
         assert 'autocomplete="new-password"' in customer_input
-        assert 'autocomplete="new-password"' in product_input
         assert 'name="quantity" class="quantity" autocomplete="new-password"' in html
         assert 'name="unit_price" class="unit-price" autocomplete="new-password"' in html
         assert 'data-lpignore="true"' in html
+        # 商品名改由两级原生下拉呈现，浏览器不再对商品名做历史/密码管理器填充。
+        assert 'class="form-select form-select-sm picker-name"' in html
+        assert 'class="form-select form-select-sm picker-spec"' in html
         assert "fetchJson('/orders/api/customers?q='" in html
         assert "fetchJson('/orders/api/products?q='" in html
 
@@ -89,9 +90,18 @@ def test_order_entry_uses_fetch_success_panel_without_blank_post_target():
     assert "fetch(orderForm.action" in html
     assert "X-Requested-With" in html
     assert "订单已保存成功" in html
-    assert "打开打印页" in html
+    assert "打开打印预览" in html
     assert "查看订单" in html
     assert "继续开单" in html
     assert "e.currentTarget.target = '_blank'" not in html
     assert "setTimeout(() => { window.location.href" not in html
     assert "submitButton.disabled = true" in html
+
+
+def test_order_entry_shows_server_validation_text_on_failed_async_save():
+    """A non-JSON 400 message must remain useful; no preview on failed save."""
+    init_db()
+    html = create_app().test_client().get("/orders/new").get_data(as_text=True)
+    assert "response.headers.get('content-type')" in html
+    assert "await response.text()" in html
+    assert "订单未保存" in html

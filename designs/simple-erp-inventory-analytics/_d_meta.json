@@ -1,0 +1,43 @@
+{
+  "type": "design",
+  "designSystems": [],
+  "primaryDesignSystem": null,
+  "assets": {
+    "inventory-analytics-prototype": {
+      "versions": [
+        {
+          "path": "inventory-analytics-prototype.html",
+          "createdAt": "2026-09-30T23:35:25.022Z",
+          "status": "needs-review"
+        },
+        {
+          "path": "inventory-analytics-prototype-v2.html",
+          "createdAt": "2026-10-01T00:17:43.933Z",
+          "status": "needs-review"
+        },
+        {
+          "path": "counterparty-layout-prototype-v3.html",
+          "createdAt": "2026-10-02T07:53:42.395Z",
+          "status": "needs-review",
+          "subtitle": "往来对账独立入口 / 主表优先 / 四类双向交易，原型·虚构数据",
+          "viewport": {
+            "width": 1440,
+            "height": 960
+          }
+        },
+        {
+          "path": "counterparty-layout-prototype-v4.html",
+          "createdAt": "2026-10-02T15:03:36.239Z",
+          "status": "approved",
+          "subtitle": "UI排版用户已确认 / 三页签在前、商品表在后 / 正式业务尚未接入",
+          "viewport": {
+            "width": 1440,
+            "height": 960
+          }
+        }
+      ]
+    }
+  },
+  "createdAt": "2026-09-30T23:35:25.032Z",
+  "updatedAt": "2026-10-03T00:06:26.728Z"
+}

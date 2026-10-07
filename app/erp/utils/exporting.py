@@ -79,7 +79,7 @@ def customer_export_rows(customers: Iterable) -> list[list[object]]:
 
 
 def product_export_headers() -> list[str]:
-    return ["商品名称", "规格", "单位", "默认价（元）", "备注", "使用次数", "创建时间", "更新时间"]
+    return ["商品名称", "型号", "单位", "默认价（元）", "备注", "使用次数", "创建时间", "更新时间"]
 
 
 def product_export_rows(products: Iterable) -> list[list[object]]:

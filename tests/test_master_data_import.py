@@ -33,7 +33,7 @@ def test_product_and_customer_excel_templates_have_exact_headers():
     assert "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" in product_response.content_type
     assert "attachment" in product_response.headers["Content-Disposition"]
     product_sheet = load_workbook(io.BytesIO(product_response.data), read_only=True).active
-    assert list(next(product_sheet.iter_rows(values_only=True))) == ["商品名称", "价格"]
+    assert list(next(product_sheet.iter_rows(values_only=True))) == ["商品名称", "型号", "价格"]
 
     assert customer_response.status_code == 200
     customer_sheet = load_workbook(io.BytesIO(customer_response.data), read_only=True).active
@@ -144,3 +144,31 @@ def test_customer_csv_import_accepts_gb18030():
     assert "新增：1" in response.get_data(as_text=True)
     with get_db() as conn:
         assert conn.execute("SELECT id FROM customers WHERE name=?", (fresh,)).fetchone() is not None
+
+
+def test_product_import_supports_old_and_new_headers_and_distinct_specs():
+    init_db()
+    name = _name("同名型号商品")
+    deleted = _name("回收站商品")
+    with get_db() as conn:
+        conn.execute("INSERT INTO products(name, spec, unit, default_price_cents) VALUES (?, 'DN20', '个', 100)", (name,))
+        conn.execute("INSERT INTO products(name, spec, unit, default_price_cents, deleted_at) VALUES (?, 'DN25', '个', 100, CURRENT_TIMESTAMP)", (deleted,))
+
+    csv_data = (
+        f"商品名称,型号,价格\n{name}, DN20 ,99\n{name},DN25,20\n{name},,30\n{name},DN25,40\n{deleted},DN25,50\n"
+    ).encode("utf-8-sig")
+    response = _upload(create_app().test_client(), "/products/import", "products.csv", csv_data)
+    html = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "新增：2" in html and "跳过：3" in html and "错误：0" in html
+    with get_db() as conn:
+        rows = conn.execute("SELECT id, spec, default_price_cents FROM products WHERE name=? ORDER BY id", (name,)).fetchall()
+    assert [(row["spec"], row["default_price_cents"]) for row in rows] == [("DN20", 100), ("DN25", 2000), ("", 3000)]
+
+    old_name = _name("旧格式商品")
+    old_csv = f"商品名称,价格\n{old_name},8.88\n".encode("utf-8-sig")
+    old_response = _upload(create_app().test_client(), "/products/import", "old.csv", old_csv)
+    assert old_response.status_code == 200
+    with get_db() as conn:
+        old_row = conn.execute("SELECT spec, default_price_cents FROM products WHERE name=?", (old_name,)).fetchone()
+    assert old_row["spec"] == "" and old_row["default_price_cents"] == 888

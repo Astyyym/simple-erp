@@ -6,6 +6,8 @@ from pathlib import Path
 from flask import Blueprint, flash, redirect, render_template, request, url_for, current_app, Response
 
 from erp.config import (
+    UI_FONT_WEIGHT_CHOICES,
+    UI_FONT_WEIGHT_LABELS,
     UI_SCALE_CHOICES,
     UI_THEME_CHOICES,
     data_root,
@@ -47,6 +49,8 @@ def settings_page():
         location_file_path=str(location_file()),
         ui_scale_choices=UI_SCALE_CHOICES,
         ui_theme_choices=UI_THEME_CHOICES,
+        ui_font_weight_choices=UI_FONT_WEIGHT_CHOICES,
+        ui_font_weight_labels=UI_FONT_WEIGHT_LABELS,
         is_desktop=is_desktop,
     )
 
@@ -86,6 +90,7 @@ def save_settings():
             "shop_name": (form.get("shop_name") or "").strip(),
             "ui_theme": (form.get("ui_theme") or "light").strip().lower(),
             "ui_scale": (form.get("ui_scale") or "100").strip().replace("%", ""),
+            "ui_font_weight": (form.get("ui_font_weight") or "standard").strip().lower(),
             "print_order_phone": (form.get("print_order_phone") or "").strip(),
             "print_order_address": (form.get("print_order_address") or "").strip(),
             "print_main_business": (form.get("print_main_business") or "").strip(),

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN" data-ui-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="design_doc_mode" content="interactive-prototype">
+  <title>简单ERP · 数据分析与往来对账 v4 原型</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="counterparty-v4.css?layout=swapped">
+  <script type="module" src="counterparty-v4.js"></script>
+</head>
+<body>
+<!-- Context: base.html + analytics/index.html + analytics/reconciliation.html and
+     inventory-analytics-prototype-v2.html. Retain shell, blue theme, fixed topbar,
+     one body scrollport; change only the prototype's analytics/reconciliation IA.
+     All records are invented, no ERP API/database is accessed. New layout awaits review.
+     Vanilla JS follows the existing v2 runtime without CDN/build/vendor dependencies. -->
+<header class="prototype-toolbar" aria-label="原型控制">
+  <div class="prototype-label"><strong>原型·虚构数据</strong><span>v4 · 待审查 · 未连接业务库</span></div>
+  <div class="controls">
+    <label for="screenSelect">页面<select id="screenSelect"><option value="analytics">数据分析</option><option value="reconciliation">往来对账</option><option value="purchase">拿货单</option><option value="purchaseReturn">退拿货单</option></select></label>
+    <label for="sampleSelect">样例<select id="sampleSelect"><option value="standard">双向交易 / 混合单位</option><option value="unknown">销售成本缺失</option><option value="empty">空数据</option><option value="fraction">历史计件小数</option></select></label>
+    <label for="themeSelect">主题<select id="themeSelect"><option value="light">浅色</option><option value="dark">深色</option><option value="system">跟随系统</option></select></label>
+  </div>
+</header>
+<div class="app-shell">
+  <aside class="sidebar" aria-label="主要导航">
+    <div class="brand"><div class="brand-mark">简</div><div><div class="brand-title">消防器材门店</div><div class="brand-subtitle">BUSINESS MANAGEMENT</div></div></div>
+    <section class="nav-group" aria-label="工作台">
+      <span class="nav-section reference-nav">工作台</span>
+      <span class="reference-nav">开单</span>
+      <span class="sidebar-sub reference-nav">销售单</span><span class="sidebar-sub reference-nav">退货单</span><a class="sidebar-sub" id="purchaseNav" href="#purchase">拿货单</a><a class="sidebar-sub" id="purchaseReturnNav" href="#purchaseReturn">退拿货单</a>
+      <span class="reference-nav">单据管理</span><span class="reference-nav">账款管理</span><a class="sidebar-sub" id="reconciliationNav" href="#reconciliation">往来对账</a>
+      <a class="active" href="#analytics" id="analyticsNav" aria-current="page">数据分析</a>
+    </section>
+    <div class="nav-divider"></div>
+    <section class="nav-group" aria-label="基础资料"><div class="nav-label">基础资料</div><span class="reference-nav">商品管理</span><span class="reference-nav">往来对象</span></section>
+    <div class="nav-divider"></div><span class="nav-section reference-nav">回收站</span>
+    <div class="nav-divider"></div><span class="nav-section reference-nav">系统设置</span>
+    <div class="app-version">原型·虚构数据<br><span>灰色导航仅展示现有壳</span></div>
+  </aside>
+  <main class="content">
+    <header class="page-topbar"><div class="company">消防器材门店 · <span id="screenTitle">数据分析</span></div><div class="local-status">本地原型 · 不写业务数据</div></header>
+    <div class="page-body" id="pageBody">
+      <section id="analyticsScreen" data-screen-label="数据分析中心">
+        <div class="page-heading"><div><h1>数据分析中心</h1><p>看销售表现，也能独立核对同一对象的双向交易。</p></div></div>
+        <form id="analyticsFilters" class="filters surface" novalidate>
+          <div class="field"><label for="analysisStart">开始日期</label><input id="analysisStart" type="date" value="2026-09-01" required></div>
+          <div class="field"><label for="analysisEnd">结束日期</label><input id="analysisEnd" type="date" value="2026-10-02" required></div>
+          <div class="field"><label for="analysisParty">往来对象</label><select id="analysisParty"><option value="">全部对象</option></select></div>
+          <div class="field"><label for="analysisProduct">商品名称</label><select id="analysisProduct"><option value="">全部商品</option></select></div>
+          <div class="field"><label for="analysisSpec">型号</label><select id="analysisSpec" disabled><option value="">全部型号</option></select></div>
+          <div class="filter-actions"><button class="btn primary" type="submit">查询</button><button class="btn" id="analysisReset" type="button">重置</button></div>
+        </form>
+        <p class="form-message" id="analysisMessage" role="status" aria-live="polite"></p>
+        <section class="metrics" id="analysisMetrics" aria-label="五项销售指标"></section>
+        <section class="recon-entry surface" aria-labelledby="reconEntryTitle">
+          <div><h2 id="reconEntryTitle">往来对账</h2><p>同一对象，一份清单。销售、退货、拿货、退拿货按本店方向核对。</p><small id="reconCarryHint">带入已查询的对象与日期；商品条件不带入，始终核对完整单据。</small></div>
+          <a class="btn primary" id="openRecon" href="#reconciliation">进入往来对账 <span aria-hidden="true">→</span></a>
+        </section>
+        <section class="surface panel secondary" aria-label="分层分析">
+          <div class="tabs" role="tablist" aria-label="辅助分析"><button class="tab active" id="heatTab" type="button" role="tab" aria-selected="true" aria-controls="heatPanel" data-tab="heat">销售热力图</button><button class="tab" id="rankTab" type="button" role="tab" aria-selected="false" aria-controls="rankPanel" data-tab="rank" tabindex="-1">产品排行</button><button class="tab" id="healthTab" type="button" role="tab" aria-selected="false" aria-controls="healthPanel" data-tab="health" tabindex="-1">成本诊断</button></div>
+          <div id="heatPanel" role="tabpanel" aria-labelledby="heatTab"><div class="section-heading"><div><h2>流水热力图</h2><p id="heatScope">按当前时间范围渲染每个月日历；格子只显示日期与深浅，悬停或点击查看当天数据。</p></div><div class="inline-field"><label for="heatMetric">指标</label><select id="heatMetric"><option value="amount">流水净额</option><option value="quantity">净销售数量</option></select></div></div><p id="heatMetricHint" class="form-message"></p><div class="heat-layout"><div><div class="heat-calendars" id="heatGrid"></div></div><div class="heat-detail" id="heatDetail" aria-live="polite">选择日期查看明细。</div></div></div>
+          <div id="rankPanel" role="tabpanel" aria-labelledby="rankTab" hidden><div class="section-heading"><div><h2>产品排行</h2><p>热销与低销量按同单位净数量分组；退货抵销单列。</p></div><label class="inline-field" for="rankingMode">排行<select id="rankingMode"><option value="hot">热销商品</option><option value="low">低销量商品</option><option value="returns">退货抵销 / 净退货</option><option value="unsold">未销售商品</option><option value="profit">毛利润排行</option><option value="stock">库存告急</option></select></label></div><div id="rankingRows"></div></div>
+          <div id="healthPanel" role="tabpanel" aria-labelledby="healthTab" hidden><h2>成本诊断</h2><div id="costHealth"></div></div>
+        </section>
+        <section class="surface panel" aria-labelledby="productTableTitle">
+          <div class="section-heading"><div><h2 id="productTableTitle">具体产品分析</h2><p id="analysisScope">销售 − 客户退货；拿货交易不混入净销售。</p></div><div class="field inline-field"><label for="analysisSort">排序</label><select id="analysisSort"><option value="amount">净销售额 ↓</option><option value="profit">毛利润 ↓</option><option value="stock">库存告急优先</option></select></div></div>
+          <div class="table-wrap"><table class="data-table analytics-table"><thead><tr><th>商品 / 型号</th><th class="number">净销售数量</th><th class="number">净销售额</th><th class="number">历史净成本</th><th class="number">毛利润</th><th class="number">毛利率</th><th class="number">当前库存</th><th class="number">移动平均成本</th><th>库存状态</th></tr></thead><tbody id="analysisRows"></tbody></table></div>
+          <div class="table-note" id="analysisTableNote"></div>
+        </section>
+      </section>
+      <section id="reconciliationScreen" data-screen-label="往来对账" hidden>
+        <div class="page-heading"><div><h1>往来对账</h1><p>按完整单据核对双向交易；同一对象既可买货，也可卖货。</p></div><a class="btn return" href="#analytics" id="backAnalytics">返回数据分析</a></div>
+        <div class="notice"><strong>只核对交易，不办理结算</strong><span>交易对账净额 = 销售 − 客户退货 − 拿货 + 退拿货。不是当前欠款，不含期初、收款、付款或调整，也不自动抵销旧账。</span></div>
+        <form id="reconFilters" class="filters recon-filters surface" novalidate>
+          <div class="field"><label for="reconParty">往来对象（必选一个）</label><select id="reconParty" required><option value="">请选择往来对象</option></select></div>
+          <div class="field"><label for="reconStart">开始日期</label><input id="reconStart" type="date" value="2026-09-01" required></div>
+          <div class="field"><label for="reconEnd">结束日期</label><input id="reconEnd" type="date" value="2026-10-02" required></div>
+          <div class="field"><label for="reconType">单据类型</label><select id="reconType"><option value="">全部四类</option><option value="sale">销售单 · 本店卖出</option><option value="sale_return">客户退货单 · 对方退给本店</option><option value="purchase">拿货单 · 本店买入</option><option value="purchase_return">退拿货单 · 本店退给对方</option></select></div>
+          <div class="filter-actions"><button class="btn primary" type="submit">查询并全选</button><button class="btn" id="reconReset" type="button">重置</button></div>
+        </form>
+        <p id="reconMessage" class="form-message" role="status" aria-live="polite"></p>
+        <p id="unlinkedNote" class="form-message"></p>
+        <section class="surface panel" aria-labelledby="reconResultsTitle">
+          <div class="section-heading"><div><h2 id="reconResultsTitle">完整单据清单</h2><p id="reconScope">请选择一个往来对象并查询。</p></div><div class="selection-actions"><button class="btn small" type="button" id="selectAll" disabled>全选结果</button><button class="btn small" type="button" id="clearAll" disabled>取消全选</button></div></div>
+          <div class="selection-summary" id="selectionSummary" aria-live="polite">已选 0 / 符合条件 0 笔</div>
+          <div class="table-wrap"><table class="data-table recon-table"><thead><tr><th class="check-cell">选择</th><th>日期 / 单号</th><th>单据类型</th><th>交易方向（本店视角）</th><th class="number">业务金额</th><th>明细</th></tr></thead><tbody id="reconRows"></tbody></table></div>
+          <div class="pagination-row"><span id="reconPageInfo"></span><nav id="reconPagination" aria-label="对账分页"></nav></div>
+          <div id="typeTotals" class="type-totals"></div>
+          <div class="net-summary"><div><span>选中单据 · 交易对账净额</span><strong id="reconNet">¥0.00</strong><small>正负只表示四类交易的净方向，不表示已收、已付或实际结算。</small></div><button class="btn primary" id="previewButton" type="button" disabled>预览选中对账单</button></div>
+        </section>
+        <section class="surface panel document-detail" id="documentDetail" hidden aria-labelledby="documentDetailTitle"></section>
+      </section>
+      <section id="purchaseScreen" data-screen-label="拿货单演示" hidden>
+        <div class="page-heading"><div><h1>新建拿货单</h1><p>本店从往来对象买入；对方也可以向本店买货。</p></div><a class="btn return" href="#analytics">返回数据分析</a></div>
+        <form id="purchaseForm" novalidate>
+          <div class="surface entry-meta">
+            <div class="field"><label for="purchaseParty">往来对象</label><select id="purchaseParty"><option value="">请选择往来对象</option></select></div>
+            <div class="field"><label for="purchaseDate">拿货日期</label><input id="purchaseDate" type="date" value="2026-10-02"></div>
+            <div class="field"><label for="purchaseNo">单号（演示预览）</label><input id="purchaseNo" readonly></div>
+            <div class="field"><label for="purchaseStatus">保存状态</label><select id="purchaseStatus"><option value="saved">正式保存</option><option value="draft">草稿</option></select></div>
+          </div>
+          <section class="surface panel"><h2>商品明细</h2><div class="table-wrap"><table class="data-table entry-table"><thead><tr><th>商品 / 型号</th><th>单位</th><th class="number">数量</th><th class="number">拿货单价</th><th class="number">当前移动成本（只读）</th><th>操作</th></tr></thead><tbody id="purchaseRows"></tbody></table></div><div class="entry-actions"><button class="btn small" type="button" id="purchaseAdd">新增行</button><button class="btn small" type="button" id="purchaseClear">清空全部</button></div></section>
+          <div class="field internal-note"><label for="purchaseSourceNotes">内部货源备注（可选，不进入对外对账）</label><textarea id="purchaseSourceNotes" rows="2" maxlength="2000" autocomplete="off"></textarea></div>
+          <div class="entry-footer"><div class="quote-summary" id="purchaseQuote">请选择商品并录入数量、拿货单价。</div><div class="filter-actions"><button class="btn" type="submit">计算金额</button><button class="btn primary" type="button" id="purchaseSave">演示保存</button></div></div>
+          <p id="purchaseMessage" class="form-message" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+      <section id="purchaseReturnScreen" data-screen-label="退拿货演示" hidden>
+        <div class="page-heading"><div><h1>新建退拿货单</h1><p>本店退给原卖方；业务金额沿原单，库存按当前移动成本扣减。</p></div><a class="btn return" href="#analytics">返回数据分析</a></div>
+        <form id="purchaseReturnForm" novalidate>
+          <div class="surface entry-meta">
+            <div class="field"><label for="returnParty">往来对象</label><select id="returnParty"><option value="">请选择往来对象</option></select></div>
+            <div class="field"><label for="returnSource">原拿货单</label><select id="returnSource" disabled><option value="">先选择往来对象</option></select></div>
+            <div class="field"><label for="returnDate">退拿货日期</label><input id="returnDate" type="date" value="2026-10-02"></div>
+            <div class="field"><label for="returnStatus">保存状态</label><select id="returnStatus"><option value="saved">正式保存</option><option value="draft">草稿</option></select></div>
+          </div>
+          <section class="surface panel"><h2>原单可退明细</h2><p class="form-message">同一原行可以多次部分退；草稿不占额度。移动成本与原拿货单价不是同一个字段。</p><div class="table-wrap"><table class="data-table entry-table"><thead><tr><th>商品 / 型号</th><th class="number">原数量</th><th class="number">已退</th><th class="number">剩余可退</th><th class="number">当前库存</th><th class="number">本次退量</th><th class="number">原拿货单价</th><th class="number">移动成本（只读）</th></tr></thead><tbody id="returnRows"><tr><td colspan="8" class="empty-state">先选择往来对象和原拿货单。</td></tr></tbody></table></div></section>
+          <div class="entry-footer"><div class="quote-summary" id="returnQuote">选择来源后填写本次退量，空白行不退。</div><div class="filter-actions"><button class="btn" type="submit">计算退拿货</button><button class="btn primary" type="button" id="returnSave" disabled>演示保存</button></div></div>
+          <p id="returnMessage" class="form-message" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+      <div id="demoReceipt" class="notice" role="status" hidden></div>
+      <section id="pdfScreen" data-screen-label="对账PDF版式预览" hidden>
+        <div class="page-heading"><div><h1>对账单预览</h1><p>原型·虚构数据 · HTML 版式样张，非正式 PDF 生成器。</p></div><div class="pdf-actions"><button class="btn primary" type="button" id="savePreview">保存 HTML 样张</button><a class="btn return" href="#reconciliation" id="backRecon">返回往来对账</a></div></div>
+        <div class="print-hint">仅核对业务交易。样张只输出交易字段，不写收款、付款、抵销或结算记录。</div>
+        <article class="paper" id="externalPreview" aria-label="对外交易核对样张"></article>
+      </section>
+    </div>
+  </main>
+</div>
+</body>
+</html>

@@ -142,12 +142,13 @@
     <div class="sheet">
       <div class="header">
         <h1>{{config.shop_name}}</h1>
-        <div class="subtitle">销售清单</div>
+        <div class="subtitle">{{document_title or ('退货清单' if order.order_type == 'return' else '销售清单')}}</div>
         <div class="meta">
           <span>单号: {{order.order_no}}</span>
           <span>日期: {{order.order_date}}</span>
-          <span>客户: {{order.customer_name}}</span>
+          <span>{{object_role|default('客户')}}: {{order.customer_name}}</span>
         </div>
+        {% if document_direction %}<div class="legal-note">交易方向：{{document_direction}} · 业务金额按本单正金额展示</div>{% endif %}
       </div>
 
       <table class="items">
@@ -195,13 +196,13 @@
           </tr>
           <tr>
             <td class="footer-text"><strong>订货地址：</strong>{{config.print_order_address}}</td>
-            <td class="footer-sign">{{config.print_receiver_label}}</td>
+            <td class="footer-sign">{% if document_type|default('sale') in ['purchase', 'purchase_return'] %}对方确认：____________{% else %}{{config.print_receiver_label}}{% endif %}</td>
           </tr>
           <tr>
             <td class="footer-text" colspan="2"><strong>主营业务：</strong>{{config.print_main_business}}</td>
           </tr>
         </table>
-        <div class="legal-note"><strong>备注：</strong>{{config.print_legal_note}}{% if order.notes %}；{{order.notes}}{% endif %}</div>
+        {% if document_type|default('sale') not in ['purchase', 'purchase_return'] %}<div class="legal-note"><strong>备注：</strong>{{config.print_legal_note}}{% if order.notes %}；{{order.notes}}{% endif %}</div>{% endif %}
       </div>
     </div>
   </section>

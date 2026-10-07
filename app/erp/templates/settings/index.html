@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>设置</h2>
-<p class="text-muted mb-3">公司信息、数据目录、界面显示与打印单文案。保存后刷新页面即可生效；改数据目录会一键迁移业务文件。若修改后未保存就切换页面，会询问是否先保存。</p>
+<p class="text-muted mb-3">保存后页面自动更新；有未保存修改时切换页面，会询问是否先保存。</p>
 
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% if messages %}
@@ -15,16 +15,15 @@
   <input type="hidden" name="next" id="settingsNextUrl" value="">
   <section class="settings-card">
     <h3>公司信息</h3>
-    <p class="text-muted small">只改这一处：顶栏、销售单/退货单 PDF、账款汇总 PDF 抬头，以及系统名称会同步为同一名称。</p>
     <label class="form-label" for="shop_name">公司名称</label>
     <input class="form-control form-control-lg" id="shop_name" name="shop_name" required maxlength="120" value="{{ config.shop_name }}">
   </section>
 
-  <section class="settings-card">
+  <section class="settings-card" id="displaySettings">
     <h3>显示</h3>
     <div class="row g-3">
       <div class="col-md-6">
-        <label class="form-label">界面缩放（仅网页界面，不影响打印纸张）</label>
+        <label class="form-label">界面缩放</label>
         <div class="d-flex flex-wrap gap-3">
           {% for scale in ui_scale_choices %}
           <label class="form-check">
@@ -51,10 +50,25 @@
           </label>
         </div>
       </div>
+      <div class="col-md-6">
+        <label class="form-label">字体粗细</label>
+        <div class="d-flex flex-wrap gap-3" role="radiogroup" aria-label="界面字体粗细">
+          {% for weight in ui_font_weight_choices %}
+          <label class="form-check">
+            <input class="form-check-input" type="radio" name="ui_font_weight" value="{{ weight }}" {% if config.ui_font_weight == weight %}checked{% endif %}>
+            <span class="form-check-label">{{ ui_font_weight_labels[weight] }}</span>
+          </label>
+          {% endfor %}
+        </div>
+        <div class="ui-font-weight-preview" aria-live="polite">
+          <div class="text-muted small">文字效果预览</div>
+          <strong>业务工作台 · 今日销售单</strong>
+        </div>
+      </div>
     </div>
   </section>
 
-  <section class="settings-card">
+  <section class="settings-card settings-card-wide">
     <h3>打印单信息</h3>
     <p class="text-muted small">版式位置固定：在对应文本框填写内容即可出现在打印单对应位置。副标题「销售清单」不可改。</p>
     <div class="mb-3">
@@ -85,7 +99,7 @@
     </div>
   </section>
 
-  <section class="settings-card">
+  <section class="settings-card settings-card-wide">
     <h3>打印位置校准</h3>
     <p class="text-muted small">
       销售单、退货单、账款汇总 PDF 与设置页样张统一使用标准
@@ -111,7 +125,7 @@
   <div class="settings-actions">
     <button type="submit" class="btn btn-primary btn-lg" id="settingsSaveBtn">保存设置</button>
     <a class="btn btn-info btn-lg" id="settingsPrintPreview" href="{{ url_for('settings.print_preview') }}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>预览打印效果</a>
-    <a class="btn btn-outline-info btn-lg" id="settingsPrintPreviewPdf" href="{{ url_for('settings.print_preview_pdf', desktop_preview=1) if is_desktop else url_for('settings.print_preview_pdf') }}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>生成预览 PDF</a>
+    <a class="btn btn-outline-info btn-lg" id="settingsPrintPreviewPdf" href="{{ url_for('settings.print_preview_pdf', desktop_preview=1, return_to=request.full_path) if is_desktop else url_for('settings.print_preview_pdf') }}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>生成预览 PDF</a>
     <span class="settings-dirty-hint d-none" id="settingsDirtyHint">有未保存的修改</span>
   </div>
 </form>
@@ -159,6 +173,17 @@
 
 <style>
   .settings-form{display:flex;flex-direction:column;gap:18px;max-width:920px}
+  /* 宽屏：不再把单列拉到 920px 上限，改成两列卡片，把下方设置项放到右侧。
+     若某个卡片字段/说明太多、压窄后会换行难读，加 .settings-card-wide 保持整行。 */
+  @media(min-width:1440px){
+    .settings-form{
+      display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:18px;max-width:none;align-items:start;
+    }
+    .settings-form>.settings-card{min-width:0}
+    .settings-form>.settings-card.settings-card-wide{grid-column:1/-1}
+    .settings-form>.settings-actions{grid-column:1/-1}
+  }
   .settings-card{
     background:var(--erp-glass-bg);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);padding:18px 18px 16px;box-shadow:var(--erp-glass-shadow);
     -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25)
@@ -167,8 +192,12 @@
     .settings-card{background:var(--erp-surface)}
   }
   .settings-card h3{margin:0 0 10px;font-size:18px}
+  .ui-font-weight-preview{display:flex;flex-direction:column;gap:3px;margin-top:12px;padding:10px 12px;border:1px solid var(--erp-border);border-radius:6px;background:var(--erp-surface-soft);font-size:12px}
+  .ui-font-weight-preview strong{font-size:14px;font-weight:650}
   .settings-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
   .settings-dirty-hint{color:#b45309;font-size:13px;font-weight:600}
+  html[data-ui-theme="dark"] .settings-dirty-hint{color:#fcd34d}
+  @media (prefers-color-scheme: dark){html[data-ui-theme="system"] .settings-dirty-hint{color:#fcd34d}}
   .settings-dl{display:grid;grid-template-columns:140px 1fr;gap:8px 12px;margin:0 0 16px}
   .settings-dl dt{color:var(--erp-muted);font-size:13px;font-weight:600}
   .settings-dl dd{margin:0;word-break:break-all}
@@ -237,6 +266,11 @@
   baseline = serializeForm(form);
   form.addEventListener('input', refreshDirtyUi);
   form.addEventListener('change', refreshDirtyUi);
+  form.querySelectorAll('input[name="ui_font_weight"]').forEach(function (input) {
+    input.addEventListener('change', function () {
+      document.documentElement.dataset.uiFontWeight = input.value;
+    });
+  });
 
   form.addEventListener('submit', function () {
     // Saving is intentional leave of the dirty state.

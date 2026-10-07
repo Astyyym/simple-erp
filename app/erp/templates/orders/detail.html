@@ -1,30 +1,32 @@
 {% extends "base.html" %}
 {% block content %}
+<header class="page-header order-detail-header">
 <h2>单据回看：{{order.order_no}}</h2>
-<div class="mb-3">
-  <a class="btn btn-secondary" href="/orders/">返回列表</a>
+<div class="page-actions">
   {% if order.status != 'void' %}<a class="btn btn-primary" href="/orders/{{order.id}}/edit">重编辑</a>{% endif %}
-  <a class="btn btn-info" href="/orders/{{order.id}}/pdf{% if is_desktop %}?desktop_preview=1{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>查看PDF</a>
-  {% if order.status in ['saved', 'printed'] %}
-  <form class="d-inline-flex gap-2 align-items-center" method="post" action="/orders/{{order.id}}/void" onsubmit="return confirm('作废后该订单不再计入客户余额，确认继续吗？')">
-    <input class="form-control" name="reason" placeholder="作废原因（必填）" required>
-    <button class="btn btn-outline-danger" type="submit">作废</button>
-  </form>
-  {% endif %}
+  <a class="btn btn-info" href="/orders/{{order.id}}/pdf{% if is_desktop %}?desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>查看PDF</a>
+  <a class="btn btn-secondary page-return" href="/orders/">返回列表</a>
 </div>
+</header>
 <div class="card mb-3"><div class="card-body">
   <p><strong>客户：</strong>{{order.customer_name}}</p>
   <p><strong>日期：</strong>{{order.order_date}}</p>
+  {% if order.source_order_id %}<p><strong>原销售单：</strong>{% if order.source_order_available %}<a href="/orders/{{order.source_order_id}}">{{order.source_order_no or order.source_order_id}}</a>{% else %}<span class="text-muted">{{order.source_order_no or ('#' ~ order.source_order_id) }}（原单已删除）</span>{% endif %}</p>{% endif %}
   <p><strong>状态：</strong>{{ {'draft':'草稿','saved':'正式保存','printed':'已打印','void':'已作废'}.get(order.status, order.status) }}</p>
   {% if order.status == 'void' %}<p><strong>作废原因：</strong>{{order.void_reason}}</p>{% endif %}
   <p><strong>备注：</strong>{{order.notes}}</p>
 </div></div>
 <table class="table table-bordered">
   {% set item_sign = -1 if order.order_type == 'return' else 1 %}
-  <tr><th>序号</th><th>产品名称</th><th>单位</th><th>数量</th><th>单价</th><th>小计</th></tr>
+  <tr><th>序号</th><th>产品名称</th><th>单位</th><th>数量</th><th>单价</th><th>小计</th><th>销售时成本</th><th>成本总额</th></tr>
   {% for item in items %}
-  <tr><td>{{loop.index}}</td><td>{{item.product_name}}</td><td>{{item.unit}}</td><td>{{item.quantity}}</td><td>{{cents_to_yuan(item.unit_price_cents)}}</td><td>{{cents_to_yuan(item.subtotal_cents * item_sign)}}</td></tr>
+  <tr><td>{{loop.index}}</td><td>{{item.product_name}}</td><td>{{item.unit}}</td><td>{{item.quantity}}</td><td>{{cents_to_yuan(item.unit_price_cents)}}</td><td>{{cents_to_yuan(item.subtotal_cents * item_sign)}}</td><td>{{micro_to_yuan(item.unit_cost_micro)}}</td><td>{{micro_to_yuan(item.cost_total_micro)}}</td></tr>
   {% endfor %}
-  <tr><th colspan="5" class="text-end">合计</th><th>{{cents_to_yuan(order.total_amount_cents)}}</th></tr>
+  <tr><th colspan="7" class="text-end">合计</th><th>{{cents_to_yuan(order.total_amount_cents)}}</th></tr>
 </table>
+{% if profit_cents is not none %}
+<div class="alert alert-secondary"><strong>内部毛利润：</strong>{{cents_to_yuan(profit_cents)}} 元（按销售时成本快照计算）</div>
+{% else %}
+<div class="alert alert-warning"><strong>内部毛利润：</strong>历史成本缺失，当前不能完整计算</div>
+{% endif %}
 {% endblock %}

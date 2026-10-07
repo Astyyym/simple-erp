@@ -1,0 +1,419 @@
+{% extends "base.html" %}
+{% block content %}
+{% set is_edit = order is defined and order %}
+<style>
+  .order-table {
+    background: transparent; border: 1px solid var(--erp-border);
+    overflow: visible;
+  }
+  .order-table input { border: 0; width: 100%; min-height: 42px; padding: 8px 10px; background: transparent; color: var(--erp-ink); }
+  .order-table input:focus { outline: 2px solid var(--erp-primary); outline-offset: -2px; background: var(--erp-surface); }
+  .order-table td, .order-table th { vertical-align: middle; padding: 0; }
+  .order-table thead th { height: 42px; padding: 0 10px; background: var(--erp-glass-bg-strong); color: var(--erp-muted); font-size: 12px; font-weight: 650; }
+  .order-table tfoot th { background: var(--erp-glass-bg-strong); color: var(--erp-ink); }
+  .suggest-wrap { position: relative; }
+  .suggest-list { position: absolute; z-index: 20; left: 0; right: 0; top: 100%; background: var(--erp-surface); border: 1px solid var(--erp-border-strong); max-height: 220px; overflow-y: auto; border-radius: 0 0 7px 7px; box-shadow: 0 12px 28px rgba(16,24,40,.14); }
+  .suggest-item { display: block; width: 100%; padding: 9px 11px; cursor: pointer; border: 0; border-bottom: 1px solid var(--erp-border); background: transparent; color: var(--erp-ink); text-align: left; font: inherit; }
+  .suggest-item:hover, .suggest-item[aria-selected="true"] { background: var(--erp-primary-soft); }
+  .suggest-item:focus-visible { outline: 2px solid var(--erp-primary); outline-offset: -2px; }
+  .readonly-total { background: var(--erp-glass-bg-strong); padding: 10px; min-height: 42px; font-variant-numeric: tabular-nums; color: var(--erp-ink); }
+  .unit-display { display: flex; align-items: center; color: var(--erp-muted); }
+  .price-cell { padding: 4px !important; }
+  .price-cell input { border: 0; width: 100%; padding: 4px 6px; background: transparent; }
+  .price-quick { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 6px 4px; }
+  .price-quick-btn { border: 1px solid var(--erp-border-strong); background: var(--erp-surface-soft); color: var(--erp-primary); border-radius: 5px; font-size: 12px; padding: 2px 6px; cursor: pointer; }
+  .price-quick-btn:hover { background: var(--erp-primary-soft); }
+  .today-history{margin-top:24px;padding:18px;background:var(--erp-glass-bg);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);box-shadow:var(--erp-glass-shadow)}
+  .today-history h3{font-size:18px;margin:0 0 4px}
+  .today-history .table-responsive{overflow-x:auto;overflow-y:hidden}
+  .today-history table{min-width:700px;margin:0}
+  .today-history .history-actions{display:flex;gap:8px;white-space:nowrap}
+  .order-table-scroll{overflow-x:auto;max-width:100%}
+  .suggest-list[popover]{position:fixed;inset:auto;margin:0;padding:0;box-sizing:border-box;color:var(--erp-ink);height:auto;min-width:min(240px,calc(100vw - 24px));max-width:calc(100vw - 24px)}
+
+  @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
+    .order-table thead th,.order-table tfoot th,.readonly-total{background:var(--erp-surface-soft)}
+  }
+</style>
+
+<div class="order-workspace" id="purchaseWorkspace"><div class="order-entry-area"><div class="order-heading page-header">
+  <div><h2>{{ '编辑拿货草稿' if is_edit else '新建拿货单' }}</h2><p>正式保存后入库并按移动加权平均更新成本；不影响客户价和客户账款。</p></div>
+  <div class="page-actions"><a class="btn btn-outline-secondary page-return" href="/orders/">返回单据管理</a></div>
+</div>
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<form method="post" action="{{ '/purchases/' ~ order.id ~ '/edit' if is_edit else '/purchases/create' }}" id="purchaseForm" autocomplete="off">
+  <input type="hidden" name="customer_id" id="customer_id" value="{{ selected_customer_id|default('') }}">
+  <input type="hidden" name="request_key" value="{{ request_key }}">
+  <div class="order-meta">
+  <div class="row g-3">
+    <div class="col-4 suggest-wrap">
+      <label class="form-label">往来对象（本单卖方）</label>
+      <input class="form-control form-control-lg" id="customer_name" name="customer_name" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="customer_suggestions" aria-haspopup="listbox" aria-label="往来对象，可用上下箭头选择建议" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="输入一个字即可匹配对象" value="{{ selected_customer_name|default('') }}" required>
+      <div class="suggest-list d-none" id="customer_suggestions" role="listbox" aria-label="对象建议"></div>
+      <div class="form-text">与客户资料共用同一档案；可直接输入新对象，保存时自动建档。</div>
+    </div>
+    <div class="col-3">
+      <label class="form-label">拿货日期</label>
+      <input class="form-control form-control-lg" id="purchaseDate" name="business_date" type="date" autocomplete="off" value="{{ order.business_date if is_edit else today }}" required {% if is_edit %}readonly{% endif %}>
+      <div class="form-text">{{ '重编辑保留原单号和原日期' if is_edit else '默认当天，可改；改后单号会按该日重算' }}</div>
+    </div>
+    <div class="col-3">
+      <label class="form-label">单号</label>
+      <input class="form-control form-control-lg" id="orderNoInput" name="order_no" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" value="{{ order.order_no if is_edit else order_no }}" required readonly>
+      <div class="form-text">{{ '重编辑保持原单号' if is_edit else '系统按 NH+所选日期+流水 自动生成' }}</div>
+    </div>
+    <div class="col-2">
+      <label class="form-label">状态</label>
+      <select class="form-select form-select-lg" name="status">
+        <option value="saved" {% if is_edit and order.status == 'saved' %}selected{% endif %}>正式保存</option>
+        <option value="draft" {% if is_edit and order.status == 'draft' %}selected{% endif %}>草稿</option>
+      </select>
+    </div>
+  </div>
+  {% if is_edit %}<input type="hidden" name="source_notes" value="{{ order.source_notes }}">{% endif %}
+  </div>
+
+  <section class="order-details-card" id="purchaseDetailsCard" aria-labelledby="purchaseDetailsTitle">
+  <h3 class="section-title" id="purchaseDetailsTitle">拿货明细</h3>
+  <div class="order-table-scroll"><table class="table table-bordered order-table" id="purchaseTable">
+    <thead class="table-light"><tr><th style="width:50px">序号</th><th style="min-width:340px">产品名称</th><th style="width:96px">单位</th><th style="width:120px">数量</th><th style="width:150px">单价(元)</th><th style="width:130px">金额</th><th style="min-width:150px">成本(元)</th><th style="width:80px">操作</th></tr></thead>
+    <tbody id="purchaseRows">
+      {% for row in form_rows %}
+      <tr>
+        <td class="text-center row-no">{{ loop.index }}</td>
+        <td class="product-picker"><div class="picker-row"><input type="hidden" name="product_id" class="product-id" value="{{ row.product_id or '' }}"><select class="form-select form-select-sm picker-name" aria-label="第 {{loop.index}} 行产品名称"></select><select class="form-select form-select-sm picker-spec" aria-label="第 {{loop.index}} 行型号"></select></div></td>
+        <td><div class="readonly-total unit-display">{{ row.unit or '—' }}</div></td>
+        <td><input name="quantity" class="quantity" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.000" value="{{ row.quantity or '' }}"></td>
+        <td class="price-cell"><input name="unit_cost_yuan" class="unit-price" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.00" value="{{ row.unit_cost_yuan or '' }}"><div class="price-quick d-none"></div></td>
+        <td><div class="readonly-total line-total">0.00</div></td>
+        <td><div class="readonly-total unit-cost-display" aria-label="只读成本">未选择商品</div></td>
+        <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="clearRow(this)">清空</button></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot><tr><th colspan="5" class="text-end p-2">合计</th><th class="p-2" id="grandTotal">0.00</th><th colspan="2"></th></tr></tfoot>
+  </table></div>
+  <div class="small text-muted mt-2" id="costHint" role="status">成本列显示商品当前移动平均成本（只读）；单位跟随商品档案。</div>
+  {% if not products %}<div class="alert alert-warning mb-0">当前没有已建档商品。请先在商品资料中建档。</div>{% endif %}
+  </section>
+  <div class="d-flex gap-2 align-items-center justify-content-end" id="purchaseActions">
+    <button type="button" class="btn btn-outline-secondary btn-lg" onclick="clearAllRows()">一键清空</button>
+    <button type="button" class="btn btn-outline-primary btn-lg" onclick="addRow()">新增一行</button>
+    <button class="btn btn-primary btn-lg" id="savePrintButton" name="save_action" value="{{ 'save' if is_edit else 'save_print' }}">{{ '保存修改' if is_edit else '保存/打印拿货单' }}</button>
+  </div>
+  {% if not is_edit %}
+  <div class="alert alert-success mt-3 d-none" id="saveSuccessPanel" role="status">
+    <div class="fw-bold" id="saveSuccessMessage">拿货单已保存成功</div>
+    <div class="mt-3 d-flex flex-wrap gap-2">
+      <a class="btn btn-info" id="openPrintLink" href="#">打开打印预览</a>
+      <a class="btn btn-secondary" id="viewOrderLink" href="#">查看拿货单</a>
+      <a class="btn btn-primary" id="continueOrderLink" href="/purchases/new">继续开单</a>
+    </div>
+    <div class="small mt-2" id="printHint">保存成功后进入统一打印预览。</div>
+  </div>
+  <div class="alert alert-danger mt-3 d-none" id="saveErrorPanel" role="alert"></div>
+  {% endif %}
+</form>
+{% if not is_edit %}
+<section class="today-history" aria-labelledby="todayHistoryTitle">
+  <h3 id="todayHistoryTitle">当天历史开单</h3>
+  <p class="small text-muted mb-3" id="todayHistoryDate">业务日期 · {{today}}（与录入、修改时间无关）</p>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>单号</th><th>对象</th><th>类型</th><th>金额</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody id="todayHistoryRows">
+        {% for history in today_history %}
+        <tr>
+          <td>{{history.order_no}}</td><td>{{history.customer_name}}</td>
+          <td>{{history.type_label}}</td>
+          <td>{{history.amount_display}}</td>
+          <td>{{history.status_label}}</td>
+          <td><div class="history-actions">
+            <a class="btn btn-sm btn-outline-secondary" href="{{history.detail_url}}">回看</a>
+            <a class="btn btn-sm btn-outline-primary" href="{{ '/purchases/' ~ history.id ~ '/edit' if history.order_type == 'purchase' else '/purchases/return/' ~ history.id ~ '/edit' }}">重编辑</a>
+          </div></td>
+        </tr>
+        {% else %}
+        <tr><td class="text-muted py-3" colspan="6">今天还没有正式保存的拿货/退拿货单</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+</div>
+</div>
+
+<script type="application/json" id="productCatalog">{{ product_catalog|tojson }}</script>
+<script src="{{ url_for('static', filename='order-product-picker.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='order-entry-common.js') }}?v=1"></script>
+<script>
+const money = ErpOrderEntry.money;
+const costMoney = ErpOrderEntry.costMoney;
+const catalog = JSON.parse(document.getElementById('productCatalog').textContent || '[]');
+const catalogById = new Map(catalog.map(p => [String(p.id), p]));
+function fetchJson(url) { return fetch(url).then(r => r.json()); }
+
+function updateCost(tr) {
+  const display = tr.querySelector('.unit-cost-display');
+  const id = tr.querySelector('.product-id').value;
+  if (!id) { display.textContent = '未选择商品'; return; }
+  const product = catalogById.get(String(id));
+  display.textContent = product && product.cost_available ? costMoney(product.unit_cost) : '成本未知';
+}
+function recalc() {
+  let total = 0;
+  document.querySelectorAll('#purchaseRows tr').forEach((tr, idx) => {
+    tr.querySelector('.row-no').textContent = idx + 1;
+    const qty = Number(tr.querySelector('.quantity').value || 0);
+    const price = Number(tr.querySelector('.unit-price').value || 0);
+    const line = qty * price;
+    tr.querySelector('.line-total').textContent = money(line);
+    total += line;
+    updateCost(tr);
+  });
+  document.getElementById('grandTotal').textContent = money(total);
+}
+async function refineProductRow(tr, product) {
+  const customerId = document.getElementById('customer_id').value || '0';
+  const quick = tr.querySelector('.price-quick');
+  let list;
+  try { list = await fetchJson('/orders/api/products?q=' + encodeURIComponent(product.name) + '&customer_id=' + encodeURIComponent(customerId)); }
+  catch (_) { return; }
+  const match = (Array.isArray(list) ? list : []).find(item => String(item.id) === String(product.id));
+  if (!match || String(tr.querySelector('.product-id').value) !== String(product.id)) return;
+  quick.innerHTML = '';
+  const prices = [];
+  if (match.regular_price) prices.push(['常规价', match.regular_price]);
+  if (match.is_customer_price && match.customer_price) prices.push(['客户价', match.customer_price]);
+  if (!prices.length) { quick.classList.add('d-none'); return; }
+  prices.forEach(([label, value]) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'price-quick-btn';
+    button.textContent = label + ' ' + value + '元';
+    button.addEventListener('click', () => { tr.querySelector('.unit-price').value = value; recalc(); });
+    quick.appendChild(button);
+  });
+  quick.classList.remove('d-none');
+}
+function clearRow(button) {
+  const tr = button.closest('tr');
+  tr.querySelectorAll('input').forEach(input => { input.value = ''; });
+  tr.querySelector('.unit-display').textContent = '—';
+  tr.querySelector('.price-quick').innerHTML = '';
+  tr.querySelector('.price-quick').classList.add('d-none');
+  tr.querySelector('.line-total').textContent = '0.00';
+  if (tr.__picker) tr.__picker.reset();
+  recalc();
+}
+function clearAllRows() {
+  if (!confirm('确认清空当前单据中已填写的对象、商品和备注信息吗？')) return;
+  document.getElementById('customer_id').value = '';
+  document.getElementById('customer_name').value = '';
+  const notesField = document.getElementById('sourceNotes');
+  if (notesField) notesField.value = '';
+  const tbody = document.getElementById('purchaseRows');
+  while (tbody.rows.length > 1) tbody.deleteRow(1);
+  const firstRow = tbody.rows[0];
+  firstRow.querySelectorAll('input').forEach(input => { input.value = ''; });
+  firstRow.querySelector('.unit-display').textContent = '—';
+  firstRow.querySelector('.price-quick').innerHTML = '';
+  firstRow.querySelector('.price-quick').classList.add('d-none');
+  firstRow.querySelector('.line-total').textContent = '0.00';
+  if (firstRow.__picker) firstRow.__picker.reset();
+  document.querySelectorAll('.suggest-list').forEach(box => box.classList.add('d-none'));
+  recalc();
+  document.getElementById('customer_name').focus();
+}
+function addRow() {
+  const tbody = document.getElementById('purchaseRows');
+  const tr = tbody.rows[0].cloneNode(true);
+  tr.querySelectorAll('input').forEach(input => { input.value = ''; });
+  tr.querySelector('.unit-display').textContent = '—';
+  tr.querySelector('.price-quick').innerHTML = '';
+  tr.querySelector('.price-quick').classList.add('d-none');
+  tr.querySelector('.line-total').textContent = '0.00';
+  tbody.appendChild(tr);
+  bindRow(tr);
+  recalc();
+}
+function bindRow(tr) {
+  tr.querySelectorAll('.quantity,.unit-price').forEach(input => input.addEventListener('input', recalc));
+  const idField = tr.querySelector('.product-id');
+  const unitDisplay = tr.querySelector('.unit-display');
+  const quick = tr.querySelector('.price-quick');
+  const picker = ErpProductPicker.mountRow(tr, catalog, product => {
+    if (!product) {
+      idField.value = '';
+      unitDisplay.textContent = '—';
+      quick.innerHTML = '';
+      quick.classList.add('d-none');
+      recalc();
+      return;
+    }
+    idField.value = product.id;
+    unitDisplay.textContent = product.unit || '—';
+    quick.innerHTML = '';
+    quick.classList.add('d-none');
+    recalc();
+    refineProductRow(tr, product);
+    tr.querySelector('.quantity').focus();
+  });
+  tr.__picker = picker;
+  if (idField.value) {
+    const existing = catalogById.get(String(idField.value));
+    if (existing) picker.set(existing);
+  }
+}
+
+const customerInput = document.getElementById('customer_name');
+const customerSuggestions = document.getElementById('customer_suggestions');
+ErpOrderEntry.bindAutocomplete(
+  customerInput,
+  customerSuggestions,
+  query => fetchJson('/purchases/api/objects?q=' + encodeURIComponent(query)),
+  c => {
+    const fragment = document.createDocumentFragment();
+    const nameNode = document.createElement('strong');
+    nameNode.textContent = c.name;
+    const detailsNode = document.createElement('small');
+    detailsNode.textContent = c.phone || '';
+    fragment.append(nameNode, document.createTextNode(' '), detailsNode);
+    return fragment;
+  },
+  c => {
+    customerInput.value = c.name;
+    document.getElementById('customer_id').value = c.id;
+    document.getElementById('purchaseDate').focus();
+  },
+  () => { document.getElementById('customer_id').value = ''; },
+);
+document.querySelectorAll('#purchaseRows tr').forEach(bindRow);
+document.addEventListener('click', event => {
+  document.querySelectorAll('[role="combobox"]').forEach(input => {
+    if (!input.closest('.suggest-wrap')?.contains(event.target)) input._closeSuggestions?.();
+  });
+});
+recalc();
+
+{% if not is_edit %}
+const purchaseDateInput = document.getElementById('purchaseDate');
+const orderNoInput = document.getElementById('orderNoInput');
+let orderNoTimer = null;
+async function refreshOrderNo() {
+  if (!purchaseDateInput || !orderNoInput) return;
+  const dateValue = purchaseDateInput.value;
+  if (!dateValue) return;
+  try {
+    const data = await fetchJson('/purchases/api/next_order_no?kind=purchase&date=' + encodeURIComponent(dateValue));
+    if (data && data.order_no) orderNoInput.value = data.order_no;
+  } catch (_) {}
+}
+if (purchaseDateInput) {
+  purchaseDateInput.addEventListener('change', refreshOrderNo);
+  purchaseDateInput.addEventListener('input', () => { clearTimeout(orderNoTimer); orderNoTimer = setTimeout(refreshOrderNo, 180); });
+}
+
+const purchaseForm = document.getElementById('purchaseForm');
+const submitButton = document.getElementById('savePrintButton');
+const successPanel = document.getElementById('saveSuccessPanel');
+const errorPanel = document.getElementById('saveErrorPanel');
+const successMessage = document.getElementById('saveSuccessMessage');
+const openPrintLink = document.getElementById('openPrintLink');
+const viewOrderLink = document.getElementById('viewOrderLink');
+const continueOrderLink = document.getElementById('continueOrderLink');
+const originalButtonText = submitButton.textContent;
+const todayHistoryRows = document.getElementById('todayHistoryRows');
+let formDirty = false;
+let orderSaved = false;
+let allowHistoryNavigation = false;
+purchaseForm.addEventListener('input', () => { formDirty = true; });
+purchaseForm.addEventListener('change', () => { formDirty = true; });
+window.addEventListener('beforeunload', event => {
+  if (!formDirty || orderSaved || allowHistoryNavigation) return;
+  event.preventDefault();
+  event.returnValue = '';
+});
+todayHistoryRows.addEventListener('click', event => {
+  const link = event.target.closest('a');
+  if (!link || !todayHistoryRows.contains(link) || !formDirty || orderSaved) return;
+  if (!confirm('当前单据尚未保存，离开后填写内容将丢失。确定继续吗？')) event.preventDefault();
+  else allowHistoryNavigation = true;
+});
+
+async function refreshTodayHistory() {
+  try {
+    const data = await fetchJson('/purchases/api/today_history');
+    todayHistoryRows.replaceChildren();
+    document.getElementById('todayHistoryDate').textContent = `业务日期 · ${data.date}（与录入、修改时间无关）`;
+    if (!data.orders.length) {
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = 6; cell.className = 'text-muted py-3'; cell.textContent = '今天还没有正式保存的拿货/退拿货单';
+      row.appendChild(cell); todayHistoryRows.appendChild(row); return;
+    }
+    const cells = (row, values) => values.forEach(value => { const cell = document.createElement('td'); cell.textContent = value; row.appendChild(cell); });
+    data.orders.forEach(item => {
+      const row = document.createElement('tr');
+      cells(row, [item.order_no, item.customer_name, item.type_label, item.amount_display, item.status_label]);
+      const actionCell = document.createElement('td');
+      const actions = document.createElement('div');
+      actions.className = 'history-actions';
+      const detailSuffix = item.order_type === 'purchase' ? `/purchases/${item.id}` : `/purchases/return/${item.id}`;
+      [['回看', '', 'secondary'], ['重编辑', '/edit', 'primary']].forEach(([label, suffix, color]) => {
+        const link = document.createElement('a');
+        link.className = `btn btn-sm btn-outline-${color}`;
+        link.href = detailSuffix + suffix;
+        link.textContent = label;
+        actions.appendChild(link);
+      });
+      actionCell.appendChild(actions); row.appendChild(actionCell); todayHistoryRows.appendChild(row);
+    });
+  } catch (_) {
+    document.getElementById('todayHistoryDate').textContent += ' · 刷新失败，请重新打开开单页查看最新单据';
+  }
+}
+
+openPrintLink.addEventListener('click', event => {
+  event.preventDefault();
+  if (orderSaved) { openPrintUrl(openPrintLink.href); document.getElementById('printHint').textContent = '已打开统一打印预览。'; }
+});
+
+purchaseForm.addEventListener('submit', async event => {
+  const submitter = event.submitter;
+  if (!submitter || submitter.name !== 'save_action' || submitter.value !== 'save_print') return;
+  event.preventDefault();
+  if (submitButton.disabled) return;
+  submitButton.disabled = true;
+  submitButton.textContent = '正在保存...';
+  successPanel.classList.add('d-none');
+  errorPanel.classList.add('d-none');
+  try {
+    const formData = new FormData(purchaseForm);
+    formData.set('save_action', 'save_print');
+    const response = await fetch(purchaseForm.action, { method: 'POST', body: formData, headers: {'X-Requested-With': 'fetch'} });
+    const contentType = response.headers.get('content-type') || '';
+    const result = contentType.includes('application/json') ? await response.json() : {ok: response.ok, message: ''};
+    if (!response.ok || !result.ok) throw new Error(result.message || '请检查对象、日期、商品、数量与单价后重试');
+    orderSaved = true;
+    successMessage.textContent = `拿货单 ${result.order_no} 已保存成功`;
+    openPrintLink.href = result.pdf_url;
+    viewOrderLink.href = result.detail_url;
+    continueOrderLink.href = result.next_url;
+    successPanel.classList.remove('d-none');
+    document.getElementById('purchaseActions').classList.add('d-none');
+    refreshTodayHistory();
+    openPrintLink.href = new URL(result.pdf_url, window.location.href).href;
+    openPrintUrl(openPrintLink.href);
+  } catch (error) {
+    if (orderSaved) return;
+    errorPanel.textContent = `拿货单未保存：${error.message || '请检查输入后重试'}`;
+    errorPanel.classList.remove('d-none');
+    submitButton.disabled = false;
+    submitButton.textContent = originalButtonText;
+  }
+});
+{% endif %}
+</script>
+{% endblock %}
