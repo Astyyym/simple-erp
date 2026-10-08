@@ -52,6 +52,19 @@ When 用户 says push + local EXE/ZIP + Release together, run the **full train**
 
 `git push` alone does **not** put installers on GitHub Releases.
 
+### Pitfalls: push hangs on a GUI credential helper (2026-10-08)
+
+`git push` from an agent shell can hang with **no output for minutes** even when the network is fine (verify with `curl -sI https://github.com` → 200). Cause: `credential.helper` is `helper-selector` (Windows Git Credential Manager), which pops a **GUI prompt** an interactive-less agent session cannot answer. Symptom pair: `git push` shows nothing while `gh auth status` is already logged in.
+
+Fix — route git creds through the gh token (non-interactive), then push:
+
+```bash
+gh auth setup-git                 # adds credential.https://github.com.helper = !gh auth git-credential
+GIT_TERMINAL_PROMPT=0 git push origin main
+```
+
+If a push already appears hung, kill that process first; do not assume it succeeded — re-check the real remote with `git ls-remote origin refs/heads/main` (or `git rev-list --left-right --count origin/main...HEAD`) rather than trusting the cached remote-tracking ref. `git ls-remote` is the fastest ground truth for "did it land".
+
 ## GitHub Releases installers
 
 When the user asks whether Releases has a package, **query** — do not infer from `main` or local `dist/`:
