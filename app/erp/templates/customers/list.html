@@ -26,16 +26,19 @@
 </form>
 <form class="row g-2 mb-3" method="post" action="/customers/create"><input class="form-control col" name="name" placeholder="客户名称" required><input class="form-control col" name="phone" placeholder="电话"><input class="form-control col" name="address" placeholder="地址"><input class="form-control col" name="opening_balance" placeholder="期初余额(元)" value="0"><button class="btn btn-primary col-2">新增客户</button></form>
 <button class="btn btn-danger mb-3" type="button" onclick="submitSelected('bulkCustomersForm','确认删除选中的客户吗？')">删除选中</button>
+{% if truncated %}<div class="alert alert-info py-2 mb-2" role="status">列表已截断（仅显示前 200 条），可用上方搜索缩小范围。</div>{% endif %}
 <form id="bulkCustomersForm" method="post" action="/customers/bulk_delete"></form>
 <table class="table table-striped align-middle stable-table">
   <colgroup><col style="width:44px"><col style="width:21%"><col style="width:16%"><col style="width:28%"><col style="width:12%"><col style="width:260px"></colgroup>
-  <tr><th><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>名称</th><th>电话</th><th>地址</th><th>期初</th><th class="action-cell">操作</th></tr>
+  <thead><tr><th><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>名称</th><th>电话</th><th>地址</th><th>期初</th><th class="action-cell">操作</th></tr></thead>
+  <tbody>
   {% for c in customers %}
   <tr>
-    <td><input form="bulkCustomersForm" type="checkbox" name="ids" value="{{c.id}}"></td><td title="{{c.name}}">{{c.name}}</td><td title="{{c.phone}}">{{c.phone}}</td><td title="{{c.address}}">{{c.address}}</td><td>{{cents_to_yuan(c.opening_balance_cents)}}</td>
+    <td><input form="bulkCustomersForm" type="checkbox" name="ids" value="{{c.id}}"></td><td title="{{c.name}}">{{c.name}}</td><td title="{{c.phone}}">{{c.phone}}</td><td title="{{c.address}}">{{c.address}}</td><td>¥{{cents_to_yuan(c.opening_balance_cents)}}</td>
     <td class="action-cell"><div class="action-wrap"><a class="btn btn-sm btn-primary" href="/customers/{{c.id}}/edit">编辑</a><form class="d-inline ajax-delete-form" method="post" action="/customers/{{c.id}}/delete"><button class="btn btn-sm btn-danger">删除</button></form></div></td>
   </tr>
   {% endfor %}
+  </tbody>
 </table>
 <script>
 const customerSearchInput = document.getElementById('customerSearchInput');

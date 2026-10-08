@@ -69,7 +69,7 @@ def pages():
 
 @pytest.mark.parametrize("page, return_href", [
     ("order", "/orders/"),
-    ("purchase", "/purchases/new"),
+    ("purchase", "/orders/"),
     ("customer", "/customers/"),
     ("prices", "/customers/"),
     ("reconciliation", "/analytics/"),
@@ -101,7 +101,7 @@ def test_secondary_return_is_last_title_action(pages, page, return_href):
     children = [node for node in dom.nodes if node["parent"] is actions]
     assert children[-1] is return_link, "return must remain the rightmost title action"
     if page == "purchase":
-        assert ">返回拿货</a>" in html
+        assert ">返回单据管理</a>" in html
 
 
 def test_shared_header_actions_keep_return_size_and_no_wrapping(pages):
@@ -171,8 +171,12 @@ def test_desktop_pdf_save_and_safe_return_share_sizing_and_rightmost_group(pages
     rule = _css_rule(html, ".page-actions .btn")
     for declaration in ("width:112px", "min-height:40px", "white-space:nowrap", "flex-shrink:0"):
         assert declaration in rule
-    assert "background:#0b6b6b" in _css_rule(html, ".pdf-save")
-    assert "background:#475467" in _css_rule(html, ".page-return")
+    # E10：预览页改主题变量——浅色值仍锁定为原色，深色分支独立。
+    light = _css_rule(html, ":root")
+    assert "--pv-save:#0b6b6b" in light
+    assert "--pv-return:#475467" in light
+    assert "background:var(--pv-save)" in _css_rule(html, ".pdf-save")
+    assert "background:var(--pv-return)" in _css_rule(html, ".page-return")
     assert "window.pywebview.api.save_pdf" in html
 
 

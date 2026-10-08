@@ -11,7 +11,7 @@ from erp.utils.exporting import (
     order_line_export_rows,
     workbook_download,
 )
-from erp.utils.errors import error_response
+from erp.utils.errors import error_response, not_found
 from erp.utils.money import cents_to_yuan, line_subtotal_cents, micro_to_yuan, yuan_to_cents
 from erp.utils.pdf import generate_order_pdf, send_pdf_for_preview
 
@@ -106,6 +106,20 @@ def _month_end(year: int, month: int) -> date:
     return date(year, month + 1, 1) - timedelta(days=1)
 
 
+def _parse_month_field(value: str, default_year: int, default_month: int) -> tuple[int, int]:
+    """解析「YYYY-MM」（<input type="month">）、裸月份或裸年份；其余回退默认年月。"""
+    text = (value or "").strip()
+    if re.fullmatch(r"\d{4}-\d{2}", text):
+        year, month = int(text[:4]), int(text[5:7])
+        if 1 <= year <= 9999 and 1 <= month <= 12:
+            return year, month
+    if re.fullmatch(r"\d{1,2}", text):          # 旧参数：只有月份
+        return default_year, _parse_month(text, default_month)
+    if re.fullmatch(r"\d{4}", text):            # 兼容：只有年份
+        return _parse_year(text, default_year), default_month
+    return default_year, default_month
+
+
 def _resolve_date_range(
     date_mode: str,
     year_raw: str,
@@ -123,10 +137,8 @@ def _resolve_date_range(
     mode = date_mode if date_mode in {"year", "month", "range"} else "range"
     year = _parse_year(year_raw, today.year)
     month = _parse_month(month_raw, today.month)
-    start_year = _parse_year(start_year_raw or year_raw, today.year)
-    start_month = _parse_month(start_month_raw or month_raw, today.month)
-    end_year = _parse_year(end_year_raw or year_raw, start_year)
-    end_month = _parse_month(end_month_raw or month_raw, start_month)
+    start_year, start_month = _parse_month_field(start_month_raw, _parse_year(start_year_raw or year_raw, today.year), _parse_month(month_raw, today.month))
+    end_year, end_month = _parse_month_field(end_month_raw, _parse_year(end_year_raw or year_raw, start_year), start_month if start_month_raw or end_month_raw else _parse_month(month_raw, start_month))
 
     if mode == "year":
         start_day = date(year, 1, 1)
@@ -212,9 +224,9 @@ def _filter_args_from_request():
         "year_raw": request.args.get("year", "").strip(),
         "month_raw": request.args.get("month", "").strip(),
         "start_year_raw": request.args.get("start_year", "").strip(),
-        "start_month_raw": request.args.get("start_month", "").strip(),
+        "start_month_raw": request.args.get("start_month_raw", request.args.get("start_month", "")).strip(),
         "end_year_raw": request.args.get("end_year", "").strip(),
-        "end_month_raw": request.args.get("end_month", "").strip(),
+        "end_month_raw": request.args.get("end_month_raw", request.args.get("end_month", "")).strip(),
         "start_date_raw": request.args.get("start_date", "").strip(),
         "end_date_raw": request.args.get("end_date", "").strip(),
         "order_type": request.args.get("order_type", "").strip(),
@@ -231,6 +243,8 @@ def list_orders():
     if not order_types and order_type:
         order_types = [order_type]
     type_filter = set(order_types)
+    # E2：状态多选筛选（空=全部）。销售/退货四态，拿货/退拿货三态（无 printed）。
+    status_filter = {s for s in request.args.getlist("status") if s in {"draft", "saved", "printed", "void"}}
 
     with get_db() as conn:
         scope, customer_row, dashboard_notice, matched_names = _resolve_customer_scope(conn, customer_q)
@@ -284,6 +298,14 @@ def list_orders():
         purchase_condition = "1=1" if (not type_filter or "purchase" in type_filter) else "1=0"
         purchase_return_condition = "1=1" if (not type_filter or "purchase_return" in type_filter) else "1=0"
 
+        # E2：状态筛选按各表 status 直接匹配（销售/退货四态；拿货/退拿货无 printed，勾了也不匹配）。
+        if status_filter:
+            quoted = ", ".join(f"'{s}'" for s in sorted(status_filter))
+            sale_condition += f" AND o.status IN ({quoted})"
+            return_condition += f" AND o.status IN ({quoted})"
+            purchase_condition += f" AND status IN ({quoted})"
+            purchase_return_condition += f" AND status IN ({quoted})"
+
         def order_side_conditions():
             conditions = ["o.deleted_at IS NULL", "o.order_date >= ?", "o.order_date <= ?"]
             params = [start_date, end_date]
@@ -312,21 +334,25 @@ def list_orders():
         # orders stores no name snapshot: join customers for display and filtering.
         union_sql = f"""
             SELECT o.id, o.order_no, o.customer_id, COALESCE(c.name, '') AS customer_name,
-                   o.order_date AS business_date, o.order_type, o.total_amount_cents, o.status
+                   o.order_date AS business_date, o.order_type, o.total_amount_cents, o.status,
+                   {_postings_expr(('sale', 'return'), 'o.id')} AS has_postings
               FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
              WHERE {order_where} AND o.order_type='sale' AND {sale_condition}
             UNION ALL
             SELECT o.id, o.order_no, o.customer_id, COALESCE(c.name, '') AS customer_name,
-                   o.order_date AS business_date, o.order_type, o.total_amount_cents, o.status
+                   o.order_date AS business_date, o.order_type, o.total_amount_cents, o.status,
+                   {_postings_expr(('sale', 'return'), 'o.id')} AS has_postings
               FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
              WHERE {order_where} AND o.order_type='return' AND {return_condition}
             UNION ALL
             SELECT id, order_no, customer_id, customer_name, business_date,
-                   'purchase' AS order_type, total_amount_cents, status
+                   'purchase' AS order_type, total_amount_cents, status,
+                   {_postings_expr(('purchase',), 'id')} AS has_postings
               FROM purchase_orders WHERE {name_where} AND {purchase_condition}
             UNION ALL
             SELECT id, order_no, customer_id, customer_name, business_date,
-                   'purchase_return' AS order_type, total_amount_cents, status
+                   'purchase_return' AS order_type, total_amount_cents, status,
+                   {_postings_expr(('purchase_return',), 'id')} AS has_postings
               FROM purchase_return_orders WHERE {name_where} AND {purchase_return_condition}
         """
         union_params = [*order_params, *order_params, *name_params, *name_params]
@@ -354,6 +380,8 @@ def list_orders():
                 }.get(row["status"], "bg-secondary"),
                 # 全部单据都可勾选删除：正式单据删除时由后端先自动冲回（作废）再进回收站。
                 "deletable": True,
+                # B1：不可编辑的记录隐藏「重编辑」（保留回看/打印）。
+                "editable": _document_editable(row["order_type"], row["status"], bool(row["has_postings"])),
                 "detail_url": {
                     "sale": f"/orders/{row['id']}", "return": f"/orders/{row['id']}",
                     "purchase": f"/purchases/{row['id']}", "purchase_return": f"/purchases/return/{row['id']}",
@@ -375,8 +403,14 @@ def list_orders():
             (f"%{customer_q}%" if customer_q else "%",),
         ).fetchall()
 
-    pagination_query = request.args.to_dict(flat=True)
-    pagination_query.pop("page", None)
+    # E2 前置修复（复核 #17）：to_dict(flat=True) 对多值参数只保留第一个，
+    # 导致多选 order_type/status 翻页时丢参数。改用多值字典逐个传给 url_for。
+    pagination_query: dict = {}
+    for key in request.args.keys():
+        if key == "page":
+            continue
+        values = request.args.getlist(key)
+        pagination_query[key] = values[0] if len(values) == 1 else values
 
     def page_url(target_page: int) -> str:
         return url_for("orders.list_orders", **{**pagination_query, "page": target_page})
@@ -416,6 +450,7 @@ def list_orders():
         filter_end_date=end_date,
         order_type=order_type,
         order_types=sorted(type_filter),
+        order_statuses=sorted(status_filter),
         date_mode=date_mode,
         filter_year=year,
         filter_month=month,
@@ -480,11 +515,14 @@ def orders_summary_pdf():
 
     customer_ids = resolve_summary_customer_ids(customer_q, start_date, end_date)
     if not customer_ids:
-        return "当前筛选范围内没有可导出的客户单据", 400
+        return error_response(
+            "当前筛选范围内没有可导出的客户单据，请调整客户或日期范围后重试。",
+            title="无可导出的汇总", back_url=url_for("orders.list_orders"),
+        )
     try:
         path = generate_account_summary_pdf_for_customers(customer_ids, start_date, end_date)
     except ValueError as exc:
-        return str(exc), 400
+        return error_response(str(exc), title="汇总表未能生成", back_url=url_for("orders.list_orders"))
     return send_pdf_for_preview(path, "货款汇总表.pdf", "货款汇总表")
 
 
@@ -592,7 +630,9 @@ def new_return_order():
 def _today_history(conn, today: str) -> list[dict]:
     rows = conn.execute(
         """SELECT o.id, o.order_no, o.order_date, o.order_type, o.status,
-                  o.total_amount_cents, COALESCE(c.name, '（未知客户）') AS customer_name
+                  o.total_amount_cents, COALESCE(c.name, '（未知客户）') AS customer_name,
+                  EXISTS(SELECT 1 FROM inventory_postings p WHERE p.source_type IN ('sale','return')
+                         AND (p.source_id=CAST(o.id AS TEXT) OR p.source_id LIKE CAST(o.id AS TEXT) || ':%')) AS has_postings
            FROM orders o LEFT JOIN customers c ON c.id=o.customer_id
            WHERE o.order_date=? AND o.deleted_at IS NULL
              AND o.status IN ('saved', 'printed')
@@ -601,7 +641,8 @@ def _today_history(conn, today: str) -> list[dict]:
         (today,),
     ).fetchall()
     return [
-        {**dict(row), "amount_display": cents_to_yuan(row["total_amount_cents"])}
+        {**dict(row), "amount_display": cents_to_yuan(row["total_amount_cents"]),
+         "editable": _document_editable(row["order_type"], row["status"], bool(row["has_postings"]))}
         for row in rows
     ]
 
@@ -803,7 +844,8 @@ def create_return_order_view():
 def _create_order_view(order_type: str):
     status = request.form.get("status", "saved").strip()
     if status not in {"draft", "saved"}:
-        return "订单状态无效，请选择“草稿”或“正式保存”", 400
+        return error_response("订单状态无效，请选择“草稿”或“正式保存”。", title="订单未保存",
+                              back_url=url_for("orders.new_order"))
     source_order_id_text = request.form.get("source_order_id", "").strip() if order_type == "return" else ""
     if source_order_id_text:
         source_item_ids = request.form.getlist("source_item_id")
@@ -816,18 +858,20 @@ def _create_order_view(order_type: str):
         try:
             source_order_id = int(source_order_id_text)
         except ValueError:
-            return "退货来源销售单无效", 400
+            return error_response("退货来源销售单无效，请重新选择。", title="订单未保存",
+                                  back_url=url_for("orders.new_return_order"))
         if not rows:
-            return "退货至少选择一行并填写数量", 400
+            return error_response("退货至少选择一行并填写数量。", title="订单未保存",
+                                  back_url=url_for("orders.new_return_order"))
     else:
         rows = _typed_rows_from_form()
         detail_error = _validate_typed_rows(rows)
         if detail_error:
-            return detail_error, 400
+            return error_response(detail_error, title="订单未保存", back_url=url_for("orders.new_order"))
     try:
         customer_id = _resolve_customer_id()
     except ValueError as exc:
-        return str(exc), 400
+        return error_response(str(exc), title="订单未保存", back_url=url_for("orders.new_order"))
     order_date = _resolve_create_order_date()
     with get_db() as conn:
         # Never trust client-supplied order_no; number follows chosen business date.
@@ -856,32 +900,82 @@ def _create_order_view(order_type: str):
                 request_key=request.form.get("request_key", ""),
             )
     except ValueError as exc:
-        return str(exc), 400
+        return error_response(str(exc), title="订单未保存", back_url=url_for("orders.new_order"))
     order_id = int(created_id)
-    if request.form.get("save_action") == "save_print":
-        pdf_path = url_for("orders.order_pdf", order_id=order_id)
-        if request.headers.get("X-Requested-With") == "fetch":
-            next_url = url_for("orders.new_return_order" if order_type == "return" else "orders.new_order")
-            return jsonify({
-                "ok": True,
-                "order_id": order_id,
-                "order_no": order_no,
-                "pdf_url": request.host_url.rstrip("/") + pdf_path,
-                "detail_url": url_for("orders.view_order", order_id=order_id),
-                "next_url": next_url,
-            })
+    # C1/C2：两个保存动作都走同一 fetch 流程；「保存并打印」在非草稿时自动标记已打印。
+    save_action = request.form.get("save_action", "save")
+    want_print = save_action == "save_print"
+    printed = False
+    if want_print and status == "saved":
+        mark_order_printed(order_id)
+        printed = True
+    pdf_path = url_for("orders.order_pdf", order_id=order_id)
+    if request.headers.get("X-Requested-With") == "fetch":
+        next_url = url_for("orders.new_return_order" if order_type == "return" else "orders.new_order")
+        return jsonify({
+            "ok": True,
+            "order_id": order_id,
+            "order_no": order_no,
+            "printed": printed,
+            "pdf_url": request.host_url.rstrip("/") + pdf_path,
+            "detail_url": url_for("orders.view_order", order_id=order_id),
+            "next_url": next_url,
+        })
+    if want_print:
         return redirect(pdf_path, code=303)
     return redirect(url_for("orders.list_orders"))
+
+def _load_sale_document(conn, order_id: int):
+    """取销售/退货单；回收站中的单据（deleted_at 非空）一律按「不存在」处理。"""
+    return conn.execute(
+        "SELECT o.*, c.name AS customer_name, source.order_no AS source_order_no "
+        "FROM orders o JOIN customers c ON c.id=o.customer_id "
+        "LEFT JOIN orders source ON source.id=o.source_order_id "
+        "WHERE o.id=? AND o.deleted_at IS NULL",
+        (order_id,),
+    ).fetchone()
+
+
+def _postings_expr(source_types: tuple[str, ...], id_ref: str) -> str:
+    """生成「该单据是否有库存流水」的 EXISTS 子查询（复用 update_order_from_typed_rows 的 source_id 口径）。"""
+    types = ", ".join(f"'{t}'" for t in source_types)
+    return (
+        f"EXISTS(SELECT 1 FROM inventory_postings p WHERE p.source_type IN ({types}) "
+        f"AND (p.source_id=CAST({id_ref} AS TEXT) OR p.source_id LIKE CAST({id_ref} AS TEXT) || ':%'))"
+    )
+
+
+def _document_editable(order_type: str, status: str, has_postings: bool) -> bool:
+    """列表/详情/当天历史统一的「可重编辑」口径。
+
+    销售/退货：未作废且无库存流水才可改（与 update_order_from_typed_rows 的过账校验一致；
+    无库存商品的无流水单仍可编辑，不要按 status 一刀切）。拿货/退拿货：只有草稿可改。
+    """
+    if order_type in ("sale", "return"):
+        return status != "void" and not has_postings
+    return status == "draft"
+
+
+def _has_stock_postings(conn, order_id: int) -> bool:
+    """销售/退货是否已有库存流水；有流水即不可再改经济字段（与 update_order_from_typed_rows 同口径）。"""
+    return conn.execute(
+        "SELECT 1 FROM inventory_postings WHERE source_type IN ('sale','return') AND (source_id=? OR source_id LIKE ?) LIMIT 1",
+        (str(order_id), f"{order_id}:%"),
+    ).fetchone() is not None
+
 
 @orders_bp.get("/<int:order_id>")
 def view_order(order_id: int):
     with get_db() as conn:
-        order = conn.execute("SELECT o.*, c.name AS customer_name, source.order_no AS source_order_no FROM orders o JOIN customers c ON c.id=o.customer_id LEFT JOIN orders source ON source.id=o.source_order_id WHERE o.id=?", (order_id,)).fetchone()
+        order = _load_sale_document(conn, order_id)
+        if order is None:
+            return not_found("单据不存在，可能已被移入回收站或从未存在。", back_url=url_for("orders.list_orders"))
         items = conn.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (order_id,)).fetchall()
         # 原销售单可能已被删除（删除销售单不再被有效退货阻止），此时只展示单号快照、不做死链接。
         source_order_available = bool(order["source_order_id"]) and conn.execute(
             "SELECT 1 FROM orders WHERE id=? AND deleted_at IS NULL", (order["source_order_id"],)
         ).fetchone() is not None
+        editable = _document_editable(order["order_type"], order["status"], _has_stock_postings(conn, order_id))
     known_cost = bool(items) and all(item["cost_total_micro"] is not None for item in items)
     if known_cost:
         cost_micro = sum(int(item["cost_total_micro"]) for item in items)
@@ -890,15 +984,27 @@ def view_order(order_id: int):
         profit_cents = int(order["total_amount_cents"]) - signed_cost_cents
     else:
         profit_cents = None
-    return render_template("orders/detail.html", order=order, items=items, profit_cents=profit_cents, source_order_available=source_order_available, cents_to_yuan=cents_to_yuan, micro_to_yuan=micro_to_yuan)
+    return render_template("orders/detail.html", order=order, items=items, profit_cents=profit_cents, source_order_available=source_order_available, editable=editable, cents_to_yuan=cents_to_yuan, micro_to_yuan=micro_to_yuan)
 
 
 @orders_bp.get("/<int:order_id>/edit")
 def edit_order(order_id: int):
+    """编辑入口。A1：不存在（含回收站中）→ 中文 404。B3：注定提交失败的记录直接给错误页。"""
     with get_db() as conn:
-        order = conn.execute("SELECT o.*, c.name AS customer_name, source.order_no AS source_order_no FROM orders o JOIN customers c ON c.id=o.customer_id LEFT JOIN orders source ON source.id=o.source_order_id WHERE o.id=?", (order_id,)).fetchone()
+        order = _load_sale_document(conn, order_id)
+        if order is None:
+            return not_found("单据不存在，可能已被移入回收站或从未存在。", back_url=url_for("orders.list_orders"))
         items = conn.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (order_id,)).fetchall()
         products = conn.execute("SELECT * FROM products WHERE deleted_at IS NULL ORDER BY usage_count DESC, name").fetchall()
+        if order["status"] == "void":
+            return error_response("已作废单据不能重编辑，只能回看。", title="无法重编辑",
+                                  back_url=url_for("orders.view_order", order_id=order_id))
+        if _has_stock_postings(conn, order_id):
+            return error_response("该单据库存已过账，经济字段不能再改。请用「回看」核对，或作废后重新开单。",
+                                  title="无法重编辑", back_url=url_for("orders.view_order", order_id=order_id))
+        if order["source_order_id"] is not None and order["status"] != "draft":
+            return error_response("正式退货单经济字段已锁定，请在详情页修改备注。", title="无法重编辑",
+                                  back_url=url_for("orders.view_order", order_id=order_id))
     return render_template("orders/new.html", order=order, items=items, products=products, product_catalog=_product_catalog(products), today=date.today().isoformat(), order_type=order["order_type"] if "order_type" in order.keys() else "sale", cents_to_yuan=cents_to_yuan, micro_to_yuan=micro_to_yuan)
 
 
@@ -910,15 +1016,18 @@ def update_order_view(order_id: int):
             (order_id,),
         ).fetchone()
     if existing is None:
-        return "订单不存在", 404
+        return not_found("订单不存在，可能已被移入回收站或从未存在。", back_url=url_for("orders.list_orders"))
     if existing["status"] == "void":
-        return "已作废订单不能重编辑", 400
+        return error_response("已作废订单不能重编辑。", title="无法重编辑",
+                              back_url=url_for("orders.view_order", order_id=order_id))
     status = request.form.get("status", "saved").strip()
     if status not in {"draft", "saved", "printed"}:
-        return "订单状态无效，请选择“草稿”“正式保存”或“已打印”", 400
+        return error_response("订单状态无效，请选择“草稿”“正式保存”或“已打印”。", title="无法重编辑",
+                              back_url=url_for("orders.view_order", order_id=order_id))
     if existing["source_order_id"] is not None:
         if existing["status"] != "draft":
-            return "正式退货单经济字段已锁定", 400
+            return error_response("正式退货单经济字段已锁定，请在详情页修改备注。", title="无法重编辑",
+                                  back_url=url_for("orders.view_order", order_id=order_id))
         source_item_ids = request.form.getlist("source_item_id")
         quantities = request.form.getlist("quantity")
         rows = [
@@ -927,9 +1036,11 @@ def update_order_view(order_id: int):
             if str(source_item_id).strip() and str(quantity).strip()
         ]
         if not rows:
-            return "退货至少选择一行并填写数量", 400
+            return error_response("退货至少选择一行并填写数量。", title="无法重编辑",
+                                  back_url=url_for("orders.view_order", order_id=order_id))
         if status == "printed":
-            return "退货单只能保存为草稿或正式保存", 400
+            return error_response("退货单只能保存为草稿或正式保存。", title="无法重编辑",
+                                  back_url=url_for("orders.view_order", order_id=order_id))
         try:
             update_return_draft_from_source(
                 order_id,
@@ -940,16 +1051,19 @@ def update_order_view(order_id: int):
                 expected_version=request.form.get("version", type=int),
             )
         except ValueError as exc:
-            return str(exc), 400
+            return error_response(str(exc), title="无法重编辑",
+                                  back_url=url_for("orders.view_order", order_id=order_id))
         return redirect(url_for("orders.view_order", order_id=order_id))
     rows = _typed_rows_from_form()
     detail_error = _validate_typed_rows(rows)
     if detail_error:
-        return detail_error, 400
+        return error_response(detail_error, title="无法重编辑",
+                              back_url=url_for("orders.view_order", order_id=order_id))
     try:
         customer_id = _resolve_customer_id()
     except ValueError as exc:
-        return str(exc), 400
+        return error_response(str(exc), title="无法重编辑",
+                              back_url=url_for("orders.view_order", order_id=order_id))
     # Re-edit keeps original order number/date/type; only business fields change.
     try:
         update_order_from_typed_rows(
@@ -964,7 +1078,8 @@ def update_order_view(order_id: int):
             expected_version=request.form.get("version", type=int),
         )
     except ValueError as exc:
-        return str(exc), 400
+        return error_response(str(exc), title="无法重编辑",
+                              back_url=url_for("orders.view_order", order_id=order_id))
     return redirect(url_for("orders.view_order", order_id=order_id))
 
 
@@ -1018,12 +1133,11 @@ def api_next_order_no():
 
 @orders_bp.get("/<int:order_id>/pdf")
 def order_pdf(order_id: int):
-    path = generate_order_pdf(order_id)
+    try:
+        path = generate_order_pdf(order_id)
+    except ValueError as exc:
+        return not_found(str(exc), back_url=url_for("orders.list_orders"))
     return send_pdf_for_preview(path, f"{order_id}.pdf", "销售单 PDF")
-
-@orders_bp.post("/<int:order_id>/confirm_print")
-def confirm_print(order_id: int):
-    mark_order_printed(order_id); return redirect(url_for("orders.list_orders"))
 
 
 @orders_bp.post("/<int:order_id>/void")
@@ -1031,7 +1145,8 @@ def void_order_view(order_id: int):
     try:
         void_order(order_id, request.form.get("reason", ""), request.form.get("version", type=int))
     except ValueError as exc:
-        return str(exc), 400
+        return error_response(str(exc), title="单据未能作废",
+                              back_url=url_for("orders.view_order", order_id=order_id))
     return redirect(url_for("orders.view_order", order_id=order_id))
 
 @orders_bp.post("/bulk_delete")

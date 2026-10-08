@@ -1,16 +1,20 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{ title }} · 打印预览</title>
+<html lang="zh-CN" data-ui-theme="{{ ui_theme or 'light' }}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{ title }} · 打印预览</title>
 <style>
-html,body{margin:0;height:100%;font-family:"Microsoft YaHei",sans-serif;background:#f3f5f7}
-.toolbar{height:56px;box-sizing:border-box;display:flex;align-items:center;gap:12px;padding:0 18px;background:#fff;border-bottom:1px solid #d9dee5}
+/* E10：独立预览页适配深色（跟随服务端 ui_theme；system 用媒体查询）。 */
+:root{--pv-bg:#f3f5f7;--pv-surface:#fff;--pv-border:#d9dee5;--pv-ink:#172033;--pv-muted:#667085;--pv-return:#475467;--pv-save:#0b6b6b}
+html[data-ui-theme="dark"]{--pv-bg:#0f141d;--pv-surface:#171e2b;--pv-border:#2b3648;--pv-ink:#e8eef9;--pv-muted:#9aa8c0;--pv-return:#3d4b63;--pv-save:#0e7490}
+@media (prefers-color-scheme: dark){html[data-ui-theme="system"]{--pv-bg:#0f141d;--pv-surface:#171e2b;--pv-border:#2b3648;--pv-ink:#e8eef9;--pv-muted:#9aa8c0;--pv-return:#3d4b63;--pv-save:#0e7490}}
+html,body{margin:0;height:100%;font-family:"Microsoft YaHei",sans-serif;background:var(--pv-bg);color:var(--pv-ink)}
+.toolbar{height:56px;box-sizing:border-box;display:flex;align-items:center;gap:12px;padding:0 18px;background:var(--pv-surface);border-bottom:1px solid var(--pv-border)}
 .toolbar strong{font-size:15px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .page-actions{display:flex;align-items:center;gap:8px;margin-left:auto;flex-shrink:0}
 .page-actions .btn{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;width:112px;min-height:40px;flex-shrink:0;white-space:nowrap;border:0;border-radius:6px;padding:7px 14px;font:600 14px "Microsoft YaHei",sans-serif;color:#fff;text-decoration:none;cursor:pointer}
-.pdf-save{background:#0b6b6b}
-.page-return{background:#475467;order:99}
+.pdf-save{background:var(--pv-save)}
+.page-return{background:var(--pv-return);order:99}
 .page-actions .btn:hover{filter:brightness(.92)}.page-actions .btn:focus-visible{outline:2px solid #2563eb;outline-offset:2px}.page-actions .btn:disabled{opacity:.6;cursor:wait}
-.hint{font-size:13px;color:#667085;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
-iframe{width:100%;height:calc(100% - 56px);border:0}
+.hint{font-size:13px;color:var(--pv-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+iframe{width:100%;height:calc(100% - 56px);border:0;background:var(--pv-bg)}
 @media(max-width:600px){.toolbar{gap:8px;padding:0 10px}.hint{display:none}.toolbar strong{flex:1}}
 </style>
 </head><body><div class="toolbar"><strong>{{ title }}</strong><span class="hint" id="hint">统一 ERP 打印预览</span><div class="page-actions"><button class="btn pdf-save" id="savePdf" type="button">保存 PDF</button><a class="btn page-return" id="returnToErp" href="{{ return_url }}">返回上一级</a></div></div><iframe src="{{ pdf_url }}" title="{{ title }}"></iframe>

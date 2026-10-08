@@ -41,10 +41,17 @@ def legacy_snapshot(conn):
 
 
 def assert_legacy_rows_unchanged(conn, before):
+    # pinyin_initials 是纯派生字段：init_db 会按名称幂等回填空值（Batch E7），
+    # 因此与历史业务列分开比较——业务列必须逐字节不变，派生列（回填）另行断言。
+    derived_columns = {"products": {"pinyin_initials"}}
     for table, rows in before.items():
+        skip = derived_columns.get(table, set())
         current = [dict(row) for row in conn.execute(f"SELECT * FROM {table} ORDER BY id")]
         assert len(current) == len(rows), table
-        assert [{key: row[key] for key in original} for row, original in zip(current, rows)] == rows, table
+        assert [
+            {key: row[key] for key in original if key not in skip}
+            for row, original in zip(current, rows)
+        ] == [{key: value for key, value in original.items() if key not in skip} for original in rows], table
 
 
 def test_schema2_application_startup_preserves_legacy_business_rows():
@@ -68,6 +75,8 @@ def test_schema2_application_startup_preserves_legacy_business_rows():
         assert conn.execute("SELECT COUNT(*) FROM product_inventory_state").fetchone()[0] == 0
         assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        # E7：升级后派生字段 pinyin_initials 已按名称回填（旧值 '' 被补齐；纯派生、无业务影响）。
+        assert conn.execute("SELECT COUNT(*) FROM products WHERE COALESCE(pinyin_initials,'') = ''").fetchone()[0] == 0
 
 
 def test_schema2_failed_index_creation_rolls_back_and_can_retry():

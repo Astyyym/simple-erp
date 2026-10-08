@@ -6,6 +6,7 @@ from weasyprint import CSS, HTML
 
 from erp.config import load_config, project_path, runtime_root
 from erp.db import get_db
+from erp.utils.errors import RecordNotFound
 from erp.utils.money import cents_to_yuan
 from erp.utils.quantity import format_quantity_3dp
 
@@ -32,7 +33,7 @@ def generate_purchase_pdf(order_id: int, *, is_return: bool = False) -> Path:
             f'FROM {table} WHERE id=?', (order_id,),
         ).fetchone()
         if order is None or order['deleted_at'] is not None:
-            raise ValueError(f'{label}不存在或已删除，不能打印')
+            raise RecordNotFound(f'{label}不存在或已删除，不能打印')
         if order['status'] != 'saved':
             raise ValueError(f'{label}仅正式有效单据可以打印；草稿、作废或未知状态不能打印')
         if not order['customer_id'] or not (order['customer_name'] or '').strip():

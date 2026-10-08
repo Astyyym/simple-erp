@@ -3,7 +3,7 @@
 <header class="page-header order-detail-header">
 <h2>单据回看：{{order.order_no}}</h2>
 <div class="page-actions">
-  {% if order.status != 'void' %}<a class="btn btn-primary" href="/orders/{{order.id}}/edit">重编辑</a>{% endif %}
+  {% if editable %}<a class="btn btn-primary" href="/orders/{{order.id}}/edit">重编辑</a>{% endif %}
   <a class="btn btn-info" href="/orders/{{order.id}}/pdf{% if is_desktop %}?desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>查看PDF</a>
   <a class="btn btn-secondary page-return" href="/orders/">返回列表</a>
 </div>

@@ -5,13 +5,15 @@ from erp.db import get_db, init_db
 from erp.services.accounting import create_customer, create_order_from_typed_rows, create_product
 
 
-def test_return_order_page_saves_and_prints_instead_of_plain_save():
+def test_return_order_page_offers_both_save_and_save_print():
+    """C1：退货开单页拆成「保存」与「保存并打印」两个按钮（2026-10-08 决策）。"""
     init_db()
     client = create_app().test_client()
 
     html = client.get("/orders/return/new").get_data(as_text=True)
 
-    assert "保存/打印退货单" in html
+    assert "保存并打印退货单" in html
+    assert 'id="saveButton" name="save_action" value="save"' in html
     assert 'name="save_action" value="save_print"' in html
     assert 'id="continueOrderLink" href="/orders/return/new"' in html
     assert "fetch(orderForm.action" in html

@@ -3,13 +3,14 @@ from pathlib import Path
 from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
-from flask import Flask, render_template, request
+from flask import Flask, jsonify, render_template, request
 
 from .auth import ensure_auth_defaults, current_username, is_desktop_shell
 from .config import ensure_data_location_initialized, load_config, bundled_root, runtime_root
 from .db import get_db, init_db, integrity_check
 from .utils.money import cents_to_yuan, micro_to_yuan
 from .utils.quantity import format_quantity, format_quantity_3dp
+from .utils.errors import error_response, wants_json as _wants_json
 from .routes.accounts import accounts_bp
 from .routes.analytics import analytics_bp
 from .routes.auth import auth_bp
@@ -94,11 +95,48 @@ def create_app() -> Flask:
             return None
         fetch_site = request.headers.get("Sec-Fetch-Site", "").strip().lower()
         if fetch_site in {"cross-site", "same-site"}:
-            return "跨站写请求已拒绝", 403
+            return error_response("跨站写请求已拒绝。", 403, title="请求被拒绝")
         origin = request.headers.get("Origin")
         if origin is not None and _normalized_origin(origin) != _normalized_origin(request.host_url):
-            return "跨站写请求已拒绝", 403
+            return error_response("跨站写请求已拒绝。", 403, title="请求被拒绝")
         return None
+
+    @app.errorhandler(404)
+    def handle_not_found(error):
+        """未匹配 URL / 记录不存在：给中文页面，不再是英文默认页。"""
+        if _wants_json():
+            return jsonify({"error": "请求的页面或记录不存在", "message": "请求的页面或记录不存在"}), 404
+        return render_template(
+            "error.html",
+            error_message="你访问的页面或记录不存在，可能链接已失效、记录已被删除，或地址输入有误。",
+            status_code=404,
+            error_title="页面不存在",
+            back_url="/",
+            severity="error",
+        ), 404
+
+    @app.errorhandler(500)
+    def handle_server_error(error):
+        """未预期的服务器错误：中文页面，不暴露内部异常细节。"""
+        if _wants_json():
+            return jsonify({"error": "服务器内部错误，请重试或返回上一页", "message": "服务器内部错误，请重试或返回上一页"}), 500
+        return render_template(
+            "error.html",
+            error_message="本地服务处理这次请求时出现异常，操作可能未生效。请返回重试；若持续出现，请检查数据目录与服务日志。",
+            status_code=500,
+            error_title="服务器内部错误",
+            back_url="/",
+            severity="error",
+        ), 500
+
+    @app.errorhandler(Exception)
+    def handle_unexpected(error):
+        # 保留 HTTPException（如 404/403）的原状态码，其余一律按 500 呈现，绝不外泄堆栈。
+        from werkzeug.exceptions import HTTPException
+        if isinstance(error, HTTPException):
+            return error
+        app.logger.exception("未处理异常: %s", error)
+        return handle_server_error(error)
 
     # Login gate removed: permanent free access for local single-machine use.
     # is_authenticated() remains True for any residual callers.

@@ -22,7 +22,8 @@
       if (theme === 'system' && query.addEventListener) query.addEventListener('change', apply);
     })();
   </script>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- E14：Bootstrap 5.3.3 本地化，断网也不丢布局（原为 CDN）。 -->
+  <link href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
   <style>
     :root{
       --erp-primary:#2563eb;--erp-primary-hover:#1d4ed8;--erp-primary-soft:#eff6ff;
@@ -184,6 +185,9 @@
     .page-topbar .status-wrap{display:flex;align-items:center;gap:12px}
     .page-topbar .status{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--erp-success)}
     .page-topbar .status:before{content:"";width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.18)}
+    /* E8：状态点由 /health 实际结果驱动；失败时变红并给出提示文案。 */
+    .page-topbar .status.status-down{color:var(--erp-danger)}
+    .page-topbar .status.status-down:before{background:var(--erp-danger);box-shadow:0 0 0 3px color-mix(in srgb,var(--erp-danger) 22%,transparent)}
     .logout-form{margin:0}
     .logout-form .btn{min-height:30px;font-size:12px;padding:3px 10px}
     h1,h2,h3,h4{color:var(--erp-ink);font-weight:650;letter-spacing:-.02em}h1{font-size:calc(28px * var(--erp-scale))}h2{font-size:calc(23px * var(--erp-scale));margin-bottom:20px}h3{font-size:calc(18px * var(--erp-scale));margin-top:26px}h4{font-size:16px}
@@ -240,9 +244,49 @@
       -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.2);
       backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.2);
     }
+    /*
+      Batch G｜单层容器原则：每块表格区域视觉上只保留「一层」玻璃，消除
+      「表格自身玻璃 + 容器玻璃」的多层叠加（暗色下尤其浑浊）。
+      - 裸表格（无包裹容器：单据列表、客户列表、单据详情）：表格自身即唯一一层，保持上面的规则。
+      - 容器 > 表格（.table-responsive/.table-shell 直接包裹、外层无卡片）：表格本体去玻璃，容器保留唯一一层玻璃。
+      - 玻璃卡片 > 容器 > 表格：表格去玻璃；中间容器降为透明 + 1px 素边框，玻璃只留最外层卡片。
+      去玻璃一律用上下文选择器，不全局移除 table.table，避免误伤裸表格页。
+    */
+    .table-responsive>table.table:not(.order-table),
+    .table-shell>table.table:not(.order-table),
+    .card table.table:not(.order-table),
+    .today-history table.table:not(.order-table),
+    .source-preview table.table:not(.order-table),
+    .order-details-card table.table:not(.order-table),
+    .analytics-panel table.table,
+    .recon-panel table.table,
+    .recycle-card table.table{
+      background:transparent;border:0;box-shadow:none;
+      -webkit-backdrop-filter:none;backdrop-filter:none;
+    }
+    /* 玻璃卡片内的中间容器：透明 + 1px 素边框（不重复玻璃、不重复边框）。 */
+    .today-history .table-responsive,
+    .source-preview .table-responsive,
+    .order-details-card .table-responsive,
+    .analytics-panel .table-responsive,
+    .analytics-panel .table-shell,
+    .recon-panel .table-responsive,
+    .recycle-card .table-responsive{
+      background:transparent;border:1px solid var(--erp-border);box-shadow:none;
+      -webkit-backdrop-filter:none;backdrop-filter:none;
+    }
+    /* 两层容器嵌套（source-preview 的 .table-responsive 已在卡片内）：只保留一层素边框。 */
+    .source-preview .table-responsive .table-responsive,
+    .order-details-card .table-responsive .table-responsive{border:0}
+    /* 玻璃卡片内的玻璃子卡（.source-preview 嵌在 .order-meta 内）：扁平化为
+       透明 + 1px 素边框，玻璃只留最外层 .order-meta，避免 2 层叠加。 */
+    .order-meta .source-preview{
+      background:transparent;border:1px solid var(--erp-border);box-shadow:none;
+      -webkit-backdrop-filter:none;backdrop-filter:none;
+    }
     .table>:not(caption)>*>*{padding:12px 14px;border-bottom-color:var(--erp-border)}
-    .table th{height:44px;background:var(--erp-glass-bg-strong);color:var(--erp-muted);font-size:12px;font-weight:650;letter-spacing:.03em;vertical-align:middle;white-space:nowrap}
-    .table td{font-size:14px;vertical-align:middle;background:transparent}.table-striped>tbody>tr:nth-of-type(odd)>*{--bs-table-accent-bg:rgba(127,127,127,.04)}.table tbody tr:hover>*{background:rgba(37,99,235,.05)}
+    .table th{height:44px;background:var(--erp-glass-bg-strong);color:var(--erp-muted);font-size:calc(12px * var(--erp-scale));font-weight:650;letter-spacing:.03em;vertical-align:middle;white-space:nowrap}
+    .table td{font-size:calc(14px * var(--erp-scale));vertical-align:middle;background:transparent}.table-striped>tbody>tr:nth-of-type(odd)>*{--bs-table-accent-bg:rgba(127,127,127,.04)}.table tbody tr:hover>*{background:rgba(37,99,235,.05)}
     .stable-table{table-layout:fixed;width:100%}.stable-table th,.stable-table td{height:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.stable-table .action-cell{width:380px;min-width:380px}.stable-table .action-wrap{display:flex;gap:6px;align-items:center;justify-content:flex-start;white-space:nowrap}.stable-table .action-wrap .btn{min-width:60px}.stable-table .deleting{opacity:.45;pointer-events:none}
     .card{
       border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);box-shadow:var(--erp-glass-shadow);
@@ -348,6 +392,18 @@
       .page-topbar,.card,.table-responsive,.table-shell,form.row,table.table:not(.order-table),
       .workspace-panel,.settings-card,.quick-card:not(.primary){
         background:var(--erp-surface)!important;
+      }
+      /* Batch G 同步：无 blur 环境下，容器内表格仍保持透明，避免与容器重复实色填充。 */
+      .table-responsive>table.table:not(.order-table),
+      .table-shell>table.table:not(.order-table),
+      .card table.table:not(.order-table),
+      .today-history table.table:not(.order-table),
+      .source-preview table.table:not(.order-table),
+      .order-details-card table.table:not(.order-table),
+      .analytics-panel table.table,
+      .recon-panel table.table,
+      .recycle-card table.table{
+        background:transparent!important;
       }
     }
     @media(max-width:900px){
@@ -460,13 +516,13 @@
     <section class="nav-group" aria-label="系统设置">
     <a class="nav-section {{'active' if request.path.startswith('/settings') else ''}}" href="/settings/">系统设置</a>
     </section>
-    <div class="app-version">本地桌面版 · {{app_version}}</div>
+    <div class="app-version">{{ '本地桌面版' if is_desktop else '浏览器本地访问' }} · {{app_version}}</div>
   </nav>
   <main class="content">
     <div class="page-topbar">
       <div class="company">{{ shop_name }}</div>
       <div class="status-wrap">
-        <div class="status">本地数据已连接</div>
+        <div class="status" id="localStatus">本地数据已连接</div>
       </div>
     </div>
     <div class="page-body">
@@ -483,6 +539,21 @@
         window.pywebview.api.set_window_title(title);
       }
     } catch (e) {}
+  })();
+  // E8：状态点反映真实 /health，而不是恒绿静态文案。
+  (function () {
+    const status = document.getElementById('localStatus');
+    if (!status) return;
+    fetch('/health', {headers: {'Accept': 'application/json'}})
+      .then(response => { if (!response.ok) throw new Error('health ' + response.status); return response.json(); })
+      .then(data => {
+        if (data && data.status === 'ok') return;
+        throw new Error('unhealthy');
+      })
+      .catch(() => {
+        status.classList.add('status-down');
+        status.textContent = '本地服务异常';
+      });
   })();
 </script>
 </body>

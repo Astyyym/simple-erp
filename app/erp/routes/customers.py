@@ -1,3 +1,5 @@
+from decimal import InvalidOperation
+
 from flask import Blueprint, render_template, request, redirect, url_for, Response, jsonify
 from erp.db import get_db
 from erp.services.accounting import create_customer
@@ -7,10 +9,19 @@ from erp.utils.exporting import (
     export_filename,
     workbook_download,
 )
+from erp.utils.errors import error_response, not_found
 from erp.utils.importing import ImportFileError, ImportResult, excel_template, normalized_name, read_upload
 from erp.utils.money import yuan_to_cents, cents_to_yuan
 
 customers_bp = Blueprint("customers", __name__, url_prefix="/customers")
+
+
+def _requested_opening_balance_cents() -> int:
+    """解析期初余额；非法输入抛出 ValueError（供调用方转成中文错误页）。"""
+    try:
+        return yuan_to_cents(request.form.get("opening_balance", "0") or "0")
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValueError("期初余额不是有效数字，请填写例如 0.00 的金额") from None
 
 @customers_bp.get("/import/template")
 def download_import_template():
@@ -21,7 +32,7 @@ def download_import_template():
 def export_customers_excel():
     q = request.args.get("q", "").strip()
     with get_db() as conn:
-        customers, _suggestions = _customer_list_context(conn, q)
+        customers, _suggestions, _truncated = _customer_list_context(conn, q)
     return workbook_download(
         customer_export_headers(),
         customer_export_rows(customers),
@@ -40,11 +51,13 @@ def _customer_list_context(conn, q: str = ""):
         customers = conn.execute(
             "SELECT * FROM customers WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE ASC, id ASC LIMIT 200"
         ).fetchall()
+    # E4：到达上限即提示「已截断，可用搜索缩小范围」。
+    truncated = len(customers) >= 200
     suggestions = conn.execute(
         "SELECT DISTINCT name FROM customers WHERE deleted_at IS NULL AND name LIKE ? ORDER BY name LIMIT 20",
         (f"%{q}%" if q else "%",),
     ).fetchall()
-    return customers, suggestions
+    return customers, suggestions, truncated
 
 
 @customers_bp.post("/import")
@@ -54,11 +67,12 @@ def import_customers():
     except (ImportFileError, AttributeError) as exc:
         message = str(exc) if str(exc) else "请选择要导入的文件"
         with get_db() as conn:
-            customers, suggestions = _customer_list_context(conn)
+            customers, suggestions, truncated = _customer_list_context(conn)
         return render_template(
             "customers/list.html",
             customers=customers,
             suggestions=suggestions,
+            truncated=truncated,
             cents_to_yuan=cents_to_yuan,
             q="",
             import_error=message,
@@ -83,11 +97,12 @@ def import_customers():
             seen_names.add(name)
             existing_names.add(name)
             result.added += 1
-        customers, suggestions = _customer_list_context(conn)
+        customers, suggestions, truncated = _customer_list_context(conn)
     return render_template(
         "customers/list.html",
         customers=customers,
         suggestions=suggestions,
+        truncated=truncated,
         cents_to_yuan=cents_to_yuan,
         q="",
         import_result=result,
@@ -98,11 +113,12 @@ def import_customers():
 def list_customers():
     q = request.args.get("q", "").strip()
     with get_db() as conn:
-        customers, suggestions = _customer_list_context(conn, q)
+        customers, suggestions, truncated = _customer_list_context(conn, q)
     return render_template(
         "customers/list.html",
         customers=customers,
         suggestions=suggestions,
+        truncated=truncated,
         cents_to_yuan=cents_to_yuan,
         q=q,
     )
@@ -120,19 +136,32 @@ def customer_suggestions():
 
 @customers_bp.post("/create")
 def create_customer_view():
-    create_customer(request.form["name"], request.form.get("phone", ""), request.form.get("address", ""), yuan_to_cents(request.form.get("opening_balance", "0")))
+    try:
+        opening_balance_cents = _requested_opening_balance_cents()
+    except ValueError as exc:
+        return error_response(str(exc), title="客户未保存", back_url=url_for("customers.list_customers"))
+    create_customer(request.form["name"], request.form.get("phone", ""), request.form.get("address", ""), opening_balance_cents)
     return redirect(url_for("customers.list_customers"))
 
 @customers_bp.get("/<int:customer_id>/edit")
 def edit_customer(customer_id: int):
     with get_db() as conn:
-        customer = conn.execute("SELECT * FROM customers WHERE id=?", (customer_id,)).fetchone()
+        customer = conn.execute("SELECT * FROM customers WHERE id=? AND deleted_at IS NULL", (customer_id,)).fetchone()
+    if customer is None:
+        return not_found("客户不存在，可能已被删除或从未存在。", back_url=url_for("customers.list_customers"))
     return render_template("customers/edit.html", customer=customer, cents_to_yuan=cents_to_yuan)
 
 @customers_bp.post("/<int:customer_id>/edit")
 def update_customer(customer_id: int):
+    try:
+        opening_balance_cents = _requested_opening_balance_cents()
+    except ValueError as exc:
+        return error_response(str(exc), title="客户未保存", back_url=url_for("customers.edit_customer", customer_id=customer_id))
     with get_db() as conn:
-        conn.execute("UPDATE customers SET name=?, phone=?, address=?, opening_balance_cents=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (request.form["name"], request.form.get("phone", ""), request.form.get("address", ""), yuan_to_cents(request.form.get("opening_balance", "0")), customer_id))
+        existing = conn.execute("SELECT 1 FROM customers WHERE id=? AND deleted_at IS NULL", (customer_id,)).fetchone()
+        if existing is None:
+            return not_found("客户不存在，可能已被删除或从未存在。", back_url=url_for("customers.list_customers"))
+        conn.execute("UPDATE customers SET name=?, phone=?, address=?, opening_balance_cents=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (request.form["name"], request.form.get("phone", ""), request.form.get("address", ""), opening_balance_cents, customer_id))
     return redirect(url_for("customers.list_customers"))
 
 @customers_bp.post("/bulk_delete")

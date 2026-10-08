@@ -37,6 +37,20 @@
     .header {
       margin: 0 0 2mm 0;
     }
+    /* E6：作废单打印件加水印（仅 status=void 时渲染）。不占版心、不参与布局。 */
+    .watermark {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotate(-24deg);
+      font-size: 64px;
+      font-weight: 700;
+      letter-spacing: .18em;
+      color: rgba(199, 53, 53, .14);
+      white-space: nowrap;
+      pointer-events: none;
+      z-index: 5;
+    }
     h1 {
       text-align: center;
       margin: 0 0 1mm 0;
@@ -140,6 +154,9 @@
 <body>
   <section class="page">
     <div class="sheet">
+      {# E6：作废单打印件加「已作废」水印。用 order.status is defined 守卫，
+         兼容设置页样张上下文（无 status 键）。 #}
+      {% if order.status is defined and order.status == 'void' %}<div class="watermark">已作废</div>{% endif %}
       <div class="header">
         <h1>{{config.shop_name}}</h1>
         <div class="subtitle">{{document_title or ('退货清单' if order.order_type == 'return' else '销售清单')}}</div>

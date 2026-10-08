@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, Response, jsonify, send_file
 from pathlib import Path
+from decimal import InvalidOperation
 import io
 from uuid import uuid4
 from PIL import Image, UnidentifiedImageError
@@ -7,6 +8,8 @@ from erp.db import get_db
 from erp.services.accounting import create_product, update_product_record
 from erp.services.inventory import initialize_product, revise_initialization
 from erp.services.inventory_status import project_inventory_status
+from erp.utils.errors import error_response, not_found
+from erp.utils.pinyin import pinyin_initials as build_pinyin_initials
 from erp.utils.exporting import (
     export_filename,
     product_export_headers,
@@ -28,7 +31,7 @@ def download_import_template():
 def export_products_excel():
     q = request.args.get("q", "").strip()
     with get_db() as conn:
-        products, _suggestions = _product_list_context(conn, q)
+        products, _suggestions, _truncated = _product_list_context(conn, q)
     return workbook_download(
         product_export_headers(),
         product_export_rows(products),
@@ -49,6 +52,7 @@ def _product_list_context(conn, q: str = ""):
             """,
             (f"%{q}%", f"%{q}%", f"%{q}%"),
         ).fetchall()
+        truncated = False
     else:
         products = conn.execute(
             """
@@ -59,6 +63,8 @@ def _product_list_context(conn, q: str = ""):
             ORDER BY p.name COLLATE NOCASE ASC, p.id ASC LIMIT 200
             """
         ).fetchall()
+        # E4：到达上限即提示「已截断，可用搜索缩小范围」。
+        truncated = len(products) >= 200
     suggestions = conn.execute(
         "SELECT DISTINCT name FROM products WHERE deleted_at IS NULL AND name LIKE ? ORDER BY usage_count DESC, name LIMIT 20",
         (f"%{q}%" if q else "%",),
@@ -72,7 +78,7 @@ def _product_list_context(conn, q: str = ""):
             safety_stock_3dp=product["safety_stock_3dp"],
         ))
         projected_products.append(product)
-    return projected_products, suggestions
+    return projected_products, suggestions, truncated
 
 
 @products_bp.post("/import")
@@ -82,11 +88,12 @@ def import_products():
     except (ImportFileError, AttributeError) as exc:
         message = str(exc) if str(exc) else "请选择要导入的文件"
         with get_db() as conn:
-            products, suggestions = _product_list_context(conn)
+            products, suggestions, truncated = _product_list_context(conn)
         return render_template(
             "products/list.html",
             products=products,
             suggestions=suggestions,
+            truncated=truncated,
             cents_to_yuan=cents_to_yuan,
         micro_to_yuan=micro_to_yuan,
             q="",
@@ -117,17 +124,18 @@ def import_products():
                 result.add_error(f"第{line_number}行：{exc}")
                 continue
             conn.execute(
-                "INSERT INTO products(name, spec, unit, default_price_cents) VALUES (?, ?, '个', ?)",
-                (name, spec, price_cents),
+                "INSERT INTO products(name, spec, unit, default_price_cents, pinyin_initials) VALUES (?, ?, '个', ?, ?)",
+                (name, spec, price_cents, build_pinyin_initials(name)),
             )
             seen_identities.add(identity)
             existing_identities.add(identity)
             result.added += 1
-        products, suggestions = _product_list_context(conn)
+        products, suggestions, truncated = _product_list_context(conn)
     return render_template(
         "products/list.html",
         products=products,
         suggestions=suggestions,
+        truncated=truncated,
         cents_to_yuan=cents_to_yuan,
         micro_to_yuan=micro_to_yuan,
         q="",
@@ -139,11 +147,12 @@ def import_products():
 def list_products():
     q = request.args.get("q", "").strip()
     with get_db() as conn:
-        rows, suggestions = _product_list_context(conn, q)
+        rows, suggestions, truncated = _product_list_context(conn, q)
     return render_template(
         "products/list.html",
         products=rows,
         suggestions=suggestions,
+        truncated=truncated,
         cents_to_yuan=cents_to_yuan,
         micro_to_yuan=micro_to_yuan,
         q=q,
@@ -163,11 +172,12 @@ def product_suggestions():
 @products_bp.post("/create")
 def create_product_view():
     try:
-        create_product(request.form["name"], request.form.get("spec", ""), request.form["unit"], yuan_to_cents(request.form["default_price"]), request.form.get("pinyin_initials", ""), safety_stock=request.form.get("safety_stock", "0"))
-    except ValueError as exc:
+        create_product(request.form["name"], request.form.get("spec", ""), request.form["unit"], yuan_to_cents(request.form["default_price"]), (request.form.get("pinyin_initials", "") or build_pinyin_initials(request.form["name"])), safety_stock=request.form.get("safety_stock", "0"))
+    except (InvalidOperation, KeyError, TypeError, ValueError) as exc:
+        message = str(exc) if isinstance(exc, ValueError) and str(exc) else "默认单价不是有效数字，请填写例如 12.00 的金额"
         with get_db() as conn:
-            products, suggestions = _product_list_context(conn)
-        return render_template("products/list.html", products=products, suggestions=suggestions, cents_to_yuan=cents_to_yuan, q="", import_error=str(exc)), 400
+            products, suggestions, truncated = _product_list_context(conn)
+        return render_template("products/list.html", products=products, suggestions=suggestions, truncated=truncated, cents_to_yuan=cents_to_yuan, micro_to_yuan=micro_to_yuan, q="", import_error=message), 400
     return redirect(url_for("products.list_products"))
 
 @products_bp.get("/<int:product_id>/edit")
@@ -177,9 +187,11 @@ def edit_product(product_id: int):
 
 def _render_product_edit(product_id: int, *, error: str = "", inventory_message: str = "", status_code: int = 200):
     with get_db() as conn:
-        product = conn.execute("SELECT * FROM products WHERE id=?", (product_id,)).fetchone()
+        product = conn.execute("SELECT * FROM products WHERE id=? AND deleted_at IS NULL", (product_id,)).fetchone()
         inventory_state = conn.execute("SELECT * FROM product_inventory_state WHERE product_id=?", (product_id,)).fetchone()
         initialization = conn.execute("SELECT * FROM inventory_initializations WHERE product_id=?", (product_id,)).fetchone()
+    if product is None:
+        return not_found("商品不存在，可能已被删除或从未存在。", back_url=url_for("products.list_products"))
     inventory_status = project_inventory_status(
         enabled=inventory_state["enabled"] if inventory_state else False,
         quantity_3dp=inventory_state["quantity_3dp"] if inventory_state else None,
@@ -263,8 +275,9 @@ def update_product(product_id: int):
     try:
         default_price_cents = yuan_to_cents(request.form["default_price"])
         update_product_record(product_id, request.form["name"], request.form.get("spec", ""), request.form["unit"], default_price_cents, safety_stock=request.form.get("safety_stock", "0"))
-    except ValueError as exc:
-        return _render_product_edit(product_id, error=str(exc), status_code=400)
+    except (InvalidOperation, KeyError, TypeError, ValueError) as exc:
+        message = str(exc) if isinstance(exc, ValueError) and str(exc) else "默认单价不是有效数字，请填写例如 12.00 的金额"
+        return _render_product_edit(product_id, error=message, status_code=400)
     return redirect(url_for("products.list_products"))
 
 

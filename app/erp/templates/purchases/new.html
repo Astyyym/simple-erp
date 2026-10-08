@@ -99,7 +99,12 @@
   <div class="d-flex gap-2 align-items-center justify-content-end" id="purchaseActions">
     <button type="button" class="btn btn-outline-secondary btn-lg" onclick="clearAllRows()">一键清空</button>
     <button type="button" class="btn btn-outline-primary btn-lg" onclick="addRow()">新增一行</button>
-    <button class="btn btn-primary btn-lg" id="savePrintButton" name="save_action" value="{{ 'save' if is_edit else 'save_print' }}">{{ '保存修改' if is_edit else '保存/打印拿货单' }}</button>
+    {% if is_edit %}
+    <button class="btn btn-primary btn-lg" id="savePrintButton" name="save_action" value="save">保存修改</button>
+    {% else %}
+    <button class="btn btn-outline-primary btn-lg" id="saveButton" name="save_action" value="save">保存</button>
+    <button class="btn btn-primary btn-lg" id="savePrintButton" name="save_action" value="save_print">保存并打印拿货单</button>
+    {% endif %}
   </div>
   {% if not is_edit %}
   <div class="alert alert-success mt-3 d-none" id="saveSuccessPanel" role="status">
@@ -130,7 +135,6 @@
           <td>{{history.status_label}}</td>
           <td><div class="history-actions">
             <a class="btn btn-sm btn-outline-secondary" href="{{history.detail_url}}">回看</a>
-            <a class="btn btn-sm btn-outline-primary" href="{{ '/purchases/' ~ history.id ~ '/edit' if history.order_type == 'purchase' else '/purchases/return/' ~ history.id ~ '/edit' }}">重编辑</a>
           </div></td>
         </tr>
         {% else %}
@@ -325,6 +329,7 @@ const viewOrderLink = document.getElementById('viewOrderLink');
 const continueOrderLink = document.getElementById('continueOrderLink');
 const originalButtonText = submitButton.textContent;
 const todayHistoryRows = document.getElementById('todayHistoryRows');
+const saveButton = document.getElementById('saveButton');
 let formDirty = false;
 let orderSaved = false;
 let allowHistoryNavigation = false;
@@ -361,7 +366,8 @@ async function refreshTodayHistory() {
       const actions = document.createElement('div');
       actions.className = 'history-actions';
       const detailSuffix = item.order_type === 'purchase' ? `/purchases/${item.id}` : `/purchases/return/${item.id}`;
-      [['回看', '', 'secondary'], ['重编辑', '/edit', 'primary']].forEach(([label, suffix, color]) => {
+      // 正式拿货/退拿货单经济字段已锁定，「重编辑」永远是死路 → 面板只保留「回看」。
+      [['回看', '', 'secondary']].forEach(([label, suffix, color]) => {
         const link = document.createElement('a');
         link.className = `btn btn-sm btn-outline-${color}`;
         link.href = detailSuffix + suffix;
@@ -382,16 +388,21 @@ openPrintLink.addEventListener('click', event => {
 
 purchaseForm.addEventListener('submit', async event => {
   const submitter = event.submitter;
-  if (!submitter || submitter.name !== 'save_action' || submitter.value !== 'save_print') return;
+  if (!submitter || submitter.name !== 'save_action') return;
+  // C1：两个按钮都走 fetch；「保存并打印」才会自动打开预览。
+  const action = submitter.value === 'save_print' ? 'save_print' : 'save';
+  const activeButton = action === 'save_print' ? submitButton : (saveButton || submitButton);
   event.preventDefault();
-  if (submitButton.disabled) return;
+  if (activeButton.disabled) return;
   submitButton.disabled = true;
-  submitButton.textContent = '正在保存...';
+  if (saveButton) saveButton.disabled = true;
+  const restoreText = activeButton.textContent;
+  activeButton.textContent = '正在保存...';
   successPanel.classList.add('d-none');
   errorPanel.classList.add('d-none');
   try {
     const formData = new FormData(purchaseForm);
-    formData.set('save_action', 'save_print');
+    formData.set('save_action', action);
     const response = await fetch(purchaseForm.action, { method: 'POST', body: formData, headers: {'X-Requested-With': 'fetch'} });
     const contentType = response.headers.get('content-type') || '';
     const result = contentType.includes('application/json') ? await response.json() : {ok: response.ok, message: ''};
@@ -401,19 +412,41 @@ purchaseForm.addEventListener('submit', async event => {
     openPrintLink.href = result.pdf_url;
     viewOrderLink.href = result.detail_url;
     continueOrderLink.href = result.next_url;
+    document.getElementById('printHint').textContent = action === 'save_print'
+      ? '保存成功后进入统一打印预览。'
+      : '本次只保存、未打印；需要打印时点「打开打印预览」。';
     successPanel.classList.remove('d-none');
     document.getElementById('purchaseActions').classList.add('d-none');
     refreshTodayHistory();
-    openPrintLink.href = new URL(result.pdf_url, window.location.href).href;
-    openPrintUrl(openPrintLink.href);
+    if (action === 'save_print') {
+      openPrintLink.href = new URL(result.pdf_url, window.location.href).href;
+      openPrintUrl(openPrintLink.href);
+    }
   } catch (error) {
     if (orderSaved) return;
     errorPanel.textContent = `拿货单未保存：${error.message || '请检查输入后重试'}`;
     errorPanel.classList.remove('d-none');
     submitButton.disabled = false;
-    submitButton.textContent = originalButtonText;
+    if (saveButton) saveButton.disabled = false;
+    activeButton.textContent = restoreText;
   }
 });
+{% endif %}
+{% if is_edit %}
+// B4：编辑模式补未保存离开提醒。
+(() => {
+  const editForm = document.getElementById('purchaseForm');
+  let editDirty = false;
+  let editSaved = false;
+  editForm.addEventListener('input', () => { editDirty = true; });
+  editForm.addEventListener('change', () => { editDirty = true; });
+  editForm.addEventListener('submit', () => { editSaved = true; });
+  window.addEventListener('beforeunload', event => {
+    if (!editDirty || editSaved) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
+})();
 {% endif %}
 </script>
 {% endblock %}

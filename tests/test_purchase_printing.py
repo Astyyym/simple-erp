@@ -136,9 +136,11 @@ def test_invalid_purchase_print_is_friendly_read_only_rejection(is_return, inval
         order_id = 999999
     path = f'/purchases/return/{order_id}/pdf' if is_return else f'/purchases/{order_id}/pdf'
     before = business_facts()
+    # A7：记录「不存在/已删除」→ 404；「状态非法/对象未绑定」→ 400。
+    expected_status = 404 if invalid in ('deleted', 'missing') else 400
     for query in ('', '?desktop_preview=1'):
         response = client.get(path + query)
-        assert response.status_code == 400
+        assert response.status_code == expected_status, (invalid, query, response.status_code)
         assert response.mimetype == 'text/html'
         text = response.get_data(as_text=True)
         assert '不能打印' in text or '不存在' in text

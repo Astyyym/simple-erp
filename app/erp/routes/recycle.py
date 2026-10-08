@@ -12,7 +12,7 @@ from erp.db import (
 )
 from erp.services.accounting import restore_order
 from erp.utils.audit import log_action
-from erp.utils.errors import error_response
+from erp.utils.errors import error_response, not_found
 from erp.utils.money import cents_to_yuan
 
 recycle_bp = Blueprint("recycle", __name__, url_prefix="/recycle")
@@ -130,7 +130,8 @@ def bulk_action():
 
     action = request.form.get("action", "")
     if action not in {"restore", "purge"}:
-        return "未知批量操作", 400
+        return error_response("未知批量操作，请刷新回收站后重试。", title="回收站操作未完成",
+                              back_url=url_for("recycle.recycle_bin"))
     try:
         parsed = _parse_selected_keys(request.form.getlist("ids"))
         for kind, item_id in parsed:
@@ -154,26 +155,26 @@ def bulk_action():
                     else:
                         _purge_one(conn, kind, item_id)
     except ValueError as exc:
-        return str(exc), 400
+        return error_response(str(exc), title="回收站操作未完成", back_url=url_for("recycle.recycle_bin"))
     log_action("bulk_restore_recycle" if action == "restore" else "bulk_purge_recycle", "batch", "batch", f"批量 {len(parsed)} 条")
     return redirect(url_for("recycle.recycle_bin"))
 
 @recycle_bp.post("/<kind>/<int:item_id>/restore")
 def restore(kind: str, item_id: int):
     if kind not in {'order','purchase_order','purchase_return','product','customer'}:
-        return '未知回收站类型',400
+        return error_response('未知回收站类型。', title="回收站操作未完成", back_url=url_for('recycle.recycle_bin'))
     if kind == 'purchase_return':
         from erp.services.purchase_returns import restore as restore_return
         try:
             restore_return(item_id,expected_version=request.form.get('version'))
         except ValueError as exc:
-            return str(exc),400
+            return error_response(str(exc), title="未能恢复", back_url=url_for('recycle.recycle_bin'))
         return redirect(url_for('recycle.recycle_bin'))
     if kind == "order":
         try:
             restore_order(item_id)
         except ValueError as exc:
-            return str(exc), 400
+            return error_response(str(exc), title="未能恢复", back_url=url_for("recycle.recycle_bin"))
         return redirect(url_for("recycle.recycle_bin"))
     table = {"order": "orders", "purchase_order": "purchase_orders", "product": "products", "customer": "customers"}[kind]
     with get_db() as conn:
@@ -217,13 +218,13 @@ def purge(kind: str, item_id: int):
 @recycle_bp.post("/bulk/<kind>/restore")
 def bulk_restore(kind: str):
     if kind not in {'order','purchase_order','purchase_return','product','customer'}:
-        return '未知回收站类型',400
+        return error_response('未知回收站类型。', title="回收站操作未完成", back_url=url_for('recycle.recycle_bin'))
     if kind == 'purchase_return':
         from erp.services.purchase_returns import recycle_batch
         try:
             recycle_batch([int(x) for x in request.form.getlist('ids')],request.form.getlist('versions'),action='restore')
         except ValueError as exc:
-            return str(exc),400
+            return error_response(str(exc), title="未能恢复", back_url=url_for('recycle.recycle_bin'))
         return redirect(url_for('recycle.recycle_bin'))
     ids = [int(x) for x in request.form.getlist("ids")]
     if kind == "order":
@@ -231,7 +232,7 @@ def bulk_restore(kind: str):
             for item_id in ids:
                 restore_order(item_id)
         except ValueError as exc:
-            return str(exc), 400
+            return error_response(str(exc), title="未能恢复", back_url=url_for("recycle.recycle_bin"))
         log_action("bulk_restore_recycle", kind, "batch", f"批量恢复 {len(ids)} 条")
         return redirect(url_for("recycle.recycle_bin"))
     table = {"purchase_order": "purchase_orders", "product": "products", "customer": "customers"}[kind]

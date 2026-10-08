@@ -7,6 +7,7 @@ from flask import Blueprint, jsonify, redirect, render_template, request, url_fo
 
 from erp.db import get_db
 from erp.services.analytics import summarize_analytics
+from erp.utils.errors import error_response, not_found, RecordNotFound
 from erp.utils.money import cents_to_yuan
 from erp.utils.quantity import format_quantity_3dp
 from erp.services.reconciliation import (
@@ -352,6 +353,14 @@ def reconciliation():
         page = min(page, total_pages)
         start = (page - 1) * page_size
         display_rows = snapshot["rows"][start : start + page_size]
+    # D2：返回路径按来源切换——从账款页进入 → 返回账款管理（携带原客户/日期）；默认返回数据分析。
+    from_accounts = (request.args.get("from", "").strip() == "accounts")
+    if from_accounts and customer_id:
+        recon_back_url = url_for("accounts.accounts", customer_id=customer_id, start_date=start_date, end_date=end_date)
+        recon_back_label = "返回账款管理"
+    else:
+        recon_back_url = url_for("analytics.analytics_center")
+        recon_back_label = "返回数据分析"
     return render_template(
         "analytics/reconciliation.html",
         customers=customers,
@@ -365,6 +374,9 @@ def reconciliation():
         display_rows=display_rows,
         page=page,
         total_pages=total_pages,
+        recon_back_url=recon_back_url,
+        recon_back_label=recon_back_label,
+        recon_source="accounts" if from_accounts else "analytics",
         return_url=(
             request.full_path.removesuffix("?")
             if request.args.get("snapshot_id", type=int) == snapshot_id and request.args.get("page", 1, type=int) == page
@@ -384,7 +396,7 @@ def reconciliation_select(snapshot_id: int):
         )
         snapshot = get_reconciliation_snapshot(snapshot_id)
     except (TypeError, ValueError) as exc:
-        return str(exc), 400
+        return error_response(str(exc), title="对账选择未保存", back_url=url_for("analytics.reconciliation"))
     return redirect(url_for(
         "analytics.reconciliation",
         customer_id=snapshot["customer_id"],
@@ -440,6 +452,8 @@ def reconciliation_order_detail(snapshot_id: int, order_id: int):
 def reconciliation_pdf(snapshot_id: int):
     try:
         path = generate_reconciliation_pdf(snapshot_id)
+    except RecordNotFound as exc:
+        return not_found(str(exc), title="对账查询不存在", back_url=url_for("analytics.reconciliation"))
     except ValueError as exc:
-        return str(exc), 400
+        return error_response(str(exc), title="对账单未能生成", back_url=url_for("analytics.reconciliation"))
     return send_pdf_for_preview(path, "往来交易对账单.pdf", "往来交易对账单")

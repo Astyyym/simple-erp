@@ -33,6 +33,7 @@
   <button class="btn btn-primary col-2">新增商品</button>
 </form>
 <button class="btn btn-danger mb-3" type="button" onclick="submitSelected('bulkProductsForm','确认删除选中的商品吗？')">删除选中</button>
+{% if truncated %}<div class="alert alert-info py-2 mb-2" role="status">列表已截断（仅显示前 200 条），可用上方搜索缩小范围。</div>{% endif %}
 <form id="bulkProductsForm" method="post" action="/products/bulk_delete"></form>
 <style>
   .product-table-shell{overflow-x:auto}
@@ -49,7 +50,7 @@
   <tbody>{% for p in products %}
   <tr data-product-id="{{p.id}}">
     <td class="selection-cell"><input form="bulkProductsForm" type="checkbox" name="ids" value="{{p.id}}"></td><td title="{{p.name}}">{{p.name}}</td><td title="{{p.spec}}">{{p.spec}}</td><td>{{p.unit}}</td>
-    <td class="numeric-cell">{{cents_to_yuan(p.default_price_cents)}}</td>
+    <td class="numeric-cell">¥{{cents_to_yuan(p.default_price_cents)}}</td>
     <td class="numeric-cell">{{format_quantity_3dp(p.quantity_3dp, p.unit) if p.inventory_enabled else '—'}}</td>
     <td class="numeric-cell">{{format_quantity_3dp(p.safety_stock_3dp, p.unit)}}</td>
     <td class="numeric-cell">{% if not p.inventory_enabled or p.quantity_3dp is none %}—{% elif p.quantity_3dp == 0 %}无库存{% else %}{{micro_to_yuan(p.avg_cost_micro)}}{% endif %}</td>

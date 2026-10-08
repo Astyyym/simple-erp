@@ -8,6 +8,7 @@ from decimal import Decimal
 from typing import Any
 
 from erp.db import get_db
+from erp.utils.errors import RecordNotFound
 
 
 def _parse_date(value: str, label: str) -> str:
@@ -67,7 +68,9 @@ def _scope_ids(rows) -> list[int]:
 def _load_snapshot_row(conn, snapshot_id: int):
     row = conn.execute("SELECT * FROM reconciliation_snapshots WHERE id=?", (int(snapshot_id),)).fetchone()
     if row is None:
-        raise ValueError("对账查询不存在或已失效")
+        # A7：快照不存在/失效属于「资源不存在」，应呈现 404 而非 400。
+        # RecordNotFound 是 ValueError 子类，既有 except ValueError 调用方行为不变。
+        raise RecordNotFound("对账查询不存在或已失效")
     return row
 
 

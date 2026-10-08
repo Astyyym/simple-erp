@@ -251,7 +251,9 @@ def test_new_order_save_print_button_uses_async_save_and_success_actions():
 
     html = client.get("/orders/new?date=2026-07-10").data.decode("utf-8")
 
-    assert "保存/打印订单" in html
+    assert "保存并打印订单" in html
+    assert 'name="save_action" value="save_print"' in html
+    assert 'id="saveButton" name="save_action" value="save"' in html
     assert "fetch(orderForm.action" in html
     assert "openPrintUrl(openPrintLink.href)" in html
     assert "function openPrintUrl(url)" in html

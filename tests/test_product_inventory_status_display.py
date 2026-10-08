@@ -155,7 +155,7 @@ def test_unknown_quantity_template_projection_never_fabricates_quantity_or_avera
 
     client, products = stock_products
     with get_db() as conn:
-        rows, suggestions = _product_list_context(conn)
+        rows, suggestions, _truncated = _product_list_context(conn)
         state = dict(conn.execute("SELECT * FROM product_inventory_state WHERE product_id=?", (products[3]["id"],)).fetchone())
     product = next(row for row in rows if row["id"] == products[3]["id"])
     # Current schema forbids NULL quantity: test the pure/template defensive

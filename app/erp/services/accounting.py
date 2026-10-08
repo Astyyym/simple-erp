@@ -10,6 +10,7 @@ from typing import Iterable
 from erp.db import get_db
 from erp.utils.audit import log_action
 from erp.utils.money import line_subtotal_cents, yuan_to_cents
+from erp.utils.pinyin import pinyin_initials as build_pinyin_initials
 from erp.services.inventory import post_return_order, post_sale_order, post_typed_return_order
 
 
@@ -177,10 +178,10 @@ def update_product_record(product_id: int, name: str, spec: str, unit: str, defa
             cursor = conn.execute(
                 """
                 UPDATE products
-                SET name=?, spec=?, unit=?, default_price_cents=?, safety_stock_3dp=?, updated_at=CURRENT_TIMESTAMP
+                SET name=?, spec=?, unit=?, default_price_cents=?, safety_stock_3dp=?, pinyin_initials=?, updated_at=CURRENT_TIMESTAMP
                 WHERE id=? AND deleted_at IS NULL
                 """,
-                (name, spec, unit, default_price_cents, safety_stock_3dp, product_id),
+                (name, spec, unit, default_price_cents, safety_stock_3dp, build_pinyin_initials(name), product_id),
             )
         except sqlite3.IntegrityError as exc:
             if "idx_products_business_identity" in str(exc) or "UNIQUE constraint failed: index" in str(exc):
@@ -251,8 +252,8 @@ def _upsert_product_and_customer_price(conn, customer_id: int, product_name: str
     product = conn.execute("SELECT * FROM products WHERE TRIM(name)=? AND TRIM(COALESCE(spec, ''))=? ORDER BY id LIMIT 1", (product_name, spec)).fetchone()
     if product is None:
         cur_product = conn.execute(
-            "INSERT INTO products(name, spec, unit, default_price_cents, usage_count) VALUES (?, ?, ?, ?, 1)",
-            (product_name, spec, unit, unit_price_cents),
+            "INSERT INTO products(name, spec, unit, default_price_cents, pinyin_initials, usage_count) VALUES (?, ?, ?, ?, ?, 1)",
+            (product_name, spec, unit, unit_price_cents, build_pinyin_initials(product_name)),
         )
         return int(cur_product.lastrowid)
     if product["deleted_at"] is not None:

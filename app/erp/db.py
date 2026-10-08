@@ -50,6 +50,7 @@ def init_db() -> None:
         ensure_order_item_cost_fields(conn)
         ensure_return_relation_fields(conn)
         ensure_order_submission_fields(conn)
+        backfill_product_pinyin_initials(conn)
         purge_expired_recycle_bin(conn)
         row = conn.execute("PRAGMA integrity_check").fetchone()
         if row[0] != "ok":
@@ -130,6 +131,22 @@ def ensure_product_image_column(conn: sqlite3.Connection) -> None:
 def ensure_product_inventory_fields(conn: sqlite3.Connection) -> None:
     if "safety_stock_3dp" not in _columns(conn, "products"):
         conn.execute("ALTER TABLE products ADD COLUMN safety_stock_3dp INTEGER NOT NULL DEFAULT 0 CHECK(safety_stock_3dp >= 0)")
+
+
+def backfill_product_pinyin_initials(conn: sqlite3.Connection) -> None:
+    """E7：为 pinyin_initials 为空的商品回填拼音首字母（幂等，不覆盖已有值）。
+
+    纯派生字段，无业务影响；旧库/旧商品升级后拼音搜索才能生效。
+    """
+    from erp.utils.pinyin import pinyin_initials
+
+    empty_rows = conn.execute(
+        "SELECT id, name FROM products WHERE COALESCE(pinyin_initials, '') = ''"
+    ).fetchall()
+    for row in empty_rows:
+        initials = pinyin_initials(row["name"])
+        if initials:
+            conn.execute("UPDATE products SET pinyin_initials=? WHERE id=?", (initials, row["id"]))
 
 
 def ensure_product_identity_constraint(conn: sqlite3.Connection) -> None:

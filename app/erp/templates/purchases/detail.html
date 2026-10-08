@@ -2,7 +2,7 @@
 {% block content %}
 <header class="page-header order-detail-header">
   <div><h2 class="mb-1">拿货单详情</h2><p class="text-muted mb-0">独立入库记录；不进入客户账款、收款或客户价学习。</p></div>
-  <div class="page-actions">{% if order.status == 'saved' and order.customer_id %}<a class="btn btn-outline-primary" href="/purchases/return/new?customer_id={{order.customer_id}}">新建退拿货单</a>{% if order.customer_name|trim %}<a class="btn btn-success" href="{{url_for('purchases.purchase_pdf', purchase_id=order.id, desktop_preview=1, return_to=request.full_path.rstrip('?')) if is_desktop else url_for('purchases.purchase_pdf', purchase_id=order.id)}}">查看PDF</a>{% endif %}{% endif %}<a class="btn btn-secondary page-return" href="/purchases/new">返回拿货</a></div>
+  <div class="page-actions">{% if order.status == 'saved' and order.customer_id %}<a class="btn btn-outline-primary" href="/purchases/return/new?customer_id={{order.customer_id}}">新建退拿货单</a>{% if order.customer_name|trim %}<a class="btn btn-success" href="{{url_for('purchases.purchase_pdf', purchase_id=order.id, desktop_preview=1, return_to=request.full_path.rstrip('?')) if is_desktop else url_for('purchases.purchase_pdf', purchase_id=order.id)}}">查看PDF</a>{% endif %}{% endif %}<a class="btn btn-secondary page-return" href="/orders/">返回单据管理</a></div>
 </header>
 <section class="order-meta mb-3">
   <div class="row g-3">

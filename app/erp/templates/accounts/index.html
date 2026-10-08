@@ -77,6 +77,7 @@
       {% endfor %}
     </form>
     <a class="btn btn-info" id="ledgerPdfLink" href="{{ url_for('accounts.ledger_pdf', customer_id=selected_customer.id, start_date=start_date, end_date=end_date) }}{% if is_desktop %}&amp;desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}"{% if not is_desktop %} target="_blank" rel="noopener"{% endif %}>打印账款流水 PDF</a>
+    <a class="btn btn-outline-primary" id="reconEntryLink" href="{{ url_for('analytics.reconciliation', customer_id=selected_customer.id, start_date=start_date, end_date=end_date) }}&amp;from=accounts">往来对账</a>
   </div>
   <div class="table-responsive"><table class="table align-middle ledger-table">
     <caption class="visually-hidden">按筛选日期展示销售、退货、收款和账务调整流水</caption>

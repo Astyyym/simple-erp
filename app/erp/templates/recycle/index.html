@@ -89,7 +89,7 @@
     <td>{{ d.order_no }}</td>
     <td><span class="badge {{ d.type_badge }}">{{ d.type_label }}</span></td>
     <td>{{ d.customer_name }}</td>
-    <td>{{ cents_to_yuan(d.total_amount_cents) }}</td>
+    <td>¥{{ cents_to_yuan(d.total_amount_cents) }}</td>
     <td><span class="badge {{ d.status_badge }}">{{ d.status_label }}</span></td>
     <td>{{ d.deleted_at }}</td>
     <td class="action-cell"><div class="action-wrap">
@@ -118,7 +118,7 @@
   <button class="btn btn-danger" type="button" data-recycle-submit="purge" data-recycle-message="确认彻底删除选中的商品吗？">确认删除选中</button>
 </div>
 <form id="recycleProductForm" method="post" action="/recycle/bulk/product/purge"></form>
-<div class="recycle-scroll"><table class="table table-striped stable-table"><thead><tr><th style="width:44px"><input type="checkbox" aria-label="全选商品" data-recycle-check-all="1"></th><th>名称</th><th>单位</th><th>价格</th><th>删除时间</th><th class="action-cell">操作</th></tr></thead><tbody>{% for p in products %}<tr><td><input type="checkbox" name="product_ids" value="{{p.id}}"></td><td>{{p.name}}</td><td>{{p.unit}}</td><td>{{cents_to_yuan(p.default_price_cents)}}</td><td>{{p.deleted_at}}</td><td class="action-cell"><div class="action-wrap"><form class="d-inline" method="post" action="/recycle/product/{{p.id}}/restore"><button class="btn btn-sm btn-success">恢复</button></form> <form class="d-inline" method="post" action="/recycle/product/{{p.id}}/purge" onsubmit="return confirm('确认彻底删除这个商品吗？历史单据会保留商品名称快照。')"><button class="btn btn-sm btn-danger">确认删除</button></form></div></td></tr>{% else %}<tr><td class="recycle-empty" colspan="6">暂无删除的商品。</td></tr>{% endfor %}</tbody></table></div>
+<div class="recycle-scroll"><table class="table table-striped stable-table"><thead><tr><th style="width:44px"><input type="checkbox" aria-label="全选商品" data-recycle-check-all="1"></th><th>名称</th><th>单位</th><th>价格</th><th>删除时间</th><th class="action-cell">操作</th></tr></thead><tbody>{% for p in products %}<tr><td><input type="checkbox" name="product_ids" value="{{p.id}}"></td><td>{{p.name}}</td><td>{{p.unit}}</td><td>¥{{cents_to_yuan(p.default_price_cents)}}</td><td>{{p.deleted_at}}</td><td class="action-cell"><div class="action-wrap"><form class="d-inline" method="post" action="/recycle/product/{{p.id}}/restore"><button class="btn btn-sm btn-success">恢复</button></form> <form class="d-inline" method="post" action="/recycle/product/{{p.id}}/purge" onsubmit="return confirm('确认彻底删除这个商品吗？历史单据会保留商品名称快照。')"><button class="btn btn-sm btn-danger">确认删除</button></form></div></td></tr>{% else %}<tr><td class="recycle-empty" colspan="6">暂无删除的商品。</td></tr>{% endfor %}</tbody></table></div>
 </section>
 
 <section class="recycle-card" data-recycle-section data-recycle-checkbox="customer_ids" data-recycle-form="recycleCustomerForm">

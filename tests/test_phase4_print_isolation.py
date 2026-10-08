@@ -75,7 +75,9 @@ def test_order_pdf_context_does_not_pass_internal_columns_to_template(monkeypatc
         utils.pdf.generate_order_pdf(order_id)
 
     assert set(dict(captured["order"])) <= {
-        "id", "order_no", "order_date", "order_type", "customer_name", "notes", "total_amount_cents"
+        "id", "order_no", "order_date", "order_type", "customer_name", "notes", "total_amount_cents",
+        # E6：作废单打印件需要 status 渲染「已作废」水印；status 是面向用户的单据状态，非内部成本列。
+        "status",
     }
     assert all(set(dict(item)) <= {
         "product_name", "spec", "unit", "quantity", "unit_price_cents", "subtotal_cents"

@@ -37,8 +37,12 @@ def test_reedit_initial_cost_uses_historical_snapshot_after_purchase_changes_ave
         request_key="cost-col-purchase",
         customer_id=customer_id,
     )
-    html = create_app().test_client().get(f"/orders/{sale_id}/edit").get_data(as_text=True)
-    assert 'data-unit-cost="10.000000"' in html
-    assert "销售时成本" in html
-    assert 'class="readonly-total unit-cost-display"' in html
-    assert 'data-unit-cost="12.000000"' not in html
+    # Batch B：已过账销售单的编辑入口被拦截，不再渲染注定提交失败的表单。
+    edit_response = create_app().test_client().get(f"/orders/{sale_id}/edit")
+    assert edit_response.status_code == 400
+    assert "过账" in edit_response.get_data(as_text=True)
+    # 历史成本快照仍在「回看」页展示（销售时成本 10.00，而不是采购后漂移的 12.00）。
+    detail_html = create_app().test_client().get(f"/orders/{sale_id}").get_data(as_text=True)
+    assert "销售时成本" in detail_html
+    assert "10.00" in detail_html
+    assert "12.00" not in detail_html

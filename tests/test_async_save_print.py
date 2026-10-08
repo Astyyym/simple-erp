@@ -95,7 +95,9 @@ def test_order_entry_uses_fetch_success_panel_without_blank_post_target():
     assert "继续开单" in html
     assert "e.currentTarget.target = '_blank'" not in html
     assert "setTimeout(() => { window.location.href" not in html
-    assert "submitButton.disabled = true" in html
+    # C1：两个按钮都在提交期间禁用（保存 / 保存并打印）。
+    assert "savePrintButton.disabled = true" in html
+    assert "saveButton.disabled = true" in html
 
 
 def test_order_entry_shows_server_validation_text_on_failed_async_save():

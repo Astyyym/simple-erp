@@ -34,9 +34,13 @@ def test_two_decimal_display_keeps_exact_cost_payload_and_historical_snapshot():
     assert product["unit_cost"] == "11.333333"
     return_item = client.get(f"/orders/api/return_sources/{sale_id}").get_json()["items"][0]
     assert return_item["unit_cost"] == "11.333333"
-    html = client.get(f"/orders/{sale_id}/edit").get_data(as_text=True)
-    assert 'data-unit-cost="11.333333"' in html
-    assert 'aria-label="只读成本">11.33</div>' in html
+    # 该销售单已过账 → 编辑入口按 Batch B 拦截（不再渲染注定提交失败的表单）；
+    # 精确成本改由「回看」页与库存快照验证，仍要求六位精度不被四舍五入。
+    edit_response = client.get(f"/orders/{sale_id}/edit")
+    assert edit_response.status_code == 400
+    assert "过账" in edit_response.get_data(as_text=True)
+    detail_html = client.get(f"/orders/{sale_id}").get_data(as_text=True)
+    assert "11.33" in detail_html
     with get_db() as conn:
         after = tuple(conn.execute("SELECT quantity_3dp,cost_total_micro,avg_cost_micro FROM product_inventory_state WHERE product_id=?", (product_id,)).fetchone())
         after_snapshot = tuple(conn.execute("SELECT unit_cost_micro,cost_total_micro FROM order_items WHERE order_id=?", (sale_id,)).fetchone())

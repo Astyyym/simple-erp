@@ -10,6 +10,7 @@ from erp.config import load_config, project_path, runtime_root
 from erp.db import get_db
 from erp.services.accounting import get_customer_account_ledger
 from erp.services.reconciliation import get_reconciliation_print_context
+from erp.utils.errors import RecordNotFound
 from erp.utils.money import cents_to_yuan
 from erp.utils.quantity import format_quantity
 
@@ -76,6 +77,7 @@ def send_pdf_for_preview(path: Path, filename: str, title: str):
             filename=filename,
             title=title,
             return_url=return_url,
+            ui_theme=load_config().get("ui_theme", "light"),
         )
     return send_file(path, as_attachment=False, download_name=filename)
 
@@ -92,10 +94,10 @@ def _safe_internal_return_url(value: str) -> str:
 
 def generate_order_pdf(order_id: int) -> Path:
     with get_db() as conn:
-        order = conn.execute("SELECT o.*, c.name AS customer_name, c.phone, c.address FROM orders o JOIN customers c ON c.id=o.customer_id WHERE o.id=?", (order_id,)).fetchone()
+        order = conn.execute("SELECT o.*, c.name AS customer_name, c.phone, c.address FROM orders o JOIN customers c ON c.id=o.customer_id WHERE o.id=? AND o.deleted_at IS NULL", (order_id,)).fetchone()
         items = conn.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (order_id,)).fetchall()
     if order is None:
-        raise ValueError(f"订单不存在: {order_id}")
+        raise ValueError("订单不存在，可能已被移入回收站或从未存在。")
     config = load_config()
     public_order = {
         "id": int(order["id"]),
@@ -105,6 +107,8 @@ def generate_order_pdf(order_id: int) -> Path:
         "customer_name": order["customer_name"],
         "notes": order["notes"] or "",
         "total_amount_cents": int(order["total_amount_cents"]),
+        # E6：放行 status 供打印模板渲染「已作废」水印（作废销售单仍可打印）。
+        "status": order["status"],
     }
     public_items = [
         {
@@ -188,6 +192,16 @@ def _account_summary_totals(rows) -> dict[str, int]:
 
 
 def generate_account_summary_pdf(customer_id: int, start_date: str = "", end_date: str = "") -> Path:
+    # A7：指定客户不存在属于「资源不存在」，抛 RecordNotFound 让路由呈现 404，
+    # 与 /accounts/ledger_pdf 对不存在客户的处理保持一致。
+    # 注意：客户存在但该时间段无单据时，_load_account_summary_section 会返回空表段落，
+    # 仍正常出 PDF（不算错误），因此这里只拦「客户本身不存在」。
+    with get_db() as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM customers WHERE id=? AND deleted_at IS NULL", (int(customer_id),)
+        ).fetchone()
+    if exists is None:
+        raise RecordNotFound(f"客户不存在: {customer_id}")
     return generate_account_summary_pdf_for_customers([int(customer_id)], start_date, end_date)
 
 

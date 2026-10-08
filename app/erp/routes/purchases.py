@@ -7,7 +7,7 @@ from flask import Blueprint, redirect, render_template, request, url_for, jsonif
 import sqlite3
 
 from erp.db import get_db
-from erp.utils.errors import error_response
+from erp.utils.errors import error_response, not_found, RecordNotFound
 from erp.utils.money import cents_to_yuan, micro_to_yuan
 from erp.utils.order_numbering import next_nh_order_no, peek_nh_order_no
 from erp.services.inventory import (
@@ -18,6 +18,14 @@ from erp.services.inventory import (
 )
 
 purchases_bp = Blueprint("purchases", __name__, url_prefix="/purchases")
+
+
+def _has_purchase_postings(conn, purchase_id: int) -> bool:
+    """拿货单是否已入库（有 purchase 流水）；有流水即不可再改经济字段。"""
+    return conn.execute(
+        "SELECT 1 FROM inventory_postings WHERE source_type='purchase' AND (source_id=? OR source_id LIKE ?) LIMIT 1",
+        (str(purchase_id), f"{purchase_id}:%"),
+    ).fetchone() is not None
 
 
 def next_purchase_no(conn, business_date: str) -> str:
@@ -195,15 +203,22 @@ def create_purchase():
             form_rows=form_rows,
             request_key=(request.form.get("request_key") or "").strip() or secrets.token_urlsafe(24),
         ), 400
-    if request.form.get("save_action") == "save_print" and request.headers.get("X-Requested-With") == "fetch":
+    # C2：保存返回 JSON（含 pdf_url），保存并打印成功后面板自动打预览。
+    # 拿货/退拿货没有「已打印」状态：入库即 determined by status=saved，不额外标记。
+    want_print = request.form.get("save_action") == "save_print"
+    pdf_path = url_for("purchases.purchase_pdf", purchase_id=result["order_id"])
+    if request.headers.get("X-Requested-With") == "fetch":
         return jsonify({
             "ok": True,
             "order_id": result["order_id"],
             "order_no": result["order_no"],
-            "pdf_url": request.host_url.rstrip("/") + url_for("purchases.purchase_pdf", purchase_id=result["order_id"]),
+            "printed": False,
+            "pdf_url": request.host_url.rstrip("/") + pdf_path,
             "detail_url": url_for("purchases.purchase_detail", purchase_id=result["order_id"]),
             "next_url": url_for("purchases.new_purchase"),
         })
+    if want_print:
+        return redirect(pdf_path, code=303)
     return redirect(url_for("purchases.purchase_detail", purchase_id=result["order_id"]))
 
 
@@ -212,7 +227,7 @@ def purchase_detail(purchase_id: int):
     with get_db() as conn:
         order = conn.execute("SELECT * FROM purchase_orders WHERE id=? AND deleted_at IS NULL", (purchase_id,)).fetchone()
         if order is None:
-            return "拿货单不存在", 404
+            return not_found("拿货单不存在，可能已被移入回收站或从未存在。", back_url=url_for("orders.list_orders"))
         items = conn.execute("SELECT * FROM purchase_order_items WHERE purchase_order_id=? ORDER BY id", (purchase_id,)).fetchall()
     return render_template("purchases/detail.html", order=order, items=items)
 
@@ -222,10 +237,15 @@ def edit_purchase(purchase_id: int):
     with get_db() as conn:
         order = conn.execute("SELECT * FROM purchase_orders WHERE id=? AND deleted_at IS NULL", (purchase_id,)).fetchone()
         items = conn.execute("SELECT * FROM purchase_order_items WHERE purchase_order_id=? ORDER BY id", (purchase_id,)).fetchall()
+        has_postings = _has_purchase_postings(conn, purchase_id)
     if order is None:
-        return "拿货单不存在", 404
+        return not_found("拿货单不存在，可能已被移入回收站或从未存在。", back_url=url_for("orders.list_orders"))
     if order["status"] != "draft":
-        return "正式拿货单经济字段已锁定", 400
+        return error_response("正式拿货单经济字段已锁定，只能回看。", title="无法编辑",
+                              back_url=url_for("purchases.purchase_detail", purchase_id=purchase_id))
+    if has_postings:
+        return error_response("该拿货单已入库，经济字段不能再改。请用「回看」核对。", title="无法编辑",
+                              back_url=url_for("purchases.purchase_detail", purchase_id=purchase_id))
     return _purchase_form(
         order=order,
         form_rows=[dict(item) | {"quantity": f"{item['quantity_3dp'] / 1000:g}", "unit_cost_yuan": f"{item['unit_cost_cents'] / 100:.2f}"} for item in items],
@@ -238,7 +258,7 @@ def update_purchase(purchase_id: int):
     with get_db() as conn:
         order = conn.execute("SELECT * FROM purchase_orders WHERE id=? AND deleted_at IS NULL", (purchase_id,)).fetchone()
     if order is None:
-        return "拿货单不存在", 404
+        return not_found("拿货单不存在，可能已被移入回收站或从未存在。", back_url=url_for("orders.list_orders"))
     product_ids = request.form.getlist("product_id")
     quantities = request.form.getlist("quantity")
     costs = request.form.getlist("unit_cost_yuan")
@@ -264,11 +284,13 @@ def update_purchase(purchase_id: int):
 @purchases_bp.post("/<int:purchase_id>/finalize")
 def finalize_purchase(purchase_id: int):
     if any(name in request.form for name in ("customer_id", "product_id", "quantity", "unit_cost_yuan", "source_notes", "business_date")):
-        return "此入口仅入库已保存草稿；请在编辑页保存当前填写内容并入库", 400
+        return error_response("此入口仅入库已保存草稿；请在编辑页保存当前填写内容并入库。", title="未能入库",
+                              back_url=url_for("purchases.purchase_detail", purchase_id=purchase_id))
     try:
         finalize_purchase_order(purchase_id)
     except ValueError as exc:
-        return str(exc), 400
+        return error_response(str(exc), title="未能入库",
+                              back_url=url_for("purchases.purchase_detail", purchase_id=purchase_id))
     return redirect(url_for("purchases.purchase_detail", purchase_id=purchase_id))
 
 
@@ -277,7 +299,8 @@ def void_purchase(purchase_id: int):
     try:
         void_purchase_order(purchase_id, request.form.get("reason", ""))
     except ValueError as exc:
-        return str(exc), 400
+        return error_response(str(exc), title="拿货单未能作废",
+                              back_url=url_for("purchases.purchase_detail", purchase_id=purchase_id))
     return redirect(url_for("purchases.purchase_detail", purchase_id=purchase_id))
 
 
@@ -394,15 +417,20 @@ def create_return():
         if request.headers.get("X-Requested-With") == "fetch":
             return jsonify({"ok": False, "message": message}), 400
         return _return_form(error=message,form_rows=form_rows,request_key=request.form.get('request_key','')),400
-    if request.form.get("save_action") == "save_print" and request.headers.get("X-Requested-With") == "fetch":
+    want_print = request.form.get("save_action") == "save_print"
+    pdf_path = url_for("purchases.purchase_return_pdf", return_id=result["order_id"])
+    if request.headers.get("X-Requested-With") == "fetch":
         return jsonify({
             "ok": True,
             "order_id": result["order_id"],
             "order_no": result["order_no"],
-            "pdf_url": request.host_url.rstrip("/") + url_for("purchases.purchase_return_pdf", return_id=result["order_id"]),
+            "printed": False,
+            "pdf_url": request.host_url.rstrip("/") + pdf_path,
             "detail_url": url_for("purchases.return_detail", return_id=result["order_id"]),
             "next_url": url_for("purchases.new_return"),
         })
+    if want_print:
+        return redirect(pdf_path, code=303)
     return redirect(url_for('purchases.return_detail',return_id=result['order_id']))
 
 
@@ -411,7 +439,7 @@ def return_detail(return_id):
     with get_db() as conn:
         order = conn.execute('SELECT * FROM purchase_return_orders WHERE id=? AND deleted_at IS NULL',(return_id,)).fetchone()
         if order is None:
-            return '退拿货单不存在',404
+            return not_found('退拿货单不存在，可能已被移入回收站或从未存在。', back_url=url_for('orders.list_orders'))
         items = conn.execute('SELECT * FROM purchase_return_items WHERE purchase_return_id=? ORDER BY id',(return_id,)).fetchall()
         source = conn.execute('SELECT id,order_no FROM purchase_orders WHERE id=?',(order['source_order_id'],)).fetchone()
     return render_template('purchases/return_detail.html',order=order,items=items,source=source)
@@ -423,8 +451,10 @@ def purchase_pdf(purchase_id: int):
     from erp.utils.pdf import send_pdf_for_preview
     try:
         path = generate_purchase_pdf(purchase_id)
+    except RecordNotFound as exc:
+        return not_found(str(exc), title="拿货单不存在", back_url=url_for('orders.list_orders'))
     except ValueError as exc:
-        return str(exc), 400
+        return error_response(str(exc), title="拿货清单未能生成", back_url=url_for('orders.list_orders'))
     return send_pdf_for_preview(path, f'purchase_{purchase_id}.pdf', '拿货清单')
 
 
@@ -434,8 +464,10 @@ def purchase_return_pdf(return_id: int):
     from erp.utils.pdf import send_pdf_for_preview
     try:
         path = generate_purchase_pdf(return_id, is_return=True)
+    except RecordNotFound as exc:
+        return not_found(str(exc), title="退拿货单不存在", back_url=url_for('orders.list_orders'))
     except ValueError as exc:
-        return str(exc), 400
+        return error_response(str(exc), title="退拿货清单未能生成", back_url=url_for('orders.list_orders'))
     return send_pdf_for_preview(path, f'purchase_return_{return_id}.pdf', '退拿货清单')
 
 
@@ -445,9 +477,10 @@ def edit_return(return_id):
         order = conn.execute('SELECT * FROM purchase_return_orders WHERE id=? AND deleted_at IS NULL',(return_id,)).fetchone()
         items = conn.execute('SELECT product_id,quantity_3dp,unit_price_cents FROM purchase_return_items WHERE purchase_return_id=? ORDER BY id',(return_id,)).fetchall()
     if order is None:
-        return '退拿货单不存在',404
+        return not_found('退拿货单不存在，可能已被移入回收站或从未存在。', back_url=url_for('orders.list_orders'))
     if order['status'] != 'draft':
-        return '正式退拿货经济字段已锁定，请在详情修改备注',400
+        return error_response('正式退拿货经济字段已锁定，请在详情修改备注。', title="无法编辑",
+                              back_url=url_for('purchases.return_detail', return_id=return_id))
     return _return_form(order=order,form_rows=[{'product_id':i['product_id'],'quantity':f"{i['quantity_3dp']/1000:g}",'unit_price_yuan':f"{i['unit_price_cents']/100:.2f}"} for i in items],request_key=order['request_key'])
 
 
@@ -457,7 +490,7 @@ def update_return(return_id):
     with get_db() as conn:
         order = conn.execute('SELECT * FROM purchase_return_orders WHERE id=? AND deleted_at IS NULL',(return_id,)).fetchone()
     if order is None:
-        return '退拿货单不存在',404
+        return not_found('退拿货单不存在，可能已被移入回收站或从未存在。', back_url=url_for('orders.list_orders'))
     form_rows = _typed_return_rows()
     rows = [row for row in form_rows if any(str(value).strip() for value in row.values())]
     try:
@@ -487,7 +520,7 @@ def return_action(return_id, action):
                 raise ValueError('备注入口不能修改经济字段')
             service.edit_notes(return_id,request.form.get('notes',''),expected_version=version)
         else:
-            return '未知退拿货操作',404
+            return not_found('未知退拿货操作。', back_url=url_for('orders.list_orders'))
     except (ValueError,sqlite3.OperationalError) as exc:
         return error_response(
             str(exc) if isinstance(exc, ValueError) else '数据库忙，请稍后重试',
