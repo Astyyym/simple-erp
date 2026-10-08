@@ -8,49 +8,60 @@
 </div>
 {% if error %}<div class="alert alert-danger" role="alert">{{ error }} 筛选未生效，请修正输入后重新查询。<div id="invalidScopeInputs" style="overflow-wrap:anywhere">原始条件：日期 {{filters.start_date or '不限'}} 至 {{filters.end_date or '不限'}}；往来对象 ID {{filters.customer_id or '全部'}}；商品 {{filters.product_name or '全部'}}；型号 {{filters.spec or '全部'}}。</div></div>{% endif %}
 <form id="analyticsFilters" class="filter-card" method="get" action="{{ url_for('analytics.analytics_center') }}" autocomplete="off">
-  <div class="analytics-filter-customer"><label class="form-label" for="customerFilter">客户</label><select id="customerFilter" class="form-select" name="customer_id"><option value="">全部客户</option>{% for customer in customers %}<option value="{{ customer['id'] }}" {{ 'selected' if filters['customer_id'] == customer['id'] else '' }}>{{ customer['name'] }}</option>{% endfor %}</select></div>
-  <div class="analytics-date-mode">
-    <label class="form-label mb-1 d-block">时间模式</label>
-    <div class="filter-mode-options" role="group" aria-label="时间模式">
-      {% for value, label in [('year','按年'),('month','按月到月'),('range','按日到日')] %}
-      <input type="radio" class="btn-check" name="date_mode" id="analyticsDateMode{{value}}" value="{{value}}" {{ 'checked' if date_mode == value else '' }} autocomplete="off">
-      <label class="btn btn-outline-primary" for="analyticsDateMode{{value}}">{{label}}</label>
-      {% endfor %}
-    </div>
-  </div>
-  <div class="filter-field-date" data-mode="range" {% if date_mode != 'range' %}hidden{% endif %}>
-    <div class="date-range">
-      <div><label class="form-label" for="startDate">开始日期</label><input id="startDate" class="form-control" type="date" name="start_date" value="{{ filters['start_date'] }}"></div>
-      <div><label class="form-label" for="endDate">结束日期</label><input id="endDate" class="form-control" type="date" name="end_date" value="{{ filters['end_date'] }}"></div>
-    </div>
-  </div>
-  <div class="filter-field-date" data-mode="month" {% if date_mode != 'month' %}hidden{% endif %}>
-    <div class="date-range">
-      <div><label class="form-label" for="startMonth">开始月</label><input id="startMonth" class="form-control" type="month" name="start_month_raw" value="{{ '%04d-%02d'|format(start_year_value, start_month_value) }}"></div>
-      <div><label class="form-label" for="endMonth">结束月</label><input id="endMonth" class="form-control" type="month" name="end_month_raw" value="{{ '%04d-%02d'|format(end_year_value, end_month_value) }}"></div>
-    </div>
-  </div>
-  <div class="filter-field-date" data-mode="year" {% if date_mode != 'year' %}hidden{% endif %}>
-    <div><label class="form-label" for="analyticsYear">年份</label><input id="analyticsYear" class="form-control" type="number" name="year" min="1" max="9999" value="{{ year_value }}"></div>
-  </div>
-  <div class="filter-field-product analytics-filter-product"><label class="form-label" for="productFilter">商品名称</label><select id="productFilter" class="form-select" name="product_name"><option value="">全部商品</option>{% for product in products|unique(attribute='name') %}<option value="{{ product['name'] }}" {{ 'selected' if filters['product_name'] == product['name'] else '' }}>{{ product['name'] }}</option>{% endfor %}</select></div>
-  <div class="analytics-filter-spec"><label class="form-label" for="specFilter">型号</label><select id="specFilter" class="form-select" name="spec" {{ 'disabled' if not filters['product_name'] else '' }}><option value="">全部型号</option>{% for product in products %}{% if not filters['product_name'] or product['name'] == filters['product_name'] %}<option value="{{ product['spec'] or '__unfilled__' }}" {{ 'selected' if filters['spec'] == (product['spec'] or '__unfilled__') else '' }}>{{ product['name'] }} · {{ product['spec'] or '未填写型号' }}</option>{% endif %}{% endfor %}</select></div>
-  <div class="filter-field-type">
-    <div class="filter-type-row" role="group" aria-label="订单类型筛选">
-      <label class="form-label">订单类型（可多选）</label>
-      <div class="filter-type-options">
-        {% for value, label in [('sale','销售单'),('return','退货单'),('purchase','拿货单'),('purchase_return','退拿货单')] %}
-        <input type="checkbox" class="btn-check" name="document_type" id="analyticsDocType{{value}}" value="{{value}}" autocomplete="off" {{ 'checked' if value in selected_document_types else '' }}>
-        <label class="btn btn-outline-primary" for="analyticsDocType{{value}}">{{label}}</label>
+  <div class="filter-tier-query">
+    <div class="filter-field-composite">
+      <label class="form-label mb-1 d-block">时间范围</label>
+      <div class="filter-mode-options" role="group" aria-label="时间模式">
+        {% for value, label in [('year','按年'),('month','按月到月'),('range','按日到日')] %}
+        <input type="radio" class="btn-check" name="date_mode" id="analyticsDateMode{{value}}" value="{{value}}" {{ 'checked' if date_mode == value else '' }} autocomplete="off">
+        <label class="btn btn-outline-primary" for="analyticsDateMode{{value}}">{{label}}</label>
         {% endfor %}
       </div>
-      <div class="filter-type-bulk" role="group" aria-label="订单类型批量操作">
-        <button type="button" class="btn btn-outline-secondary analytics-type-all" data-type-all="1">全选</button>
-        <button type="button" class="btn btn-outline-secondary analytics-type-none" data-type-none="1">清空</button>
+      <div class="dates">
+        <div class="filter-field-date" data-mode="range" {% if date_mode != 'range' %}hidden{% endif %}>
+          <div class="date-range">
+            <div><label class="form-label" for="startDate">开始日期</label><input id="startDate" class="form-control" type="date" name="start_date" value="{{ filters['start_date'] }}"></div>
+            <div><label class="form-label" for="endDate">结束日期</label><input id="endDate" class="form-control" type="date" name="end_date" value="{{ filters['end_date'] }}"></div>
+          </div>
+        </div>
+        <div class="filter-field-date" data-mode="month" {% if date_mode != 'month' %}hidden{% endif %}>
+          <div class="date-range">
+            <div><label class="form-label" for="startMonth">开始月</label><input id="startMonth" class="form-control" type="month" name="start_month_raw" value="{{ '%04d-%02d'|format(start_year_value, start_month_value) }}"></div>
+            <div><label class="form-label" for="endMonth">结束月</label><input id="endMonth" class="form-control" type="month" name="end_month_raw" value="{{ '%04d-%02d'|format(end_year_value, end_month_value) }}"></div>
+          </div>
+        </div>
+        <div class="filter-field-date" data-mode="year" {% if date_mode != 'year' %}hidden{% endif %}>
+          <div><label class="form-label" for="analyticsYear">年份</label><input id="analyticsYear" class="form-control" type="number" name="year" min="1" max="9999" value="{{ year_value }}"></div>
+        </div>
       </div>
     </div>
-    <div class="form-text filter-type-hint">不勾选=四类全部；利润类指标（净销售额、毛利润、产品排行）只算销售 + 退货，拿货/退拿货只影响流水热力图与下方「单据流水」。</div>
+    <div class="filter-field-plain"><label class="form-label" for="customerFilter">客户</label><select id="customerFilter" class="form-select" name="customer_id"><option value="">全部客户</option>{% for customer in customers %}<option value="{{ customer['id'] }}" {{ 'selected' if filters['customer_id'] == customer['id'] else '' }}>{{ customer['name'] }}</option>{% endfor %}</select></div>
+    <div class="filter-field-plain analytics-filter-product"><label class="form-label" for="productFilter">商品名称</label><select id="productFilter" class="form-select" name="product_name"><option value="">全部商品</option>{% for product in products|unique(attribute='name') %}<option value="{{ product['name'] }}" {{ 'selected' if filters['product_name'] == product['name'] else '' }}>{{ product['name'] }}</option>{% endfor %}</select></div>
+    <div class="filter-field-plain analytics-filter-spec"><label class="form-label" for="specFilter">型号</label><select id="specFilter" class="form-select" name="spec" {{ 'disabled' if not filters['product_name'] else '' }}><option value="">全部型号</option>{% for product in products %}{% if not filters['product_name'] or product['name'] == filters['product_name'] %}<option value="{{ product['spec'] or '__unfilled__' }}" {{ 'selected' if filters['spec'] == (product['spec'] or '__unfilled__') else '' }}>{{ product['name'] }} · {{ product['spec'] or '未填写型号' }}</option>{% endif %}{% endfor %}</select></div>
   </div>
+  <div class="filter-tier-conditions">
+    <div class="filter-field-type">
+      <div class="filter-type-row" role="group" aria-label="订单类型筛选">
+        <label class="form-label">订单类型（可多选）</label>
+        <div class="filter-type-options">
+          {% for value, label in [('sale','销售单'),('return','退货单'),('purchase','拿货单'),('purchase_return','退拿货单')] %}
+          <input type="checkbox" class="btn-check" name="document_type" id="analyticsDocType{{value}}" value="{{value}}" autocomplete="off" {{ 'checked' if value in selected_document_types else '' }}>
+          <label class="btn btn-outline-primary" for="analyticsDocType{{value}}">{{label}}</label>
+          {% endfor %}
+        </div>
+        <div class="filter-type-bulk" role="group" aria-label="订单类型批量操作">
+          <button type="button" class="btn btn-outline-secondary analytics-type-none" data-type-none="1">清空</button>
+        </div>
+      </div>
+      <div class="form-text filter-type-hint">不勾选=四类全部；利润类指标（净销售额、毛利润、产品排行）只算销售 + 退货，拿货/退拿货只影响流水热力图与下方「单据流水」。</div>
+    </div>
+  </div>
+  {% if filter_chips %}
+  <div class="filter-chips" aria-label="已选条件">
+    <span class="filter-chips-cap">已选条件</span>
+    {% for chip in filter_chips %}<a class="filter-chip" href="{{ chip.url }}" title="移除该条件">{{ chip.label }}<span class="filter-chip-x" aria-hidden="true">×</span></a>{% endfor %}
+  </div>
+  {% endif %}
   <div class="filter-actions"><div class="filter-actions-primary"><button class="btn btn-primary" type="submit">查询</button><a class="btn btn-outline-secondary" href="{{ url_for('analytics.analytics_center') }}">重置</a></div></div>
   <input type="hidden" name="metric" value="{{ filters.metric }}">
 </form>
@@ -70,7 +81,6 @@
   form.querySelectorAll('input[name="date_mode"]').forEach(input => input.addEventListener('change', syncPanels));
   syncPanels();
   const boxes = form.querySelectorAll('input[name="document_type"]');
-  form.querySelector('[data-type-all]')?.addEventListener('click', () => boxes.forEach(b => { b.checked = true; }));
   form.querySelector('[data-type-none]')?.addEventListener('click', () => boxes.forEach(b => { b.checked = false; }));
 })();
 </script>

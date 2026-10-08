@@ -296,40 +296,50 @@
     }
     .card-body{padding:18px}
     /*
-      共享筛选卡：单据管理与数据分析使用同一套排版。
-      结构 = 字段网格（客户 / 时间模式 / 日期面板 / 商品名称 / 型号）+ 独立订单类型行 + 底部操作条。
-      订单类型行把「标签 + 四类复选框 + 全选 + 清空」放在同一行左对齐，不再把批量按钮推到最右。
+      共享筛选卡：单据管理与数据分析使用同一套排版（三段式）。
+      ① 查询三要素：时间（模式 + 日期输入合成一个组合控件）· 客户 · 商品/型号，常驻最高频。
+      ② 条件多选：订单类型 / 单据状态，降权；不勾选 = 全部，因此不再提供「全选」按钮。
+      ③ 已选条件 chip 行（可单独移除）+ 动作条（主操作在左、导出/重置贴右）。
     */
-    .filter-card{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px 20px;align-items:start;padding:18px;margin:0 0 18px;border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);background:var(--erp-glass-bg);box-shadow:var(--erp-glass-shadow);-webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25)}
+    .filter-card{padding:18px;margin:0 0 18px;border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);background:var(--erp-glass-bg);box-shadow:var(--erp-glass-shadow);-webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25)}
     .filter-card>*{min-width:0}
     .filter-card .form-control,.filter-card .form-select{min-width:0}
     /* 嵌套日期行不要用 Bootstrap 负外边距，避免筛选卡内溢出 */
     .filter-card .row{margin-left:0;margin-right:0}
-    .filter-field-date{grid-column:span 2}
+    /* ① 查询三要素 */
+    .filter-tier-query{display:flex;flex-wrap:wrap;gap:16px 20px;align-items:flex-start}
+    .filter-tier-query>*{min-width:0}
+    .filter-field-composite{flex:1.2 1 320px;min-width:0}
+    .filter-field-plain{flex:1 1 220px}
+    .filter-field-composite .dates{margin-top:10px}
+    .filter-mode-options{display:flex;flex-wrap:wrap;gap:8px}
+    .filter-mode-options .btn{white-space:nowrap;min-height:34px;padding:4px 12px;font-size:13px}
     .filter-field-date .date-range{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
     .filter-field-date[data-mode="year"] .form-control{max-width:220px}
     .filter-field-date[hidden]{display:none}
-    .filter-field-product{grid-column:span 2}
-    .filter-mode-options{display:flex;flex-wrap:wrap;gap:8px}
-    .filter-mode-options .btn{white-space:nowrap;min-height:34px;padding:4px 10px;font-size:13px;flex:1 1 auto}
-    .filter-field-type{grid-column:1/-1}
+    /* ② 条件多选 */
+    .filter-tier-conditions{display:grid;gap:14px;margin-top:16px;padding-top:16px;border-top:1px dashed var(--erp-border)}
     .filter-type-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
     .filter-type-row .form-label{margin:0}
     .filter-type-options,.filter-type-bulk{display:flex;flex-wrap:wrap;gap:8px}
     .filter-type-options .btn,.filter-type-bulk .btn{white-space:nowrap;min-height:34px;padding:4px 12px;font-size:13px}
-    .filter-type-hint{margin-top:9px}
-    .filter-actions{grid-column:1/-1;display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:2px;padding-top:16px;border-top:1px solid var(--erp-border)}
+    .filter-type-hint{margin-top:2px;color:var(--erp-muted);font-size:12px}
+    /* ③ 已选条件 chip */
+    .filter-chips{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid var(--erp-border)}
+    .filter-chips .filter-chips-cap{color:var(--erp-muted);font-size:12.5px}
+    .filter-chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;border:1px solid color-mix(in srgb,var(--erp-primary) 30%,var(--erp-border));background:var(--erp-primary-soft);color:var(--erp-primary);font-size:12.5px;text-decoration:none}
+    .filter-chip:hover{background:color-mix(in srgb,var(--erp-primary) 16%,var(--erp-surface));text-decoration:none;color:var(--erp-primary)}
+    .filter-chip .filter-chip-x{font-weight:700;opacity:.75}
+    /* 动作条 */
+    .filter-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:16px;padding-top:16px;border-top:1px solid var(--erp-border)}
     .filter-actions-primary,.filter-actions-extra{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
     .filter-actions-extra{margin-left:auto}
-    .filter-hint{grid-column:1/-1;color:var(--erp-muted);font-size:12px}
-    @media(max-width:1500px){
-      .filter-card{grid-template-columns:repeat(2,minmax(0,1fr))}
-      .filter-field-date,.filter-field-product{grid-column:span 2}
-    }
+    .filter-hint{color:var(--erp-muted);font-size:12px;margin-top:10px}
+    /* 条件多选行仍沿用 .filter-field-type 类名（两页模板按此行分组） */
+    .filter-field-type{min-width:0}
     @media(max-width:1100px){
-      .filter-card{grid-template-columns:minmax(0,1fr)}
-      .filter-field-date,.filter-field-product{grid-column:span 1}
-      .filter-field-date .date-range{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .filter-field-composite,.filter-field-plain{flex:1 1 100%}
+      .filter-actions-extra{margin-left:0}
     }
     /* shared order-entry surfaces: sales / return / purchase / purchase-return */
     .order-heading{display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;align-items:flex-end;margin-bottom:20px}

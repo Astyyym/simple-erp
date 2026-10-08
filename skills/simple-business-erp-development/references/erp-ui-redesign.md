@@ -182,6 +182,17 @@
 - **EXE 图标生成**：`packaging/简单ERP.ico` 由同一 SVG 渲染（headless Edge `--screenshot` + `--default-background-color=00000000` → Pillow 存多尺寸 16/24/32/48/64/128/256）。spec 里 `app_icon = project_root/'packaging'/'简单ERP.ico'` 并给 `EXE(icon=str(app_icon))`。
 - **验收方式**：CDP 逐路由读 `.sidebar` 与 `.content` 的 `getBoundingClientRect().width/x`，断言**所有页面 × 所有宽度取值集合为单值**；改 CSS 后必须禁用缓存（`Network.setCacheDisabled`）再读 computed。
 
+## 筛选卡：三段式排列（v3.1.0 后统一）
+
+单据管理（`orders/list.html`）与数据分析（`analytics/index.html`）共用 `base.html` 的 `.filter-card`，已从「一个 4 等分平铺网格」改为**三段式**。改动前的平铺网格不是缺陷，是当时的方案；但两页筛选已按下列约定收口，不要改回等价网格。
+
+- **第一段 `.filter-tier-query`（flex wrap）**：时间（模式按钮 + 对应日期输入合成**同一组合控件** `.filter-field-composite`）| 客户 / 商品 / 型号（`.filter-field-plain`）。切换模式只换组合控件下半截的日期输入，不再让「时间模式」和「日期面板」各占一个网格项。
+- **第二段 `.filter-tier-conditions`（虚线分隔）**：订单类型、单据状态多选。**不勾选 = 全部**，所以没有「全选」按钮（全选与不勾选结果相同，属冗余）；只保留「清空」。JS 不再有 `[data-type-all]` / `[data-status-all]` 处理器。
+- **第三段**：`.filter-chips`（已选条件，可单独 × 移除）+ `.filter-actions`（主操作在左、导出/重置贴右，`margin-left:auto` 保持不变）。
+- **chip 规则**（`app/erp/utils/filter_chips.py`）：时间范围**不生成** chip（它是常驻控件）；四类全勾 / 无选择都不生成 chip；商品 chip 移除时连同 `spec` 一起清（型号从属商品）；移除链接保留其余筛选与展示态、去掉 `page`。默认无筛选时不渲染 chip 行。
+- **测试同步**：`test_order_list_filter_layout.py` / `test_ui_layout_reflow.py` / `test_analytics_v4_behavior.py` / `test_orders_type_filter.py` / `test_analytics_center.py` 中编码旧 4 列网格（`repeat(4,minmax(0,1fr))`、`grid-column:span 2`）与「全选」文案的断言必须随结构更新；`tests/test_filter_chips.py` 覆盖 chip 出现/移除/时间与全选不产生 chip。
+- **陷阱**：断言 `"全选" in html` 会在删掉按钮后命中 `base.html` 里描述该约定的**注释文本**而假通过。改筛选相关断言时不要只搜可见文案，要断言真实 class / `data-*` 属性。
+
 ## 验证清单
 
 - 全量测试通过（需隔离正式业务数据库）。

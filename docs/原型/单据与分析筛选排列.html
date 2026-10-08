@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>简单ERP · 筛选条件排列原型</title>
+<style>
+:root{
+  color-scheme:light;
+  --ink:#172638;--muted:#617187;--line:#d3dae3;--line-soft:#e7ecf3;
+  --blue:#2060dc;--blue-soft:#eaf1ff;--blue-ink:#1746a8;
+  --green:#2f9c71;--green-ink:#167051;
+  --surface:rgba(255,255,255,.82);--wash:#eef3f9;--soft:#f6f9fc;
+  --radius:12px;--shadow:0 10px 30px #1835510d;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:
+    radial-gradient(1200px 600px at 12% -10%, #ffffff 0%, transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, #f2f7ff 0%, transparent 55%),
+    var(--wash);
+  min-height:100vh;color:var(--ink);
+  font:15px/1.55 "Microsoft YaHei","PingFang SC",system-ui,sans-serif;
+}
+.wrap{max-width:1180px;margin:32px auto 60px;padding:0 24px}
+h1{margin:0 0 6px;font-size:25px;letter-spacing:.2px}
+.lead{margin:0 0 6px;color:var(--muted)}
+.sub{margin:0 0 24px;color:var(--muted);font-size:13px}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 18px}
+.bar .sep{flex:1 1 auto}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff}
+.seg button{border:0;background:#fff;color:var(--ink);padding:9px 16px;font:inherit;cursor:pointer}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--blue);color:#fff}
+.badge-tag{font-size:12px;color:var(--blue-ink);background:var(--blue-soft);border:1px solid #c9dbff;border-radius:999px;padding:3px 10px}
+button:focus-visible,input:focus-visible,select:focus-visible,.chip button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+
+/* ---------- filter card ---------- */
+.card{
+  background:var(--surface);border:1px solid #dfe6ef;border-radius:var(--radius);
+  padding:20px;box-shadow:var(--shadow);
+  -webkit-backdrop-filter:blur(10px) saturate(1.15);backdrop-filter:blur(10px) saturate(1.15);
+}
+.card h2{margin:0 0 2px;font-size:18px}
+.card .help{margin:0 0 16px;color:var(--muted);font-size:12.5px}
+.filter{display:grid;gap:16px 20px}
+.filter>*{min-width:0}
+.field label{display:block;margin-bottom:7px;color:#52637a;font-weight:600;font-size:13px}
+.field .ctl,.field input,.field select{
+  height:42px;width:100%;padding:7px 11px;border:1px solid var(--line);border-radius:8px;
+  background:#fff;color:var(--ink);font:inherit;
+}
+.field .ctl::placeholder{color:#9aa8ba}
+.multiselect{display:flex;flex-wrap:wrap;gap:8px}
+.opt{position:relative}
+.opt input{position:absolute;opacity:0;width:0;height:0}
+.opt span{
+  display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 14px;border-radius:8px;
+  border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer;user-select:none;font-size:13.5px;
+}
+.opt span:before{content:"";width:14px;height:14px;border:1.5px solid #b6c2d2;border-radius:4px;display:inline-block}
+.opt input:checked+span{background:var(--blue-soft);border-color:#b7cdfb;color:var(--blue-ink);font-weight:600}
+.opt input:checked+span:before{background:var(--blue);border-color:var(--blue);box-shadow:inset 0 0 0 2px #fff}
+.bulk{display:flex;gap:8px}
+.link{border:0;background:transparent;color:var(--blue-ink);font:inherit;font-size:13px;cursor:pointer;padding:6px 4px}
+.link:hover{text-decoration:underline}
+
+/* tier 1: essentials */
+.tier1{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr);gap:16px 20px;align-items:start}
+.composite .dates{margin-top:10px}
+.modes{display:inline-flex;gap:8px;flex-wrap:wrap}
+.modes button{
+  border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:8px;
+  padding:8px 14px;font:inherit;font-size:13.5px;cursor:pointer;min-height:36px;
+}
+.modes button.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.daterow{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.daterow.one{grid-template-columns:minmax(140px,220px)}
+
+/* tier 2 */
+.tier2{display:grid;gap:14px;padding-top:16px;border-top:1px dashed var(--line-soft)}
+.condrow{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px}
+.condrow>label{flex:0 0 auto;color:#52637a;font-weight:600;font-size:13px;margin:0}
+
+/* tier 3 */
+.tier3{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding-top:16px;border-top:1px solid var(--line-soft)}
+.tier3 .push{margin-left:auto}
+.btn{border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);padding:10px 16px;font:inherit;font-size:14px;cursor:pointer;white-space:nowrap}
+.btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+.btn.export{border-color:#bfe3d3;color:var(--green-ink);background:#f4fbf8}
+
+/* chips */
+.chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:16px;padding-top:14px;border-top:1px solid var(--line-soft)}
+.chips .cap{color:var(--muted);font-size:12.5px}
+.chip{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #cfe0ff;background:var(--blue-soft);color:var(--blue-ink);border-radius:999px;padding:4px 6px 4px 12px;font-size:12.5px}
+.chip button{border:0;background:#dbe6ff;color:var(--blue-ink);width:18px;height:18px;line-height:1;border-radius:50%;cursor:pointer;font-size:12px;display:grid;place-items:center;padding:0}
+.chip button:hover{background:#c3d6ff}
+.chips .empty{color:var(--muted);font-size:12.5px}
+
+/* current-state replica */
+.flat{grid-template-columns:repeat(4,minmax(0,1fr))}
+.flat .span2{grid-column:span 2}
+.flat .full{grid-column:1/-1}
+.note{color:var(--muted);font-size:12px;margin:8px 0 0}
+.stack{display:grid;gap:10px}
+.warn{margin:14px 0 0;padding:10px 12px;border-radius:8px;background:#fff7ea;border:1px solid #f0dcb6;color:#7a5a12;font-size:12.5px}
+.legend{display:flex;flex-wrap:wrap;gap:14px;margin:18px 0 0;color:var(--muted);font-size:12.5px}
+.legend b{color:var(--ink)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.dot.t1{background:var(--blue)} .dot.t2{background:#b7c2d2} .dot.t3{background:var(--green)}
+@media(max-width:900px){
+  .tier1{grid-template-columns:minmax(0,1fr)}
+  .flat{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .flat .span2{grid-column:span 2}
+}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <h1>筛选条件排列 · 原型对照</h1>
+  <p class="lead">单据管理 / 数据分析的顶部筛选卡，两种排列并列对比。</p>
+  <p class="sub">静态原型：数据为示意，不连业务库、不执行导出。可直接点击切换页签、切换布局、增减条件，观察 chip 变化。</p>
+
+  <div class="bar">
+    <div class="seg" role="tablist" aria-label="页面">
+      <button type="button" data-page="orders" class="on">单据管理</button>
+      <button type="button" data-page="analytics">数据分析</button>
+    </div>
+    <div class="seg" role="tablist" aria-label="布局">
+      <button type="button" data-layout="guide" class="on">推荐布局</button>
+      <button type="button" data-layout="current">现状对照组</button>
+    </div>
+    <span class="sep"></span>
+    <span class="badge-tag" id="modeTag">单据管理 · 推荐布局</span>
+  </div>
+
+  <section class="card">
+    <h2 id="cardTitle">单据管理</h2>
+    <p class="help" id="cardHelp">按业务日期筛选单据；订单类型与单据状态可多选，不勾选表示全部。</p>
+    <div id="mount"></div>
+    <div class="chips" id="chips" hidden></div>
+  </section>
+
+  <div class="legend">
+    <span><span class="dot t1"></span><b>第一段</b> 查询三要素：时间（模式+取值一体）· 客户 · 商品，常驻最高频</span>
+    <span><span class="dot t2"></span><b>第二段</b> 条件多选：类型 / 状态 / 型号，降权、chip 化</span>
+    <span><span class="dot t3"></span><b>第三段</b> 动作条：主操作在左，导出/重置分区</span>
+  </div>
+</main>
+
+<script>
+// ---------------- 数据模型（示意） ----------------
+const TIME_MODES = [['year','按年'],['month','按月'],['range','按日到日']];
+const TYPE_OPTS  = [['sale','销售单'],['return','退货单'],['purchase','拿货单'],['purchase_return','退拿货单']];
+const STATUS_OPTS= [['draft','草稿'],['saved','正式保存'],['printed','已打印'],['void','已作废']];
+
+const state = {
+  page:'orders', layout:'guide',
+  mode:'year',
+  customer:'', product:'', spec:'',
+  types:new Set(['sale']),          // 单据管理：默认只看销售单
+  statuses:new Set(),
+  docTypes:new Set(['sale','return','purchase','purchase_return']), // 分析页订单类型
+};
+
+// ---------------- 渲染 ----------------
+const mount = document.getElementById('mount');
+const chipsEl = document.getElementById('chips');
+
+function optGroup(name, opts, checkedSet){
+  return `<div class="multiselect">${opts.map(([v,label])=>{
+    const on = checkedSet.has(v) ? 'checked':'';
+    return `<label class="opt"><input type="checkbox" data-group="${name}" value="${v}" ${on}><span>${label}</span></label>`;
+  }).join('')}</div>`;
+}
+
+function modeButtons(){
+  return `<div class="modes" role="group" aria-label="时间模式">${TIME_MODES.map(([v,label])=>
+    `<button type="button" data-mode="${v}" class="${state.mode===v?'on':''}">${label}</button>`).join('')}</div>`;
+}
+
+function dateInputs(){
+  if(state.mode==='year')  return `<div class="daterow one"><input type="number" aria-label="年份" value="2026"></div>`;
+  if(state.mode==='month') return `<div class="daterow"><input type="month" aria-label="开始月份" value="2026-01"><input type="month" aria-label="结束月份" value="2026-09"></div>`;
+  return `<div class="daterow"><input type="date" aria-label="开始日期" value="2026-09-01"><input type="date" aria-label="结束日期" value="2026-09-30"></div>`;
+}
+
+function tier1(){
+  const third = state.page==='orders'
+    ? `<div class="field"><label for="fCust">客户名称</label><input id="fCust" class="ctl" data-text="customer" value="${state.customer}" placeholder="输入可自动匹配库内客户" list="cli"><datalist id="cli"><option value="示例消防门店"></option><option value="示范物资公司"></option></datalist></div>`
+    : `<div class="field"><label for="fProd">商品名称</label><select id="fProd" data-sel="product"><option value="">全部商品</option><option ${state.product==='灭火器'?'selected':''}>灭火器</option><option ${state.product==='消防栓'?'selected':''}>消防栓</option></select></div>`;
+  return `<div class="tier1">
+    <div class="field composite">
+      <label>时间范围</label>
+      ${modeButtons()}
+      <div class="dates">${dateInputs()}</div>
+    </div>
+    ${ third }
+    <div class="field">${
+      state.page==='orders'
+        ? `<label for="fStatus">排序 / 其他</label><select id="fStatus"><option>按业务日期倒序</option><option>按金额倒序</option></select>`
+        : `<label for="fSpec">型号</label><select id="fSpec" data-sel="spec"><option value="">全部型号</option></select>`
+    }</div>
+  </div>`;
+}
+
+function tier2(){
+  if(state.page==='orders'){
+    return `<div class="tier2">
+      <div class="condrow"><label>订单类型</label>${optGroup('types',TYPE_OPTS,state.types)}<div class="bulk"><button class="link" data-bulk="types:none" type="button">清空</button></div></div>
+      <div class="condrow"><label>单据状态</label>${optGroup('statuses',STATUS_OPTS,state.statuses)}<div class="bulk"><button class="link" data-bulk="statuses:none" type="button">清空</button></div></div>
+    </div>`;
+  }
+  return `<div class="tier2">
+    <div class="condrow"><label>订单类型</label>${optGroup('docTypes',TYPE_OPTS,state.docTypes)}<div class="bulk"><button class="link" data-bulk="docTypes:none" type="button">清空</button></div></div>
+  </div>`;
+}
+
+function tier3(){
+  const mid = state.page==='orders'
+    ? `<button class="btn primary" type="button" data-noop>筛选</button>
+       <button class="btn" type="button" data-reset>清除筛选条件</button>
+       <span class="push"></span>
+       <button class="btn export" type="button" data-noop>导出汇总表</button>
+       <button class="btn export" type="button" data-noop>导出销售单Excel</button>
+       <button class="btn export" type="button" data-noop>导出退货单Excel</button>`
+    : `<button class="btn primary" type="button" data-noop>查询</button>
+       <button class="btn" type="button" data-reset>重置</button>`;
+  return `<div class="tier3">${mid}</div>`;
+}
+
+function renderGuide(){
+  mount.className = 'filter';
+  mount.innerHTML = tier1() + tier2() + tier3();
+  chipsEl.hidden = false;
+}
+
+function renderCurrent(){
+  // 复刻现状：4 等分网格，模式与日期拆成两格，全选/清空并列，长提示平铺
+  const datePanel = state.mode==='year'
+    ? `<div class="field"><label for="cYear">年份</label><input id="cYear" value="2026" style="max-width:220px"></div>`
+    : state.mode==='month'
+    ? `<div class="field"><label>开始月份</label><input type="month" value="2026-01"><label style="margin-top:8px">结束月份</label><input type="month" value="2026-09"></div>`
+    : `<div class="field"><label>开始日期</label><input type="date" value="2026-09-01"><label style="margin-top:8px">结束日期</label><input type="date" value="2026-09-30"></div>`;
+
+  const typeRow = `<div class="full">
+    <div class="condrow" style="margin-bottom:6px"><label>订单类型（可多选）</label>${optGroup('types',TYPE_OPTS,state.types)}
+      <div class="bulk"><button class="link" type="button" data-bulk="types:all">全选</button><button class="link" type="button" data-bulk="types:none">清空</button></div></div>
+    <p class="note">不勾选=全部；可全选、部分或单选。销售与退货共用同一天流水号，拿货与退拿货共用同一天 NH 流水。</p></div>`;
+  const statusRow = state.page==='orders' ? `<div class="full">
+    <div class="condrow" style="margin-bottom:6px"><label>单据状态（可多选）</label>${optGroup('statuses',STATUS_OPTS,state.statuses)}
+      <div class="bulk"><button class="link" type="button" data-bulk="statuses:all">全选</button><button class="link" type="button" data-bulk="statuses:none">清空</button></div></div>
+    <p class="note">不勾选=全部状态。拿货与退拿货没有「已打印」状态。</p></div>` : '';
+
+  const head = state.page==='orders' ? '' : `<div class="field"><label>客户</label><select><option>全部客户</option></select></div>`;
+  const prod = state.page==='analytics' ? `<div class="field span2"><label>商品名称</label><select><option>全部商品</option></select></div><div class="field"><label>型号</label><select><option>全部型号</option></select></div>` : '';
+  const customerField = state.page==='orders' ? `<div class="field"><label>客户名称</label><input placeholder="输入可自动匹配库内客户"></div>` : head;
+
+  const actions = state.page==='orders'
+    ? `<div class="full" style="display:flex;flex-wrap:wrap;gap:10px;padding-top:14px;border-top:1px solid var(--line-soft)">
+        <button class="btn primary" type="button" data-noop>筛选</button>
+        <button class="btn" type="button" data-reset>清除筛选条件</button>
+        <span class="push"></span>
+        <button class="btn export" type="button" data-noop>导出汇总表</button>
+        <button class="btn export" type="button" data-noop>导出销售单Excel</button>
+        <button class="btn export" type="button" data-noop>导出退货单Excel</button></div>`
+    : `<div class="full" style="display:flex;gap:10px;padding-top:14px;border-top:1px solid var(--line-soft)">
+        <button class="btn primary" type="button" data-noop>查询</button><button class="btn" type="button" data-reset>重置</button></div>`;
+
+  mount.className = 'filter flat';
+  mount.innerHTML = `
+    ${customerField}
+    <div class="field"><label>时间模式</label>${modeButtons()}</div>
+    ${datePanel}
+    ${prod}
+    ${typeRow}
+    ${statusRow}
+    ${actions}
+    <div class="full"><p class="note">切换时间模式仅调整日期输入项；点击「筛选」后更新下方结果。</p></div>`;
+  chipsEl.hidden = true;
+
+  const w = document.createElement('div');
+  w.className = 'warn';
+  w.textContent = '现状问题：时间模式与日期输入被拆成两格；按年时年份框仍占 2 列留下空档；「全选」在不勾选=全部的语义下是冗余按钮；两条长提示平铺占行；当前生效条件不可见。';
+  mount.appendChild(w);
+}
+
+// ---------------- chips ----------------
+function labelOf(list, v){ const f=list.find(o=>o[0]===v); return f?f[1]:v; }
+function renderChips(){
+  if(state.layout!=='guide'){ chipsEl.hidden=true; return; }
+  const chips = [];
+  const timeLabel = state.mode==='year' ? '2026 年' : state.mode==='month' ? '2026-01 至 2026-09' : '2026-09-01 至 2026-09-30';
+  chips.push(['time','时间：'+timeLabel]);
+  if(state.page==='orders' && state.customer.trim()) chips.push(['customer','客户：'+state.customer.trim()]);
+  if(state.page==='analytics' && state.product) chips.push(['product','商品：'+state.product]);
+
+  const pushSet = (key,set,opts,cap)=>{
+    if(set.size===0) return;
+    // 全选视作“全部”，不显示 chip，避免噪音
+    if(set.size===opts.length) return;
+    chips.push([key, cap+'：'+[...set].map(v=>labelOf(opts,v)).join('、')]);
+  };
+  if(state.page==='orders'){
+    pushSet('types',state.types,TYPE_OPTS,'类型');
+    pushSet('statuses',state.statuses,STATUS_OPTS,'状态');
+  } else {
+    pushSet('docTypes',state.docTypes,TYPE_OPTS,'类型');
+  }
+
+  chipsEl.innerHTML = `<span class="cap">已选条件</span>` + chips.map(([k,t])=>
+    `<span class="chip">${t}<button type="button" data-chip="${k}" title="移除该条件">×</button></span>`).join('');
+  if(chips.length===0) chipsEl.innerHTML += `<span class="empty">（未设置条件）</span>`;
+}
+
+// ---------------- 主题切换 ----------------
+function renderTitle(){
+  const pageName = state.page==='orders' ? '单据管理' : '数据分析';
+  const layoutName = state.layout==='guide' ? '推荐布局' : '现状对照组';
+  document.getElementById('cardTitle').textContent = pageName;
+  document.getElementById('cardHelp').textContent = state.page==='orders'
+    ? '按业务日期筛选单据；订单类型与单据状态可多选，不勾选表示全部。'
+    : '按业务日期查看销售 − 客户退货；当前库存状态不随历史日期回溯。';
+  document.getElementById('modeTag').textContent = pageName + ' · ' + layoutName;
+}
+function render(){
+  renderTitle();
+  (state.layout==='guide' ? renderGuide : renderCurrent)();
+  renderChips();
+}
+
+// ---------------- 事件（事件委托） ----------------
+document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>{
+  state.page=b.dataset.page;
+  document.querySelectorAll('[data-page]').forEach(x=>x.classList.toggle('on',x===b));
+  render();
+});
+document.querySelectorAll('[data-layout]').forEach(b=>b.onclick=()=>{
+  state.layout=b.dataset.layout;
+  document.querySelectorAll('[data-layout]').forEach(x=>x.classList.toggle('on',x===b));
+  render();
+});
+
+mount.addEventListener('click',e=>{
+  const mode = e.target.closest('[data-mode]');
+  if(mode){ state.mode=mode.dataset.mode; renderGuide(); renderChips(); return; }
+  const bulk = e.target.closest('[data-bulk]');
+  if(bulk){
+    const [g,act]=bulk.dataset.bulk.split(':');
+    const opts = g==='statuses'?STATUS_OPTS:TYPE_OPTS;
+    state[g] = new Set(act==='all' ? opts.map(o=>o[0]) : []);
+    state.layout==='guide' ? renderGuide() : renderCurrent();
+    renderChips(); return;
+  }
+  if(e.target.closest('[data-reset]')){
+    state.mode='year'; state.customer=''; state.product=''; state.spec='';
+    state.types=new Set(['sale']); state.statuses=new Set();
+    state.docTypes=new Set(TYPE_OPTS.map(o=>o[0]));
+    state.layout==='guide' ? renderGuide() : renderCurrent();
+    renderChips(); return;
+  }
+  if(e.target.closest('[data-noop]')){
+    const el=document.createElement('div'); el.className='warn';
+    el.textContent='静态原型：正式页面在此提交当前筛选条件。';
+    mount.appendChild(el); setTimeout(()=>el.remove(),1600);
+  }
+});
+mount.addEventListener('change',e=>{
+  const box = e.target.closest('input[type=checkbox][data-group]');
+  if(box){
+    const g=box.dataset.group, set=state[g];
+    box.checked ? set.add(box.value) : set.delete(box.value);
+    renderChips(); return;
+  }
+});
+mount.addEventListener('input',e=>{
+  const t=e.target.closest('[data-text]');
+  if(t){ state[t.dataset.text]=t.value; renderChips(); }
+});
+mount.addEventListener('change',e=>{
+  const s=e.target.closest('[data-sel]');
+  if(s){ state[s.dataset.sel]=s.value; renderChips(); }
+});
+chipsEl.addEventListener('click',e=>{
+  const b=e.target.closest('[data-chip]');
+  if(!b) return;
+  const k=b.dataset.chip;
+  if(k==='time') state.mode='year';
+  else if(k==='customer') state.customer='';
+  else if(k==='product') state.product='';
+  else if(state[k]) state[k]=new Set();
+  state.layout==='guide' ? renderGuide() : renderCurrent();
+  renderChips();
+});
+
+render();
+</script>
+</body>
+</html>

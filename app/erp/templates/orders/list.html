@@ -2,80 +2,90 @@
 {% block content %}
 <h2>单据管理</h2>
 <form id="ordersFilterForm" class="filter-card" method="get" action="/orders/" autocomplete="off">
-  <div class="order-filter-customer">
-    <label class="form-label mb-1" for="customerFilterInput">客户名称</label>
-    <input class="form-control" id="customerFilterInput" name="customer" value="{{customer_q}}" list="order_customer_suggestions" placeholder="输入可自动匹配库内客户" autocomplete="off">
-    <datalist id="order_customer_suggestions">{% for s in customer_suggestions %}<option value="{{s.name}}"></option>{% endfor %}</datalist>
-  </div>
-  <div class="order-filter-mode">
-    <label class="form-label mb-1 d-block">时间模式</label>
-    <div class="filter-mode-options" role="group" aria-label="时间模式">
-      {% for value, label, suffix in [('year','按年','Year'),('month','按月到月','Month'),('range','按日到日','Range')] %}
-      <input type="radio" class="btn-check" name="date_mode" id="dateMode{{suffix}}" value="{{value}}" {{ 'checked' if date_mode == value else '' }} autocomplete="off">
-      <label class="btn btn-outline-primary" for="dateMode{{suffix}}">{{label}}</label>
-      {% endfor %}
-    </div>
-  </div>
-  <div class="filter-field-date" data-mode="year" {% if date_mode != 'year' %}hidden{% endif %}>
-    <label class="form-label mb-1" for="filterYear">年份</label>
-    <input class="form-control" id="filterYear" name="year" type="number" min="2000" max="2100" value="{{filter_year}}">
-  </div>
-  <div class="filter-field-date" data-mode="month" {% if date_mode != 'month' %}hidden{% endif %}>
-    <div class="date-range">
-      <div>
-        <label class="form-label mb-1" for="filterStartMonthInput">开始月份</label>
-        <input class="form-control" id="filterStartMonthInput" name="start_month_raw" type="month" value="{{ '%04d-%02d'|format(filter_start_year, filter_start_month) }}">
-      </div>
-      <div>
-        <label class="form-label mb-1" for="filterEndMonthInput">结束月份</label>
-        <input class="form-control" id="filterEndMonthInput" name="end_month_raw" type="month" value="{{ '%04d-%02d'|format(filter_end_year, filter_end_month) }}">
-      </div>
-    </div>
-  </div>
-  <div class="filter-field-date" data-mode="range" {% if date_mode != 'range' %}hidden{% endif %}>
-    <div class="date-range">
-      <div>
-        <label class="form-label mb-1" for="filterStartDate">开始日期</label>
-        <input class="form-control" id="filterStartDate" type="date" name="start_date" value="{{start_date}}" title="开始日期">
-      </div>
-      <div>
-        <label class="form-label mb-1" for="filterEndDate">结束日期</label>
-        <input class="form-control" id="filterEndDate" type="date" name="end_date" value="{{end_date}}" title="结束日期">
-      </div>
-    </div>
-  </div>
-  <div class="filter-field-type">
-    <div class="filter-type-row" role="group" aria-label="订单类型筛选">
-      <label class="form-label" id="orderTypeLabel">订单类型（可多选）</label>
-      <div class="filter-type-options">
-        {% for value, label in [('sale','销售单'),('return','退货单'),('purchase','拿货单'),('purchase_return','退拿货单')] %}
-        <input type="checkbox" class="btn-check" name="order_type" id="orderType{{value}}" value="{{value}}" autocomplete="off" {{ 'checked' if value in order_types else '' }}>
-        <label class="btn btn-outline-primary" for="orderType{{value}}">{{label}}</label>
+  <div class="filter-tier-query">
+    <div class="filter-field-composite">
+      <label class="form-label mb-1 d-block">时间范围</label>
+      <div class="filter-mode-options" role="group" aria-label="时间模式">
+        {% for value, label, suffix in [('year','按年','Year'),('month','按月到月','Month'),('range','按日到日','Range')] %}
+        <input type="radio" class="btn-check" name="date_mode" id="dateMode{{suffix}}" value="{{value}}" {{ 'checked' if date_mode == value else '' }} autocomplete="off">
+        <label class="btn btn-outline-primary" for="dateMode{{suffix}}">{{label}}</label>
         {% endfor %}
       </div>
-      <div class="filter-type-bulk" role="group" aria-label="订单类型批量操作">
-        <button type="button" class="btn btn-outline-secondary" data-type-all="1">全选</button>
-        <button type="button" class="btn btn-outline-secondary" data-type-none="1">清空</button>
+      <div class="dates">
+        <div class="filter-field-date" data-mode="year" {% if date_mode != 'year' %}hidden{% endif %}>
+          <label class="form-label mb-1" for="filterYear">年份</label>
+          <input class="form-control" id="filterYear" name="year" type="number" min="2000" max="2100" value="{{filter_year}}">
+        </div>
+        <div class="filter-field-date" data-mode="month" {% if date_mode != 'month' %}hidden{% endif %}>
+          <div class="date-range">
+            <div>
+              <label class="form-label mb-1" for="filterStartMonthInput">开始月份</label>
+              <input class="form-control" id="filterStartMonthInput" name="start_month_raw" type="month" value="{{ '%04d-%02d'|format(filter_start_year, filter_start_month) }}">
+            </div>
+            <div>
+              <label class="form-label mb-1" for="filterEndMonthInput">结束月份</label>
+              <input class="form-control" id="filterEndMonthInput" name="end_month_raw" type="month" value="{{ '%04d-%02d'|format(filter_end_year, filter_end_month) }}">
+            </div>
+          </div>
+        </div>
+        <div class="filter-field-date" data-mode="range" {% if date_mode != 'range' %}hidden{% endif %}>
+          <div class="date-range">
+            <div>
+              <label class="form-label mb-1" for="filterStartDate">开始日期</label>
+              <input class="form-control" id="filterStartDate" type="date" name="start_date" value="{{start_date}}" title="开始日期">
+            </div>
+            <div>
+              <label class="form-label mb-1" for="filterEndDate">结束日期</label>
+              <input class="form-control" id="filterEndDate" type="date" name="end_date" value="{{end_date}}" title="结束日期">
+            </div>
+          </div>
+        </div>
       </div>
     </div>
-    <div class="form-text filter-type-hint">不勾选=全部；可全选、部分或单选。销售与退货共用同一天流水号，拿货与退拿货共用同一天 NH 流水。</div>
-  </div>
-  <div class="filter-field-type">
-    <div class="filter-type-row" role="group" aria-label="单据状态筛选">
-      <label class="form-label" id="orderStatusLabel">单据状态（可多选）</label>
-      <div class="filter-type-options">
-        {% for value, label in [('draft','草稿'),('saved','正式保存'),('printed','已打印'),('void','已作废')] %}
-        <input type="checkbox" class="btn-check" name="status" id="orderStatus{{value}}" value="{{value}}" autocomplete="off" {{ 'checked' if value in order_statuses else '' }}>
-        <label class="btn btn-outline-primary" for="orderStatus{{value}}">{{label}}</label>
-        {% endfor %}
-      </div>
-      <div class="filter-type-bulk" role="group" aria-label="单据状态批量操作">
-        <button type="button" class="btn btn-outline-secondary" data-status-all="1">全选</button>
-        <button type="button" class="btn btn-outline-secondary" data-status-none="1">清空</button>
-      </div>
+    <div class="filter-field-plain">
+      <label class="form-label mb-1" for="customerFilterInput">客户名称</label>
+      <input class="form-control" id="customerFilterInput" name="customer" value="{{customer_q}}" list="order_customer_suggestions" placeholder="输入可自动匹配库内客户" autocomplete="off">
+      <datalist id="order_customer_suggestions">{% for s in customer_suggestions %}<option value="{{s.name}}"></option>{% endfor %}</datalist>
     </div>
-    <div class="form-text filter-type-hint">不勾选=全部状态。拿货与退拿货没有「已打印」状态。</div>
   </div>
+  <div class="filter-tier-conditions">
+    <div class="filter-field-type">
+      <div class="filter-type-row" role="group" aria-label="订单类型筛选">
+        <label class="form-label" id="orderTypeLabel">订单类型（可多选）</label>
+        <div class="filter-type-options">
+          {% for value, label in [('sale','销售单'),('return','退货单'),('purchase','拿货单'),('purchase_return','退拿货单')] %}
+          <input type="checkbox" class="btn-check" name="order_type" id="orderType{{value}}" value="{{value}}" autocomplete="off" {{ 'checked' if value in order_types else '' }}>
+          <label class="btn btn-outline-primary" for="orderType{{value}}">{{label}}</label>
+          {% endfor %}
+        </div>
+        <div class="filter-type-bulk" role="group" aria-label="订单类型批量操作">
+          <button type="button" class="btn btn-outline-secondary" data-type-none="1">清空</button>
+        </div>
+      </div>
+      <div class="form-text filter-type-hint">不勾选=全部；销售与退货共用同一天流水号，拿货与退拿货共用同一天 NH 流水。</div>
+    </div>
+    <div class="filter-field-type">
+      <div class="filter-type-row" role="group" aria-label="单据状态筛选">
+        <label class="form-label" id="orderStatusLabel">单据状态（可多选）</label>
+        <div class="filter-type-options">
+          {% for value, label in [('draft','草稿'),('saved','正式保存'),('printed','已打印'),('void','已作废')] %}
+          <input type="checkbox" class="btn-check" name="status" id="orderStatus{{value}}" value="{{value}}" autocomplete="off" {{ 'checked' if value in order_statuses else '' }}>
+          <label class="btn btn-outline-primary" for="orderStatus{{value}}">{{label}}</label>
+          {% endfor %}
+        </div>
+        <div class="filter-type-bulk" role="group" aria-label="单据状态批量操作">
+          <button type="button" class="btn btn-outline-secondary" data-status-none="1">清空</button>
+        </div>
+      </div>
+      <div class="form-text filter-type-hint">不勾选=全部状态。拿货与退拿货没有「已打印」状态。</div>
+    </div>
+  </div>
+  {% if filter_chips %}
+  <div class="filter-chips" aria-label="已选条件">
+    <span class="filter-chips-cap">已选条件</span>
+    {% for chip in filter_chips %}<a class="filter-chip" href="{{ chip.url }}" title="移除该条件">{{ chip.label }}<span class="filter-chip-x" aria-hidden="true">×</span></a>{% endfor %}
+  </div>
+  {% endif %}
   <div class="filter-actions">
     <div class="filter-actions-primary">
       <button class="btn btn-primary" type="submit">筛选</button>
@@ -258,12 +268,8 @@
   syncModePanels();
   syncExportLink();
 
-  // 订单类型多选：全选 / 清空（不勾选=全部）
+  // 订单类型 / 单据状态多选：不勾选=全部，因此只保留「清空」。
   const typeBoxes = form.querySelectorAll('input[name="order_type"]');
-  form.querySelector('[data-type-all]')?.addEventListener('click', () => {
-    typeBoxes.forEach(box => { box.checked = true; });
-    syncExportLink();
-  });
   form.querySelector('[data-type-none]')?.addEventListener('click', () => {
     typeBoxes.forEach(box => { box.checked = false; });
     syncExportLink();
@@ -271,10 +277,6 @@
 
   // E2：单据状态多选（不勾选=全部状态）
   const statusBoxes = form.querySelectorAll('input[name="status"]');
-  form.querySelector('[data-status-all]')?.addEventListener('click', () => {
-    statusBoxes.forEach(box => { box.checked = true; });
-    syncExportLink();
-  });
   form.querySelector('[data-status-none]')?.addEventListener('click', () => {
     statusBoxes.forEach(box => { box.checked = false; });
     syncExportLink();

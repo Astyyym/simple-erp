@@ -247,7 +247,7 @@ def test_analytics_top_filter_supports_year_month_range_and_document_types():
     assert 'id="analyticsDateModeyear"' in html and 'id="analyticsDateModeyear" value="year" checked' in html
     assert 'name="document_type"' in html
     assert 'id="analyticsDocTypesale"' in html and 'id="analyticsDocTypepurchase_return"' in html
-    assert "全选" in html and "清空" in html
+    assert 'data-type-none' in html and 'data-type-all' not in html
 
     # 按月到月：2 月到 3 月
     html = client.get("/analytics/", query_string={

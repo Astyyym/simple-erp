@@ -49,11 +49,11 @@ def test_order_type_filter_supports_all_sale_and_return_while_preserving_conditi
     assert f"SALE-TYPE-{suffix}" in all_html and f"RETURN-TYPE-{suffix}" in all_html
     assert f"SALE-TYPE-{suffix}" in sale_html and f"RETURN-TYPE-{suffix}" not in sale_html
     assert f"RETURN-TYPE-{suffix}" in return_html and f"SALE-TYPE-{suffix}" not in return_html
-    # 订单类型筛选改为可多选（复选框 + 全选/清空），不再使用单选下拉。
+    # 订单类型筛选改为可多选（复选框 + 清空）；不勾选=全部，故无「全选」按钮。
     assert 'name="order_type"' in all_html
     assert "订单类型（可多选）" in all_html
     assert 'id="orderTypesale"' in all_html and 'id="orderTypereturn"' in all_html
-    assert "全选" in all_html and "清空" in all_html
+    assert 'data-type-none' in all_html and 'data-type-all' not in all_html
     assert f'value="{customer_name}"' in sale_html
     assert 'value="2026-07-08"' in sale_html
 

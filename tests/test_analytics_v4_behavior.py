@@ -288,7 +288,7 @@ def test_invalid_filter_values_stay_visible_instead_of_appearing_as_all_party():
 
 
 def test_analytics_filter_card_uses_aligned_grid_and_split_order_type_block():
-    """筛选卡：与单据管理页共用 .filter-card；订单类型标签与全选/清空同行、操作条独立分隔。"""
+    """筛选卡：与单据管理页共用 .filter-card 三段式；订单类型标签与清空同行、操作条独立分隔。"""
     from pathlib import Path
 
     init_db()
@@ -298,19 +298,27 @@ def test_analytics_filter_card_uses_aligned_grid_and_split_order_type_block():
 
     assert 'class="filter-card"' in html
     assert 'class="row analytics-filters"' not in html
-    # 共享样式在 base.html：4 列满行网格 + 日期面板跨 2 格 + 操作条整行。
-    assert ".filter-card{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))" in base
+    # 共享样式在 base.html：查询三要素（时间组合控件）+ 条件多选 + 动作条。
+    assert ".filter-tier-query{display:flex;flex-wrap:wrap" in base
     assert ".filter-card>*{min-width:0}" in base
-    assert ".filter-field-date{grid-column:span 2}" in base
-    assert ".filter-actions{grid-column:1/-1" in base
+    assert ".filter-field-composite{flex:1.2 1 320px" in base
+    assert ".filter-actions{display:flex" in base
     # 嵌套日期行不再使用 Bootstrap 负外边距
     assert ".filter-card .row{margin-left:0;margin-right:0}" in base
 
     type_row = html.split('class="filter-type-row"', 1)[1].split('filter-type-hint', 1)[0]
     assert 'class="filter-type-options"' in type_row
     assert 'class="filter-type-bulk"' in type_row
-    # 全选/清空与四类同行左对齐，不再被推到行尾。
+    # 清空与四类同行左对齐；不勾选=全部，无全选按钮。
     assert ".filter-type-options,.filter-type-bulk{display:flex;flex-wrap:wrap;gap:8px}" in base
     assert ".filter-type-bulk{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}" not in base
+    assert 'data-type-all' not in html
+    # chip 行样式在共享 CSS；默认无筛选时不渲染空行。
+    assert ".filter-chips{display:flex" in base
+    assert 'class="filter-chips"' not in html
+    # 勾选单一类型（部分选择）后出现「已选条件」chip，且清空链接指向去掉该条件的 URL。
+    filtered = create_app().test_client().get('/analytics/', query_string={'document_type': 'sale'}).get_data(as_text=True)
+    assert 'class="filter-chips"' in filtered
+    assert '类型：销售单' in filtered
     # analytics-v4.css 不再重复定义筛选卡（避免两套样式漂移）。
     assert ".erp-analytics .analytics-filters" not in css

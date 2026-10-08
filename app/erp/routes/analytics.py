@@ -8,6 +8,7 @@ from flask import Blueprint, jsonify, redirect, render_template, request, url_fo
 from erp.db import get_db
 from erp.services.analytics import summarize_analytics
 from erp.utils.errors import error_response, not_found, RecordNotFound
+from erp.utils.filter_chips import analytics_filter_chips
 from erp.utils.money import cents_to_yuan
 from erp.utils.quantity import format_quantity_3dp
 from erp.services.reconciliation import (
@@ -67,6 +68,21 @@ def _customers():
         return conn.execute(
             "SELECT id, name FROM customers WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE, id"
         ).fetchall()
+
+
+def _customer_name(customer_id: str) -> str:
+    """客户 chip 展示用名称；找不到或未选时返回空串。"""
+    if not customer_id:
+        return ""
+    try:
+        key = int(customer_id)
+    except (TypeError, ValueError):
+        return ""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT name FROM customers WHERE id=? AND deleted_at IS NULL", (key,)
+        ).fetchone()
+    return row["name"] if row else ""
 
 
 def _products():
@@ -316,6 +332,13 @@ def analytics_center():
         end_year_value=month_end_year,
         end_month_value=month_end_month,
         selected_document_types=set(document_types),
+        filter_chips=analytics_filter_chips(
+            customer_id=customer_raw,
+            customer_name=_customer_name(customer_raw),
+            product_name=product_name,
+            spec=spec,
+            document_types=document_types,
+        ),
     ), (400 if error else 200)
 
 

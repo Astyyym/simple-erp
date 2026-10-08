@@ -49,7 +49,7 @@ def test_date_mode_choices_are_separate_buttons_with_spacing():
 
 
 def test_order_filter_type_block_keeps_bulk_buttons_on_the_type_row():
-    """订单类型块：标签 + 四类复选框 + 全选/清空同一行左对齐（不再推到最右）。"""
+    """订单类型块：标签 + 四类复选框 + 清空同行左对齐；不勾选=全部，故不再有「全选」。"""
     init_db()
     html = create_app().test_client().get("/orders/").get_data(as_text=True)
     form = html.split('id="ordersFilterForm"', 1)[1].split("</form>", 1)[0]
@@ -58,13 +58,18 @@ def test_order_filter_type_block_keeps_bulk_buttons_on_the_type_row():
     # 从 filter-type-row 到提示文案之间 = 类型行本体（内含四类与批量按钮）。
     type_row = form.split('class="filter-type-row"', 1)[1].split('filter-type-hint', 1)[0]
     assert 'class="filter-type-options"' in type_row, "四类复选框与标签同行"
-    assert 'class="filter-type-bulk"' in type_row, "全选/清空与四类同行"
+    assert 'class="filter-type-bulk"' in type_row, "清空与四类同行"
+    assert 'data-type-all' not in form, "不勾选=全部，全选按钮冗余，应已移除"
+    assert 'data-status-all' not in form
     assert ".filter-type-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}" in html
     # 批量按钮不再被推到行尾
     assert ".filter-type-bulk{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}" not in html
-    # 字段网格：4 列满行，日期面板跨 2 格
-    assert "grid-template-columns:repeat(4,minmax(0,1fr))" in html
-    assert ".filter-field-date{grid-column:span 2}" in html
+    # 三段式布局：查询三要素 + 条件多选 + 动作条；时间模式与日期输入同属组合控件
+    assert 'class="filter-tier-query"' in form
+    assert 'class="filter-tier-conditions"' in form
+    assert 'class="filter-field-composite"' in form
+    assert ".filter-tier-query{display:flex;flex-wrap:wrap" in html
+    assert ".filter-field-composite{flex:1.2 1 320px" in html
 
 
 def test_order_filter_actions_split_primary_and_export_groups():

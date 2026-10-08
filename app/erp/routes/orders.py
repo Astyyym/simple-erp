@@ -12,6 +12,7 @@ from erp.utils.exporting import (
     workbook_download,
 )
 from erp.utils.errors import error_response, not_found
+from erp.utils.filter_chips import order_filter_chips
 from erp.utils.money import cents_to_yuan, line_subtotal_cents, micro_to_yuan, yuan_to_cents
 from erp.utils.pdf import generate_order_pdf, send_pdf_for_preview
 
@@ -463,6 +464,11 @@ def list_orders():
         dashboard_notice=dashboard_notice,
         unique_customer=unique_customer,
         summary_hint=summary_hint,
+        filter_chips=order_filter_chips(
+            customer_q=customer_q,
+            order_types=type_filter,
+            order_statuses=status_filter,
+        ),
         cents_to_yuan=cents_to_yuan,
     )
 

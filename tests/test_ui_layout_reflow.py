@@ -130,25 +130,30 @@ def test_settings_uses_two_columns_only_on_wide_screens():
 
 
 def test_both_filter_cards_share_one_full_row_field_grid():
-    """单据管理与数据分析的筛选卡：同一套 .filter-card 满行字段网格，不留空格子。"""
+    """单据管理与数据分析的筛选卡：同一套 .filter-card 三段式结构。"""
     orders = _html("/orders/")
     assert 'class="filter-card"' in orders
-    assert ".filter-card{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))" in orders
-    assert ".filter-field-date{grid-column:span 2}" in orders
-    # 订单类型整行：标签 + 四类 + 全选/清空同行左对齐（不再把批量按钮推到最右）。
-    assert ".filter-field-type{grid-column:1/-1}" in orders
+    # 三段式：查询三要素（时间组合控件 + 客户）→ 条件多选 → 动作条。
+    assert ".filter-tier-query{display:flex;flex-wrap:wrap" in orders
+    assert ".filter-field-composite{flex:1.2 1 320px" in orders
+    assert ".filter-tier-conditions{display:grid" in orders
+    # 订单类型整行：标签 + 四类 + 清空同行左对齐（不勾选=全部，无全选）。
     assert ".filter-type-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}" in orders
     assert ".filter-type-options,.filter-type-bulk{display:flex;flex-wrap:wrap;gap:8px}" in orders
     assert "justify-content:flex-end" not in orders.split('.filter-type-row')[1].split('}')[0]
+    assert 'data-type-all' not in orders and 'data-status-all' not in orders
 
     analytics = _html("/analytics/")
     assert "analytics-v4.css" in analytics
     # 数据分析页复用同一套类名，不再维护第二套筛选卡样式。
     assert 'class="filter-card"' in analytics
+    assert 'class="filter-tier-query"' in analytics
+    assert 'class="filter-field-composite"' in analytics
     assert 'class="filter-field-type"' in analytics
     assert 'class="filter-type-row"' in analytics
     assert 'class="filter-type-bulk"' in analytics
     assert 'class="analytics-order-type"' not in analytics
+    assert 'data-type-all' not in analytics
     from erp import create_app as _create
     app = _create()
     css = app.test_client().get("/static/analytics-v4.css").get_data(as_text=True)
