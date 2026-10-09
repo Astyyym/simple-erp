@@ -8,7 +8,7 @@
 
 - 正式目录（唯一真源）：本地 Windows 项目根目录
 - GitHub：`Astyyym/simple-erp`，默认分支 `main`
-- 当前源码版本以根目录 `VERSION` 为准；当前工作区 `VERSION` 为 `v3.2.0`
+- 当前源码版本以根目录 `VERSION` 为准；当前工作区 `VERSION` 为 `v3.3.0`
 - 当前需求权威文档：`docs/需求/消防器材店ERP系统-需求文档.md`
 
 ## 怎么跑
