@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>{{ title }}</h2>
+<p class="text-muted mb-3">
+  以下为**预检结果，尚未写入数据库**。请核对无误后再点「确认导入」；点「取消」不会改动任何数据。
+</p>
+
+{% if not has_backup %}
+<div class="alert alert-warning" role="alert">
+  <strong>尚未创建任何备份。</strong>导入会直接改动业务数据库。
+  建议先到 <a href="/settings/#backupSection">系统设置 → 备份与恢复</a> 备份，再继续。
+</div>
+{% endif %}
+
+<div class="alert alert-info">
+  <strong>预检结果：</strong>
+  将新增：{{ preview.added }}
+  {% if preview.updated %}，将更新：{{ preview.updated }}{% endif %}
+  ，跳过：{{ preview.skipped }}
+  ，错误：{{ preview.error_count }}
+</div>
+
+{% if kind == 'customers' %}
+<div class="alert alert-secondary">
+  <strong>核对用合计：</strong>客户欠款合计 <strong>¥{{ cents_to_yuan(totals.opening_balance_total_cents) }}</strong>
+  （新增+更新行）。请与旧软件导出的应收合计对照，不一致请先排查再导入。
+</div>
+{% else %}
+<div class="alert alert-secondary">
+  <strong>核对用合计：</strong>商品期初库存金额合计 <strong>¥{{ cents_to_yuan(totals.initial_cost_total_cents) }}</strong>
+  （新增+更新行）。请与旧软件的库存金额对照，不一致请先排查再导入。
+</div>
+{% endif %}
+
+<form method="post" action="{{ action_url }}" class="d-flex flex-wrap gap-2 align-items-center mb-3">
+  <input type="hidden" name="preview_json" value="{{ preview.to_json() }}">
+  <label class="form-label mb-0">同名处理：</label>
+  <select class="form-select" name="same_name" style="max-width:220px">
+    <option value="skip" selected>跳过（默认，不覆盖已有）</option>
+    <option value="update">更新（覆盖联系方式/期初等档案字段）</option>
+  </select>
+  <button class="btn btn-primary">确认导入</button>
+  <a class="btn btn-outline-secondary" href="{{ back_url }}">取消</a>
+</form>
+
+{% if preview.errors %}
+<div class="alert alert-danger">
+  <strong>需要处理的错误行（{{ preview.error_count }}）：</strong>
+  <ul class="mb-0 mt-2">{% for e in preview.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<div class="table-responsive">
+<table class="table table-sm align-middle">
+  <thead><tr><th>行号</th><th>对象</th><th>处理</th><th>说明</th></tr></thead>
+  <tbody>
+  {% for r in preview.rows %}
+    <tr>
+      <td>{{ r.line_number }}</td>
+      <td>{{ r.identity }}</td>
+      <td>
+        {% if r.action == 'add' %}<span class="badge text-bg-success">新增</span>
+        {% elif r.action == 'update' %}<span class="badge text-bg-info">更新</span>
+        {% elif r.action == 'skip' %}<span class="badge text-bg-secondary">跳过</span>
+        {% else %}<span class="badge text-bg-danger">错误</span>{% endif %}
+      </td>
+      <td class="text-muted small">{{ r.reason }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

@@ -41,6 +41,8 @@ dist\simple-erp-windows-vX.Y.Z.zip
 
 本轮 `v2.0.0` 为独立新目录 `dist\local-v2.0.0\简单ERP\` 和 `dist\simple-erp-windows-v2.0.0.zip`。由当时Windows源码fresh构建，未覆盖上述常规目录或旧包。ZIP完整解压后使用；根配置与冻结内置配置都来自 `packaging/default_config.json`，不是本机config。Windows产品版本保留精确 `v2.0.0`，数字文件版本为 `2.0.0.0`。
 
+当前 `v3.3.0` 在 v3.2.0 之上交付「旧数据迁移承接」整批（备份与恢复、导入扩列与两段式预检、期初成本来源、区间两端余额、档案来源标记与零建档起步、店铺信息引导与顶栏实时钟、基础资料列表页三段式重排、品牌区英文副标题移除），产物为 `dist\local-v3.3.0\简单ERP\` 和 `dist\simple-erp-windows-v3.3.0.zip`，同样 fresh 构建、只含通用配置、不携带业务/演示/测试数据。Windows 产品版本 `v3.3.0`，数字文件版本 `3.3.0.0`。
+
 当前 `v3.2.0` 在 v3.1.0 之上合并交付产品审查修复第二轮与筛选卡三段式重排，产物为 `dist\local-v3.2.0\简单ERP\` 和 `dist\simple-erp-windows-v3.2.0.zip`，同样 fresh 构建、只含通用配置、不携带业务/演示/测试数据。Windows 产品版本 `v3.2.0`，数字文件版本 `3.2.0.0`。
 
 当前 `v3.1.0` 为首次推送 `main` 并创建 GitHub Release 的版本，产物为 `dist\local-v3.1.0\简单ERP\` 和 `dist\simple-erp-windows-v3.1.0.zip`，同样 fresh 构建、只含通用配置、不携带业务/演示/测试数据。Windows 产品版本 `v3.1.0`，数字文件版本 `3.1.0.0`。

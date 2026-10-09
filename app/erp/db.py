@@ -50,6 +50,9 @@ def init_db() -> None:
         ensure_order_item_cost_fields(conn)
         ensure_return_relation_fields(conn)
         ensure_order_submission_fields(conn)
+        ensure_master_data_origin_fields(conn)
+        ensure_product_brand_field(conn)
+        ensure_initialization_cost_source(conn)
         backfill_product_pinyin_initials(conn)
         purge_expired_recycle_bin(conn)
         row = conn.execute("PRAGMA integrity_check").fetchone()
@@ -126,6 +129,39 @@ def ensure_order_type_column(conn: sqlite3.Connection) -> None:
 def ensure_product_image_column(conn: sqlite3.Connection) -> None:
     if "image_path" not in _columns(conn, "products"):
         conn.execute("ALTER TABLE products ADD COLUMN image_path TEXT NOT NULL DEFAULT ''")
+
+
+def ensure_master_data_origin_fields(conn: sqlite3.Connection) -> None:
+    """G-0a：商品/客户档案来源标记。
+
+    取值 `manual`（手工新建）/`import`（批量导入）/`order`（开单时自动建档）。
+    旧数据一律留空（NULL），读取时按「未知」处理——**不根据 usage_count 等间接指标猜测来源**。
+    幂等：列已存在即跳过。
+    """
+    for table in ("products", "customers"):
+        if "origin" not in _columns(conn, table):
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN origin TEXT")
+
+
+def ensure_product_brand_field(conn: sqlite3.Connection) -> None:
+    """E-2：商品品牌（可选）。
+
+    旧软件的商品档案带品牌，本系统原先无此字段，迁移即丢数据。取值自由文本；
+    **可空、不做必填、不参与业务唯一键**（唯一键仍是 `(TRIM(name), TRIM(spec))`），
+    因此加列不会阻塞迁移、不会与既有商品冲突。幂等：列已存在即跳过。
+    """
+    if "brand" not in _columns(conn, "products"):
+        conn.execute("ALTER TABLE products ADD COLUMN brand TEXT")
+
+
+def ensure_initialization_cost_source(conn: sqlite3.Connection) -> None:
+    """C-1：期初成本来源结构化表达。
+
+    取值 `known`（已知成本）/`estimated`（用户确认估算）/`zero`（明确零成本）。
+    旧数据留空，读取时按「未标注」处理，不猜。
+    """
+    if "cost_source" not in _columns(conn, "inventory_initializations"):
+        conn.execute("ALTER TABLE inventory_initializations ADD COLUMN cost_source TEXT NOT NULL DEFAULT ''")
 
 
 def ensure_product_inventory_fields(conn: sqlite3.Connection) -> None:
@@ -568,6 +604,8 @@ CREATE TABLE IF NOT EXISTS products (
     is_active INTEGER NOT NULL DEFAULT 1,
     usage_count INTEGER NOT NULL DEFAULT 0,
     pinyin_initials TEXT DEFAULT '',
+    origin TEXT,
+    brand TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TEXT,
@@ -591,6 +629,7 @@ CREATE TABLE IF NOT EXISTS inventory_initializations (
     cost_total_micro INTEGER NOT NULL CHECK(cost_total_micro >= 0),
     business_date TEXT NOT NULL,
     source TEXT NOT NULL DEFAULT '',
+    cost_source TEXT NOT NULL DEFAULT '',
     request_key TEXT NOT NULL UNIQUE,
     payload_hash TEXT NOT NULL,
     revision_no INTEGER NOT NULL DEFAULT 0 CHECK(revision_no >= 0),
@@ -700,6 +739,7 @@ CREATE TABLE IF NOT EXISTS customers (
     notes TEXT DEFAULT '',
     opening_balance_cents INTEGER NOT NULL DEFAULT 0,
     is_active INTEGER NOT NULL DEFAULT 1,
+    origin TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TEXT,

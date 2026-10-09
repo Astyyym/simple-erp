@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>客户管理</h2>
+{% if not has_backup %}
+<div class="alert alert-warning" role="alert">
+  <strong>尚未创建任何备份。</strong>导入或迁移旧数据会直接改动业务数据库，出错后无法回退。
+  请先到 <a href="/settings/#backupSection">系统设置 → 备份与恢复</a> 点一次「立即备份」，再开始导入。
+</div>
+{% endif %}
 {% if import_error %}<div class="alert alert-danger">{{ import_error }}</div>{% endif %}
 {% if import_result %}
 <div class="alert alert-info">
@@ -9,32 +15,64 @@
   {% if import_result.error_count > import_result.errors|length %}<div class="small mt-2">仅显示前{{ import_result.errors|length }}条错误，其余{{ import_result.error_count - import_result.errors|length }}条未展开。</div>{% endif %}
 </div>
 {% endif %}
-<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
-  <a class="btn btn-outline-primary" href="/customers/import/template">下载Excel模板</a>
-  <a class="btn btn-outline-success" href="/customers/export.xlsx{% if q %}?q={{ q|urlencode }}{% endif %}">导出Excel</a>
-  <form class="d-flex gap-2" method="post" action="/customers/import" enctype="multipart/form-data">
-    <input class="form-control" type="file" name="file" accept=".xlsx,.csv" required>
-    <button class="btn btn-primary text-nowrap">批量导入</button>
-  </form>
-  <span class="text-muted small">支持.xlsx/.csv，最大5MB；重复名称自动跳过</span>
+{% if import_result %}{% set import_open = true %}{% endif %}
+<div class="list-import-card">
+  <div class="list-import-row">
+    <div class="list-import-links">
+      <a class="btn btn-outline-primary" href="/customers/import/template">下载Excel模板</a>
+      <a class="btn btn-outline-success" href="/customers/export.xlsx{% if q %}?q={{ q|urlencode }}{% endif %}">导出Excel</a>
+    </div>
+    <details class="list-import-panel" {% if import_error or import_open %}open{% endif %}>
+      <summary class="list-import-toggle">批量导入</summary>
+      <form class="list-import-form" method="post" action="/customers/import" enctype="multipart/form-data">
+        <input class="form-control" type="file" name="file" accept=".xlsx,.csv" required>
+        <select class="form-select" name="same_name">
+          <option value="skip" selected>同名：跳过</option>
+          <option value="update">同名：更新</option>
+        </select>
+        <button class="btn btn-primary text-nowrap">预检并导入</button>
+      </form>
+      <p class="list-import-hint">支持.xlsx/.csv，最大5MB；列：客户名称/电话/地址/期初余额（元）/备注；旧单列表头仍兼容。期初填**未结欠款**（正数=客户欠我）。</p>
+    </details>
+  </div>
 </div>
-<form class="row g-2 mb-3" method="get" action="/customers/">
-  <input class="form-control col" id="customerSearchInput" name="q" value="{{q}}" list="customer_name_suggestions" placeholder="输入相似字符查找客户">
-  <datalist id="customer_name_suggestions">{% for s in suggestions %}<option value="{{s.name}}"></option>{% endfor %}</datalist>
-  <button class="btn btn-primary col-2">查找客户</button>
-  <a class="btn btn-outline-secondary col-2" href="/customers/">清除信息</a>
-</form>
-<form class="row g-2 mb-3" method="post" action="/customers/create"><input class="form-control col" name="name" placeholder="客户名称" required><input class="form-control col" name="phone" placeholder="电话"><input class="form-control col" name="address" placeholder="地址"><input class="form-control col" name="opening_balance" placeholder="期初余额(元)" value="0"><button class="btn btn-primary col-2">新增客户</button></form>
+<div class="list-tools">
+  <form class="list-search" method="get" action="/customers/">
+    <input class="form-control" id="customerSearchInput" name="q" value="{{q}}" list="customer_name_suggestions" placeholder="输入相似字符查找客户">
+    <datalist id="customer_name_suggestions">{% for s in suggestions %}<option value="{{s.name}}"></option>{% endfor %}</datalist>
+    {% if quality == 'todo' %}<input type="hidden" name="quality" value="todo">{% endif %}
+    <button class="btn btn-primary">查找客户</button>
+    <a class="btn btn-outline-secondary" href="/customers/">清除信息</a>
+  </form>
+  <div class="list-facet">
+    <span class="list-facet-cap">档案筛选：</span>
+    <a class="btn btn-sm {{ 'btn-primary' if quality != 'todo' else 'btn-outline-secondary' }}" href="/customers/{% if q %}?q={{ q|urlencode }}{% endif %}">全部</a>
+    <a class="btn btn-sm {{ 'btn-primary' if quality == 'todo' else 'btn-outline-secondary' }}" href="/customers/?quality=todo{% if q %}&q={{ q|urlencode }}{% endif %}">待补全{% if todo_count %}（{{ todo_count }}）{% endif %}</a>
+    {% if quality == 'todo' %}<span class="list-facet-hint">仅显示开单自动建档、且电话与地址都为空的客户；补全后会自动移出本筛选。</span>{% endif %}
+  </div>
+  <details class="list-create-panel" {% if create_open %}open{% endif %}>
+    <summary class="list-create-toggle">新增客户</summary>
+    <form class="list-create" method="post" action="/customers/create">
+      <div class="list-create-fields">
+        <input class="form-control" name="name" placeholder="客户名称" required>
+        <input class="form-control" name="phone" placeholder="电话">
+        <input class="form-control" name="address" placeholder="地址">
+        <input class="form-control" name="opening_balance" placeholder="期初余额(元)" value="0">
+      </div>
+      <button class="btn btn-primary">确认新增</button>
+    </form>
+  </details>
+</div>
 <button class="btn btn-danger mb-3" type="button" onclick="submitSelected('bulkCustomersForm','确认删除选中的客户吗？')">删除选中</button>
-{% if truncated %}<div class="alert alert-info py-2 mb-2" role="status">列表已截断（仅显示前 200 条），可用上方搜索缩小范围。</div>{% endif %}
+{% if truncated %}<div class="alert alert-warning py-2 mb-2" role="status"><strong>列表已截断</strong>（仅显示前 200 条）。迁移后客户可能很多，请用上方搜索缩小范围，**不要据此认为数据丢失**。</div>{% endif %}
 <form id="bulkCustomersForm" method="post" action="/customers/bulk_delete"></form>
 <table class="table table-striped align-middle stable-table">
-  <colgroup><col style="width:44px"><col style="width:21%"><col style="width:16%"><col style="width:28%"><col style="width:12%"><col style="width:260px"></colgroup>
-  <thead><tr><th><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>名称</th><th>电话</th><th>地址</th><th>期初</th><th class="action-cell">操作</th></tr></thead>
+  <colgroup><col style="width:44px"><col style="width:22%"><col style="width:15%"><col style="width:26%"><col style="width:100px"><col style="width:90px"><col style="width:190px"></colgroup>
+  <thead><tr><th><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>名称</th><th>电话</th><th>地址</th><th>期初</th><th>来源</th><th class="action-cell">操作</th></tr></thead>
   <tbody>
   {% for c in customers %}
   <tr>
-    <td><input form="bulkCustomersForm" type="checkbox" name="ids" value="{{c.id}}"></td><td title="{{c.name}}">{{c.name}}</td><td title="{{c.phone}}">{{c.phone}}</td><td title="{{c.address}}">{{c.address}}</td><td>¥{{cents_to_yuan(c.opening_balance_cents)}}</td>
+    <td><input form="bulkCustomersForm" type="checkbox" name="ids" value="{{c.id}}"></td><td title="{{c.name}}">{{c.name}}{% if customer_needs_completion(c) %}<span class="badge text-bg-warning ms-1" title="缺联系方式：请补全电话或地址，便于后续对账联系">待补全</span>{% endif %}</td><td title="{{c.phone}}">{{c.phone}}</td><td title="{{c.address}}">{{c.address}}</td><td>¥{{cents_to_yuan(c.opening_balance_cents)}}</td><td>{{ origin_label(c.origin) }}</td>
     <td class="action-cell"><div class="action-wrap"><a class="btn btn-sm btn-primary" href="/customers/{{c.id}}/edit">编辑</a><form class="d-inline ajax-delete-form" method="post" action="/customers/{{c.id}}/delete"><button class="btn btn-sm btn-danger">删除</button></form></div></td>
   </tr>
   {% endfor %}

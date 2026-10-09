@@ -68,9 +68,15 @@
     </div>
   </section>
 
-  <section class="settings-card settings-card-wide">
+  <section class="settings-card settings-card-wide" id="printInfoSection">
     <h3>打印单信息</h3>
     <p class="text-muted small">版式位置固定：在对应文本框填写内容即可出现在打印单对应位置。副标题「销售清单」不可改。</p>
+    {% if print_info_missing %}
+    <div class="alert alert-warning py-2" role="alert">
+      <strong>打印件上会留空白：</strong>还没填 {{ print_info_missing | join('、') }}。
+      这两项没有出厂默认值，不填就会在打印单上印成空白。
+    </div>
+    {% endif %}
     <div class="mb-3">
       <label class="form-label" for="print_order_phone">订货电话</label>
       <input class="form-control" id="print_order_phone" name="print_order_phone" value="{{ config.print_order_phone }}">
@@ -130,6 +136,22 @@
   </div>
 </form>
 
+<section class="settings-card mt-4" id="printInfoPromptSection">
+  <h3>打印信息提示</h3>
+  <p class="text-muted small mb-2">
+    工作台会在「订货电话 / 订货地址」为空时提示一次。补全后提示自动消失；不想再看到可以关掉。
+  </p>
+  <form method="post" action="{{ url_for('settings.dismiss_print_info_prompt' if not config.print_info_prompt_dismissed else 'settings.restore_print_info_prompt') }}">
+    {% if config.print_info_prompt_dismissed %}
+    <button type="submit" class="btn btn-outline-secondary">重新打开提示</button>
+    <span class="text-muted small ms-2">当前：已关闭</span>
+    {% else %}
+    <button type="submit" class="btn btn-outline-secondary">不再提示</button>
+    <span class="text-muted small ms-2">当前：提示中</span>
+    {% endif %}
+  </form>
+</section>
+
 <section class="settings-card mt-4">
   <h3>数据存储位置</h3>
   <p class="text-muted small">业务数据在数据根目录下的 <code>data/erp.db</code> 等文件夹。路径记忆在本机 LocalAppData，不跟程序安装包走。</p>
@@ -157,6 +179,91 @@
       迁移包含 data / backups / imports / logs；temp_pdf 会在新目录重建。
     </p>
   </form>
+</section>
+
+<section class="settings-card settings-card-wide mt-4" id="backupSection">
+  <h3>备份与恢复</h3>
+  <p class="text-muted small">
+    备份会把 <code>erp.db</code>、商品图片与旧账存档打包成一个 zip，保存在数据目录的 <code>backups/</code> 下。
+    <strong>备份与数据放在同一块盘上等于没有备份</strong>，请定期用「另存到…」把备份复制到 U 盘或另一块盘。
+    超过 {{ backup_retention_days }} 天的旧备份会在下次备份时自动清理。
+  </p>
+  <form method="post" action="{{ url_for('settings.backup_create') }}" class="mb-3">
+    <button type="submit" class="btn btn-primary">立即备份</button>
+  </form>
+
+  {% if backups %}
+  <table class="table align-middle">
+    <thead><tr><th>备份时间</th><th>大小</th><th>原因</th><th>操作</th></tr></thead>
+    <tbody>
+    {% for b in backups %}
+      <tr>
+        <td>{{ b.created_at_display }}</td>
+        <td>{{ b.size_display }}</td>
+        <td>{{ b.reason }}</td>
+        <td>
+          <form method="post" action="{{ url_for('settings.backup_copy') }}" class="d-flex flex-wrap gap-2 mb-2">
+            <input type="hidden" name="backup_name" value="{{ b.name }}">
+            <input class="form-control form-control-sm" style="max-width:240px" name="destination_dir" placeholder="另存目录，例如 D:\备份">
+            <button type="submit" class="btn btn-sm btn-outline-secondary">另存到…</button>
+          </form>
+          <form method="post" action="{{ url_for('settings.backup_restore') }}" class="d-flex flex-wrap gap-2 align-items-center"
+                onsubmit="return confirm('将用这份备份覆盖当前数据库。恢复前会自动备份当前库。确定继续？');">
+            <input type="hidden" name="backup_name" value="{{ b.name }}">
+            <input class="form-control form-control-sm" style="max-width:120px" name="confirm_text" placeholder="输入 恢复">
+            <label class="form-check form-check-inline mb-0">
+              <input class="form-check-input" type="checkbox" name="include_config" value="1">
+              <span class="form-check-label small">同时恢复设置</span>
+            </label>
+            <button type="submit" class="btn btn-sm btn-danger">恢复此备份</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted small mb-0">还没有任何备份。迁移旧数据前，请先点上面的「立即备份」。</p>
+  {% endif %}
+</section>
+
+<section class="settings-card settings-card-wide mt-4" id="legacyArchiveSection">
+  <h3>旧账留底存档</h3>
+  <p class="text-muted small">
+    把旧软件导出的欠款清单（客户 / 单号 / 日期 / 金额等）<strong>原样保存为文件</strong>到数据目录的 <code>legacy_archive/</code>。
+    <strong>此存档只作留底凭证，不参与账款计算</strong>——旧软件口径与本系统不同，硬塞进去只会污染账款。
+    客户来问「这 5000 怎么来的」时，人工翻档核对。
+  </p>
+  <form method="post" action="{{ url_for('settings.legacy_archive_upload') }}" enctype="multipart/form-data" class="d-flex flex-wrap gap-2 align-items-end mb-3">
+    <div>
+      <label class="form-label" for="legacy_archive_file">旧欠款清单文件</label>
+      <input class="form-control" id="legacy_archive_file" type="file" name="file" accept=".xlsx,.xls,.csv,.txt" required>
+    </div>
+    <div>
+      <label class="form-label" for="legacy_archive_note">备注（可选）</label>
+      <input class="form-control" id="legacy_archive_note" name="note" placeholder="例如：截至 2026-10-01 未结欠款">
+    </div>
+    <button class="btn btn-outline-primary">存档（仅留底）</button>
+  </form>
+  {% if archives %}
+  <table class="table align-middle">
+    <thead><tr><th>存档时间</th><th>文件</th><th>大小</th><th>行数</th><th>备注</th><th>操作</th></tr></thead>
+    <tbody>
+    {% for a in archives %}
+      <tr>
+        <td>{{ a.saved_at_display }}</td>
+        <td>{{ a.original_name }}</td>
+        <td>{{ a.size_display }}</td>
+        <td>{{ a.line_count if a.line_count is not none else '—' }}</td>
+        <td>{{ a.note }}</td>
+        <td><a class="btn btn-sm btn-outline-secondary" href="{{ url_for('settings.legacy_archive_download', name=a.name) }}">下载回看</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted small mb-0">还没有存档。迁移时若有旧欠款明细，可存这里留底。</p>
+  {% endif %}
 </section>
 
 <div class="settings-leave-modal d-none" id="settingsLeaveModal" role="dialog" aria-modal="true" aria-labelledby="settingsLeaveTitle">

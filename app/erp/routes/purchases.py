@@ -7,6 +7,7 @@ from flask import Blueprint, redirect, render_template, request, url_for, jsonif
 import sqlite3
 
 from erp.db import get_db
+from erp.utils.audit import log_action
 from erp.utils.errors import error_response, not_found, RecordNotFound
 from erp.utils.money import cents_to_yuan, micro_to_yuan
 from erp.utils.order_numbering import next_nh_order_no, peek_nh_order_no
@@ -90,11 +91,27 @@ def _resolve_purchase_customer_id() -> int:
             return customer_id
         if not name:
             raise ValueError("往来对象不能为空")
-        existing = conn.execute("SELECT id FROM customers WHERE name=?", (name,)).fetchone()
+        existing = conn.execute("SELECT id, deleted_at FROM customers WHERE name=?", (name,)).fetchone()
         if existing:
-            return int(existing["id"])
-        cur = conn.execute("INSERT INTO customers(name) VALUES (?)", (name,))
-        return int(cur.lastrowid)
+            customer_id = int(existing["id"])
+            if existing["deleted_at"] is not None:
+                # G-9：命中回收站对象 → 复用并恢复可见性（与销售侧统一），并留痕。
+                conn.execute(
+                    "UPDATE customers SET deleted_at=NULL, delete_reason='', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (customer_id,),
+                )
+                log_action(
+                    "restore_customer_on_order",
+                    "customer",
+                    customer_id,
+                    f"拿货复用回收站对象档案并恢复可见性：{name}",
+                    conn=conn,
+                )
+            return customer_id
+        cur = conn.execute("INSERT INTO customers(name, origin) VALUES (?, 'order')", (name,))
+        new_id = int(cur.lastrowid)
+        log_action("auto_create_customer", "customer", new_id, f"拿货自动建档对象：{name}", conn=conn)
+        return new_id
 
 
 def _purchase_today_history(conn, today: str) -> list[dict]:

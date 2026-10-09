@@ -112,7 +112,7 @@ def _average_cost_micro_for_accounting(quantity_3dp: int, cost_total_micro: int)
 def create_customer(name: str, phone: str = "", address: str = "", opening_balance_cents: int = 0) -> int:
     with get_db() as conn:
         cur = conn.execute(
-            "INSERT INTO customers(name, phone, address, opening_balance_cents) VALUES (?, ?, ?, ?)",
+            "INSERT INTO customers(name, phone, address, opening_balance_cents, origin) VALUES (?, ?, ?, ?, 'manual')",
             (name, phone, address, opening_balance_cents),
         )
         customer_id = cur.lastrowid
@@ -143,14 +143,20 @@ def _validate_safety_stock(value) -> int:
     return int(scaled)
 
 
-def create_product(name: str, spec: str, unit: str, default_price_cents: int, pinyin_initials: str = "", *, safety_stock=None) -> int:
+def normalize_product_brand(brand) -> str | None:
+    """E-2：品牌是可选的自由文本；空白一律归一成 NULL，避免「空串」和「没填」两种假状态。"""
+    text = "" if brand is None else str(brand).strip()
+    return text or None
+
+
+def create_product(name: str, spec: str, unit: str, default_price_cents: int, pinyin_initials: str = "", *, safety_stock=None, brand=None) -> int:
     name, spec = normalize_product_identity(name, spec)
     safety_stock_3dp = _validate_safety_stock(safety_stock)
     with get_db() as conn:
         try:
             cur = conn.execute(
-                "INSERT INTO products(name, spec, unit, default_price_cents, pinyin_initials, safety_stock_3dp) VALUES (?, ?, ?, ?, ?, ?)",
-                (name, spec, unit, default_price_cents, pinyin_initials, safety_stock_3dp),
+                "INSERT INTO products(name, spec, unit, default_price_cents, pinyin_initials, safety_stock_3dp, origin, brand) VALUES (?, ?, ?, ?, ?, ?, 'manual', ?)",
+                (name, spec, unit, default_price_cents, pinyin_initials, safety_stock_3dp, normalize_product_brand(brand)),
             )
         except sqlite3.IntegrityError as exc:
             if "idx_products_business_identity" in str(exc) or "UNIQUE constraint failed: index" in str(exc):
@@ -161,7 +167,10 @@ def create_product(name: str, spec: str, unit: str, default_price_cents: int, pi
     return int(product_id)
 
 
-def update_product_record(product_id: int, name: str, spec: str, unit: str, default_price_cents: int, *, safety_stock=None) -> None:
+_BRAND_UNSET = object()
+
+
+def update_product_record(product_id: int, name: str, spec: str, unit: str, default_price_cents: int, *, safety_stock=None, brand=_BRAND_UNSET) -> None:
     name, spec = normalize_product_identity(name, spec)
     safety_stock_3dp = _validate_safety_stock(safety_stock)
     with get_db() as conn:
@@ -175,14 +184,25 @@ def update_product_record(product_id: int, name: str, spec: str, unit: str, defa
         if inventory_state is not None and inventory_state["enabled"] and unit.strip() != current["unit"]:
             raise ValueError("单位已锁定")
         try:
-            cursor = conn.execute(
-                """
-                UPDATE products
-                SET name=?, spec=?, unit=?, default_price_cents=?, safety_stock_3dp=?, pinyin_initials=?, updated_at=CURRENT_TIMESTAMP
-                WHERE id=? AND deleted_at IS NULL
-                """,
-                (name, spec, unit, default_price_cents, safety_stock_3dp, build_pinyin_initials(name), product_id),
-            )
+            if brand is _BRAND_UNSET:
+                # 调用方没提供品牌 → 保持原值（旧调用点/局部更新不误清品牌）。
+                cursor = conn.execute(
+                    """
+                    UPDATE products
+                    SET name=?, spec=?, unit=?, default_price_cents=?, safety_stock_3dp=?, pinyin_initials=?, updated_at=CURRENT_TIMESTAMP
+                    WHERE id=? AND deleted_at IS NULL
+                    """,
+                    (name, spec, unit, default_price_cents, safety_stock_3dp, build_pinyin_initials(name), product_id),
+                )
+            else:
+                cursor = conn.execute(
+                    """
+                    UPDATE products
+                    SET name=?, spec=?, unit=?, default_price_cents=?, safety_stock_3dp=?, pinyin_initials=?, brand=?, updated_at=CURRENT_TIMESTAMP
+                    WHERE id=? AND deleted_at IS NULL
+                    """,
+                    (name, spec, unit, default_price_cents, safety_stock_3dp, build_pinyin_initials(name), normalize_product_brand(brand), product_id),
+                )
         except sqlite3.IntegrityError as exc:
             if "idx_products_business_identity" in str(exc) or "UNIQUE constraint failed: index" in str(exc):
                 raise ValueError("商品名称和型号已存在") from exc
@@ -247,23 +267,50 @@ def create_order(customer_id: int, order_no: str, items: Iterable[dict], status:
     return order_id
 
 
-def _upsert_product_and_customer_price(conn, customer_id: int, product_name: str, spec: str, unit: str, unit_price_cents: int) -> int:
+def _upsert_product_and_customer_price(conn, customer_id: int, product_name: str, spec: str, unit: str, unit_price_cents: int, *, order_no: str = "") -> int:
     product_name, spec = normalize_product_identity(product_name, spec)
     product = conn.execute("SELECT * FROM products WHERE TRIM(name)=? AND TRIM(COALESCE(spec, ''))=? ORDER BY id LIMIT 1", (product_name, spec)).fetchone()
     if product is None:
         cur_product = conn.execute(
-            "INSERT INTO products(name, spec, unit, default_price_cents, pinyin_initials, usage_count) VALUES (?, ?, ?, ?, ?, 1)",
+            "INSERT INTO products(name, spec, unit, default_price_cents, pinyin_initials, usage_count, origin) VALUES (?, ?, ?, ?, ?, 1, 'order')",
             (product_name, spec, unit, unit_price_cents, build_pinyin_initials(product_name)),
         )
-        return int(cur_product.lastrowid)
-    if product["deleted_at"] is not None:
-        raise ValueError("商品已在回收站，不能用于新开单")
+        new_id = int(cur_product.lastrowid)
+        # G-0b：自动建档必须留痕，否则事后无法追溯是谁/哪张单建出来的。
+        log_action(
+            "auto_create_product",
+            "product",
+            new_id,
+            f"开单自动建档商品：{product_name} {spec}，来源 {order_no}".strip() if order_no else f"开单自动建档商品：{product_name} {spec}".strip(),
+            conn=conn,
+        )
+        return new_id
     product_id = int(product["id"])
+    if product["deleted_at"] is not None:
+        # G-9：命中回收站档案 → 复用并恢复可见性（不再报错），并留痕便于用户察觉。
+        conn.execute(
+            "UPDATE products SET deleted_at=NULL, delete_reason='', unit=?, usage_count=usage_count+1, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            (unit, product_id),
+        )
+        log_action(
+            "restore_product_on_order",
+            "product",
+            product_id,
+            f"开单复用回收站商品档案并恢复可见性：{product_name} {spec}".strip(),
+            conn=conn,
+        )
+        _learn_customer_price(conn, customer_id, product_id, unit_price_cents, int(product["default_price_cents"]))
+        return product_id
     conn.execute(
         "UPDATE products SET unit=?, usage_count=usage_count+1, updated_at=CURRENT_TIMESTAMP WHERE id=?",
         (unit, product_id),
     )
-    default_price_cents = int(product["default_price_cents"])
+    _learn_customer_price(conn, customer_id, product_id, unit_price_cents, int(product["default_price_cents"]))
+    return product_id
+
+
+def _learn_customer_price(conn, customer_id: int, product_id: int, unit_price_cents: int, default_price_cents: int) -> None:
+    """手输价 ≠ 默认价时写客户专属价（既有自动学习机制，行为不变）。"""
     if unit_price_cents != default_price_cents:
         conn.execute(
             """
@@ -273,7 +320,6 @@ def _upsert_product_and_customer_price(conn, customer_id: int, product_name: str
             """,
             (customer_id, product_id, unit_price_cents),
         )
-    return product_id
 
 
 def _select_existing_product(conn, customer_id: int, product_id, unit_price_cents: int) -> tuple[int, str, str, str]:
@@ -347,7 +393,7 @@ def create_order_from_typed_rows(
             if row.get("product_id"):
                 product_id, product_name, spec, unit = _select_existing_product(conn, customer_id, row["product_id"], unit_price_cents)
             else:
-                product_id = _upsert_product_and_customer_price(conn, customer_id, product_name, spec, unit, unit_price_cents)
+                product_id = _upsert_product_and_customer_price(conn, customer_id, product_name, spec, unit, unit_price_cents, order_no=order_no)
             subtotal = line_subtotal_cents(quantity, unit_price_cents)
             total += subtotal * sign
             prepared.append((product_id, product_name, spec, unit, quantity, unit_price_cents, subtotal))
@@ -649,7 +695,7 @@ def update_order_from_typed_rows(
             if row.get("product_id"):
                 product_id, product_name, spec, unit = _select_existing_product(conn, customer_id, row["product_id"], unit_price_cents)
             else:
-                product_id = _upsert_product_and_customer_price(conn, customer_id, product_name, spec, unit, unit_price_cents)
+                product_id = _upsert_product_and_customer_price(conn, customer_id, product_name, spec, unit, unit_price_cents, order_no=order_no)
             subtotal = line_subtotal_cents(quantity, unit_price_cents)
             total += subtotal * sign
             prepared.append((order_id, product_id, product_name, spec, unit, quantity, unit_price_cents, subtotal))
@@ -1036,6 +1082,15 @@ def get_customer_account_ledger(customer_id: int, start_date: str = "", end_date
         entry["balance_delta_cents"] for entry in active_entries
     )
 
+    # D-1：区间两端余额。
+    #   起始欠款 = 期初 + 区间首日**之前**已生效流水；
+    #   截止欠款 = 起始欠款 + 区间净变动。
+    #   因此当 end_date 为空或=今天（且所有流水都不晚于今天）时，截止欠款 == 当前余额。
+    period_start_balance_cents = opening_balance_cents + sum(
+        entry["balance_delta_cents"] for entry in active_entries
+        if start_date and entry["date"] < start_date
+    )
+
     period = {
         "start_date": start_date,
         "end_date": end_date,
@@ -1050,6 +1105,8 @@ def get_customer_account_ledger(customer_id: int, start_date: str = "", end_date
         period[key] for key in ("sales_cents", "returns_cents", "purchases_cents",
                                 "purchase_returns_cents", "payments_cents", "adjustments_cents")
     )
+    period["start_balance_cents"] = period_start_balance_cents
+    period["end_balance_cents"] = period_start_balance_cents + period["net_change_cents"]
 
     allowed_types = {t for t in (type_filter or []) if t in {
         "sale", "return", "purchase", "purchase_return", "payment", "adjustment"}}

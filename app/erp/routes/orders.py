@@ -12,6 +12,7 @@ from erp.utils.exporting import (
     workbook_download,
 )
 from erp.utils.errors import error_response, not_found
+from erp.utils.audit import log_action
 from erp.utils.filter_chips import order_filter_chips
 from erp.utils.money import cents_to_yuan, line_subtotal_cents, micro_to_yuan, yuan_to_cents
 from erp.utils.pdf import generate_order_pdf, send_pdf_for_preview
@@ -35,6 +36,9 @@ def next_order_no(conn, order_date: str) -> str:
         match = pattern.fullmatch(row["order_no"])
         if match:
             max_seq = max(max_seq, int(match.group(1)))
+    # E-1b：补 9999 上限校验，避免溢出成 5 位破坏单号格式（对齐拿货侧 order_numbering）。
+    if max_seq >= 9999:
+        raise ValueError(f"{day} 的单号流水已达到9999，无法继续开单")
     return f"{prefix}{max_seq + 1:04d}"
 
 
@@ -759,7 +763,7 @@ def _product_catalog(products) -> list[dict]:
     ]
 
 
-def _resolve_customer_id() -> int:
+def _resolve_customer_id(*, order_no: str = "") -> int:
     customer_name = request.form.get("customer_name", "").strip()
     customer_id_text = request.form.get("customer_id", "").strip()
     with get_db() as conn:
@@ -777,24 +781,54 @@ def _resolve_customer_id() -> int:
             return customer_id
         if not customer_name:
             raise ValueError("客户名称不能为空")
-        existing = conn.execute("SELECT id FROM customers WHERE name=?", (customer_name,)).fetchone()
+        existing = conn.execute("SELECT id, deleted_at FROM customers WHERE name=?", (customer_name,)).fetchone()
         if existing:
-            return int(existing["id"])
-        cur = conn.execute("INSERT INTO customers(name) VALUES (?)", (customer_name,))
-        return int(cur.lastrowid)
+            customer_id = int(existing["id"])
+            if existing["deleted_at"] is not None:
+                # G-9：命中回收站客户 → 复用并恢复可见性（与商品侧统一），并留痕。
+                conn.execute(
+                    "UPDATE customers SET deleted_at=NULL, delete_reason='', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (customer_id,),
+                )
+                log_action(
+                    "restore_customer_on_order",
+                    "customer",
+                    customer_id,
+                    f"开单复用回收站客户档案并恢复可见性：{customer_name}",
+                    conn=conn,
+                )
+            return customer_id
+        cur = conn.execute(
+            "INSERT INTO customers(name, origin) VALUES (?, 'order')",
+            (customer_name,),
+        )
+        new_id = int(cur.lastrowid)
+        # G-0b：自动建档必须留痕，摘要写明来源单据号。
+        log_action(
+            "auto_create_customer",
+            "customer",
+            new_id,
+            f"开单自动建档客户：{customer_name}，来源 {order_no}" if order_no else f"开单自动建档客户：{customer_name}",
+            conn=conn,
+        )
+        return new_id
 
 
 def _typed_rows_from_form() -> list[dict]:
     product_ids = request.form.getlist("product_id")
     product_names = request.form.getlist("product_name")
+    specs = request.form.getlist("spec")
     units = request.form.getlist("unit")
     unit_prices = request.form.getlist("unit_price")
     quantities = request.form.getlist("quantity")
     if len(product_ids) < len(product_names):
         product_ids.extend([""] * (len(product_names) - len(product_ids)))
+    # G-3：明细行现在也提交 `spec`；旧调用方（无 spec 字段）补空串保持兼容。
+    if len(specs) < len(product_names):
+        specs.extend([""] * (len(product_names) - len(specs)))
     return [
-        {"product_id": product_id, "product_name": name, "unit": unit, "unit_price_yuan": price, "quantity": qty}
-        for product_id, name, unit, price, qty in zip(product_ids, product_names, units, unit_prices, quantities)
+        {"product_id": product_id, "product_name": name, "spec": spec, "unit": unit, "unit_price_yuan": price, "quantity": qty}
+        for product_id, name, spec, unit, price, qty in zip(product_ids, product_names, specs, units, unit_prices, quantities)
         if name.strip() and qty.strip()
     ]
 
@@ -874,14 +908,15 @@ def _create_order_view(order_type: str):
         detail_error = _validate_typed_rows(rows)
         if detail_error:
             return error_response(detail_error, title="订单未保存", back_url=url_for("orders.new_order"))
-    try:
-        customer_id = _resolve_customer_id()
-    except ValueError as exc:
-        return error_response(str(exc), title="订单未保存", back_url=url_for("orders.new_order"))
     order_date = _resolve_create_order_date()
     with get_db() as conn:
         # Never trust client-supplied order_no; number follows chosen business date.
         order_no = next_order_no(conn, order_date)
+    try:
+        # G-0b：开单自动建档的客户留痕，摘要带上来源单据号。
+        customer_id = _resolve_customer_id(order_no=order_no)
+    except ValueError as exc:
+        return error_response(str(exc), title="订单未保存", back_url=url_for("orders.new_order"))
     try:
         if order_type == "return" and source_order_id_text:
             created_id = create_return_order_from_source(

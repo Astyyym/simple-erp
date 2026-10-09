@@ -1,8 +1,15 @@
 from decimal import InvalidOperation
+from uuid import uuid4
 
 from flask import Blueprint, render_template, request, redirect, url_for, Response, jsonify
 from erp.db import get_db
 from erp.services.accounting import create_customer
+from erp.services.master_data_import import (
+    CUSTOMER_HEADERS,
+    build_customer_preview,
+    customer_totals,
+    ImportPreview,
+)
 from erp.utils.exporting import (
     customer_export_headers,
     customer_export_rows,
@@ -10,10 +17,16 @@ from erp.utils.exporting import (
     workbook_download,
 )
 from erp.utils.errors import error_response, not_found
-from erp.utils.importing import ImportFileError, ImportResult, excel_template, normalized_name, read_upload
+from erp.utils.importing import ImportFileError, ImportResult, excel_template, normalized_name, read_upload_detailed
 from erp.utils.money import yuan_to_cents, cents_to_yuan
+from erp.utils.backup import list_backups
 
 customers_bp = Blueprint("customers", __name__, url_prefix="/customers")
+
+
+def _backup_hint() -> dict:
+    """A-6/A-7：迁移前提醒与「本库尚无任何备份」告警。"""
+    return {"has_backup": bool(list_backups())}
 
 
 def _requested_opening_balance_cents() -> int:
@@ -25,14 +38,14 @@ def _requested_opening_balance_cents() -> int:
 
 @customers_bp.get("/import/template")
 def download_import_template():
-    return excel_template(["客户名称"], "客户导入模板.xlsx")
+    return excel_template(list(CUSTOMER_HEADERS[1]), "客户导入模板.xlsx")
 
 
 @customers_bp.get("/export.xlsx")
 def export_customers_excel():
     q = request.args.get("q", "").strip()
     with get_db() as conn:
-        customers, _suggestions, _truncated = _customer_list_context(conn, q)
+        customers, _suggestions, _truncated, _todo = _customer_list_context(conn, q)
     return workbook_download(
         customer_export_headers(),
         customer_export_rows(customers),
@@ -41,15 +54,24 @@ def export_customers_excel():
     )
 
 
-def _customer_list_context(conn, q: str = ""):
+def _customer_list_context(conn, q: str = "", quality: str = ""):
+    todo_sql = (
+        " AND origin='order' AND TRIM(COALESCE(phone, ''))='' AND TRIM(COALESCE(address, ''))=''"
+        if quality == "todo"
+        else ""
+    )
     if q:
         customers = conn.execute(
-            "SELECT * FROM customers WHERE deleted_at IS NULL AND (name LIKE ? OR phone LIKE ? OR address LIKE ?) ORDER BY name COLLATE NOCASE ASC, id ASC LIMIT 200",
+            "SELECT * FROM customers WHERE deleted_at IS NULL AND (name LIKE ? OR phone LIKE ? OR address LIKE ?)"
+            + todo_sql
+            + " ORDER BY name COLLATE NOCASE ASC, id ASC LIMIT 200",
             (f"%{q}%", f"%{q}%", f"%{q}%"),
         ).fetchall()
     else:
         customers = conn.execute(
-            "SELECT * FROM customers WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE ASC, id ASC LIMIT 200"
+            "SELECT * FROM customers WHERE deleted_at IS NULL"
+            + todo_sql
+            + " ORDER BY name COLLATE NOCASE ASC, id ASC LIMIT 200"
         ).fetchall()
     # E4：到达上限即提示「已截断，可用搜索缩小范围」。
     truncated = len(customers) >= 200
@@ -57,70 +79,139 @@ def _customer_list_context(conn, q: str = ""):
         "SELECT DISTINCT name FROM customers WHERE deleted_at IS NULL AND name LIKE ? ORDER BY name LIMIT 20",
         (f"%{q}%" if q else "%",),
     ).fetchall()
-    return customers, suggestions, truncated
+    todo_count = conn.execute(
+        "SELECT COUNT(*) AS c FROM customers WHERE deleted_at IS NULL"
+        " AND origin='order' AND TRIM(COALESCE(phone, ''))='' AND TRIM(COALESCE(address, ''))=''"
+    ).fetchone()["c"]
+    return customers, suggestions, truncated, todo_count
 
 
 @customers_bp.post("/import")
 def import_customers():
+    """B-4：第一段——只解析出预览，不落库。"""
     try:
-        rows = read_upload(request.files.get("file"), ["客户名称"])
+        headers, rows = read_upload_detailed(request.files.get("file"), CUSTOMER_HEADERS)
     except (ImportFileError, AttributeError) as exc:
         message = str(exc) if str(exc) else "请选择要导入的文件"
         with get_db() as conn:
-            customers, suggestions, truncated = _customer_list_context(conn)
+            customers, suggestions, truncated, todo_count = _customer_list_context(conn)
         return render_template(
             "customers/list.html",
             customers=customers,
             suggestions=suggestions,
             truncated=truncated,
+            todo_count=todo_count,
+            quality="",
             cents_to_yuan=cents_to_yuan,
             q="",
             import_error=message,
+            **_backup_hint(),
         ), 400
+
+    with get_db() as conn:
+        existing_names = {row["name"] for row in conn.execute("SELECT name FROM customers WHERE deleted_at IS NULL")}
+        soft_deleted = {row["name"] for row in conn.execute("SELECT name FROM customers WHERE deleted_at IS NOT NULL")}
+    same_name = request.form.get("same_name", "skip")
+    if same_name not in ("skip", "update"):
+        same_name = "skip"
+    preview = build_customer_preview(headers, rows, existing_names, soft_deleted, same_name=same_name)
+    preview.batch_id = uuid4().hex
+    return render_template(
+        "import_preview.html",
+        kind="customers",
+        title="客户导入预览",
+        action_url=url_for("customers.import_customers_confirm"),
+        back_url=url_for("customers.list_customers"),
+        preview=preview,
+        totals=customer_totals(preview),
+        cents_to_yuan=cents_to_yuan,
+        **_backup_hint(),
+    )
+
+
+@customers_bp.post("/import/confirm")
+def import_customers_confirm():
+    """B-4：第二段——服务端二次校验后落库。"""
+    raw = request.form.get("preview_json", "")
+    same_name = request.form.get("same_name", "skip")
+    try:
+        preview = ImportPreview.from_json(raw)
+    except Exception:  # noqa: BLE001 — 预览态损坏一律拒绝，不猜测
+        return error_response("导入预览已失效，请重新上传文件。", title="导入未执行",
+                              back_url=url_for("customers.list_customers"))
+    if preview.kind != "customers":
+        return error_response("导入预览类型不匹配，请重新上传。", title="导入未执行",
+                              back_url=url_for("customers.list_customers"))
 
     result = ImportResult()
     with get_db() as conn:
-        existing_names = {row["name"] for row in conn.execute("SELECT name FROM customers").fetchall()}
-        seen_names: set[str] = set()
-        for line_number, row in rows:
-            name = normalized_name(row[0] if row else None)
-            if not name:
-                result.add_error(f"第{line_number}行：客户名称不能为空")
+        existing_names = {row["name"] for row in conn.execute("SELECT name FROM customers WHERE deleted_at IS NULL")}
+        soft_deleted = {row["name"] for row in conn.execute("SELECT name FROM customers WHERE deleted_at IS NOT NULL")}
+        for row in preview.rows:
+            if row.action == "error":
+                result.add_error(f"第{row.line_number}行：{row.reason}")
                 continue
-            if name in existing_names or name in seen_names:
+            if row.action == "skip":
                 result.skipped += 1
                 continue
-            conn.execute(
-                "INSERT INTO customers(name, phone, address, opening_balance_cents) VALUES (?, '', '', 0)",
-                (name,),
-            )
-            seen_names.add(name)
-            existing_names.add(name)
-            result.added += 1
-        customers, suggestions, truncated = _customer_list_context(conn)
+            name = row.payload.get("name", "")
+            # 二次校验：预览后库可能已变化。
+            if name in soft_deleted:
+                result.add_error(f"第{row.line_number}行：该名称已被回收站记录占用")
+                continue
+            if row.action == "add":
+                if name in existing_names:
+                    result.skipped += 1
+                    continue
+                conn.execute(
+                    "INSERT INTO customers(name, phone, address, opening_balance_cents, origin) VALUES (?, ?, ?, ?, 'import')",
+                    (name, row.payload.get("phone", ""), row.payload.get("address", ""),
+                     int(row.payload.get("opening_balance_cents", 0))),
+                )
+                existing_names.add(name)
+                result.added += 1
+            elif row.action == "update":
+                if name not in existing_names:
+                    result.add_error(f"第{row.line_number}行：同名客户已不存在，无法更新")
+                    continue
+                # 只覆盖可空档案字段，不动业务流水。
+                conn.execute(
+                    "UPDATE customers SET phone=?, address=?, opening_balance_cents=?, updated_at=CURRENT_TIMESTAMP WHERE name=? AND deleted_at IS NULL",
+                    (row.payload.get("phone", ""), row.payload.get("address", ""),
+                     int(row.payload.get("opening_balance_cents", 0)), name),
+                )
+                result.added += 1
+        customers, suggestions, truncated, todo_count = _customer_list_context(conn)
     return render_template(
         "customers/list.html",
         customers=customers,
         suggestions=suggestions,
         truncated=truncated,
+        todo_count=todo_count,
+        quality="",
         cents_to_yuan=cents_to_yuan,
         q="",
         import_result=result,
+        **_backup_hint(),
     )
 
 
 @customers_bp.get("/")
 def list_customers():
     q = request.args.get("q", "").strip()
+    quality = request.args.get("quality", "").strip()
     with get_db() as conn:
-        customers, suggestions, truncated = _customer_list_context(conn, q)
+        customers, suggestions, truncated, todo_count = _customer_list_context(conn, q, quality)
     return render_template(
         "customers/list.html",
         customers=customers,
         suggestions=suggestions,
         truncated=truncated,
+        todo_count=todo_count,
+        quality=quality,
         cents_to_yuan=cents_to_yuan,
         q=q,
+        **_backup_hint(),
     )
 
 @customers_bp.get("/api/suggestions")

@@ -53,6 +53,14 @@ def excel_template(headers: list[str], filename: str):
 
 
 def read_upload(upload, expected_headers: list[str] | tuple[list[str], ...]) -> list[tuple[int, list[object]]]:
+    _headers, rows = read_upload_detailed(upload, expected_headers)
+    return rows
+
+
+def read_upload_detailed(
+    upload, expected_headers: list[str] | tuple[list[str], ...]
+) -> tuple[list[str], list[tuple[int, list[object]]]]:
+    """与 read_upload 相同的校验，但额外返回表头，供按列名映射使用。"""
     filename = (upload.filename or "").strip()
     suffix = Path(filename).suffix.lower()
     if suffix not in {".xlsx", ".csv"}:
@@ -77,7 +85,7 @@ def read_upload(upload, expected_headers: list[str] | tuple[list[str], ...]) -> 
         raise ImportFileError(f"表头错误，应为：{expected}")
     if len(rows) == 1:
         raise ImportFileError("没有可导入的数据行")
-    return [(number, list(row)) for number, row in enumerate(rows[1:], start=2)]
+    return headers, [(number, list(row)) for number, row in enumerate(rows[1:], start=2)]
 
 
 def _xlsx_rows(data: bytes) -> list[tuple[object, ...]]:

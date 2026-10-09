@@ -28,12 +28,15 @@ def test_order_entry_exposes_accessible_customer_combobox_and_product_picker():
     customer_list = _tag_with_attribute(page, "div", "id", "customer_suggestions")
     assert 'role="listbox"' in customer_list
 
-    # 商品改为"产品名称 → 型号"两级原生下拉，键盘/读屏天然可用
-    assert 'class="form-select form-select-sm picker-name"' in page
-    assert 'class="form-select form-select-sm picker-spec"' in page
+    # G 段二：商品改为「名称 + 型号」可手输的混合控件（datalist 建议 + 命中绑定/未命中自动建档）。
+    assert 'class="form-control form-control-sm picker-name-input"' in page
+    assert 'class="form-control form-control-sm picker-spec-input"' in page
     assert 'name="product_name"' in page and 'class="product-name"' in page
+    assert 'name="spec"' in page and 'class="product-spec"' in page
     assert 'id="productCatalog"' in page
+    assert 'id="productNameOptions"' in page and 'id="productSpecOptions"' in page
     assert 'order-product-picker.js' in page
+    assert "mountHybrid" in page
 
     assert "ArrowDown" in page
     assert "ArrowUp" in page

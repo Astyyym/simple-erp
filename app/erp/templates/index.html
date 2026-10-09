@@ -48,6 +48,12 @@
   .recent-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding:14px 15px 11px}.recent-head h2{margin:0;font-size:16px}.recent-link{display:inline-flex;min-height:32px;align-items:center;gap:5px;padding:4px 7px;color:var(--erp-primary);border-radius:5px;font-size:12px;font-weight:650;text-decoration:none;white-space:nowrap}.recent-link:hover{background:var(--erp-primary-soft)}
   .recent-table-wrap{overflow-x:auto;overflow-y:hidden}.recent-table{width:100%;min-width:700px;border-collapse:collapse;color:var(--erp-ink);font-variant-numeric:tabular-nums}.recent-table th,.recent-table td{padding:9px 11px;border-top:1px solid var(--erp-border);text-align:left;vertical-align:middle}.recent-table th{color:var(--erp-muted);background:var(--erp-glass-bg-strong);font-size:12px;font-weight:650;white-space:nowrap}.recent-table td{font-size:13px}.recent-table tbody tr:hover td{background:rgba(37,99,235,.045)}
   .recent-order-cell{display:flex;min-width:160px;align-items:center;gap:8px}.recent-type{display:inline-flex;min-height:21px;align-items:center;padding:2px 7px;border:1px solid var(--erp-border);border-radius:4px;font-size:11px;font-weight:650;white-space:nowrap}.recent-type.sale{color:var(--erp-primary);background:var(--erp-primary-soft);border-color:color-mix(in srgb,var(--erp-primary) 18%,var(--erp-border))}.recent-type.return{color:var(--erp-danger);background:rgba(199,53,53,.07);border-color:rgba(199,53,53,.18)}.recent-order-no{color:var(--erp-primary);font-family:Consolas,"Courier New",monospace;font-size:12px;text-decoration:none;white-space:nowrap}.recent-order-no:hover{text-decoration:underline}.recent-muted{color:var(--erp-muted);white-space:nowrap}.recent-amount{font-weight:680;white-space:nowrap}.recent-amount.negative{color:var(--erp-danger)}.recent-view{color:var(--erp-primary);font-weight:650;text-decoration:none;white-space:nowrap}.recent-view:hover{text-decoration:underline}.recent-empty{padding:20px 12px!important;color:var(--erp-muted);text-align:center!important}
+  /* E-5：打印信息引导卡。克制样式，不抢指标卡的视觉重量。 */
+  .print-info-notice{display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px;margin-bottom:16px;padding:14px 16px;border:1px solid color-mix(in srgb,var(--erp-primary) 30%,var(--erp-border));border-left:4px solid var(--erp-primary);border-radius:var(--erp-radius);background:var(--erp-surface);box-shadow:var(--erp-shadow)}
+  .print-info-notice-body{flex:1 1 320px;min-width:0}
+  .print-info-notice h2{margin:0 0 4px;font-size:15px}
+  .print-info-notice p{margin:0;color:var(--erp-muted);font-size:12px;line-height:1.5}
+  .print-info-notice-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
   @media(max-width:1100px){.dashboard-main{grid-template-columns:minmax(0,1fr) 220px;grid-template-areas:"head actions" "metrics actions" "recent actions" "flow actions";gap:14px}.quick-actions{padding:14px}.dashboard-head{align-items:flex-start;flex-direction:column;gap:8px}.day-chip{align-items:flex-start;text-align:left}.metric-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.flow{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.flow-step,.flow-step:first-child,.flow-step:last-child{border:1px solid var(--erp-border);border-radius:7px}}
   @media(max-width:760px){.sidebar{display:none}.content{height:calc(100% - 20px);margin:10px;border-radius:18px}.page-topbar{padding:0 12px}.page-topbar .company{min-width:0;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.page-body{padding:15px 11px 22px}.dashboard-main{grid-template-columns:minmax(0,1fr);grid-template-areas:"head" "metrics" "actions" "recent" "flow";gap:14px}.quick-actions{position:static}.quick-action-list{grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-head{align-items:flex-start;flex-direction:column;gap:8px}.day-chip{align-items:flex-start}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.metric-card{min-height:108px;padding:12px}.metric-card.net-card{grid-column:1/-1}.metric-value{font-size:24px}.recent-head{align-items:flex-start;flex-direction:column}.recent-table-wrap{overflow:visible}.recent-table{min-width:0}.recent-table thead{display:none}.recent-table,.recent-table tbody{display:block;width:100%}.recent-table tbody tr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 9px;padding:10px;border-top:1px solid var(--erp-border)}.recent-table tbody td{min-width:0;padding:2px 0;border:0}.recent-table tbody td:nth-child(1){grid-column:1/-1}.recent-table tbody td:nth-child(2){grid-column:1/-1;color:var(--erp-muted)}.recent-table tbody td:nth-child(3){grid-column:1;color:var(--erp-muted);font-size:12px}.recent-table tbody td:nth-child(4){grid-column:2;color:var(--erp-muted);text-align:right;font-size:12px}.recent-table tbody td:nth-child(5){grid-column:1}.recent-table tbody td:nth-child(6){grid-column:2;text-align:right}}
   @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
@@ -56,6 +62,25 @@
   }
 </style>
 <div class="dashboard-layout">
+  {# E-5：迁移用户首次使用时引导填写打印用店铺信息，否则打印件对应位置是空白。
+     只在缺字段且未被关掉时出现；补全后自动消失。 #}
+  {% if print_info_missing and not erp_config.print_info_prompt_dismissed %}
+  <section class="print-info-notice" id="printInfoNotice" aria-label="打印信息待补全">
+    <div class="print-info-notice-body">
+      <h2>打印单上还有空白</h2>
+      <p>
+        还没填<strong>{{ print_info_missing | join('、') }}</strong>，打印销售单时这两处会留空。
+        在「系统设置 → 打印单信息」填一次，之后每张单都会带上。
+      </p>
+    </div>
+    <div class="print-info-notice-actions">
+      <a class="btn btn-primary" href="/settings/#printInfoSection">去填写</a>
+      <form method="post" action="{{ url_for('settings.dismiss_print_info_prompt') }}">
+        <button type="submit" class="btn btn-outline-secondary">不再提示</button>
+      </form>
+    </div>
+  </section>
+  {% endif %}
   <section class="dashboard-main" aria-label="工作台概况、快捷操作与最近业务">
     <div class="dashboard-head">
       <div><h1>业务工作台</h1></div>

@@ -155,7 +155,7 @@ def test_unknown_quantity_template_projection_never_fabricates_quantity_or_avera
 
     client, products = stock_products
     with get_db() as conn:
-        rows, suggestions, _truncated = _product_list_context(conn)
+        rows, suggestions, _truncated, _todo = _product_list_context(conn)
         state = dict(conn.execute("SELECT * FROM product_inventory_state WHERE product_id=?", (products[3]["id"],)).fetchone())
     product = next(row for row in rows if row["id"] == products[3]["id"])
     # Current schema forbids NULL quantity: test the pure/template defensive
@@ -208,9 +208,16 @@ def test_readonly_context_survives_search_export_and_real_error_renderers(stock_
 
 def test_successful_import_uses_same_two_axis_read_projection(stock_products):
     import io
+    import html as html_module
+    import re
 
     client, products = stock_products
-    response = client.post("/products/import", data={"file": (io.BytesIO("商品名称,型号,价格\nC4虚构导入新品,X,1.00\n".encode("utf-8-sig")), "synthetic.csv")}, content_type="multipart/form-data")
+    preview = client.post("/products/import", data={"file": (io.BytesIO("商品名称,型号,价格\nC4虚构导入新品,X,1.00\n".encode("utf-8-sig")), "synthetic.csv"), "same_name": "skip"}, content_type="multipart/form-data")
+    assert preview.status_code == 200
+    # Batch B：导入改为两段式，先预检再确认。
+    pj = html_module.unescape(re.search(r'name="preview_json" value="([^"]*)"', preview.get_data(as_text=True)).group(1))
+    client.post("/products/import/confirm", data={"preview_json": pj, "same_name": "skip"}, follow_redirects=True)
+    response = client.get("/products/")
     assert response.status_code == 200
     rows = ProductHTML(response.get_data(as_text=True)).product_rows()
     assert rows["C4虚构导入新品"]["启用状态"] == "未启用"

@@ -126,23 +126,43 @@ def initialize_product(
     request_key: str,
     *,
     confirm_zero: bool = False,
+    cost_source: str = "known",
+    total_cost: Any = None,
 ) -> dict[str, Any]:
+    """启用期初库存。
+
+    C-1 成本来源：`known`（已知成本）/`estimated`（用户确认估算）/`zero`（明确零成本）。
+    C-2 总金额输入：`total_cost` 给定时按「总金额 ÷ 数量」反推单位成本（与 `unit_cost` 二选一）。
+    """
+    if cost_source not in ("known", "estimated", "zero"):
+        raise ValueError("成本来源无效")
     quantity_3dp = _scaled_quantity(quantity)
-    unit_cost_micro = _cost_micro(unit_cost, required=quantity_3dp > 0)
-    if quantity_3dp == 0:
-        if unit_cost_micro not in (None, 0):
-            raise ValueError("零期初的成本必须为零")
-        if not confirm_zero:
-            raise ValueError("零期初必须明确确认")
-        unit_cost_micro = 0
-    assert unit_cost_micro is not None
-    cost_total_micro = _cost_total_micro(quantity_3dp, unit_cost_micro)
+    if total_cost not in (None, "") and quantity_3dp > 0:
+        # C-2：用总金额反推单位成本，忽略传入的 unit_cost。
+        total_micro = _cost_micro(total_cost, required=True)
+        assert total_micro is not None
+        unit_cost_micro = int(
+            (Decimal(total_micro) / Decimal(quantity_3dp) * Decimal("1000")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        )
+        cost_total_micro = _cost_total_micro(quantity_3dp, unit_cost_micro)
+    else:
+        unit_cost_micro = _cost_micro(unit_cost, required=quantity_3dp > 0)
+        if quantity_3dp == 0:
+            if unit_cost_micro not in (None, 0):
+                raise ValueError("零期初的成本必须为零")
+            if not confirm_zero:
+                raise ValueError("零期初必须明确确认")
+            unit_cost_micro = 0
+            cost_source = "zero"
+        assert unit_cost_micro is not None
+        cost_total_micro = _cost_total_micro(quantity_3dp, unit_cost_micro)
     payload = {
         "product_id": int(product_id),
         "quantity_3dp": quantity_3dp,
         "unit_cost_micro": unit_cost_micro,
         "business_date": _date_value(business_date),
         "source": (source or "").strip(),
+        "cost_source": cost_source,
         "confirm_zero": bool(confirm_zero),
     }
     digest = _payload_hash(payload)
@@ -177,11 +197,11 @@ def initialize_product(
         conn.execute(
             """
             INSERT INTO inventory_initializations(
-                product_id, quantity_3dp, cost_total_micro, business_date, source,
+                product_id, quantity_3dp, cost_total_micro, business_date, source, cost_source,
                 request_key, payload_hash
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (product_id, quantity_3dp, cost_total_micro, payload["business_date"], payload["source"], request_key, digest),
+            (product_id, quantity_3dp, cost_total_micro, payload["business_date"], payload["source"], cost_source, request_key, digest),
         )
         conn.execute(
             """

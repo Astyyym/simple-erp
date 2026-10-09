@@ -80,12 +80,12 @@ def test_product_list_renders_count_and_measure_quantities_in_separate_columns()
     parser = TableRows()
     parser.feed(html)
     header = next(row for row in parser.rows if "名称" in row)
-    assert header == ["", "名称", "规格", "单位", "默认价", "当前库存", "安全库存", "移动平均成本", "库存金额", "启用状态", "库存状况", "操作"]
+    assert header == ["", "名称", "规格", "品牌", "单位", "默认价", "当前库存", "安全库存", "移动平均成本", "库存金额", "启用状态", "库存状况", "来源", "操作"]
     count_row = next(row for row in parser.rows if "计件展示商品" in row)
     measure_row = next(row for row in parser.rows if "计量展示商品" in row)
-    assert count_row[5:7] == ["15", "3"]
-    assert measure_row[5:7] == ["12.345", "1.125"]
-    assert count_row[9:11] == measure_row[9:11] == ["已启用", "正常"]
+    assert count_row[6:8] == ["15", "3"]
+    assert measure_row[6:8] == ["12.345", "1.125"]
+    assert count_row[10:12] == measure_row[10:12] == ["已启用", "正常"]
     assert 'class="table-responsive product-table-shell"' in html
     assert 'class="selection-cell"' in html
     assert 'class="numeric-cell"' in html

@@ -22,6 +22,7 @@
 
 | Reference | 用途 |
 |---|---|
+| [plan-item-admission-three-questions.md](./plan-item-admission-three-questions.md) | 写计划/需求清单时用「三问」（数据存在？需求真实？已解决？）筛掉无效条目 |
 | [agent-managed-dev-preview.md](./agent-managed-dev-preview.md) | Windows/WSL 预览端口、实例确认与链接交付 |
 | [user-visible-instance-verification.md](./user-visible-instance-verification.md) | 用户页面、测试结果与真实运行实例的证据等级 |
 | [wsl-windows-localhost-instance-mismatch.md](./wsl-windows-localhost-instance-mismatch.md) | Windows/WSL localhost 实例错配排查 |

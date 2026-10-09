@@ -6,6 +6,11 @@
 </div>
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
 {% if inventory_message %}<div class="alert alert-success">{{ inventory_message }}</div>{% endif %}
+{% if product_needs_completion(product) %}
+<div class="alert alert-warning" role="alert">
+  <strong>这份档案待补全：</strong>{{ product_completion_hint(product) }}。补全后会自动退出「待补全」筛选。
+</div>
+{% endif %}
 <section class="card mb-3" aria-label="当前库存与计算成本">
   <div class="card-body">
     <div class="d-flex flex-wrap justify-content-between gap-2 mb-3"><h3 class="h5 mb-0">当前库存与成本</h3><span class="text-muted small">由库存流水计算，只读</span></div>
@@ -21,6 +26,7 @@
 <form method="post" class="col-6">
   <label class="form-label">商品名称</label><input class="form-control mb-3" name="name" value="{{product.name}}" required>
   <label class="form-label">型号</label><input class="form-control mb-3" name="spec" value="{{product.spec}}">
+  <label class="form-label">品牌</label><input class="form-control mb-3" name="brand" value="{{product.brand or ''}}" placeholder="可留空">
   <label class="form-label">单位</label><input class="form-control mb-3" name="unit" value="{{product.unit}}" {% if inventory_state and inventory_state.enabled %}readonly title="单位已锁定"{% endif %} required>
   <label class="form-label">默认单价(元)</label><input class="form-control mb-3" name="default_price" value="{{cents_to_yuan(product.default_price_cents)}}" required>
   <label class="form-label">安全库存</label><input class="form-control mb-3" name="safety_stock" value="{{format_quantity_3dp(product.safety_stock_3dp, product.unit)}}" required>
@@ -39,21 +45,33 @@
 <hr class="my-4">
 <section class="col-8">
   <h3>库存期初</h3>
+  <p class="text-muted small">
+    本系统<strong>一个商品只有一个单位</strong>，不支持箱/个换算——迁移时请先选定一个基准单位再填期初（C-4）。
+    期初日期决定「可补录单据的最早业务日期」，补录的单据<strong>不得早于期初日期</strong>（C-3）。
+  </p>
   {% if not inventory_state %}
   <p class="text-muted">状态：未启用。未启用商品不计入库存告急和库存金额。</p>
   <form method="post" action="/products/{{product.id}}/inventory/initialize">
     <input type="hidden" name="request_key" value="web-init-{{product.id}}-{{product.updated_at}}">
     <div class="row g-2">
       <div class="col-md-3"><label class="form-label">期初数量</label><input class="form-control" name="quantity" required></div>
-      <div class="col-md-3"><label class="form-label">单位成本(元)</label><input class="form-control" name="unit_cost"></div>
+      <div class="col-md-3"><label class="form-label">单位成本(元)</label><input class="form-control" name="unit_cost" placeholder="与下方总金额二选一"></div>
+      <div class="col-md-3"><label class="form-label">库存总金额(元)</label><input class="form-control" name="total_cost" placeholder="填了则按数量反推单位成本"></div>
       <div class="col-md-3"><label class="form-label">期初日期</label><input class="form-control" type="date" name="business_date" required></div>
+      <div class="col-md-3"><label class="form-label">成本来源</label>
+        <select class="form-select" name="cost_source">
+          <option value="known" selected>已知成本（有进货单/发票）</option>
+          <option value="estimated">用户确认估算（大致成本，留痕可审计）</option>
+        </select>
+      </div>
       <div class="col-md-3"><label class="form-label">来源备注</label><input class="form-control" name="source" value="系统上线期初"></div>
     </div>
-    <label class="form-check mt-3"><input class="form-check-input" type="checkbox" name="confirm_zero" value="1"><span class="form-check-label">确认零期初</span></label>
+    <label class="form-check mt-3"><input class="form-check-input" type="checkbox" name="confirm_zero" value="1"><span class="form-check-label">确认零期初（数量为 0 时勾选，成本来源将记为「明确零成本」）</span></label>
     <button class="btn btn-outline-primary mt-3">启用期初库存</button>
   </form>
   {% else %}
-  <p>状态：已启用{% if initialization and initialization.locked %}，期初已锁定{% else %}，允许首笔库存流水前修订{% endif %}</p>
+  <p>状态：已启用{% if initialization and initialization.locked %}，期初已锁定{% else %}，允许首笔库存流水前修订{% endif %}
+    {% if initialization and initialization.cost_source %}；成本来源：{% if initialization.cost_source == 'known' %}已知成本{% elif initialization.cost_source == 'estimated' %}用户确认估算{% elif initialization.cost_source == 'zero' %}明确零成本{% else %}未标注{% endif %}{% endif %}</p>
 
   {% if initialization and not initialization.locked %}
   <form method="post" action="/products/{{product.id}}/inventory/revise">

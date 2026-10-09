@@ -53,7 +53,7 @@
   {% macro balance_money(value) -%}{% if value < 0 %}−{% endif %}{{ money(value) }}{%- endmacro %}
   {% set type_names = {"sale": "销售单", "return": "退货单", "purchase": "拿货单", "purchase_return": "退拿货单", "payment": "收款", "adjustment": "账务调整"} %}
   <h1>{{ config.shop_name }}</h1>
-  <div class="title">客户账款流水</div>
+  <div class="title">{{ ledger.doc_title }}</div>
   <div class="meta">
     <span>客户：{{ ledger.customer.name }}</span>
     <span>筛选期间：{% if ledger.period.start_date or ledger.period.end_date %}{{ ledger.period.start_date or '最早' }} 至 {{ ledger.period.end_date or '最新' }}{% else %}全部日期{% endif %}</span>
@@ -83,6 +83,16 @@
         <span>退拿货 {{ signed_money(ledger.period.purchase_returns_cents) }}</span>
         <span>收款 {{ signed_money(ledger.period.payments_cents) }}</span>
         <span>调整 {{ signed_money(ledger.period.adjustments_cents) }}</span>
+      </div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-label">区间两端欠款 · 截至 {{ ledger.period.start_date or '最早' }} / {{ ledger.period.end_date or '最新' }}</div>
+      <div class="summary-value">{{ signed_money(ledger.period.end_balance_cents) }}</div>
+      <div class="summary-help">区间起始欠款 → 区间截止欠款；与对方账单相减核对时用这两栏。</div>
+      <div class="breakdown">
+        <span>区间起始欠款 {{ balance_money(ledger.period.start_balance_cents) }}</span>
+        <span>区间净变动 {{ signed_money(ledger.period.net_change_cents) }}</span>
+        <span>区间截止欠款 {{ balance_money(ledger.period.end_balance_cents) }}</span>
       </div>
     </div>
   </section>

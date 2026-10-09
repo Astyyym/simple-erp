@@ -144,7 +144,7 @@
     .brand{min-height:calc(72px * var(--erp-scale));display:flex;align-items:center;gap:11px;padding:10px;border-bottom:1px solid var(--erp-sidebar-border);margin-bottom:12px}
     .brand-mark{width:34px;height:34px;border-radius:7px;background:var(--erp-primary);color:#fff;display:grid;place-items:center;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18);flex:0 0 auto}
     .brand-mark svg{width:20px;height:20px;display:block}
-    .brand-title{font-size:calc(15px * var(--erp-scale));font-weight:650;letter-spacing:.02em;line-height:1.25}.brand-subtitle{font-size:11px;color:var(--erp-sidebar-muted);margin-top:1px;letter-spacing:.08em}
+    .brand-title{font-size:calc(15px * var(--erp-scale));font-weight:650;letter-spacing:.02em;line-height:1.25}
     .nav-group{flex:0 0 auto}
     .nav-label{margin:0 0 7px;padding:9px 12px;color:var(--erp-sidebar-ink);font-size:calc(14px * var(--erp-scale));font-weight:700;letter-spacing:.04em}
     .nav-section{display:flex;align-items:center;min-height:42px;margin:2px 0;padding:9px 12px;border-radius:7px;color:var(--erp-sidebar-ink);font-size:calc(14px * var(--erp-scale));font-weight:600;text-decoration:none;transition:background .15s,color .15s}
@@ -182,6 +182,8 @@
       padding:26px 30px 48px;
     }
     .page-topbar .company{font-size:calc(13px * var(--erp-scale));color:var(--erp-muted)}
+    /* Batch 0：顶栏钉住可见的实时钟；tabular-nums 防秒跳抖动，由 JS 每秒刷新（不服务端渲染）。 */
+    .page-topbar .topbar-clock{flex:1 1 auto;text-align:center;font-size:calc(13px * var(--erp-scale));color:var(--erp-muted);font-variant-numeric:tabular-nums;letter-spacing:.02em;white-space:nowrap}
     .page-topbar .status-wrap{display:flex;align-items:center;gap:12px}
     .page-topbar .status{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--erp-success)}
     .page-topbar .status:before{content:"";width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.18)}
@@ -341,6 +343,70 @@
       .filter-field-composite,.filter-field-plain{flex:1 1 100%}
       .filter-actions-extra{margin-left:0}
     }
+    /*
+      基础资料列表页（商品管理 / 客户管理）顶部工具区：两页共用同一套类，只写一次。
+      三块职责固定，块与块之间用一条素线分隔，不再各自摊成一条整宽玻璃条：
+        ① .list-search  查找（输入框 flex 撑开 + 两个固定宽按钮，同一行）
+        ② .list-facet   档案筛选（标签 + 全部/待补全 chip，紧随查找行）
+        ③ .list-create  新增（字段 flex 换行，按钮固定宽，不与字段抢空间）
+      批量导入独立成 .list-import-card：迁移期一次性动作，不挤日常控件。
+      全部使用 flex + min-width:0，窄窗口按行换行，不靠等分 col 把控件压到裁字。
+    */
+    .list-tools,.list-import-card{
+      padding:16px;margin:0 0 18px;border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);
+      background:var(--erp-glass-bg);box-shadow:var(--erp-glass-shadow);
+      -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);
+      backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);
+    }
+    .list-tools>*{min-width:0}
+    .list-tools>*+*{margin-top:14px}
+    .list-search{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0}
+    .list-search .form-control{flex:1 1 260px;min-width:0}
+    .list-search .btn{flex:0 0 auto;min-width:104px}
+    .list-facet{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+    .list-facet .list-facet-cap{color:var(--erp-muted);font-size:12.5px;font-weight:600}
+    .list-facet .list-facet-hint{color:var(--erp-muted);font-size:12.5px}
+    .list-create{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:14px 0 0;padding-top:14px;border-top:1px solid var(--erp-border)}
+    /* 字段用等宽网格均分；给字段一个舒适下限，宁可整齐换行也不把 6 个框压到 116px 挤成一排 */
+    .list-create-fields{flex:1 1 420px;min-width:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 12px}
+    .list-create .form-control{min-width:0}
+    .list-create .btn{flex:0 0 auto;min-width:104px}
+    /*
+      可收起面板（新增 / 批量导入）共用：单条新增与批量导入都是低频动作，
+      常驻展开会白占高度。用原生 <details>/<summary>，不引 JS 也能键盘操作。
+    */
+    .list-create-panel,.list-import-panel{display:block}
+    /* 关键：收起时必须显式隐藏面板内容。面板里的 form 自带 display:flex（作者样式），
+       会盖掉浏览器 UA 对「闭合 details 内非 summary 子元素」的默认隐藏，导致收起后仍可见。 */
+    .list-create-panel:not([open])>*:not(summary),
+    .list-import-panel:not([open])>*:not(summary){display:none}
+    .list-create-toggle,.list-import-toggle{
+      display:inline-flex;align-items:center;gap:8px;list-style:none;user-select:none;cursor:pointer;
+      min-height:34px;padding:4px 14px;border:1px solid var(--erp-border-strong);border-radius:6px;
+      background:var(--erp-glass-bg-strong);color:var(--erp-ink);font-size:14px;font-weight:600;
+    }
+    .list-create-toggle::-webkit-details-marker,.list-import-toggle::-webkit-details-marker{display:none}
+    .list-create-toggle::before,.list-import-toggle::before{
+      content:"";width:0;height:0;border-left:5px solid currentColor;
+      border-top:4px solid transparent;border-bottom:4px solid transparent;transition:transform .15s ease;
+    }
+    .list-create-panel[open]>.list-create-toggle::before,
+    .list-import-panel[open]>.list-import-toggle::before{transform:rotate(90deg)}
+    .list-create-toggle:hover,.list-import-toggle:hover{background:var(--erp-surface-soft)}
+    .list-create-panel[open]>.list-create-toggle{margin-bottom:14px}
+    /* 面板内表单不再重复分隔线：切换标题已经把两块分开。 */
+    .list-create-panel .list-create{margin:0;padding-top:0;border-top:0}
+    /* 批量导入展开时占满整行，文件框/下拉/按钮和说明才排得开 */
+    .list-import-panel[open]{flex:1 1 100%}
+    .list-import-panel .list-import-form{margin-top:0}
+    .list-import-panel .list-import-hint{margin-top:10px}
+    .list-import-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px}
+    .list-import-links{display:flex;flex-wrap:wrap;gap:8px}
+    .list-import-form{display:flex;flex-wrap:wrap;align-items:center;gap:8px;flex:1 1 420px;min-width:0;margin:0}
+    .list-import-form input[type="file"]{flex:1 1 200px;min-width:0}
+    .list-import-form .form-select{flex:0 0 150px}
+    .list-import-form .btn{flex:0 0 auto}
+    .list-import-hint{margin:10px 0 0;color:var(--erp-muted);font-size:12.5px;line-height:1.6}
     /* shared order-entry surfaces: sales / return / purchase / purchase-return */
     .order-heading{display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;align-items:flex-end;margin-bottom:20px}
     .order-heading h2{margin:0 0 4px}.order-heading p{margin:0;color:var(--erp-muted);font-size:13px}
@@ -500,7 +566,7 @@
 <body class="{{ 'order-entry-page' if request.path in ('/orders/new', '/orders/return/new', '/purchases/new', '/purchases/return/new') else '' }}">
 <div class="app-shell">
   <nav class="sidebar">
-    <div class="brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M14 2H8C5.79086 2 4 3.79086 4 6V18C4 20.2091 5.79086 22 8 22H16C18.2091 22 20 20.2091 20 18V8L14 2ZM14 2V5C14 6.65685 15.3431 8 17 8H20M8 12H10M14 12H16M8 16H10M14 16H16"/></svg></div><div><div class="brand-title">{{ shop_name or '简单ERP' }}</div><div class="brand-subtitle">BUSINESS MANAGEMENT</div></div></div>
+    <div class="brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M14 2H8C5.79086 2 4 3.79086 4 6V18C4 20.2091 5.79086 22 8 22H16C18.2091 22 20 20.2091 20 18V8L14 2ZM14 2V5C14 6.65685 15.3431 8 17 8H20M8 12H10M14 12H16M8 16H10M14 16H16"/></svg></div><div><div class="brand-title">{{ shop_name or '简单ERP' }}</div></div></div>
     <section class="nav-group" aria-label="工作台">
     <a class="nav-section {{'active' if request.path == '/' else ''}} {{'current' if request.path == '/' or request.path.startswith('/orders/') or request.path.startswith('/accounts') else ''}}" href="/">工作台</a>
     <a class="{{'active' if request.path.startswith('/orders/new') or request.path.startswith('/orders/return/new') else ''}}" href="/orders/new">开单</a>
@@ -531,6 +597,7 @@
   <main class="content">
     <div class="page-topbar">
       <div class="company">{{ shop_name }}</div>
+      <div class="topbar-clock" id="topbarClock" aria-hidden="true"></div>
       <div class="status-wrap">
         <div class="status" id="localStatus">本地数据已连接</div>
       </div>
@@ -564,6 +631,19 @@
         status.classList.add('status-down');
         status.textContent = '本地服务异常';
       });
+  })();
+  // Batch 0：顶栏实时钟，YYYY-MM-DD HH:MM:SS（24 小时制），每秒刷新。
+  (function () {
+    const clock = document.getElementById('topbarClock');
+    if (!clock) return;
+    function pad(n) { return String(n).padStart(2, '0'); }
+    function render() {
+      const now = new Date();
+      clock.textContent = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate())
+        + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+    }
+    render();
+    setInterval(render, 1000);
   })();
 </script>
 </body>

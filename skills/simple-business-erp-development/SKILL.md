@@ -32,10 +32,11 @@ metadata:
 
 1. 检查当前 Git 分支、工作区和项目现有修改；保护用户未提交的文件与业务数据。
 2. 明确本次目标、允许修改文件、非目标和验收方式；需求变化时先更新需求基线与短计划。
-3. UI/用户流程变化先遵循项目开发全流程技能的原型与验收要求；不因文档任务强行增加代码或原型。
-4. 用隔离的临时 SQLite 数据库运行相关测试；优先使用 Windows 项目环境：`.venv\\Scripts\\python.exe -m pytest tests\\ -q`。
-5. 需要时做 Windows 页面/桌面 EXE/打印机等对应层级的真实验收；测试通过不代替用户路径验证。
-6. 分别报告 `passed`、`failed`、`blocked`、`unverified`；代码修改、测试、用户验收、打包、Git 推送和 Release 各自记录，不能互相推断。
+3. 写计划或候选功能条目时，对每条过「三问」（数据真的存在？用户真的需要？现有机制已解决？），依据见 [`references/plan-item-admission-three-questions.md`](references/plan-item-admission-three-questions.md)；判否的条目删除后必须留痕与理由，存疑的降为「待确认」并在开工前问用户。
+4. UI/用户流程变化先遵循项目开发全流程技能的原型与验收要求；不因文档任务强行增加代码或原型。
+5. 用隔离的临时 SQLite 数据库运行相关测试；优先使用 Windows 项目环境：`.venv\\Scripts\\python.exe -m pytest tests\\ -q`。
+6. 需要时做 Windows 页面/桌面 EXE/打印机等对应层级的真实验收；测试通过不代替用户路径验证。
+7. 分别报告 `passed`、`failed`、`blocked`、`unverified`；代码修改、测试、用户验收、打包、Git 推送和 Release 各自记录，不能互相推断。
 
 ## Planning and task-record lifecycle
 

@@ -360,6 +360,14 @@ def _account_ledger_print_context(ledger: dict) -> dict:
     )}
     public["customer"] = {"name": ledger["customer"]["name"]}
     public["period"] = dict(ledger["period"])
+    # D-2：PDF 标题按实际区间动态化，对外出示时不再用「客户账款流水」这种内部语义。
+    period = public["period"]
+    if period.get("start_date") or period.get("end_date"):
+        start_label = period.get("start_date") or "最早"
+        end_label = period.get("end_date") or "至今"
+        public["doc_title"] = f"对账单 {start_label} ~ {end_label}"
+    else:
+        public["doc_title"] = "客户账款流水（全部）"
     entry_fields = ("source", "source_id", "type", "date", "reference", "description", "amount_cents", "status", "void_reason")
     entries = []
     for entry in ledger["entries"]:

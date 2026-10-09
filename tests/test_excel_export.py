@@ -106,10 +106,12 @@ def test_excel_export_endpoints_and_headers():
     assert product_name not in product_names
     product_row = next(row for row in product_rows[1:] if row[0] == f"在用商品{suffix}")
     assert product_row[1] == "S1"
-    assert product_row[2] == "箱"
-    assert str(product_row[3]) == "12.34"
-    assert product_row[4] == "商品备注"
-    assert int(product_row[5]) == 3
+    # E-2：未填品牌 → 导出为空单元格（openpyxl 读回 None），不是字符串 "None"。
+    assert product_row[2] in (None, "")
+    assert product_row[3] == "箱"
+    assert str(product_row[4]) == "12.34"
+    assert product_row[5] == "商品备注"
+    assert int(product_row[6]) == 3
 
     sale_rows = _sheet_rows(
         client.get(

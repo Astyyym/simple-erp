@@ -4,6 +4,11 @@
   <h2>编辑客户</h2>
   <div class="page-actions"><a class="btn btn-secondary page-return" href="/customers/">返回</a></div>
 </header>
+{% if customer_needs_completion(customer) %}
+<div class="alert alert-warning" role="alert">
+  <strong>这份档案待补全：</strong>{{ customer_completion_hint(customer) }}。补全后会自动退出「待补全」筛选。
+</div>
+{% endif %}
 <form method="post" class="col-6">
   <label class="form-label">客户名称</label><input class="form-control mb-3" name="name" value="{{customer.name}}" required>
   <label class="form-label">电话</label><input class="form-control mb-3" name="phone" value="{{customer.phone}}">

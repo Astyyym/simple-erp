@@ -122,8 +122,9 @@ def test_truncation_hints_render_on_product_and_customer_lists():
         name = f"E4商品{i:03d}"
         _cp(name, f"S{i:03d}", "个", 1000, build(name))
     html = client.get("/products/").get_data(as_text=True)
-    assert "列表已截断（仅显示前 200 条）" in html
-    assert "缩小范围" in html
+    # Batch B（B-9）：截断提示强化，并明确「不要据此认为数据丢失」。
+    assert "列表已截断" in html and "仅显示前 200 条" in html
+    assert "缩小范围" in html and "不要据此认为数据丢失" in html
 
 
 def test_return_source_dropdown_shows_truncation_hint_at_limit():

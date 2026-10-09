@@ -39,13 +39,23 @@ CONFIG_DEFAULTS: dict[str, Any] = {
     "print_legal_note": "本销售单等同于合同，具有法律效力，收货人签字或附托运物流单号生效，直至货款结清",
     "print_maker_name": "",
     "print_receiver_label": "收货人：____________",
+    # E-5：打印用店铺信息的「首次使用提示」是否已被用户关掉。
+    "print_info_prompt_dismissed": False,
 }
+
+# E-5：打印件上会真的印成空白的字段。
+# 只列**没有出厂默认值**的两项——主营业务与备注（法律句）在 CONFIG_DEFAULTS 里有出厂
+# 文案，迁移用户不填也不会印成空白；把它们算作「缺失」会让提示永远挂着、退化成噪声。
+PRINT_INFO_REQUIRED_FIELDS = (
+    ("print_order_phone", "订货电话"),
+    ("print_order_address", "订货地址"),
+)
 
 UI_SCALE_CHOICES = ("100", "125", "150")
 UI_THEME_CHOICES = ("light", "dark", "system")
 UI_FONT_WEIGHT_CHOICES = ("standard", "medium", "strong")
 UI_FONT_WEIGHT_LABELS = {"standard": "标准", "medium": "稍粗", "strong": "加粗"}
-MIGRATE_DIRNAMES = ("data", "backups", "imports", "logs", "product_images")
+MIGRATE_DIRNAMES = ("data", "backups", "imports", "logs", "product_images", "legacy_archive")
 APP_STORAGE_DIRNAME = "简单ERP"
 DEFAULT_DATA_ROOT_DIRNAME = "简单ERP数据"
 
@@ -148,8 +158,22 @@ def project_path(*parts: str) -> Path:
 
 def ensure_runtime_dirs(root: Path | None = None) -> None:
     base = Path(root) if root is not None else data_root()
-    for dirname in ["data", "backups", "logs", "imports", "temp_pdf", "product_images"]:
+    for dirname in ["data", "backups", "logs", "imports", "temp_pdf", "product_images", "legacy_archive"]:
         (base / dirname).mkdir(parents=True, exist_ok=True)
+
+
+def missing_print_info_fields(config: dict[str, Any]) -> list[str]:
+    """E-5：返回打印件上会印成空白的字段中文名（按 PRINT_INFO_REQUIRED_FIELDS 顺序）。
+
+    空值判定按 `strip()` 后的空串；None 也视为缺失。只读、无副作用，
+    页面提示与路由判定共用同一口径，避免「工作台说缺、设置页说全」的漂移。
+    """
+    missing = []
+    for key, label in PRINT_INFO_REQUIRED_FIELDS:
+        value = config.get(key)
+        if not str(value or "").strip():
+            missing.append(label)
+    return missing
 
 
 def ensure_data_location_initialized() -> Path:
@@ -196,6 +220,7 @@ def _merge_defaults(raw: dict[str, Any]) -> dict[str, Any]:
     if font_weight not in UI_FONT_WEIGHT_CHOICES:
         font_weight = "standard"
     merged["ui_font_weight"] = font_weight
+    merged["print_info_prompt_dismissed"] = bool(merged.get("print_info_prompt_dismissed"))
     return merged
 
 

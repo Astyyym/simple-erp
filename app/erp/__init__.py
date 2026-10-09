@@ -6,10 +6,17 @@ from urllib.parse import urlsplit
 from flask import Flask, jsonify, render_template, request
 
 from .auth import ensure_auth_defaults, current_username, is_desktop_shell
-from .config import ensure_data_location_initialized, load_config, bundled_root, runtime_root
+from .config import ensure_data_location_initialized, load_config, bundled_root, runtime_root, missing_print_info_fields
 from .db import get_db, init_db, integrity_check
 from .utils.money import cents_to_yuan, micro_to_yuan
 from .utils.quantity import format_quantity, format_quantity_3dp
+from .services.master_data_quality import (
+    customer_completion_hint,
+    customer_needs_completion,
+    origin_label,
+    product_completion_hint,
+    product_needs_completion,
+)
 from .utils.errors import error_response, wants_json as _wants_json
 from .routes.accounts import accounts_bp
 from .routes.analytics import analytics_bp
@@ -87,6 +94,14 @@ def create_app() -> Flask:
             "format_quantity": format_quantity,
             "format_quantity_3dp": format_quantity_3dp,
             "micro_to_yuan": micro_to_yuan,
+            # G-0：档案来源标签与「待补全」判定，页面与筛选共用同一口径。
+            "origin_label": origin_label,
+            "product_needs_completion": product_needs_completion,
+            "customer_needs_completion": customer_needs_completion,
+            "product_completion_hint": product_completion_hint,
+            "customer_completion_hint": customer_completion_hint,
+            # E-5：打印用店铺信息缺哪些（页面提示与路由判定共用同一口径）。
+            "print_info_missing": missing_print_info_fields(cfg_now),
         }
 
     @app.before_request

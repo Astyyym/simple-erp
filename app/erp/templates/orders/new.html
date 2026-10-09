@@ -106,6 +106,9 @@
 
   <section class="order-details-card" id="orderDetailsCard" aria-labelledby="orderDetailsTitle">
   <h3 class="section-title" id="orderDetailsTitle">{{ '退货信息' if is_return else '订单信息' }}</h3>
+  <p class="text-muted small mb-2">
+    商品名称与型号可直接手输：命中已有商品会自动带出单位/单价；没有匹配则会新建商品档案，之后可到商品页补全（无成本 → 无毛利、库存与分析为空白；拿货单需先启用库存）。
+  </p>
   <div class="order-table-scroll"><table class="table table-bordered order-table" id="orderTable">
     <thead class="table-light"><tr><th style="width:50px">序号</th><th style="min-width:340px">产品名称</th><th style="width:190px">单位</th><th style="width:120px">数量</th><th style="width:140px">单价(元)</th><th style="width:140px">金额</th><th style="min-width:140px">{{ '退货回冲成本' if is_return else ('销售时成本' if is_edit else '移动平均成本') }}(元)</th><th style="width:80px">操作</th></tr></thead>
     <tbody id="orderBody">
@@ -113,7 +116,7 @@
       {% for item in rows %}
       <tr{% if item and item.unit_cost_micro is not none %} data-unit-cost="{{ micro_to_yuan(item.unit_cost_micro, precision=6) }}"{% endif %}>
         <td class="text-center row-no">{{loop.index}}</td>
-        <td class="product-picker"><div class="picker-row"><input type="hidden" name="product_id" class="product-id" value="{{item.product_id if item else ''}}"><input type="hidden" name="source_item_id" class="source-item-id" value="{{item.source_item_id if item else ''}}"><input type="hidden" name="product_name" class="product-name" value="{{item.product_name if item else ''}}"><select class="form-select form-select-sm picker-name" aria-label="第 {{loop.index}} 行产品名称"></select><select class="form-select form-select-sm picker-spec" aria-label="第 {{loop.index}} 行型号"></select></div></td>
+        <td class="product-picker"><div class="picker-row"><input type="hidden" name="product_id" class="product-id" value="{{item.product_id if item else ''}}"><input type="hidden" name="source_item_id" class="source-item-id" value="{{item.source_item_id if item else ''}}"><input type="hidden" name="product_name" class="product-name" value="{{item.product_name if item else ''}}"><input type="hidden" name="spec" class="product-spec" value="{{item.spec if item else ''}}"><input class="form-control form-control-sm picker-name-input" list="productNameOptions" autocomplete="off" aria-label="第 {{loop.index}} 行产品名称" placeholder="输入或选择商品名" value="{{item.product_name if item else ''}}"><input class="form-control form-control-sm picker-spec-input" list="productSpecOptions" autocomplete="off" aria-label="第 {{loop.index}} 行型号" placeholder="型号（可留空）" value="{{item.spec if item else ''}}"></div></td>
         <td><div class="unit-cell"><select class="form-select form-select-sm unit-select"><option value="">自定义</option>{% for u in ['个','套','件'] %}<option value="{{u}}" {% if item and item.unit == u %}selected{% endif %}>{{u}}</option>{% endfor %}</select><input name="unit" class="unit" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="自定义" value="{{item.unit if item else ''}}"></div></td>
         <td><input name="quantity" class="quantity" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0" value="{{item.quantity if item else ''}}"></td>
         <td class="price-cell"><input name="unit_price" class="unit-price" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.00" value="{{cents_to_yuan(item.unit_price_cents) if item else ''}}"><label class="regular-price-option"><input type="checkbox" class="regular-price-check">常规价 <span class="regular-price-text"></span></label></td>
@@ -125,6 +128,9 @@
     </tbody>
     <tfoot><tr><th colspan="5" class="text-end p-2">合计</th><th class="p-2" id="grandTotal">0.00</th><th colspan="2"></th></tr></tfoot>
   </table></div>
+  <p class="text-muted small mt-2" id="zeroSetupHint">
+    新商品需先到「商品管理」页启用库存后才能入库（拿货单）。
+  </p>
   <div class="small text-muted mt-2" id="profitPreview" role="status">预计毛利润：成本完整的商品才会计算，历史成本缺失时显示不完整。</div>
   <textarea class="form-control mt-3" name="notes" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="备注">{{order.notes if is_edit else ''}}</textarea>
   </section>
@@ -182,7 +188,9 @@
 </div>
 
 <script type="application/json" id="productCatalog">{{ product_catalog|tojson }}</script>
-<script src="{{ url_for('static', filename='order-product-picker.js') }}?v=1"></script>
+<datalist id="productNameOptions"></datalist>
+<datalist id="productSpecOptions"></datalist>
+<script src="{{ url_for('static', filename='order-product-picker.js') }}?v=2"></script>
 <script>
 function money(n) { return (Math.round((Number(n) || 0) * 100) / 100).toFixed(2); }
 function costMoney(costText) {
@@ -411,6 +419,21 @@ bindAutocomplete(
   () => { document.getElementById('customer_id').value = ''; },
 );
 const productCatalog = JSON.parse(document.getElementById('productCatalog').textContent || '[]');
+// G 段二：把已有商品名/型号填进 datalist，手输时给建议（不强制选择）。
+function refreshProductDatalists() {
+  const nameList = document.getElementById('productNameOptions');
+  const specList = document.getElementById('productSpecOptions');
+  if (!nameList || !specList) return;
+  const names = new Set();
+  const specs = new Set();
+  productCatalog.forEach(p => { names.add(p.name); specs.add(p.spec || ''); });
+  nameList.replaceChildren();
+  Array.from(names).sort((a, b) => String(a).localeCompare(String(b), 'zh-Hans-CN'))
+    .forEach(n => { const o = document.createElement('option'); o.value = n; nameList.appendChild(o); });
+  specList.replaceChildren();
+  Array.from(specs).sort().forEach(s => { const o = document.createElement('option'); o.value = s; specList.appendChild(o); });
+}
+refreshProductDatalists();
 function hideRegularPriceOption(regularOption, regularCheck, regularText) {
   if (!regularOption) return;
   regularText.textContent = '';
@@ -468,10 +491,10 @@ function bindRow(tr) {
       }
     });
   }
-  const picker = ErpProductPicker.mountRow(tr, productCatalog, product => {
+  const picker = ErpProductPicker.mountHybrid(tr, productCatalog, product => {
     if (!product) {
+      // 未命中已有商品：保留纯文本，交给后端自动建档；单位/价格按当前输入保留。
       productIdField.value = '';
-      productNameField.value = '';
       delete tr.dataset.unitCost;
       hideRegularPriceOption(regularOption, regularCheck, regularText);
       recalc();
@@ -479,6 +502,7 @@ function bindRow(tr) {
     }
     productIdField.value = product.id;
     productNameField.value = product.name;
+    if (tr.querySelector('.product-spec')) tr.querySelector('.product-spec').value = product.spec || '';
     unitInput.value = product.unit || '';
     unitSelect.value = ['个','套','件'].includes(product.unit) ? product.unit : '';
     priceInput.value = (Number(product.default_price_cents || 0) / 100).toFixed(2);

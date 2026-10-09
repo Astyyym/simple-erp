@@ -193,6 +193,36 @@
 - **测试同步**：`test_order_list_filter_layout.py` / `test_ui_layout_reflow.py` / `test_analytics_v4_behavior.py` / `test_orders_type_filter.py` / `test_analytics_center.py` 中编码旧 4 列网格（`repeat(4,minmax(0,1fr))`、`grid-column:span 2`）与「全选」文案的断言必须随结构更新；`tests/test_filter_chips.py` 覆盖 chip 出现/移除/时间与全选不产生 chip。
 - **陷阱**：断言 `"全选" in html` 会在删掉按钮后命中 `base.html` 里描述该约定的**注释文本**而假通过。改筛选相关断言时不要只搜可见文案，要断言真实 class / `data-*` 属性。
 
+## 基础资料列表页顶部工具区（商品/客户，2026-10-09 重排）
+
+商品管理（`products/list.html`）与客户管理（`customers/list.html`）的顶部不再各写一份 `form.row` + 等分 `col`，改为共用 `base.html` 的 `.list-*` 类。旧的等分 `col` 按格子分宽而不是按语义分：1280 窗口下「默认单价(元)」占位需 79px、可用 71px 被裁；每行 78px 高只装 40px 控件，行内空、行间只剩 8px。
+
+- **结构**：`.list-import-card`（批量导入，独立卡片）+ `.list-tools`（`.list-search` 查找行 / `.list-facet` 档案筛选 / `.list-create` 新增），块间 `.list-tools>*+*{margin-top}` 用素线分隔。字段用 `.list-create-fields` 等宽网格 `repeat(auto-fit,minmax(180px,1fr))`——宁可整齐换行，也不把 6 个框压到 116px 挤成一排。
+- **低频动作默认收起**：批量导入与单条新增都用原生 `<details>/<summary>`（不引 JS，键盘可操作）。切换标题在 `base.html` 统一（`.list-create-toggle` / `.list-import-toggle`，三角箭头靠 `::before` + `[open]` 旋转）。
+- **`<details>` 折叠陷阱（实测踩过）**：面板内 `form` 自带 `display:flex`（作者样式）会**盖掉浏览器 UA 对「闭合 details 内非 summary 子元素」的默认隐藏**，收起后表单仍可见。必须显式写 `.list-create-panel:not([open])>*:not(summary),.list-import-panel:not([open])>*:not(summary){display:none}`。只测 `details.open === false` 会漏掉这个缺陷，要测渲染高度/`display`。
+- **导出不能跟着导入一起收**：`下载Excel模板` / `导出Excel` 是迁移后高频动作，必须留在 `<details>` **之外**（与 `.list-import-links` 同层）；只有文件上传 + 同名策略 + 预检并导入收进面板。
+- **失败/成功要自动展开**：新增失败（路由传 `create_open=True`）和导入失败/完成（模板里 `import_error or import_result or import_init_errors` → `open`）都必须展开面板，否则用户看不到错误原因或结果摘要。路由侧只需在商品新增失败分支传 `create_open=True`；导入两个分支的变量本来就传了，模板内用 `{% set %}` 判定即可。
+- **提交按钮改名**：原提交按钮与切换标题同名（都叫「新增商品」），展开后出现两个同名按钮；提交按钮改叫「确认新增」。
+- **契约测试**：`tests/test_master_data_list_layout.py` 锁结构钩子（class/元素）而非可见文案；覆盖共用类、默认收起、`display:none` 规则存在、失败/完成自动展开、colgroup 列数、操作列宽度类。
+
+## 备份提示只保留一条，且必须随状态消失（2026-10-09）
+
+商品/客户页原先有两条提示：黄色「尚未创建任何备份」（`{% if not has_backup %}`，有备份即消失）和灰色「迁移旧数据前请先备份」（**无条件常驻**）。灰条内容是黄条的子集，且备份建好后仍永久占 41px，属噪声。
+
+- **合并成一条**：迁移提醒并入黄色告警的正文（「导入或迁移旧数据会直接改动业务数据库」），整条挂在 `{% if not has_backup %}` 下。
+- **不要留「始终可见」的提醒条**：一次性动作（导入/迁移）的提醒只该在真正有风险时出现。测试要同时断言两个方向——无备份时出现、建备份后**整条消失**；只断言前半会漏掉常驻噪声。
+- `tests/test_backup_restore.py::test_master_data_lists_warn_when_no_backup_exists` 已按此更新；`import_preview.html` 的 `{% if not has_backup %}` 提示保留不变（预览页本就是一次性流程）。
+- 实测（1280×820）：有备份时两页表格顶部从 y579 提到 y484，省 95px。
+
+## 客户表 colgroup 与表头列数（2026-10-09 修正）
+
+`customers/list.html` 的 `stable-table` 是 `table-layout:fixed`，列宽**取自首行**。历史缺陷：加了「来源」列却只改了 `<thead>`，`<colgroup>` 仍是 6 列 → 多出的列没宽度，「电话」「期初」表头被截断成「电…」「期…」。
+
+- 改列前先数一遍：`<colgroup>` 的 `<col>` 数必须等于 `<thead>` 的 `<th>` 数（`test_master_data_list_layout.py::test_customer_table_colgroup_matches_header_column_count` 已锁）。
+- 列宽要在**最小窗口 1100px** 也不裁表头；当前取值：勾选 44px / 名称 22% / 电话 15% / 地址 26% / 期初 100px / 来源 90px / 操作 190px。改完用 CDP 在 1100/1280/1440/1600 四档读 `th.scrollWidth > th.clientWidth` 复核。
+- 断言表体单元格时**必须先造数据**：空 `<tbody>` 里没有 `<td>`，`html.split('<tbody>')[1]` 取到的 body 段是空的，会假失败。
+- 注：`th.scrollWidth > th.clientWidth` 对勾选列（16px checkbox + 14px 内边距）会因亚像素取整误报，判断裁切时排除它或按元素 `getBoundingClientRect().right` 比对。
+
 ## 验证清单
 
 - 全量测试通过（需隔离正式业务数据库）。
