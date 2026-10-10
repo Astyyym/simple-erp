@@ -80,6 +80,22 @@ def test_frozen_run_still_prefers_bundled_config(monkeypatch, tmp_path):
     assert config["ui_scale"] == "150"
 
 
+def test_frozen_run_does_not_fall_back_to_source_tree_template(monkeypatch, tmp_path):
+    """冻结版缺包内配置时应明确报错，不能去读源码目录里的模板。
+
+    冻结运行读源码路径的 packaging/ 目录，等于把"源码树"当成安装包的一部分；
+    目标机器上那个路径根本不存在，会静默变成另一种行为。
+    """
+    empty_bundle = tmp_path / "empty-bundle"
+    empty_bundle.mkdir()
+    monkeypatch.setattr(config_module, "bundled_root", lambda: empty_bundle)
+    monkeypatch.setattr(config_module, "is_frozen", lambda: True)
+    _drop_writable_config()
+
+    with pytest.raises(FileNotFoundError, match="配置文件不存在"):
+        config_module.load_config()
+
+
 def test_save_config_writes_real_file_so_fallback_is_first_run_only():
     _drop_writable_config()
 

@@ -238,14 +238,14 @@ def load_config() -> dict[str, Any]:
     if not config_path.exists():
         # config.json 是可写配置、不进 git，所以「文件还不存在」是正常的首次运行，
         # 必须能起来，不能直接抛 FileNotFoundError。
-        # 冻结版优先用包内配置（_MEIPASS）；源码模式不查 bundled_root()——它等于项目根，
-        # 会把工作区那份配置当成"内置配置"，直接回退到出厂模板。
-        candidates = [bundled_root() / "config.json"] if is_frozen() else []
-        candidates.append(factory_config_path())
-        for candidate in candidates:
-            if candidate.exists():
-                config_path = candidate
-                break
+        # 两种模式的回退源不同，不要混：
+        #   冻结版 -> 包内配置（_MEIPASS/config.json），这是构建时打进包的
+        #   源码模式 -> 出厂模板 packaging/default_config.json
+        # 源码模式**不查** bundled_root()：它等于项目根，会把工作区那份可写配置
+        # 误当成"内置配置"读进来，回退就失去意义了。
+        candidate = (bundled_root() / "config.json") if is_frozen() else factory_config_path()
+        if candidate.exists():
+            config_path = candidate
     if not config_path.exists():
         raise FileNotFoundError(f"配置文件不存在: {config_path}")
     with config_path.open("r", encoding="utf-8") as f:
