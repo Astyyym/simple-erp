@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>单据管理</h2>
-<form id="ordersFilterForm" class="filter-card" method="get" action="/orders/" autocomplete="off">
+<form id="ordersFilterForm" class="filter-card" method="get" data-inplace action="/orders/" autocomplete="off">
   <div class="filter-tier-query">
     <div class="filter-field-composite">
       <label class="form-label mb-1 d-block">时间范围</label>
@@ -81,7 +81,7 @@
     </div>
   </div>
   {% if filter_chips %}
-  <div class="filter-chips" aria-label="已选条件">
+  <div class="filter-chips" data-refresh-fragment id="ordersChips" aria-label="已选条件">
     <span class="filter-chips-cap">已选条件</span>
     {% for chip in filter_chips %}<a class="filter-chip" href="{{ chip.url }}" title="移除该条件">{{ chip.label }}<span class="filter-chip-x" aria-hidden="true">×</span></a>{% endfor %}
   </div>
@@ -107,6 +107,7 @@
   </form>
 <div class="d-flex gap-2 mb-3"><a class="btn btn-primary" href="/orders/new">新建订单</a><button class="btn btn-danger" type="button" onclick="submitSelected('bulkOrdersForm','确认删除选中的单据吗？正式单据会先自动冲回库存与账款，再移入回收站。')">删除选中</button></div>
 <form id="bulkOrdersForm" method="post" action="/orders/bulk_delete"></form>
+<section id="ordersResults" data-refresh-fragment>
 <table class="table table-striped align-middle stable-table">
   <colgroup><col style="width:44px"><col style="width:16%"><col style="width:17%"><col style="width:11%"><col style="width:11%"><col style="width:11%"><col style="width:11%"><col style="width:300px"></colgroup>
   <thead><tr><th><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>单号</th><th>往来对象</th><th>日期</th><th>类型</th><th>金额</th><th>状态</th><th class="action-cell">操作</th></tr></thead>
@@ -121,9 +122,11 @@
     <td>¥{{cents_to_yuan(o.total_amount_cents)}}</td>
     <td><span class="badge {{o.status_badge}}">{{o.status_label}}</span></td>
     <td class="action-cell"><div class="action-wrap">
-      <a class="btn btn-sm btn-secondary" href="{{o.detail_url}}">回看</a>
+      <a class="btn btn-sm btn-secondary" href="{{o.detail_url}}">查看</a>
       {% if o.editable %}
-      <a class="btn btn-sm btn-primary" href="{{o.edit_url}}">重编辑</a>
+      <a class="btn btn-sm btn-primary" href="{{o.edit_url}}">编辑</a>
+      {% else %}
+      <button class="btn btn-sm btn-primary" type="button" disabled title="{{o.edit_block_reason}}" aria-disabled="true">编辑</button>
       {% endif %}
       {% if o.order_type in ('sale', 'return') %}
       <a class="btn btn-sm btn-info" href="/orders/{{o.id}}/pdf{% if is_desktop %}?desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>打印</a>
@@ -151,7 +154,7 @@
   <nav aria-label="单据列表分页">
     <ul class="pagination pagination-sm mb-0">
       {% if previous_page_url %}
-      <li class="page-item"><a class="page-link" aria-label="上一页" href="{{previous_page_url}}" rel="prev">上一页</a></li>
+      <li class="page-item"><a class="page-link" data-inplace aria-label="上一页" href="{{previous_page_url}}" rel="prev">上一页</a></li>
       {% else %}
       <li class="page-item disabled"><span class="page-link" aria-label="上一页" aria-disabled="true">上一页</span></li>
       {% endif %}
@@ -160,18 +163,19 @@
         {% if item.number == page %}
         <span class="page-link" aria-label="第 {{item.number}} 页" aria-current="page">{{item.number}}</span>
         {% else %}
-        <a class="page-link" aria-label="第 {{item.number}} 页" href="{{item.url}}">{{item.number}}</a>
+        <a class="page-link" data-inplace aria-label="第 {{item.number}} 页" href="{{item.url}}">{{item.number}}</a>
         {% endif %}
       </li>
       {% endfor %}
       {% if next_page_url %}
-      <li class="page-item"><a class="page-link" aria-label="下一页" href="{{next_page_url}}" rel="next">下一页</a></li>
+      <li class="page-item"><a class="page-link" data-inplace aria-label="下一页" href="{{next_page_url}}" rel="next">下一页</a></li>
       {% else %}
       <li class="page-item disabled"><span class="page-link" aria-label="下一页" aria-disabled="true">下一页</span></li>
       {% endif %}
     </ul>
   </nav>
 </div>
+</section>
 <style>
 /* 筛选卡排版已统一到 base.html 的 .filter-card（与数据分析页共用），本页只保留单据管理专有部分。 */
 .purchase-dashboard-layout{

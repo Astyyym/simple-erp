@@ -385,8 +385,10 @@ def list_orders():
                 }.get(row["status"], "bg-secondary"),
                 # 全部单据都可勾选删除：正式单据删除时由后端先自动冲回（作废）再进回收站。
                 "deletable": True,
-                # B1：不可编辑的记录隐藏「重编辑」（保留回看/打印）。
+                # B1：不可编辑的记录也渲染「编辑」按钮，但置灰 + title 说明原因。
+                # 直接隐藏会让用户以为功能缺失；禁用态保留了「这里本来能改」的信息。
                 "editable": _document_editable(row["order_type"], row["status"], bool(row["has_postings"])),
+                "edit_block_reason": _document_edit_block_reason(row["order_type"], row["status"], bool(row["has_postings"])),
                 "detail_url": {
                     "sale": f"/orders/{row['id']}", "return": f"/orders/{row['id']}",
                     "purchase": f"/purchases/{row['id']}", "purchase_return": f"/purchases/return/{row['id']}",
@@ -652,7 +654,8 @@ def _today_history(conn, today: str) -> list[dict]:
     ).fetchall()
     return [
         {**dict(row), "amount_display": cents_to_yuan(row["total_amount_cents"]),
-         "editable": _document_editable(row["order_type"], row["status"], bool(row["has_postings"]))}
+         "editable": _document_editable(row["order_type"], row["status"], bool(row["has_postings"])),
+         "edit_block_reason": _document_edit_block_reason(row["order_type"], row["status"], bool(row["has_postings"]))}
         for row in rows
     ]
 
@@ -997,6 +1000,22 @@ def _document_editable(order_type: str, status: str, has_postings: bool) -> bool
     return status == "draft"
 
 
+def _document_edit_block_reason(order_type: str, status: str, has_postings: bool) -> str:
+    """不可编辑时的原因文案；可编辑时返回空串。
+
+    与 `_document_editable` 同一口径。列表/详情把「编辑」按钮始终渲染出来，
+    不可编辑时显示为禁用态并用这段文案说明为什么点不了——比直接隐藏按钮更好，
+    用户不会以为「这个功能没了」。
+    """
+    if _document_editable(order_type, status, has_postings):
+        return ""
+    if status == "void":
+        return "已作废单据不能编辑，只能查看。"
+    if order_type in ("sale", "return"):
+        return "该单据库存已过账，经济字段不能再改；如需更正请先作废，再重新开单。"
+    return "正式拿货单/退拿货单经济字段已锁定，只能查看。"
+
+
 def _has_stock_postings(conn, order_id: int) -> bool:
     """销售/退货是否已有库存流水；有流水即不可再改经济字段（与 update_order_from_typed_rows 同口径）。"""
     return conn.execute(
@@ -1017,6 +1036,9 @@ def view_order(order_id: int):
             "SELECT 1 FROM orders WHERE id=? AND deleted_at IS NULL", (order["source_order_id"],)
         ).fetchone() is not None
         editable = _document_editable(order["order_type"], order["status"], _has_stock_postings(conn, order_id))
+        edit_block_reason = _document_edit_block_reason(
+            order["order_type"], order["status"], _has_stock_postings(conn, order_id)
+        ) if not editable else ""
     known_cost = bool(items) and all(item["cost_total_micro"] is not None for item in items)
     if known_cost:
         cost_micro = sum(int(item["cost_total_micro"]) for item in items)
@@ -1025,7 +1047,7 @@ def view_order(order_id: int):
         profit_cents = int(order["total_amount_cents"]) - signed_cost_cents
     else:
         profit_cents = None
-    return render_template("orders/detail.html", order=order, items=items, profit_cents=profit_cents, source_order_available=source_order_available, editable=editable, cents_to_yuan=cents_to_yuan, micro_to_yuan=micro_to_yuan)
+    return render_template("orders/detail.html", order=order, items=items, profit_cents=profit_cents, source_order_available=source_order_available, editable=editable, edit_block_reason=edit_block_reason, cents_to_yuan=cents_to_yuan, micro_to_yuan=micro_to_yuan)
 
 
 @orders_bp.get("/<int:order_id>/edit")

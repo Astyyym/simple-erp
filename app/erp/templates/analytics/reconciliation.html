@@ -8,7 +8,7 @@
 </style>
 <header class="page-header recon-head"><div><h1>往来对账</h1><p>销售、客户退货、拿货、退拿货按完整单据核对；默认选中完整结果集，打印不等于收款或结算。</p></div><div class="page-actions"><a class="btn btn-secondary page-return" href="{{ recon_back_url }}">{{ recon_back_label }}</a></div></header>
 {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
-<form class="recon-filters" method="get" action="{{ url_for('analytics.reconciliation') }}">
+<form class="recon-filters" method="get" data-inplace action="{{ url_for('analytics.reconciliation') }}">
   {% if recon_source == 'accounts' %}<input type="hidden" name="from" value="accounts">{% endif %}
   <div><label class="form-label" for="reconCustomer">往来对象</label><select class="form-select" id="reconCustomer" name="customer_id" required><option value="">请选择往来对象</option>{% for customer in customers %}<option value="{{ customer['id'] }}" {{ 'selected' if customer_id == customer['id'] else '' }}>{{ customer['name'] }}</option>{% endfor %}</select></div>
   <div><label class="form-label" for="reconStart">开始日期</label><input class="form-control" id="reconStart" type="date" name="start_date" value="{{ start_date }}"></div>
@@ -18,46 +18,82 @@
 </form>
 {% if snapshot %}
 
-<p class="text-muted">更换对象、日期或类型后请重新查询，将重置为全结果默认选中。{% if snapshot['scope_version'] == 1 %}当前为旧版销售/客户退货快照；“全部”不包含拿货，重新查询才使用四类范围。{% endif %}</p>
-{% if snapshot['unbound_purchase_count'] %}<div class="alert alert-warning">本日期范围另有 {{ snapshot['unbound_purchase_count'] }} 笔有效历史拿货未关联往来对象，未纳入对账；请人工确认，不从备注推断。</div>{% endif %}
+<p class="text-muted" data-refresh-fragment id="reconHint">更换对象、日期或类型后请重新查询，将重置为全结果默认选中。{% if snapshot['scope_version'] == 1 %}当前为旧版销售/客户退货快照；“全部”不包含拿货，重新查询才使用四类范围。{% endif %}</p>
+{% if snapshot['unbound_purchase_count'] %}<div class="alert alert-warning" data-refresh-fragment id="reconUnbound">本日期范围另有 {{ snapshot['unbound_purchase_count'] }} 笔有效历史拿货未关联往来对象，未纳入对账；请人工确认，不从备注推断。</div>{% endif %}
 <div id="reconMessage" role="alert" class="alert alert-warning" hidden></div>
-<section class="recon-panel" aria-labelledby="reconResultTitle">
-  <div class="recon-toolbar"><strong id="reconResultTitle">已选 {{ snapshot['selected_count'] }} / 符合条件 {{ snapshot['scope_count'] }} 笔，交易对账净额 ¥{{ cents_to_yuan(snapshot['selected_total_cents']) }}</strong><div class="actions"><button class="btn btn-secondary" type="button" id="selectAll">全选</button><button class="btn btn-secondary" type="button" id="clearAll">取消全选</button><a id="reconPrint" class="btn btn-primary" href="{{ url_for('analytics.reconciliation_pdf', snapshot_id=snapshot['id']) }}{% if is_desktop %}?desktop_preview=1&amp;return_to={{ return_url|urlencode }}{% endif %}">打印对账单</a></div></div>
+<section class="recon-panel" data-refresh-fragment id="reconPanel" data-snapshot-url="{{ return_url }}" aria-labelledby="reconResultTitle">
+  <div class="recon-toolbar"><strong id="reconResultTitle">已选 {{ snapshot['selected_count'] }} / 符合条件 {{ snapshot['scope_count'] }} 笔，交易对账净额 ¥{{ cents_to_yuan(snapshot['selected_total_cents']) }}</strong><div class="actions"><button class="btn btn-secondary" type="button" id="selectAll" data-snapshot-id="{{ snapshot['id'] }}">全选</button><button class="btn btn-secondary" type="button" id="clearAll" data-snapshot-id="{{ snapshot['id'] }}">取消全选</button><a id="reconPrint" class="btn btn-primary" href="{{ url_for('analytics.reconciliation_pdf', snapshot_id=snapshot['id']) }}{% if is_desktop %}?desktop_preview=1&amp;return_to={{ return_url|urlencode }}{% endif %}">打印对账单</a></div></div>
   <p>销售（+）¥{{ cents_to_yuan(snapshot['type_totals_cents']['sale']) }} · 客户退货（−）¥{{ cents_to_yuan(snapshot['type_totals_cents']['customer_return']) }} · 拿货（−）¥{{ cents_to_yuan(snapshot['type_totals_cents']['purchase']) }} · 退拿货（+）¥{{ cents_to_yuan(snapshot['type_totals_cents']['purchase_return']) }}</p>
-  {% if snapshot['scope_count'] %}<div id="reconSelection"><div class="table-responsive"><table class="table table-sm recon-table"><thead><tr><th>选择</th><th>日期</th><th>单号</th><th>类型</th><th>本店方向</th><th>整单交易金额</th><th>明细</th></tr></thead><tbody>{% for row in display_rows %}<tr class="{{ 'return-row' if row['total_amount_cents'] < 0 else '' }}"><td><input type="checkbox" name="selected_ids" value="{{ row['id'] }}" {{ 'checked' if row['id'] in snapshot['selected_ids'] else '' }} aria-label="选择 {{ row['order_no'] }}" data-toggle-url="{% if snapshot['scope_version'] == 1 %}{{ url_for('analytics.reconciliation_toggle', snapshot_id=snapshot['id'], order_id=row['id']) }}{% else %}{{ url_for('analytics.reconciliation_document_toggle', snapshot_id=snapshot['id'], document_key=row['id']) }}{% endif %}"></td><td>{{ row['order_date'] }}</td><td>{{ row['order_no'] }}</td><td>{{ row['type_label'] }}</td><td>{{ row['direction'] }}</td><td>¥{{ cents_to_yuan(row['total_amount_cents']) }}</td><td><button type="button" class="btn btn-sm btn-secondary detail-button" data-detail-url="{% if snapshot['scope_version'] == 1 %}{{ url_for('analytics.reconciliation_order_detail', snapshot_id=snapshot['id'], order_id=row['id']) }}{% else %}{{ url_for('analytics.reconciliation_document_detail', snapshot_id=snapshot['id'], order_id=row['id']) }}{% endif %}">查看</button></td></tr>{% endfor %}</tbody></table></div></div><div class="recon-pagination" aria-label="对账结果分页">第 {{ page }} / {{ total_pages }} 页{% if page > 1 %}<a href="{{ url_for('analytics.reconciliation', snapshot_id=snapshot['id'], page=page - 1) }}{{ '&amp;from=accounts' if recon_source == 'accounts' else '' }}">上一页</a>{% endif %}{% if page < total_pages %}<a href="{{ url_for('analytics.reconciliation', snapshot_id=snapshot['id'], page=page + 1) }}{{ '&amp;from=accounts' if recon_source == 'accounts' else '' }}">下一页</a>{% endif %}</div>{% else %}<div class="empty-state">当前筛选范围没有可对账的有效单据。</div>{% endif %}
+  {% if snapshot['scope_count'] %}<div id="reconSelection"><div class="table-responsive"><table class="table table-sm recon-table"><thead><tr><th>选择</th><th>日期</th><th>单号</th><th>类型</th><th>本店方向</th><th>整单交易金额</th><th>明细</th></tr></thead><tbody>{% for row in display_rows %}<tr class="{{ 'return-row' if row['total_amount_cents'] < 0 else '' }}"><td><input type="checkbox" name="selected_ids" value="{{ row['id'] }}" {{ 'checked' if row['id'] in snapshot['selected_ids'] else '' }} aria-label="选择 {{ row['order_no'] }}" data-toggle-url="{% if snapshot['scope_version'] == 1 %}{{ url_for('analytics.reconciliation_toggle', snapshot_id=snapshot['id'], order_id=row['id']) }}{% else %}{{ url_for('analytics.reconciliation_document_toggle', snapshot_id=snapshot['id'], document_key=row['id']) }}{% endif %}"></td><td>{{ row['order_date'] }}</td><td>{{ row['order_no'] }}</td><td>{{ row['type_label'] }}</td><td>{{ row['direction'] }}</td><td>¥{{ cents_to_yuan(row['total_amount_cents']) }}</td><td><button type="button" class="btn btn-sm btn-secondary detail-button" data-detail-url="{% if snapshot['scope_version'] == 1 %}{{ url_for('analytics.reconciliation_order_detail', snapshot_id=snapshot['id'], order_id=row['id']) }}{% else %}{{ url_for('analytics.reconciliation_document_detail', snapshot_id=snapshot['id'], order_id=row['id']) }}{% endif %}">查看</button></td></tr>{% endfor %}</tbody></table></div></div><div class="recon-pagination" aria-label="对账结果分页">第 {{ page }} / {{ total_pages }} 页{% if page > 1 %}<a data-inplace href="{{ url_for('analytics.reconciliation', snapshot_id=snapshot['id'], page=page - 1) }}{{ '&amp;from=accounts' if recon_source == 'accounts' else '' }}">上一页</a>{% endif %}{% if page < total_pages %}<a data-inplace href="{{ url_for('analytics.reconciliation', snapshot_id=snapshot['id'], page=page + 1) }}{{ '&amp;from=accounts' if recon_source == 'accounts' else '' }}">下一页</a>{% endif %}</div>{% else %}<div class="empty-state">当前筛选范围没有可对账的有效单据。</div>{% endif %}
 </section>
 <script>
 (() => {
-  const boxes = [...document.querySelectorAll('#reconSelection input[name="selected_ids"]')];
-  const snapshotUrl = {{ return_url|tojson }};
-  const filters = [...document.querySelectorAll('.recon-filters [name]')];
-  const initialFilters = filters.map(field => field.value);
+  // 全部用事件委托挂在 document 上：结果区块会被就地刷新整块替换，
+  // 直接绑定在复选框/按钮上的监听器会随旧节点一起消失。
   const message = document.getElementById('reconMessage');
   let pending = false;
-  const showError = text => { message.textContent = text; message.hidden = false; };
-  const dirty = () => filters.some((field, index) => field.value !== initialFilters[index]);
-  const guard = () => { if (dirty()) { showError('筛选已改变，请重新查询；查询后将重置为全结果选择。'); return false; } if (pending) { showError('选择正在保存，请稍后再试。'); return false; } return true; };
-  filters.forEach(field => field.addEventListener('change', () => { if (dirty()) showError('筛选已改变，请重新查询；查询后将重置为全结果选择。'); else message.hidden = true; }));
-  document.getElementById('reconPrint').addEventListener('click', event => { if (!guard()) event.preventDefault(); });
+  const showError = text => { if (message) { message.textContent = text; message.hidden = false; } };
+  const currentSnapshotUrl = () => document.getElementById('reconPanel')?.dataset.snapshotUrl || {{ return_url|tojson }};
+  const reconFilters = () => [...document.querySelectorAll('.recon-filters [name]')];
+  let initialFilters = reconFilters().map(field => field.value);
+  const dirty = () => reconFilters().some((field, index) => field.value !== initialFilters[index]);
+  const guard = () => {
+    if (dirty()) { showError('筛选已改变，请重新查询；查询后将重置为全结果选择。'); return false; }
+    if (pending) { showError('选择正在保存，请稍后再试。'); return false; }
+    return true;
+  };
+  // 就地刷新后表单字段是新的节点，重新采样基线，否则「已改动」判定会误报。
+  document.addEventListener('erp:refreshed', () => {
+    initialFilters = reconFilters().map(field => field.value);
+    if (message) message.hidden = true;
+  });
+  document.addEventListener('change', event => {
+    const field = event.target.closest('.recon-filters [name]');
+    if (!field) return;
+    if (dirty()) showError('筛选已改变，请重新查询；查询后将重置为全结果选择。');
+    else if (message) message.hidden = true;
+  });
   const post = async (url, body) => {
     if (!guard()) return false;
     pending = true;
-    body.set('page', '{{ page }}');
     try {
       const response = await fetch(url, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body});
       if (!response.ok) { const text = await response.text(); try { throw new Error(JSON.parse(text).error); } catch (error) { if (error instanceof SyntaxError) throw new Error(text); throw error; } }
-      location.href = snapshotUrl;
+      location.href = currentSnapshotUrl();
       return true;
     } catch (error) { showError(error.message || '选择更新失败，请重新查询'); return false; }
     finally { pending = false; }
   };
-  boxes.forEach(box => box.addEventListener('change', async () => { const success = await post(box.dataset.toggleUrl, new URLSearchParams({selected: box.checked ? '1' : '0'})); if (!success) box.checked = !box.checked; }));
-  document.getElementById('selectAll').addEventListener('click', () => post('{{ url_for('analytics.reconciliation_select', snapshot_id=snapshot['id']) }}', new URLSearchParams({mode:'all'})));
-  document.getElementById('clearAll').addEventListener('click', () => post('{{ url_for('analytics.reconciliation_select', snapshot_id=snapshot['id']) }}', new URLSearchParams({mode:'explicit'})));
-  document.querySelectorAll('.detail-button').forEach(button => button.addEventListener('click', async () => {
-    if (!guard()) return;
-    try { const response = await fetch(button.dataset.detailUrl); const data = await response.json(); if (!response.ok) throw new Error(data.error); window.alert(`${data.order.type_label} · ${data.order.direction}\n${data.order.order_no}\n` + data.items.map(item => `${item.product_name} ${item.spec || ''} × ${item.quantity} ${item.unit} = ¥${(item.subtotal_cents / 100).toFixed(2)}`).join('\n') + `\n整单交易金额：¥${(data.order.total_amount_cents / 100).toFixed(2)}`); } catch (error) { showError(error.message); }
-  }));
+  document.addEventListener('click', async event => {
+    const printLink = event.target.closest('#reconPrint');
+    if (printLink) { if (!guard()) event.preventDefault(); return; }
+    const box = event.target.closest('#reconSelection input[name="selected_ids"]');
+    if (box) {
+      const success = await post(box.dataset.toggleUrl, new URLSearchParams({selected: box.checked ? '1' : '0'}));
+      if (!success) box.checked = !box.checked;
+      return;
+    }
+    const all = event.target.closest('#selectAll');
+    if (all) {
+      await post(`/analytics/reconciliation/select/${all.dataset.snapshotId}`, new URLSearchParams({mode:'all'}));
+      return;
+    }
+    const none = event.target.closest('#clearAll');
+    if (none) {
+      await post(`/analytics/reconciliation/select/${none.dataset.snapshotId}`, new URLSearchParams({mode:'explicit'}));
+      return;
+    }
+    const detail = event.target.closest('.detail-button');
+    if (detail) {
+      if (!guard()) return;
+      try {
+        const response = await fetch(detail.dataset.detailUrl);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+        window.alert(`${data.order.type_label} · ${data.order.direction}\n${data.order.order_no}\n` + data.items.map(item => `${item.product_name} ${item.spec || ''} × ${item.quantity} ${item.unit} = ¥${(item.subtotal_cents / 100).toFixed(2)}`).join('\n') + `\n整单交易金额：¥${(data.order.total_amount_cents / 100).toFixed(2)}`);
+      } catch (error) { showError(error.message); }
+    }
+  });
 })();
 </script>
 {% else %}<div class="recon-panel empty-state">请选择一个往来对象并查询，系统会默认选中完整结果集。</div>{% endif %}

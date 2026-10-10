@@ -43,7 +43,7 @@
   </div>
 </div>
 <div class="list-tools">
-  <form class="list-search" method="get" action="/products/">
+  <form class="list-search" method="get" data-inplace action="/products/">
     <input class="form-control" id="productSearchInput" name="q" value="{{q}}" list="product_name_suggestions" placeholder="输入相似字符查找商品">
     <datalist id="product_name_suggestions">{% for s in suggestions %}<option value="{{s.name}}"></option>{% endfor %}</datalist>
     {% if quality == 'todo' %}<input type="hidden" name="quality" value="todo">{% endif %}
@@ -52,8 +52,8 @@
   </form>
   <div class="list-facet">
     <span class="list-facet-cap">档案筛选：</span>
-    <a class="btn btn-sm {{ 'btn-primary' if quality != 'todo' else 'btn-outline-secondary' }}" href="/products/{% if q %}?q={{ q|urlencode }}{% endif %}">全部</a>
-    <a class="btn btn-sm {{ 'btn-primary' if quality == 'todo' else 'btn-outline-secondary' }}" href="/products/?quality=todo{% if q %}&q={{ q|urlencode }}{% endif %}">待补全{% if todo_count %}（{{ todo_count }}）{% endif %}</a>
+    <a class="btn btn-sm {{ 'btn-primary' if quality != 'todo' else 'btn-outline-secondary' }}" data-inplace href="/products/{% if q %}?q={{ q|urlencode }}{% endif %}">全部</a>
+    <a class="btn btn-sm {{ 'btn-primary' if quality == 'todo' else 'btn-outline-secondary' }}" data-inplace href="/products/?quality=todo{% if q %}&q={{ q|urlencode }}{% endif %}">待补全{% if todo_count %}（{{ todo_count }}）{% endif %}</a>
     {% if quality == 'todo' %}<span class="list-facet-hint">仅显示型号为空的商品；补全型号后会自动移出本筛选。</span>{% endif %}
   </div>
   <details class="list-create-panel" {% if create_open %}open{% endif %}>
@@ -83,6 +83,7 @@
   .product-table-shell .product-inventory-table .selection-cell::before,.product-table-shell .product-inventory-table .selection-cell::after,.product-table-shell .product-inventory-table .numeric-cell::before,.product-table-shell .product-inventory-table .numeric-cell::after{content:none;display:none}
   .product-table-shell .product-inventory-table .action-cell{width:auto;min-width:150px}
 </style>
+<section id="productsResults" data-refresh-fragment>
 <div class="table-responsive product-table-shell">
 <table class="table table-striped align-middle stable-table product-inventory-table">
   <thead><tr><th class="selection-cell"><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>名称</th><th>规格</th><th>品牌</th><th>单位</th><th class="numeric-cell">默认价</th><th class="numeric-cell">当前库存</th><th class="numeric-cell">安全库存</th><th class="numeric-cell">移动平均成本</th><th class="numeric-cell">库存金额</th><th>启用状态</th><th>库存状况</th><th>来源</th><th class="action-cell">操作</th></tr></thead>
@@ -102,6 +103,7 @@
   {% endfor %}</tbody>
 </table>
 </div>
+</section>
 <script>
 const productSearchInput = document.getElementById('productSearchInput');
 const productSuggestions = document.getElementById('product_name_suggestions');

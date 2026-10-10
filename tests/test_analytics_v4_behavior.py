@@ -322,3 +322,116 @@ def test_analytics_filter_card_uses_aligned_grid_and_split_order_type_block():
     assert '类型：销售单' in filtered
     # analytics-v4.css 不再重复定义筛选卡（避免两套样式漂移）。
     assert ".erp-analytics .analytics-filters" not in css
+
+
+def test_cost_view_switches_between_stack_and_ring_with_correct_semantics():
+    """成本覆盖/毛利构成：堆叠条 ↔ 环形切换；环形段数与份额对应真实构成。"""
+    from pathlib import Path
+    from erp.services.analytics import summarize_analytics
+
+    init_db()
+    customer = create_customer("环形视图对象")
+    product = create_product("历史商品", "", "个", 100)
+    # 一行有历史成本、一行没有 → 覆盖 < 100%，两段都非零。
+    known = legacy_sale(customer, product, "MD202509010001", "2025-09-01", price="10")
+    legacy_sale(customer, product, "MD202509020001", "2025-09-02", price="20")
+    with get_db() as conn:
+        conn.execute("UPDATE order_items SET cost_total_micro=100000 WHERE order_id=?", (known,))
+    window = {"start_date": "2025-09-01", "end_date": "2025-09-02", "customer_id": customer}
+    result = summarize_analytics(**window)
+    assert result["summary"]["known_net_sales_cents"] == 1000
+    assert result["summary"]["unknown_net_sales_cents"] == 2000
+
+    app = create_app()
+    client = app.test_client()
+    bar = client.get("/analytics/", query_string={**window, "tab": "health", "cost_view": "bar"}).get_data(as_text=True)
+    ring = client.get("/analytics/", query_string={**window, "tab": "health", "cost_view": "ring"}).get_data(as_text=True)
+
+    # 两种视图都在页面上，默认（bar）显示堆叠条、隐藏环形。
+    assert 'data-cost-view="bar"' in bar and 'data-cost-view="ring"' in bar
+    assert 'id="costViewBar"' in bar and 'id="costViewRing"' in bar
+    assert "hidden" not in bar.split('<div class="cost-charts" data-cost-view="bar"', 1)[1].split('>', 1)[0]
+    assert "hidden" in bar.split('<div class="cost-charts cost-charts-ring"', 1)[1].split('>', 1)[0]
+    # 切到 ring：环形可见、堆叠条隐藏。
+    assert "hidden" in ring.split('<div class="cost-charts" data-cost-view="bar"', 1)[1].split('>', 1)[0]
+    assert "hidden" not in ring.split('<div class="cost-charts cost-charts-ring"', 1)[1].split('>', 1)[0]
+    # 环形段：覆盖（已知成本 / 未覆盖），份额与真实金额一致（1000/3000、2000/3000）。
+    coverage = ring.split('cost-charts-ring', 1)[1].split('cost-charts-ring', 1)[0]
+    assert 'data-seg-label="已知成本"' in coverage and 'data-seg-label="未覆盖"' in coverage
+    assert 'data-seg-percent="33.3"' in coverage and 'data-seg-percent="66.7"' in coverage
+    # 悬停数值浮标贴在环外缘（不再进圆心）；圆心恒显示总量。
+    assert 'class="cost-ring-tip' in coverage and 'class="cost-ring-center"' in coverage
+    assert '净销售额' in coverage
+    # 命中层与视觉层解耦：透明命中弧负责鼠标判定（永不移动），避免段外扩导致抖动。
+    assert 'class="cost-ring-hit"' in coverage
+    tip_pointer = (Path(__file__).resolve().parents[1] / "app" / "erp" / "static" / "analytics-v4.css").read_text(encoding="utf-8")
+    assert ".cost-ring-seg{pointer-events:none" in tip_pointer and ".cost-ring-hit{pointer-events:stroke" in tip_pointer
+    # 环形从 12 时起顺时针：首段 dashoffset 为负（沿顺时针推进）；扫描动画存在。
+    assert 'stroke-dashoffset="-' in coverage
+    css = (Path(__file__).resolve().parents[1] / "app" / "erp" / "static" / "analytics-v4.css").read_text(encoding="utf-8")
+    assert "costsweep" in css and "stroke-linecap:round" in css
+    # 非法的 cost_view 被拒绝。
+    assert client.get("/analytics/", query_string={**window, "cost_view": "pie"}).status_code == 400
+
+
+def test_bar_growth_animation_is_wired_to_tab_switch_and_keeps_constant_speed():
+    """条形统计图竖向生长：切页签 / 就地换图都播，速度恒定（时长=柱高/速度）。"""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    css = (root / "app" / "erp" / "static" / "analytics-v4.css").read_text(encoding="utf-8")
+    js = (root / "app" / "erp" / "static" / "analytics-controls.mjs").read_text(encoding="utf-8")
+
+    # 竖向柱：从 0 长到 --bar-rise；柱顶数值同用 --bar-rise/--bar-dur 随柱上升。
+    assert "@keyframes bargrow{from{height:0}to{height:var(--bar-rise,0)}}" in css
+    assert "@keyframes barlabel{from{transform:translate(-50%,var(--bar-rise,0))}to{transform:translate(-50%,0)}}" in css
+    assert ".is-growing .rank-bar-fill{animation:bargrow var(--bar-dur" in css
+    assert ".is-growing .rank-bar-value{animation:barlabel var(--bar-dur" in css
+    # 横向堆叠条用 clip-path 展开，不能 scaleX（会压扁条内文字）。
+    assert "@keyframes stackgrow{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}" in css
+    assert "scaleX" not in css.split("stackgrow", 1)[1].split("}", 1)[0]
+    # reduced-motion 关闭生长。
+    assert "@media(prefers-reduced-motion:reduce)" in css and ".erp-analytics .is-growing .rank-bar-fill" in css
+    # 匀速口径：时长 = 柱高 / 恒定速度；触发点在 JS（就地刷新整块替换后按需重播）。
+    assert "export const BAR_GROW_SPEED_PX_S" in js and "export const STACK_GROW_SPEED_PX_S" in js
+    assert "heights.map(height => Math.max(0, Number(height) || 0) / speed)" in js
+    assert "chart.classList.add('is-growing')" in js
+    assert "prefersReducedMotion" in js
+    # 触发点一：切页签到 产品排行 / 成本诊断（点已选中的页签不重播）。
+    assert "key === 'rank' || key === 'health'" in js, "切到 产品排行/成本诊断 要生长"
+    assert "wasSelected" in js, "点已选中的页签不应重播"
+    # 触发点二：任何就地换图（换榜 / 换每组显示 / 点显示 / 成本视图切换）都重播生长。
+    assert "growActivePanel()" in js and "applyViewChange" in js
+    assert "activeTabKey" in js, "就地刷新后按当前页签决定播哪块"
+    # 后端与模板没有引入生长相关参数：柱高仍是模板内联的 bar_height_px。
+    template = (root / "app" / "erp" / "templates" / "analytics" / "index.html").read_text(encoding="utf-8")
+    assert 'style="height:{{row.bar_height_px}}px"' in template
+    assert 'style="bottom:{{row.bar_height_px}}px"' in template
+
+
+def test_cost_missing_source_is_vertical_columns_not_horizontal_rows():
+    """成本缺失来源由横向条形改为竖向柱（与产品排行同一形态）。"""
+    from erp.routes.analytics import _cost_diagnostics
+    from erp.services.analytics import summarize_analytics
+
+    init_db()
+    customer = create_customer("缺失竖向对象")
+    product = create_product("历史商品", "", "个", 100)
+    legacy_sale(customer, product, "MD202509010001", "2025-09-01", price="10")
+    # 无历史成本 → 进入缺失来源。
+    result = summarize_analytics(start_date="2025-09-01", end_date="2025-09-01", customer_id=customer)
+    assert result["product_rows"][0]["unknown_net_sales_cents"] == 1000
+
+    diag = _cost_diagnostics(result)
+    assert diag["missing"], "应有一条缺失来源"
+    top = diag["missing"][0]
+    assert top["bar_height_px"] == 190.0, "最高柱应与产品排行同高"
+    assert "bar_percent" in top
+
+    html = create_app().test_client().get(
+        "/analytics/", query_string={"start_date": "2025-09-01", "end_date": "2025-09-01", "customer_id": customer, "tab": "health"}
+    ).get_data(as_text=True)
+    assert "cost-missing-columns" in html
+    assert 'class="rank-column negative"' in html
+    # 旧的横向行容器不应再出现在成本缺失来源中
+    assert "rank-bars" not in html

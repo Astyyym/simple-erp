@@ -41,7 +41,7 @@
 </style>
 
 <div class="order-workspace" id="orderWorkspace"><div class="order-entry-area"><div class="order-heading page-header">
-  <div><h2>{{ ('重编辑退货单' if is_return else '重编辑销售单') if is_edit else ('新建退货单' if is_return else '新建销售单') }}</h2><p>{{ '登记客户退回商品，金额将冲减应收账款。' if is_return else '按行录入商品，完成后保存并打开打印单。' }}</p></div>
+  <div><h2>{{ ('编辑退货单' if is_return else '编辑销售单') if is_edit else ('新建退货单' if is_return else '新建销售单') }}</h2><p>{{ '登记客户退回商品，金额将冲减应收账款。' if is_return else '按行录入商品，完成后保存并打开打印单。' }}</p></div>
   <div class="page-actions"><a class="btn btn-outline-secondary page-return" href="/orders/">返回单据管理</a></div>
 </div>
 <form method="post" action="{{ '/orders/' ~ order.id ~ '/edit' if is_edit else ('/orders/return/create' if is_return else '/orders/create') }}" id="orderForm" autocomplete="off">
@@ -84,12 +84,12 @@
     <div class="col-3">
       <label class="form-label">{{ '退货日期' if is_return else '销售日期' }}</label>
       <input class="form-control form-control-lg" id="orderDateInput" type="date" name="order_date" autocomplete="off" value="{{order.order_date if is_edit else today}}" required {% if is_edit %}readonly{% endif %}>
-      <div class="form-text">{{ '重编辑不可改日期' if is_edit else '默认当天，可改；改后单号会按该日重算' }}</div>
+      <div class="form-text">{{ '编辑不可改日期' if is_edit else '默认当天，可改；改后单号会按该日重算' }}</div>
     </div>
     <div class="col-3">
       <label class="form-label">单号</label>
       <input class="form-control form-control-lg" id="orderNoInput" name="order_no" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" value="{{order.order_no if is_edit else order_no}}" required readonly>
-      <div class="form-text">{{ '重编辑保持原单号' if is_edit else '系统按 MD+所选日期+流水 自动生成' }}</div>
+      <div class="form-text">{{ '编辑保持原单号' if is_edit else '系统按 MD+所选日期+流水 自动生成' }}</div>
     </div>
     <div class="col-2">
       <label class="form-label">状态</label>
@@ -172,8 +172,8 @@
           <td>{{history_order.amount_display}}</td>
           <td>{{'已打印' if history_order.status == 'printed' else '正式保存'}}</td>
           <td><div class="history-actions">
-            <a class="btn btn-sm btn-outline-secondary" href="{{url_for('orders.view_order', order_id=history_order.id)}}">回看</a>
-            {% if history_order.editable %}<a class="btn btn-sm btn-outline-primary" href="{{url_for('orders.edit_order', order_id=history_order.id)}}">重编辑</a>{% endif %}
+            <a class="btn btn-sm btn-outline-secondary" href="{{url_for('orders.view_order', order_id=history_order.id)}}">查看</a>
+            {% if history_order.editable %}<a class="btn btn-sm btn-outline-primary" href="{{url_for('orders.edit_order', order_id=history_order.id)}}">编辑</a>{% else %}<button class="btn btn-sm btn-outline-primary" type="button" disabled title="{{history_order.edit_block_reason}}" aria-disabled="true">编辑</button>{% endif %}
           </div></td>
         </tr>
         {% else %}
@@ -699,9 +699,9 @@ async function refreshTodayHistory() {
       const actionCell = document.createElement('td');
       const actions = document.createElement('div');
       actions.className = 'history-actions';
-      // 已过账销售单点「重编辑」是死路 → 只按后端 editable 显隐（回看始终保留）。
-      const actionDefs = [['回看', '', 'secondary']];
-      if (item.editable) actionDefs.push(['重编辑', '/edit', 'primary']);
+      // 已过账销售单点「编辑」是死路 → 按后端 editable 渲染成链接或禁用按钮（查看始终保留）。
+      const actionDefs = [['查看', '', 'secondary']];
+      if (item.editable) actionDefs.push(['编辑', '/edit', 'primary']);
       actionDefs.forEach(([label, suffix, color]) => {
         const link = document.createElement('a');
         link.className = `btn btn-sm btn-outline-${color}`;
@@ -709,6 +709,15 @@ async function refreshTodayHistory() {
         link.textContent = label;
         actions.appendChild(link);
       });
+      if (!item.editable) {
+        const blocked = document.createElement('button');
+        blocked.type = 'button';
+        blocked.disabled = true;
+        blocked.className = 'btn btn-sm btn-outline-primary';
+        blocked.textContent = '编辑';
+        blocked.title = item.edit_block_reason || '该单据当前不可编辑。';
+        actions.appendChild(blocked);
+      }
       actionCell.appendChild(actions);
       row.appendChild(actionCell);
       todayHistoryRows.appendChild(row);

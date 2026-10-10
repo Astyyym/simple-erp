@@ -37,7 +37,7 @@
   </div>
 </div>
 <div class="list-tools">
-  <form class="list-search" method="get" action="/customers/">
+  <form class="list-search" method="get" data-inplace action="/customers/">
     <input class="form-control" id="customerSearchInput" name="q" value="{{q}}" list="customer_name_suggestions" placeholder="输入相似字符查找客户">
     <datalist id="customer_name_suggestions">{% for s in suggestions %}<option value="{{s.name}}"></option>{% endfor %}</datalist>
     {% if quality == 'todo' %}<input type="hidden" name="quality" value="todo">{% endif %}
@@ -46,8 +46,8 @@
   </form>
   <div class="list-facet">
     <span class="list-facet-cap">档案筛选：</span>
-    <a class="btn btn-sm {{ 'btn-primary' if quality != 'todo' else 'btn-outline-secondary' }}" href="/customers/{% if q %}?q={{ q|urlencode }}{% endif %}">全部</a>
-    <a class="btn btn-sm {{ 'btn-primary' if quality == 'todo' else 'btn-outline-secondary' }}" href="/customers/?quality=todo{% if q %}&q={{ q|urlencode }}{% endif %}">待补全{% if todo_count %}（{{ todo_count }}）{% endif %}</a>
+    <a class="btn btn-sm {{ 'btn-primary' if quality != 'todo' else 'btn-outline-secondary' }}" data-inplace href="/customers/{% if q %}?q={{ q|urlencode }}{% endif %}">全部</a>
+    <a class="btn btn-sm {{ 'btn-primary' if quality == 'todo' else 'btn-outline-secondary' }}" data-inplace href="/customers/?quality=todo{% if q %}&q={{ q|urlencode }}{% endif %}">待补全{% if todo_count %}（{{ todo_count }}）{% endif %}</a>
     {% if quality == 'todo' %}<span class="list-facet-hint">仅显示开单自动建档、且电话与地址都为空的客户；补全后会自动移出本筛选。</span>{% endif %}
   </div>
   <details class="list-create-panel" {% if create_open %}open{% endif %}>
@@ -64,6 +64,7 @@
   </details>
 </div>
 <button class="btn btn-danger mb-3" type="button" onclick="submitSelected('bulkCustomersForm','确认删除选中的客户吗？')">删除选中</button>
+<section id="customersResults" data-refresh-fragment>
 {% if truncated %}<div class="alert alert-warning py-2 mb-2" role="status"><strong>列表已截断</strong>（仅显示前 200 条）。迁移后客户可能很多，请用上方搜索缩小范围，**不要据此认为数据丢失**。</div>{% endif %}
 <form id="bulkCustomersForm" method="post" action="/customers/bulk_delete"></form>
 <table class="table table-striped align-middle stable-table">
@@ -78,6 +79,7 @@
   {% endfor %}
   </tbody>
 </table>
+</section>
 <script>
 const customerSearchInput = document.getElementById('customerSearchInput');
 const customerSuggestions = document.getElementById('customer_name_suggestions');

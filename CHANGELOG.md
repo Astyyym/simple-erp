@@ -2,6 +2,15 @@
 
 > 各版本条目按当时发布口径保留。v0.8.0 永久免登录已经取代早期版本中记录的本机登录门；历史凭据不在更新记录中保存。
 
+## v3.5.0 - 筛选无刷新、导航归属、动作标签统一与数据分析图型收口（2026-10-10，打包）
+
+- **筛选提交不再闪烁回顶（Batch A）**：单据管理 / 数据分析 / 账款管理 / 往来对账 / 客户管理 / 商品管理六页的筛选与翻页原本是普通 GET 表单 → 整页重载，滚动容器是内层 `.page-body`，浏览器 `scrollRestoration` 管不到它，实测 7 处 `scrollTop` 全部归 0。新增共享 `app/erp/static/page-refresh.mjs`（`scrollAnchor` / `refreshInPlace` / `wireInPlaceForm` / `initPageRefresh`），给表单/翻页加 `data-inplace`、结果区加 `data-refresh-fragment`，即可 fetch → 只换结果区块 → `pushState` → 恢复滚动；失败回落 `location.assign`。数据分析页原有的 `refreshInPlace` 改为从共享模块 re-export，消除两套实现。**块替换会让直接绑定失效**：往来对账的选中/全选/明细改事件委托；单据管理导出链接的实时同步脚本留在 fragment 之外。实测单据管理 400→400、账款管理 500→500 / 450→450，且 `navigation` 计数不增（真无刷新）。
+- **侧栏高亮改按路由 owner 判定（Batch B）**：修「账款管理查出流水后点『往来对账』，左侧高亮跳到数据分析」——该页真实路由是 `/analytics/reconciliation`，`request.path.startswith('/analytics')` 必然命中数据分析，而返回按钮写着「返回账款管理」。新增 `app/erp/utils/nav.py` 做 endpoint → owner 映射，跨模块页面用显式来源参数覆盖（`from=accounts` → 账款管理）；同时删掉「工作台」的 `current` 半高亮类（它让单据管理/账款管理页侧栏两项同时是蓝字）。**不要再用 `request.path.startswith(...)` 判高亮**。
+- **动作标签统一（Batch C）**：查看单据统一为「查看」（原「回看」）、编辑统一为「编辑」（原「重编辑 / 编辑草稿」）、打印统一为「打印」（原「查看PDF」）；范围含单据列表、单据详情、工作台最近单据、三个开单页的当天历史面板（**服务端渲染 + JS 重建两处**）、拿货/退拿货详情页。回收站「恢复 / 确认删除」与设置页「下载回看」语义不同，不纳入。
+- **条件不可用的动作改为「始终渲染 + 置灰 + 原因」（Batch D）**：同一操作列里有的行有「编辑」、有的行没有，读起来就是标签不一致。不可编辑时不再隐藏，改渲染 `<button type="button" disabled title="原因" aria-disabled="true">编辑</button>`；原因文案集中在 `_document_edit_block_reason()`，**紧挨着**判定函数 `_document_editable()` 放，两者不可能说反。`base.html` 显式写 `:disabled` 样式（灰底 + `cursor:not-allowed` + `opacity:1`）——Bootstrap 默认淡蓝禁用态看着还像能点。API 载荷补 `edit_block_reason`，当天历史面板的 JS 重建分支同步。
+- **数据分析图型收口（Batch E/F）**：成本覆盖 / 毛利构成新增「堆叠条 ↔ 环形」切换（`cost_view`，默认仍是堆叠条）——环形段间留缝 + 端头圆角、12 时起顺时针扫掠、悬停段外扩并在圆心显示该段数值；成本缺失来源由横向条形改竖向柱；产品排行维持竖向柱。条形统计图新增「竖向生长」动画：切页签 / 换榜 / 换每组显示 / 显示按钮 / 成本视图切换都播一次，柱子从基线**匀速**长到终高（速度常量 240 px/s，高柱用时更长，实测各柱「高度÷时长」恒定），整页加载与换榜就地刷新后的重放由 JS 加 `.is-growing` 控制（不用纯 CSS 动画），`prefers-reduced-motion` 直接到位。
+- 本轮验收：全量 pytest **799 passed / 16 skipped**、前端 Node **57 passed**；新增 23 pytest + 6 Node 契约测试（侧栏归属、动作词表、page-refresh）。隔离数据根 + 真实浏览器 CDP 实测侧栏 17 条路由计算色每页恰好一项高亮、六页滚动保位、环形 12 点起点与悬停外扩、柱状生长速度恒定。**未做**：桌面 EXE 原生窗口/OS 鼠标矩阵、实体打印、浅/深/跟随系统三主题矩阵。本版 fresh 重打 Windows one-folder EXE 与版本化 ZIP（包内只含通用默认配置，不携带业务库、演示库或测试数据）。
+
 ## v3.4.0 - 桌面版启动提速与品牌启动画面（2026-10-10，推送与 GitHub Release）
 
 - **惰性导入重依赖（Batch A）**：`weasyprint`/`openpyxl`/`pypinyin`/`PIL` 改为**首次使用时才导入**，涉及 `app/erp/utils/pdf.py`、`purchase_pdf.py`、`exporting.py`、`importing.py`、`pinyin.py`、`routes/products.py` 六个文件。`import erp` + `create_app` 从 **1.85–3.28s 降到 0.445–0.552s**，服务端口就绪 ~2.53s → **~1.13s**。**seam 保留**：`pdf.py`/`products.py` 用模块级 `None` 声明保住既有 monkeypatch 注入点；`purchase_pdf.py` 因测试会直接"读"`purchase_pdf.HTML`，改用 PEP 562 `__getattr__`（原计划的 `None` 写法单独跑会 3 failed）。

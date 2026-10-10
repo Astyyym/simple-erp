@@ -1,12 +1,12 @@
-"""Batch B：编辑死路与恢复一致性（2026-10-08 第二轮修复）。
+"""Batch B：编辑死路与恢复一致性（2026-10-08 第二轮修复；2026-10-10 改为禁用态）。
 
 覆盖审查证据 #4/#5/#10/#16：
-- 单据管理列表：已作废 / 已过账销售单不再显示「重编辑」，未过账的可编辑
-- 详情页按同一口径显隐「重编辑」
+- 单据管理列表：已作废 / 已过账销售单的「编辑」渲染为**禁用按钮**（不再是隐藏），
+  未过账的可编辑为真链接；两种状态按钮都存在，列表列宽一致
+- 详情页按同一口径渲染链接或禁用按钮
 - GET 编辑入口提前拦截（作废 / 过账 → 中文错误页）
-- 恢复的 void 单在列表里没有「重编辑」
 - 编辑页（4 个开单页）含 beforeunload 未保存提醒
-- 开单页当天历史面板：已过账销售单无「重编辑」，拿货/退拿货面板不再有「重编辑」
+- 开单页当天历史面板：已过账销售单的「编辑」为禁用按钮，拿货/退拿货面板无编辑入口
 """
 import re
 
@@ -48,7 +48,8 @@ def _row_html(html, order_no):
 # B1：列表按钮
 # ---------------------------------------------------------------------------
 
-def test_listed_posted_sale_hides_reedit_but_plain_sale_keeps_it():
+def test_listed_posted_sale_shows_disabled_edit_while_plain_sale_keeps_link():
+    """不可编辑 → 禁用按钮（仍可见）；可编辑 → 真链接。两种都渲染出「编辑」。"""
     init_db()
     customer_id = create_customer("列表编辑客户")
     posted_pid = _posted_product("LIST-POSTED")
@@ -57,13 +58,22 @@ def test_listed_posted_sale_hides_reedit_but_plain_sale_keeps_it():
     plain_sale = _sale(customer_id, plain_pid, "MD202610070602")       # 无库存流水（商品未启用库存）
 
     html = create_app().test_client().get("/orders/").get_data(as_text=True)
-    assert "/orders/{}/edit".format(posted_sale) not in _row_html(html, "MD202610070601")
-    assert "/orders/{}/edit".format(plain_sale) in _row_html(html, "MD202610070602")
-    # 回看与打印都保留。
+    posted_row = _row_html(html, "MD202610070601")
+    plain_row = _row_html(html, "MD202610070602")
+
+    # 已过账：没有 edit 链接，但有禁用的「编辑」按钮 + 原因。
+    assert f"/orders/{posted_sale}/edit" not in posted_row
+    assert 'disabled' in posted_row and ">编辑<" in posted_row
+    assert "库存已过账" in posted_row
+    # 未过账：真链接。
+    assert f"/orders/{plain_sale}/edit" in plain_row
+    # 两种状态都渲染出「编辑」按钮 —— 操作列不再长短不一。
+    assert ">编辑<" in posted_row and ">编辑<" in plain_row
+    # 查看与打印都保留。
     assert "MD202610070601" in html
 
 
-def test_voided_document_in_list_has_no_reedit():
+def test_voided_document_in_list_shows_disabled_edit_with_reason():
     init_db()
     customer_id = create_customer("作废列表客户")
     product_id = _plain_product("LIST-VOID")
@@ -75,9 +85,11 @@ def test_voided_document_in_list_has_no_reedit():
     assert row, "作废单仍应出现在列表"
     assert "已作废" in row
     assert f"/orders/{sale_id}/edit" not in row
+    assert 'disabled' in row and ">编辑<" in row
+    assert "已作废单据不能编辑" in row
 
 
-def test_purchase_list_hides_reedit_for_formal_but_keeps_for_draft():
+def test_purchase_list_disables_edit_for_formal_but_links_for_draft():
     init_db()
     product_id = _posted_product("LIST-PUR")
     customer_id = create_customer("拿货列表客户")
@@ -92,7 +104,9 @@ def test_purchase_list_hides_reedit_for_formal_but_keeps_for_draft():
         customer_id=customer_id, request_key="list-pur-draft", status="draft",
     )
     html = create_app().test_client().get("/orders/").get_data(as_text=True)
-    assert f"/purchases/{formal['order_id']}/edit" not in _row_html(html, "NH202610070601")
+    formal_row = _row_html(html, "NH202610070601")
+    assert f"/purchases/{formal['order_id']}/edit" not in formal_row
+    assert 'disabled' in formal_row and ">编辑<" in formal_row
     assert f"/purchases/{draft['order_id']}/edit" in _row_html(html, "NH202610070602")
 
 
@@ -100,17 +114,19 @@ def test_purchase_list_hides_reedit_for_formal_but_keeps_for_draft():
 # B2：详情页按钮
 # ---------------------------------------------------------------------------
 
-def test_detail_page_hides_reedit_for_posted_sale():
+def test_detail_page_disables_edit_for_posted_sale():
     init_db()
     customer_id = create_customer("详情编辑客户")
     product_id = _posted_product("DETAIL-POSTED")
     sale_id = _sale(customer_id, product_id, "MD202610070604")
     html = create_app().test_client().get(f"/orders/{sale_id}").get_data(as_text=True)
     assert f"/orders/{sale_id}/edit" not in html
+    assert 'disabled' in html and ">编辑<" in html
+    assert "库存已过账" in html
     assert f"/orders/{sale_id}/pdf" in html
 
 
-def test_detail_page_keeps_reedit_for_plain_sale():
+def test_detail_page_keeps_edit_link_for_plain_sale():
     init_db()
     customer_id = create_customer("详情无流水客户")
     product_id = _plain_product("DETAIL-PLAIN")
@@ -175,8 +191,8 @@ def test_edit_forms_include_beforeunload_guard():
 # B5：当天历史面板
 # ---------------------------------------------------------------------------
 
-def test_today_history_hides_reedit_for_posted_sale_and_keeps_for_plain():
-    """当天历史面板按 has_postings 显隐「重编辑」（服务端渲染 + API 字段）。"""
+def test_today_history_shows_disabled_edit_for_posted_sale_and_link_for_plain():
+    """当天历史面板按 has_postings 渲染链接或禁用按钮（服务端渲染 + API 字段）。"""
     init_db()
     from datetime import date
     today = date.today().isoformat()
@@ -197,11 +213,16 @@ def test_today_history_hides_reedit_for_posted_sale_and_keeps_for_plain():
     html = client.get("/orders/new").get_data(as_text=True)
     assert f"/orders/{posted}/edit" not in html
     assert f"/orders/{plain}/edit" in html
+    # 不可编辑时仍是可见的禁用按钮（不再直接消失）。
+    assert ">编辑<" in html and "disabled" in html
 
     payload = client.get("/orders/api/today_history").get_json()
     by_id = {row["id"]: row for row in payload["orders"]}
     assert by_id[posted]["editable"] is False
     assert by_id[plain]["editable"] is True
+    # API 也带出禁用原因，供 JS 重建分支写进 title。
+    assert "库存已过账" in by_id[posted]["edit_block_reason"]
+    assert by_id[plain]["edit_block_reason"] == ""
 
 
 def test_purchase_today_history_has_no_reedit_link():

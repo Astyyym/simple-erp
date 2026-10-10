@@ -55,12 +55,12 @@
     <div class="col-3">
       <label class="form-label">拿货日期</label>
       <input class="form-control form-control-lg" id="purchaseDate" name="business_date" type="date" autocomplete="off" value="{{ order.business_date if is_edit else today }}" required {% if is_edit %}readonly{% endif %}>
-      <div class="form-text">{{ '重编辑保留原单号和原日期' if is_edit else '默认当天，可改；改后单号会按该日重算' }}</div>
+      <div class="form-text">{{ '编辑保留原单号和原日期' if is_edit else '默认当天，可改；改后单号会按该日重算' }}</div>
     </div>
     <div class="col-3">
       <label class="form-label">单号</label>
       <input class="form-control form-control-lg" id="orderNoInput" name="order_no" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" value="{{ order.order_no if is_edit else order_no }}" required readonly>
-      <div class="form-text">{{ '重编辑保持原单号' if is_edit else '系统按 NH+所选日期+流水 自动生成' }}</div>
+      <div class="form-text">{{ '编辑保持原单号' if is_edit else '系统按 NH+所选日期+流水 自动生成' }}</div>
     </div>
     <div class="col-2">
       <label class="form-label">状态</label>
@@ -137,7 +137,7 @@
           <td>{{history.amount_display}}</td>
           <td>{{history.status_label}}</td>
           <td><div class="history-actions">
-            <a class="btn btn-sm btn-outline-secondary" href="{{history.detail_url}}">回看</a>
+            <a class="btn btn-sm btn-outline-secondary" href="{{history.detail_url}}">查看</a>
           </div></td>
         </tr>
         {% else %}
@@ -369,8 +369,8 @@ async function refreshTodayHistory() {
       const actions = document.createElement('div');
       actions.className = 'history-actions';
       const detailSuffix = item.order_type === 'purchase' ? `/purchases/${item.id}` : `/purchases/return/${item.id}`;
-      // 正式拿货/退拿货单经济字段已锁定，「重编辑」永远是死路 → 面板只保留「回看」。
-      [['回看', '', 'secondary']].forEach(([label, suffix, color]) => {
+      // 正式拿货/退拿货单经济字段已锁定，「编辑」永远是死路 → 面板只保留「查看」。
+      [['查看', '', 'secondary']].forEach(([label, suffix, color]) => {
         const link = document.createElement('a');
         link.className = `btn btn-sm btn-outline-${color}`;
         link.href = detailSuffix + suffix;

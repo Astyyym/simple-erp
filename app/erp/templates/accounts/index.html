@@ -39,7 +39,7 @@
 
 <h2>账款管理</h2>
 <p class="account-subtitle">当前余额与筛选期间发生额分开展示；销售、退货、拿货、退拿货、收款和调整统一留在客户往来流水中。</p>
-<form class="card card-body account-filter" method="get" action="{{ url_for('accounts.accounts') }}">
+<form class="card card-body account-filter" method="get" data-inplace action="{{ url_for('accounts.accounts') }}">
   <div class="customer-field"><label for="ledgerCustomer">客户</label><select class="form-select" id="ledgerCustomer" name="customer_id" required>
     <option value="" {% if not selected_customer %}selected{% endif %}>请选择客户</option>
     {% for customer in customers %}<option value="{{ customer.id }}" {% if selected_customer and selected_customer.id == customer.id %}selected{% endif %}>{{ customer.name }}</option>{% endfor %}
@@ -50,6 +50,7 @@
 </form>
 
 {% if selected_customer and ledger %}
+<section id="accountsResults" data-refresh-fragment>
 <section class="account-summary-grid" aria-label="客户账款摘要">
   <article class="card account-summary-card">
     <div class="summary-label"><span>当前余额</span><span>全历史 · 不受日期筛选影响</span></div>
@@ -67,13 +68,13 @@
 
 <section aria-labelledby="ledgerHeading">
   <div class="ledger-heading"><div><h3 id="ledgerHeading">{{ selected_customer.name }} · 客户往来流水</h3><div class="ledger-hint">收款按余额减少显示；退货、拿货为负向；退拿货为正向。作废记录保留查看，余额影响为 ¥0.00。</div></div>
-    <form class="ledger-type-filter" id="ledgerTypeFilter" method="get" action="{{ url_for('accounts.accounts') }}">
+    <form class="ledger-type-filter" id="ledgerTypeFilter" method="get" data-inplace action="{{ url_for('accounts.accounts') }}">
       <input type="hidden" name="customer_id" value="{{ selected_customer.id }}">
       <input type="hidden" name="start_date" value="{{ start_date }}"><input type="hidden" name="end_date" value="{{ end_date }}">
       <span class="filter-label">单据类型</span>
       {% set active_types = type_filter or ['sale','return','purchase','purchase_return'] %}
       {% for key,label in [('sale','销售'),('return','退货'),('purchase','拿货'),('purchase_return','退拿货')] %}
-      <label class="type-chip"><input type="checkbox" name="type" value="{{ key }}" {{ 'checked' if key in active_types else '' }} onchange="document.getElementById('ledgerTypeFilter').submit()">{{ label }}</label>
+      <label class="type-chip"><input type="checkbox" name="type" value="{{ key }}" {{ 'checked' if key in active_types else '' }} onchange="this.form.requestSubmit()">{{ label }}</label>
       {% endfor %}
     </form>
     <a class="btn btn-info" id="ledgerPdfLink" href="{{ url_for('accounts.ledger_pdf', customer_id=selected_customer.id, start_date=start_date, end_date=end_date) }}{% if is_desktop %}&amp;desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}"{% if not is_desktop %} target="_blank" rel="noopener"{% endif %}>打印账款流水 PDF</a>
@@ -94,6 +95,7 @@
       </tr>{% else %}<tr><td colspan="8" class="empty-ledger">所选日期范围内没有流水记录。</td></tr>{% endfor %}
     </tbody>
   </table></div>
+</section>
 </section>
 
 <section class="entry-grid" aria-label="新增账务记录">

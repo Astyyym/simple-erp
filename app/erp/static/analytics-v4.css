@@ -17,3 +17,45 @@
 .erp-analytics .btn-outline-secondary{color:var(--erp-ink);border-color:var(--erp-border)}
 html[data-ui-theme="dark"] .erp-analytics{color-scheme:dark}
 @media(prefers-color-scheme:dark){html[data-ui-theme="system"] .erp-analytics{color-scheme:dark}}
+/* 成本图表切换：堆叠条 ↔ 环形 */
+.erp-analytics .cost-view-switch{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:0 0 14px}
+.erp-analytics .cost-view-switch .cost-view-cap{font-size:13px;font-weight:600;color:var(--erp-muted)}
+.erp-analytics .cost-view-switch .btn{padding:4px 14px;font-size:13px}
+.erp-analytics .cost-view-form{display:none}
+/* 成本环形：段间留缝 + 端头圆角，12 时起顺时针扫掠出现，悬停沿中角外扩并显示外缘数值浮标 */
+.erp-analytics .cost-charts-ring .cost-chart{display:flex;flex-direction:column;align-items:center;text-align:center}
+.erp-analytics .cost-charts-ring .cost-chart h3,.erp-analytics .cost-charts-ring .cost-chart .help{align-self:stretch;text-align:left}
+.erp-analytics .cost-ring-view{position:relative;width:260px;max-width:100%;margin:6px auto 2px}
+.erp-analytics .cost-ring{display:block;width:100%;height:auto;overflow:visible}
+/* 视觉弧：不接收鼠标，只负责外扩动画与视觉。 */
+.erp-analytics .cost-ring-seg{pointer-events:none;transition:transform .18s ease}
+.erp-analytics .cost-ring-arc{stroke-width:24;stroke-linecap:round}
+.erp-analytics .cost-ring-seg.is-pop{transform:translate(var(--pop-x,0),var(--pop-y,0))}
+.erp-analytics .cost-ring-seg.is-pop .cost-ring-arc{filter:drop-shadow(0 2px 5px rgba(16,24,40,.28))}
+/* 命中层：透明加厚弧（永不移动），只负责鼠标判定，避免段外扩导致光标落空而抖动。 */
+.erp-analytics .cost-ring-hit{pointer-events:stroke;cursor:default}
+.erp-analytics .cost-ring-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;text-align:center;padding:0 76px}
+.erp-analytics .cost-ring-total{font-size:17px;font-weight:700;color:var(--erp-ink);font-variant-numeric:tabular-nums;line-height:1.2}
+.erp-analytics .cost-ring-total-label{font-size:11px;color:var(--erp-muted);margin-top:2px;line-height:1.25}
+/* 悬停数值浮标：贴在对应段中角的环外缘，默认隐藏，悬停该段才出现 */
+.erp-analytics .cost-ring-tip{position:absolute;transform:translate(-50%,-50%);display:none;flex-direction:column;align-items:center;gap:1px;padding:3px 7px;border-radius:6px;background:var(--erp-surface);border:1px solid var(--erp-border-strong);box-shadow:0 3px 10px rgba(16,24,40,.16);white-space:nowrap;pointer-events:none;z-index:2}
+.erp-analytics .cost-ring-view.is-hover .cost-ring-tip.is-active{display:flex}
+.erp-analytics .cost-ring-tip strong{font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--erp-ink);line-height:1.15}
+.erp-analytics .cost-ring-tip em{font-size:10px;font-style:normal;color:var(--erp-muted);line-height:1.15}
+@keyframes costsweep{from{stroke-dashoffset:var(--sweep-len)}to{stroke-dashoffset:0}}
+.erp-analytics .cost-ring-sweep{animation:costsweep .8s cubic-bezier(.4,0,.2,1) forwards}
+@media(prefers-reduced-motion:reduce){.erp-analytics .cost-ring-sweep{animation:none;stroke-dashoffset:0}}
+.erp-analytics .cost-missing-columns{padding-top:26px}
+.erp-analytics .cost-missing-columns .rank-column{flex:0 0 84px}
+/* 条形统计图竖向生长：只在「切换到该图型」时由 JS 给容器加 .is-growing 播一次。
+   每根柱的时长由 JS 按「柱高 ÷ 恒定速度」写在 --bar-dur 上，故矮柱先到顶、高柱用时更长；
+   柱顶数值标注同用 --bar-rise/--bar-dur 随柱顶一起上升，保持贴柱顶。
+   不能改成纯 CSS 动画：结果区块由 refreshInPlace 整块替换，纯 CSS 会在每次就地刷新时重放。 */
+@keyframes bargrow{from{height:0}to{height:var(--bar-rise,0)}}
+@keyframes barlabel{from{transform:translate(-50%,var(--bar-rise,0))}to{transform:translate(-50%,0)}}
+.erp-analytics .is-growing .rank-bar-fill{animation:bargrow var(--bar-dur,.8s) linear forwards}
+.erp-analytics .is-growing .rank-bar-value{animation:barlabel var(--bar-dur,.8s) linear forwards}
+/* 横向堆叠条套不上竖向生长，改从左向右匀速展开；用 clip-path 而不是 scaleX，避免压扁条内文字。 */
+@keyframes stackgrow{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+.erp-analytics .cost-stack.is-growing{animation:stackgrow var(--bar-dur,.8s) linear forwards}
+@media(prefers-reduced-motion:reduce){.erp-analytics .is-growing .rank-bar-fill,.erp-analytics .is-growing .rank-bar-value,.erp-analytics .cost-stack.is-growing{animation:none}}

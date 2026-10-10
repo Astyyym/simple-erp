@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
 <header class="page-header order-detail-header">
-<h2>单据回看：{{order.order_no}}</h2>
+<h2>单据查看：{{order.order_no}}</h2>
 <div class="page-actions">
-  {% if editable %}<a class="btn btn-primary" href="/orders/{{order.id}}/edit">重编辑</a>{% endif %}
-  <a class="btn btn-info" href="/orders/{{order.id}}/pdf{% if is_desktop %}?desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>查看PDF</a>
+  {% if editable %}<a class="btn btn-primary" href="/orders/{{order.id}}/edit">编辑</a>{% else %}<button class="btn btn-primary" type="button" disabled title="{{edit_block_reason}}" aria-disabled="true">编辑</button>{% endif %}
+  <a class="btn btn-info" href="/orders/{{order.id}}/pdf{% if is_desktop %}?desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>打印</a>
   <a class="btn btn-secondary page-return" href="/orders/">返回列表</a>
 </div>
 </header>

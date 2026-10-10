@@ -223,6 +223,50 @@
 - 断言表体单元格时**必须先造数据**：空 `<tbody>` 里没有 `<td>`，`html.split('<tbody>')[1]` 取到的 body 段是空的，会假失败。
 - 注：`th.scrollWidth > th.clientWidth` 对勾选列（16px checkbox + 14px 内边距）会因亚像素取整误报，判断裁切时排除它或按元素 `getBoundingClientRect().right` 比对。
 
+## 侧栏高亮归属：按路由 owner 判定，不按 URL 前缀（2026-10-10）
+
+用户反馈「账款管理查出流水后点『往来对账』，左侧导航跳到数据分析」。根因不是数据问题，是**高亮判定用错了依据**。
+
+- **症状**：`/analytics/reconciliation?...&from=accounts` 挂在 `/analytics` 命名空间下，`request.path.startswith('/analytics')` 必然把高亮打在「数据分析」；而返回按钮写着「返回账款管理」——两处打架。链接已携带 `from=accounts`，但它**只用于返回按钮文案**，没参与高亮。
+- **修法**：新增 `app/erp/utils/nav.py`，把 endpoint 映射到 owner（`orders.list_orders/view_order/edit_order/...` → 单据管理，`accounts.*` → 账款管理，`analytics.*` → 数据分析…），跨模块页面用**显式来源参数覆盖**（`analytics.reconciliation` + `from=accounts` → 账款管理）。`__init__.py` 的 context processor 注入 `nav` 布尔表，`base.html` 侧栏改用 `nav.*`。
+- **不要再用 `request.path.startswith(...)` 判高亮**：它匹配的是「服务命名空间」而非「用户所在模块」，每新增一个跨模块页面就会再错一次。
+- **同页只能有一项像选中**：历史上「工作台」带一个 `current` 类（条件含 `/orders/`、`/accounts`），复用 active 的文字色但无底色 → 单据管理/账款管理页侧栏**两项同时是蓝字**。已删除 `.nav-section.current` 与模板里的 `current`；「工作台」只在 `/` 高亮。审计时**读计算色，不要读 class 名**（第二项没有底色，class-only 检查会漏）。
+- **验收**：`tests/test_sidebar_ownership.py` 参数化 12 条路由断言「恰好一项高亮且归属正确」，另测 `from=accounts` 覆盖、无 `from` 默认归属、`current` 已消失。CDP 逐路由读 `.sidebar a` 的 `backgroundColor !== 'rgba(0,0,0,0)'` 作为「高亮」口径（子项默认文字色是 `rgb(119,131,151)`，**不是** `rgb(71,84,103)`，别把默认色当成高亮）。
+- **坑：context processor 会在没有请求上下文时被调用。** 新注入的 `nav` 若在 processor 里直接读 `request.endpoint`，凡是**直接 `render_template` 渲染模板**的场景（打印模板/水印测试、PDF 生成）都会 `RuntimeError: Working outside of request context`——本轮一次打挂 22 条 PDF/水印测试。取值逻辑要收进 `nav_state()` 内部并用 `has_request_context()` 守卫，无上下文时返回「全部不高亮」；context processor 只写 `"nav": nav_state()`。同类新注入项（`request.args`、`request.path`）都要按这条自查。
+
+## 筛选提交的闪烁与回顶：就地刷新（2026-10-10）
+
+用户反馈「页面不是在最上方时，点查询会闪烁刷新并回到最上方」。实测 7 个页面全部 `scrollTop` 归 0。
+
+- **根因**：筛选是普通 `method="get"` 表单 → 整页重载；滚动容器是内层 `.page-body`（见上文「顶栏钉住」的壳层拆分），浏览器自带 `scrollRestoration` 对内部滚动容器无能为力。
+- **修法**：新增共享模块 `app/erp/static/page-refresh.mjs`，`base.html` 全局引入（`type=module`，自动接线）。给筛选表单/翻页链接加 `data-inplace`，给结果区加 `data-refresh-fragment` + 稳定 `id`，即可 fetch → 只换结果区块 → `pushState` → 恢复滚动；失败回落 `location.assign`。成功派发 `erp:refreshed` 事件供页面重建联动。
+- **不要为每页各写一套**：数据分析页原本已有 `refreshInPlace`（`analytics-controls.mjs`），若只给新页面另写一份就会漂移。本轮把它抽到共享模块并让 `analytics-controls.mjs` **re-export**，既有单测 import 路径不变。
+- **块替换会让直接绑定失效**：被替换区块内的监听器随旧节点一起消失（`<script>` 也不会重执行）。往来对账的选中/全选/明细原本 `addEventListener` 绑在具体元素上 → 全部改成**事件委托**挂 `document`；筛选基线值在 `erp:refreshed` 时重新采样，否则「筛选已改动」判定会误报。需要初始化的脚本必须放在 fragment **之外**。
+- **保留既有联动**：单据管理的导出链接靠 `input/change` 实时同步表单值（`orders/list.html`），改就地刷新后该脚本必须仍在（它在 fragment 外，保持不动）。
+- **验收口径**：`scrollTop` 前后相等 **且** `performance.getEntriesByType('navigation').length` 不增加（后者证明真没整页导航，只有前者可能是巧合）；同时确认结果区内容确实换了。
+
+## 动作标签统一：一个动作一个词（2026-10-10）
+
+用户圈出「操作」列说「标签不一致」。分三类看：条件显隐（设计如此）、跨页命名漂移（真缺陷）、单行写错。本例是**命名漂移**：
+
+| 动作 | 曾用词 | 定案 |
+|---|---|---|
+| 查看单据 | 回看 / 查看 | **查看** |
+| 编辑单据 | 重编辑 / 编辑 / 编辑草稿 | **编辑** |
+| 打印 | 打印 / 查看PDF | **打印** |
+
+- 范围：单据列表操作列、单据详情页、工作台最近单据、三个开单页的当天历史面板（**服务端渲染 + JS 重建两处都要改**）、拿货/退拿货详情页；编辑页标题与字段提示里的「重编辑」也一并改。
+- **不纳入**（语义不同，非同一动作）：回收站「恢复 / 确认删除」、设置页「下载回看」（下载归档文件）。
+- 契约测试 `tests/test_action_label_vocabulary.py`：断言旧词在单据相关页为 0、三词顺序固定、端点正确；并断言回收站/归档保留自己的词。**造夹具要注意**：已过账销售单的「编辑」是**禁用按钮**（需用未启用库存的商品才有真链接）、空回收站渲染不出行内按钮（需先造已删除记录）。
+
+## 条件不可用的动作：始终渲染 + 置灰 + 原因（2026-10-10）
+
+同一列表里「有的行有编辑、有的行没有」看起来就是「标签不一致」。定案：**条件显隐一律改成始终渲染 + 禁用态**。
+
+- **修法**：不可编辑时渲染 `<button type="button" disabled title="<原因>" aria-disabled="true">编辑</button>`，可编辑时才输出 `<a href>`；隐藏会让用户以为功能被删了，禁用态保留了「这里本来能改」并说明为什么不能。原因文案集中在 `_document_edit_block_reason()`，**紧挨着**判定函数 `_document_editable()` 放，两者不可能互相说反。
+- **必须同步三处**：服务端模板（列表 / 详情 / 当天历史面板）、当天历史面板的 **JS 重建分支**（API 载荷要带 `edit_block_reason`，只带 `editable` 会在刷新后退回旧样子）、以及 `:disabled` 样式。Bootstrap 默认的淡蓝禁用态看着还像能点，要显式写 `background/border-color/color/opacity:1/cursor:not-allowed`。
+- **测试要换断言方向**：原来断言「链接不存在」，改成断言「禁用按钮 + 原因存在，且每行仍恰好一个『编辑』」，同时**保留**「被拦的行不出现 `/edit` href」这条守卫，防止禁用态退化回可点链接。
+
 ## 验证清单
 
 - 全量测试通过（需隔离正式业务数据库）。

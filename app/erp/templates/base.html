@@ -148,7 +148,7 @@
     .nav-group{flex:0 0 auto}
     .nav-label{margin:0 0 7px;padding:9px 12px;color:var(--erp-sidebar-ink);font-size:calc(14px * var(--erp-scale));font-weight:700;letter-spacing:.04em}
     .nav-section{display:flex;align-items:center;min-height:42px;margin:2px 0;padding:9px 12px;border-radius:7px;color:var(--erp-sidebar-ink);font-size:calc(14px * var(--erp-scale));font-weight:600;text-decoration:none;transition:background .15s,color .15s}
-    .nav-section:hover{background:var(--erp-sidebar-hover);color:var(--erp-sidebar-ink)}.nav-section.current{color:var(--erp-sidebar-active-ink)}.nav-section.active{background:var(--erp-sidebar-active);color:var(--erp-sidebar-active-ink)}
+    .nav-section:hover{background:var(--erp-sidebar-hover);color:var(--erp-sidebar-ink)}.nav-section.active{background:var(--erp-sidebar-active);color:var(--erp-sidebar-active-ink)}
     .nav-divider{height:2px;flex:none;background:var(--erp-sidebar-border);margin:20px 0 14px}
     .sidebar a{position:relative;color:var(--erp-sidebar-ink);display:flex;align-items:center;min-height:42px;padding:9px 12px;margin:2px 0;text-decoration:none;border-radius:7px;font-weight:500;font-size:calc(14px * var(--erp-scale));transition:background .15s,color .15s}
     .sidebar a.nav-section{font-weight:700;letter-spacing:.04em}
@@ -198,6 +198,10 @@
        min-height 富余空间全堆到内容下方，文字整体上浮（实测最大 -3px）。inline-flex + align-items
        让标签在任何父容器下都垂直/水平居中。 */
     .btn{display:inline-flex;align-items:center;justify-content:center;min-height:38px;border-radius:6px;font-size:14px;font-weight:600;padding:7px 14px;box-shadow:none!important}.btn-sm{min-height:31px;font-size:13px;padding:4px 10px}.btn-lg{min-height:44px;font-size:15px;padding:9px 18px}
+    /* 禁用的「编辑」按钮：明确读作「不可点」，而不是淡一点的蓝按钮。
+       保留在列表里（不隐藏）是为了让用户看到「这里本来能改」，原因写在 title 里。 */
+    .btn:disabled,.btn.disabled{background:var(--erp-surface-soft);border-color:var(--erp-border-strong);color:var(--erp-muted);opacity:1;cursor:not-allowed}
+    .btn:disabled:hover,.btn.disabled:hover{background:var(--erp-surface-soft);color:var(--erp-muted)}
     .page-header{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;margin-bottom:20px}
     .page-header>h1,.page-header>h2,.page-header>div:not(.page-actions){flex:1 1 240px;min-width:0;margin-bottom:0}
     .page-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px;margin-left:auto;flex:0 1 auto;min-width:0}
@@ -562,35 +566,38 @@
       return window.open(target.href, '_blank', 'noopener');
     }
   </script>
+  {# 共享就地刷新：筛选 / 翻页 / 页内切换不再整页重载并回顶。
+     模块本身是 module，用 type=module 引入；各页在自身脚本里调用 window.erpPageRefresh.initPageRefresh()。 #}
+  <script type="module" src="{{ url_for('static', filename='page-refresh.mjs') }}?v=1"></script>
 </head>
 <body class="{{ 'order-entry-page' if request.path in ('/orders/new', '/orders/return/new', '/purchases/new', '/purchases/return/new') else '' }}">
 <div class="app-shell">
   <nav class="sidebar">
     <div class="brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M14 2H8C5.79086 2 4 3.79086 4 6V18C4 20.2091 5.79086 22 8 22H16C18.2091 22 20 20.2091 20 18V8L14 2ZM14 2V5C14 6.65685 15.3431 8 17 8H20M8 12H10M14 12H16M8 16H10M14 16H16"/></svg></div><div><div class="brand-title">{{ shop_name or '简单ERP' }}</div></div></div>
     <section class="nav-group" aria-label="工作台">
-    <a class="nav-section {{'active' if request.path == '/' else ''}} {{'current' if request.path == '/' or request.path.startswith('/orders/') or request.path.startswith('/accounts') else ''}}" href="/">工作台</a>
-    <a class="{{'active' if request.path.startswith('/orders/new') or request.path.startswith('/orders/return/new') else ''}}" href="/orders/new">开单</a>
-    <a class="sidebar-sub {{'active' if request.path.startswith('/orders/new') else ''}}" href="/orders/new">销售单</a>
-    <a class="sidebar-sub {{'active' if request.path.startswith('/orders/return/new') else ''}}" href="/orders/return/new">退货单</a>
-    <a class="sidebar-sub {{'active' if request.path.startswith('/purchases') and not request.path.startswith('/purchases/return') else ''}}" href="/purchases/new">拿货单</a>
-    <a class="sidebar-sub {{'active' if request.path.startswith('/purchases/return') else ''}}" href="/purchases/return/new">退拿货单</a>
-    <a class="{{'active' if request.path.startswith('/orders/') and not request.path.startswith('/orders/new') and not request.path.startswith('/orders/return/new') else ''}}" href="/orders/">单据管理</a>
-    <a class="{{'active' if request.path.startswith('/accounts') else ''}}" href="/accounts/">账款管理</a>
-    <a class="{{'active' if request.path.startswith('/analytics') else ''}}" href="/analytics/">数据分析</a>
+    <a class="nav-section {{'active' if nav.workbench else ''}}" href="/">工作台</a>
+    <a class="{{'active' if nav.order_entry else ''}}" href="/orders/new">开单</a>
+    <a class="sidebar-sub {{'active' if nav.sale_entry else ''}}" href="/orders/new">销售单</a>
+    <a class="sidebar-sub {{'active' if nav.return_entry else ''}}" href="/orders/return/new">退货单</a>
+    <a class="sidebar-sub {{'active' if nav.purchase_entry else ''}}" href="/purchases/new">拿货单</a>
+    <a class="sidebar-sub {{'active' if nav.purchase_return_entry else ''}}" href="/purchases/return/new">退拿货单</a>
+    <a class="{{'active' if nav.documents else ''}}" href="/orders/">单据管理</a>
+    <a class="{{'active' if nav.accounts else ''}}" href="/accounts/">账款管理</a>
+    <a class="{{'active' if nav.analytics else ''}}" href="/analytics/">数据分析</a>
     </section>
     <div class="nav-divider" aria-hidden="true"></div>
     <section class="nav-group" aria-label="基础资料">
     <div class="nav-label">基础资料</div>
-    <a class="{{'active' if request.path.startswith('/products') else ''}}" href="/products/">商品管理</a>
-    <a class="{{'active' if request.path.startswith('/customers') else ''}}" href="/customers/">客户管理</a>
+    <a class="{{'active' if nav.products else ''}}" href="/products/">商品管理</a>
+    <a class="{{'active' if nav.customers else ''}}" href="/customers/">客户管理</a>
     </section>
     <div class="nav-divider" aria-hidden="true"></div>
     <section class="nav-group" aria-label="回收站">
-    <a class="nav-section {{'active' if request.path.startswith('/recycle') else ''}}" href="/recycle/">回收站</a>
+    <a class="nav-section {{'active' if nav.recycle else ''}}" href="/recycle/">回收站</a>
     </section>
     <div class="nav-divider" aria-hidden="true"></div>
     <section class="nav-group" aria-label="系统设置">
-    <a class="nav-section {{'active' if request.path.startswith('/settings') else ''}}" href="/settings/">系统设置</a>
+    <a class="nav-section {{'active' if nav.settings else ''}}" href="/settings/">系统设置</a>
     </section>
     <div class="app-version">{{ '本地桌面版' if is_desktop else '浏览器本地访问' }} · {{app_version}}</div>
   </nav>
