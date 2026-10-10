@@ -41,7 +41,7 @@ dist\simple-erp-windows-vX.Y.Z.zip
 
 本轮 `v2.0.0` 为独立新目录 `dist\local-v2.0.0\简单ERP\` 和 `dist\simple-erp-windows-v2.0.0.zip`。由当时Windows源码fresh构建，未覆盖上述常规目录或旧包。ZIP完整解压后使用；根配置与冻结内置配置都来自 `packaging/default_config.json`，不是本机config。Windows产品版本保留精确 `v2.0.0`，数字文件版本为 `2.0.0.0`。
 
-当前 `v3.5.0` 在 v3.4.0 之上交付「筛选无刷新、侧栏导航归属、动作标签统一与数据分析图型收口」整批（六页筛选/翻页就地刷新不再闪烁回顶 + 共享 `page-refresh.mjs`、侧栏高亮改按路由 owner 判定、查看/编辑/打印词统一、条件不可用的「编辑」改置灰+原因、成本环形切换与柱状生长动画），产物为 `dist\local-v3.5.0\简单ERP\` 和 `dist\simple-erp-windows-v3.5.0.zip`，同样 fresh 构建、只含通用配置、不携带业务/演示/测试数据。Windows 产品版本 `v3.5.0`，数字文件版本 `3.5.0.0`。**本版仅本地打包，未推送 GitHub、未发布 Release**；桌面 EXE 原生窗口/OS 鼠标矩阵、实体打印与浅/深/跟随系统三主题矩阵仍未验。
+当前 `v3.5.0` 在 v3.4.0 之上交付「筛选无刷新、侧栏导航归属、动作标签统一与数据分析图型收口」整批（六页筛选/翻页就地刷新不再闪烁回顶 + 共享 `page-refresh.mjs`、侧栏高亮改按路由 owner 判定、查看/编辑/打印词统一、条件不可用的「编辑」改置灰+原因、成本环形切换与柱状生长动画），产物为 `dist\local-v3.5.0\简单ERP\` 和 `dist\simple-erp-windows-v3.5.0.zip`，同样 fresh 构建、只含通用配置、不携带业务/演示/测试数据。Windows 产品版本 `v3.5.0`，数字文件版本 `3.5.0.0`。本版已推送 GitHub 并发布 Release `v3.5.0`（ZIP 资产下载回本地与构建产物字节级一致）；桌面 EXE 原生窗口/OS 鼠标矩阵、实体打印与浅/深/跟随系统三主题矩阵仍未验。
 
 当前 `v3.4.0` 在 v3.3.0 之上交付「EXE 启动速度优化」整批（惰性导入 `weasyprint`/`openpyxl`/`pypinyin`/`PIL` + 桌面壳品牌 splash 先行与抢跑修复），产物为 `dist\local-v3.4.0\简单ERP\` 和 `dist\simple-erp-windows-v3.4.0.zip`，同样 fresh 构建、只含通用配置、不携带业务/演示/测试数据。Windows 产品版本 `v3.4.0`，数字文件版本 `3.4.0.0`。本版已推送 GitHub 并发布 Release `v3.4.0`（ZIP 资产下载回本地与构建产物字节级一致）；真实桌面观感（splash 无闪烁/重复双击）待用户实机确认。
 
