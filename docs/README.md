@@ -17,7 +17,7 @@
 | 文档 | 内容 |
 |---|---|
 | [开发说明](./开发说明.md) | Windows 主环境、可选 WSL 交叉测试、启动与 pytest |
-| [Windows 桌面版打包说明](./Windows桌面版打包说明.md) | Windows EXE 构建、安装、数据目录和安全升级 |
+| [Windows 桌面版打包说明](./Windows桌面版打包说明.md) | Windows 安装包与绿色包构建、安装、数据目录和安全升级 |
 | [项目开发技能 references 索引](../skills/simple-business-erp-development/references/README.md) | 项目专用开发/排障规则、业务专题和历史参考的职责划分 |
 | [开发短计划索引](../开发短计划/README.md) | 已有计划记录及状态；历史计划不默认代表待办 |
 | [EXE 启动速度优化计划](../开发短计划/2026-10-09_EXE启动速度优化_执行计划.md) | **A/B/C 三批已完成**（源码 6 文件惰性导入 + `desktop_app.py` splash 先行）；全量 789 passed / 前端 47；冻结版窗口可见 ~4.43s → **~1.99s**（达标 ≤2.0s）；冻结包功能冒烟 5/5。**仅「真实桌面观感人工验收」待哥哥实机**。注：`purchase_pdf.py` 必须用 `__getattr__` seam（`None` 声明单独跑会挂）；splash 实现须「先建 app 再开窗口」以保住数据库失败先抛错的契约 |

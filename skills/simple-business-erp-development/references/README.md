@@ -27,6 +27,7 @@
 | [user-visible-instance-verification.md](./user-visible-instance-verification.md) | 用户页面、测试结果与真实运行实例的证据等级 |
 | [wsl-windows-localhost-instance-mismatch.md](./wsl-windows-localhost-instance-mismatch.md) | Windows/WSL localhost 实例错配排查 |
 | [windows-native-exe-packaging.md](./windows-native-exe-packaging.md) | Windows PyInstaller one-folder 构建和 EXE 冒烟 |
+| [windows-installer-inno-peruser.md](./windows-installer-inno-peruser.md) | Inno Setup per-user 安装包：为什么不能装 Program Files、config/数据保留策略、静默安装验收 |
 | [desktop-splash-first.md](./desktop-splash-first.md) | 桌面壳 splash 先行：保住「数据库失败先抛错」契约的正确启动顺序 |
 | [lazy-import-module-seam.md](./lazy-import-module-seam.md) | 惰性导入重依赖时保留测试 seam 的写法（`None` 声明 vs `__getattr__`）与「单独跑」验收 |
 | [windows-chinese-path-exe-smoke.md](./windows-chinese-path-exe-smoke.md) | 中文路径下的 Windows 构建与隔离冒烟注意事项 |

@@ -2,6 +2,38 @@
 
 适用于需要在 Windows 浏览器验收源码页面的 ERP 迭代。只有预览服务真实启动并确认用户访问的是正确实例后，才提供预览链接。
 
+## ⚠️ 隔离环境变量名：只有 `ERP_DATA_ROOT` 生效
+
+写探针/播种/验收脚本时，**必须**用 `ERP_DATA_ROOT`（`app/erp/config.py:122`）。曾经用过的 `ERP_DATA_DIR` 是**错的**，会被静默忽略：`resolve_data_root()` 读不到该变量，就一路回落到「路径记忆 → 默认数据根」，**把测试数据写进用户的真实数据根**。
+
+正确的完整隔离三件套（缺一会漏）：
+
+```python
+os.environ["ERP_DATA_ROOT"] = str(DATA)          # 业务库所在根（唯一决定库位置的变量）
+os.environ["ERP_CONFIG_PATH"] = str(DATA / "config.json")
+os.environ["ERP_LOCATION_FILE"] = str(DATA / "location" / "data_location.json")
+```
+
+**写完数据后必须回读确认真的隔离了，不能假设：**
+
+```python
+# 1) 让 app 自己报告它解析到的根（最可靠，不靠推断）
+client.get("/health").get_json()["data_root"] == str(DATA)
+# 2) 确认真实数据根没被动过（比对 mtime / 行数 / 直接断言表为空）
+```
+
+`/health` 会返回实际生效的 `data_root`——**这是判断隔离是否成功的唯一权威依据**。变量名写错时脚本不会报错、`init_db()` 照样成功，只有 `/health` 或事后检查真实库才能发现。
+
+**报告前必须核对用户数据根未被写入。** 一旦污染：不要静默删除，先备份整个数据根（校验文件清单 + `integrity_check`），再让用户决定清理范围（精确删探针行 / 整根重置）。
+
+### 排查污染来源的顺序
+
+用户说「exe/包里怎么有测试数据」时，先分清三层，不要一上来怀疑构建：
+
+1. **交付包内容**：解压 ZIP 列出条目，查 `.db`/`.log`/`data/` 条目；再在 exe 二进制和整个产物目录里按 UTF-8 **与 UTF-16** 双编码搜业务字符串。包干净 → 不是打包问题。
+2. **数据根解析**：冻结版启动会读 `%LOCALAPPDATA%\简单ERP\data_location.json` 的路径记忆。**包干净但界面有数据，几乎总是数据根里有旧数据**，不是包被污染。
+3. **谁写进去的**：查该库的 `audit_logs`（含精确 `created_at` 和 `summary`），再回 scratch 目录 grep 那些探针名字，定位到具体脚本及其环境变量写法。
+
 ## 端口与启动者
 
 | 场景 | 地址/端口 | 启动者 |

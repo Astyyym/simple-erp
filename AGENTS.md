@@ -8,16 +8,31 @@
 
 - 正式目录（唯一真源）：本地 Windows 项目根目录
 - GitHub：`Astyyym/simple-erp`，默认分支 `main`
-- 当前源码版本以根目录 `VERSION` 为准；当前工作区 `VERSION` 为 `v3.5.0`
+- 当前源码版本以根目录 `VERSION` 为准；当前工作区 `VERSION` 为 `v3.6.0`
 - 当前需求权威文档：`docs/需求/消防器材店ERP系统-需求文档.md`
 
 ## 怎么跑
 
 - Windows 源码开发：首次准备运行 `setup.bat`，启动使用 `启动系统.bat` / `启动系统.vbs`
-- Windows 桌面版：`dist\简单ERP\简单ERP.exe`
+- Windows 桌面版（免安装）：`dist\local-vX.Y.Z\简单ERP\简单ERP.exe`
+- Windows 安装包（推荐给门店）：`打包Windows安装包.bat` → `dist\simple-erp-setup-vX.Y.Z.exe`，per-user 装到 `%LOCALAPPDATA%\Programs\简单ERP`
 - 测试：`.venv\Scripts\python.exe -m pytest tests\ -q`；打包 venv 可用 `.venv-win\Scripts\python.exe -m pytest tests\ -q`
 - 健康检查：`http://127.0.0.1:5000/health`（公开端点，返回 `auth: disabled`）
 - WSL：只通过 Windows 盘映射访问同一仓库做可选交叉测试；不建立第二套长期源码。
+
+## 交付产物（三种形态，缺一不可）
+
+每次打包/发版都出齐这三种，都由 `打包Windows安装包.bat` 一次生成：
+
+| 形态 | 产物 | 用途 |
+|---|---|---|
+| 绿色版目录 | `dist\local-vX.Y.Z\简单ERP\` | 本机/U 盘直接跑 |
+| **安装包** | `dist\simple-erp-setup-vX.Y.Z.exe` | 门店用户安装（开始菜单/卸载项） |
+| 交付 ZIP | `dist\simple-erp-windows-vX.Y.Z.zip` | 发给别人（解压即用） |
+
+- 三者是**同一份程序**，只差投递方式；安装包是 Inno Setup 包在 one-folder 产物之上。
+- 安装包**必须 per-user**（`{localappdata}\Programs\简单ERP`），不得改成 Program Files：程序把可写 `config.json` 写在 EXE 旁，装进受保护目录会让保存设置失败。契约见 `tests/test_installer_packaging.py`。
+- 只保留当前版本的产物；新版本打包成功后删除旧的 `local-v*` 目录与旧 ZIP，避免用户点错同名 `简单ERP.exe`。
 
 ## 可以改
 

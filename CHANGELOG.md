@@ -2,6 +2,18 @@
 
 > 各版本条目按当时发布口径保留。v0.8.0 永久免登录已经取代早期版本中记录的本机登录门；历史凭据不在更新记录中保存。
 
+## v3.6.0 - Windows 安装包形态（2026-10-10，安装包交付）
+
+- **新增安装包形态（Inno Setup 6）**：此前只有 PyInstaller one-folder 绿色包（解压即用）。本版新增 `dist\simple-erp-setup-v3.6.0.exe`：双击安装 → 开始菜单「简单ERP」与可选桌面快捷方式 → 可在「设置 → 应用」正常卸载。构建入口 `打包Windows安装包.bat`（先复用既有 one-folder 构建，再调 `ISCC` 编译）。
+- **per-user 安装，不需要管理员**：`DefaultDirName={localappdata}\Programs\简单ERP` + `PrivilegesRequired=lowest` + 禁用提权覆盖。**这是必须的**——程序把可写 `config.json` 放在 EXE 旁边（`erp/config.py: runtime_root()`），装进受保护的系统目录会让非管理员保存设置失败。选择这一形态就不必改业务代码里的路径逻辑。
+- **升级不丢店铺设置**：`config.json` 以 `onlyifdoesntexist uninsneveruninstall` 单独安装——重装/升级不覆盖用户改过的店铺名、打印偏移、主题；卸载也保留该文件。
+- **数据零接触**：`[Files]` 与 `[UninstallDelete]` 只覆盖 `{app}`，业务数据仍在「文档\简单ERP数据」；卸载后弹窗说明数据位置，不删数据。安装包内不含任何 `*.db`/演示库/日志。
+- **前置检查只提示不阻断**：安装前检测 `简单ERP.exe` 是否在运行（在运行则询问是否关闭后再装）；缺 WebView2 运行时只提示并给官方下载地址，不静默联网下载。
+- **版本单一真源**：安装脚本用 ISPP 从仓库根 `VERSION` 读版本，`AppVersion=v3.6.0`、PE `FileVersion=3.6.0.0`；脚本里不写死版本号（由 `tests/test_installer_packaging.py` 守护）。
+- **简体中文安装界面**：Inno Setup 发行包不带中文语言文件，`packaging/installer/ChineseSimplified.isl` 随仓库提供（官方 `istrans` 版本）。
+- **交付产物固定为三种形态**：`打包Windows安装包.bat` 一次出齐 ① 绿色版目录 `dist\local-vX.Y.Z\简单ERP\`、② 安装包 `dist\simple-erp-setup-vX.Y.Z.exe`、③ 交付 ZIP `dist\simple-erp-windows-vX.Y.Z.zip`；ZIP 生成抽成 `packaging/make_release_zip.py`（写盘前拒绝 `.db`/`.log`/`demo_data` 等业务条目）。三者是同一份程序，只差投递方式。只保留当前版本产物——此前 `dist/` 堆了 8 个同名 `简单ERP.exe`，极易误把绿色版当安装包双击。
+- 本轮验收：全量 pytest **809 passed / 16 skipped**（v3.5.0 基线 799 + 新增 10 条安装包契约测试）；前端 Node **57 passed**。产物：`dist\local-v3.6.0\简单ERP\`（662 文件，EXE 12,236,517 B，PE `3.6.0.0`/`v3.6.0`）、`dist\simple-erp-setup-v3.6.0.exe`（40,085,898 B）、`dist\simple-erp-windows-v3.6.0.zip`（662 条目，53,548,746 B，SHA256 `2c04bf58…42ea`）。**真实安装/升级/卸载/运行四段实测通过**（隔离目录 + 隔离数据根）：安装文件清单与源目录逐项一致、升级保留改过的 `config.json`、已安装 EXE `/health` 为 `v3.6.0` 且 7 页 200、卸载只剩保留的 `config.json` 且注册表项清空；正式数据根三个文件 SHA256 全程未变。**另经用户真实人工安装验收**：向导中改到自定义路径安装，664 文件与源产物逐项一致、开始菜单「简单ERP」/「卸载 简单ERP」齐全、正式安装 `/health` 为 `v3.6.0` 且 10 页 200。**未验**：非中文 Windows、无 WebView2 机器、中文用户目录路径。绿色包继续保留，三种形态并存。
+
 ## v3.5.0 - 筛选无刷新、导航归属、动作标签统一与数据分析图型收口（2026-10-10，打包）
 
 - **筛选提交不再闪烁回顶（Batch A）**：单据管理 / 数据分析 / 账款管理 / 往来对账 / 客户管理 / 商品管理六页的筛选与翻页原本是普通 GET 表单 → 整页重载，滚动容器是内层 `.page-body`，浏览器 `scrollRestoration` 管不到它，实测 7 处 `scrollTop` 全部归 0。新增共享 `app/erp/static/page-refresh.mjs`（`scrollAnchor` / `refreshInPlace` / `wireInPlaceForm` / `initPageRefresh`），给表单/翻页加 `data-inplace`、结果区加 `data-refresh-fragment`，即可 fetch → 只换结果区块 → `pushState` → 恢复滚动；失败回落 `location.assign`。数据分析页原有的 `refreshInPlace` 改为从共享模块 re-export，消除两套实现。**块替换会让直接绑定失效**：往来对账的选中/全选/明细改事件委托；单据管理导出链接的实时同步脚本留在 fragment 之外。实测单据管理 400→400、账款管理 500→500 / 450→450，且 `navigation` 计数不增（真无刷新）。
