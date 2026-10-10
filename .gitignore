@@ -22,6 +22,11 @@ imports/
 *.db-wal
 *.db-shm
 
+# 本机可写配置：店铺名、打印偏移、主题、缩放都是每台机器的私有设置。
+# 出厂默认配置的唯一真源是 packaging/default_config.json（构建打包 + 源码首次运行回退都用它）。
+# 不要把这个文件提交回仓库，否则开发机设置会污染「厂默认」并持续漂移。
+config.json
+
 # Build outputs
 dist/
 build/

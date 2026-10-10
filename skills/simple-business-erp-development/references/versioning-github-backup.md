@@ -8,7 +8,7 @@ Commit source and repeatable build assets:
 
 - `app/`, `tests/`, `docs/` (`docs/需求/`, `docs/复盘/`, ops notes + `docs/README.md`)
 - `开发短计划/` (execution plans; not a substitute for long-lived requirements)
-- `requirements.txt`, `config.json` template
+- `requirements.txt`, `packaging/default_config.json`（出厂配置模板；根 `config.json` 是可写配置、已 gitignore，不进仓库）
 - build scripts and PyInstaller `.spec`
 - `README.md`, `CHANGELOG.md`, `VERSION`
 
@@ -85,7 +85,10 @@ gh release create v0.8.0 \
 
 ### Pitfalls (2026-07-12 / 2026-07-14 / 2026-07-26 / 2026-10-07)
 
-- **根 `config.json` 是跟踪文件，但常被本地改成真实店铺信息**（店名、真实手机号、经手人）。发版时索引里必须保持厂默认（与 `packaging/default_config.json` 一致），工作区那份改动**保持未暂存、不进提交、不上传**。提交前 `git diff --cached -- config.json` 必须为空，并扫描 `git diff --cached` 确认无真实店名/手机号/姓名；短计划/发布说明里也不要写真实店铺名或经手人。
+- **根 `config.json` 不进 git（已 `.gitignore`）**，它是每台机器的可写配置（店名、打印偏移、主题、缩放）。出厂默认的唯一真源是 `packaging/default_config.json`：构建打包用它，源码首次运行（文件不存在）也回退到它（`erp/config.py: factory_config_path()`）。
+  - 曾经的做法是「跟踪 `config.json`，发版时保证索引里是厂默认」——**不要再回到那样**：开发机一改设置就污染厂默认，且两份内容持续漂移。
+  - 发版前不必再检查 `git diff --cached -- config.json`（它已被忽略，不可能进提交）；改为确认**没有** `config.json` 出现在暂存区。
+  - 短计划/发布说明里仍不要写真实店铺名或经手人。
 - **手动 `PyInstaller ... --distpath <自定义>` 不会生成产物根 `config.json`**（只有 `_internal/config.json` 和 EXE）。`打包Windows桌面版.bat` 会补这一步；手动构建要自己 `cp packaging/default_config.json <dist>/<app>/config.json` 并 `diff` 确认等于通用模板（应用在根配置缺失时会回退到内置配置，但交付仍应补齐）。
 - Chinese zip basenames can upload as mangled assets → use `simple-erp-windows-vX.Y.Z.zip` only。
 - Tag without assets leaves Latest stale — user will say “releases 没装包”.

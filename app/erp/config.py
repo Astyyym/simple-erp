@@ -224,12 +224,28 @@ def _merge_defaults(raw: dict[str, Any]) -> dict[str, Any]:
     return merged
 
 
+def factory_config_path() -> Path:
+    """出厂默认配置模板（随仓库/构建分发，只读）。
+
+    这是**唯一**的默认配置真源：`简单ERP.spec` 打包的是它，源码首次运行的回退也是它。
+    不要再复制第二份，否则两份会漂移。
+    """
+    return SOURCE_ROOT / "packaging" / "default_config.json"
+
+
 def load_config() -> dict[str, Any]:
     config_path = config_file_path()
-    if not config_path.exists() and is_frozen():
-        bundled = bundled_root() / "config.json"
-        if bundled.exists():
-            config_path = bundled
+    if not config_path.exists():
+        # config.json 是可写配置、不进 git，所以「文件还不存在」是正常的首次运行，
+        # 必须能起来，不能直接抛 FileNotFoundError。
+        # 冻结版优先用包内配置（_MEIPASS）；源码模式不查 bundled_root()——它等于项目根，
+        # 会把工作区那份配置当成"内置配置"，直接回退到出厂模板。
+        candidates = [bundled_root() / "config.json"] if is_frozen() else []
+        candidates.append(factory_config_path())
+        for candidate in candidates:
+            if candidate.exists():
+                config_path = candidate
+                break
     if not config_path.exists():
         raise FileNotFoundError(f"配置文件不存在: {config_path}")
     with config_path.open("r", encoding="utf-8") as f:
