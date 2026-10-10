@@ -8,7 +8,28 @@ from pathlib import Path
 from copy import copy
 
 from flask import send_file
-from openpyxl import Workbook, load_workbook
+
+# Deferred openpyxl seams: resolved on first template/import use so app boot does
+# not pay openpyxl's import cost. Kept as module-level names (None) for overrides.
+Workbook = None
+load_workbook = None
+
+
+def _workbook():
+    global Workbook
+    if Workbook is None:
+        from openpyxl import Workbook as _Workbook
+        Workbook = _Workbook
+    return Workbook
+
+
+def _load_workbook():
+    global load_workbook
+    if load_workbook is None:
+        from openpyxl import load_workbook as _load
+        load_workbook = _load
+    return load_workbook
+
 
 MAX_IMPORT_BYTES = 5 * 1024 * 1024
 MAX_DISPLAYED_ERRORS = 100
@@ -32,7 +53,7 @@ class ImportResult:
 
 
 def excel_template(headers: list[str], filename: str):
-    workbook = Workbook()
+    workbook = _workbook()()
     sheet = workbook.active
     sheet.title = "导入模板"
     sheet.append(headers)
@@ -89,7 +110,7 @@ def read_upload_detailed(
 
 
 def _xlsx_rows(data: bytes) -> list[tuple[object, ...]]:
-    workbook = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+    workbook = _load_workbook()(io.BytesIO(data), read_only=True, data_only=True)
     sheet = workbook.active
     if sheet is None:
         return []

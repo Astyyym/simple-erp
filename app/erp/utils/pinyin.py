@@ -8,11 +8,25 @@
 """
 from __future__ import annotations
 
-try:  # pragma: no cover - 导入分支取决于运行环境
-    from pypinyin import Style, lazy_pinyin
-except ImportError:  # pragma: no cover
-    lazy_pinyin = None
-    Style = None
+# Deferred pypinyin: imported on first use so app boot does not pay its cost
+# (and so a missing package never blocks import). Kept as module-level names so
+# callers/tests can still observe or override them.
+lazy_pinyin = None
+Style = None
+
+
+def _ensure_pypinyin() -> bool:
+    """首次使用时才导入 pypinyin；缺包时仍退化为空串。"""
+    global lazy_pinyin, Style
+    if lazy_pinyin is not None:
+        return True
+    try:  # pragma: no cover - 导入分支取决于运行环境
+        from pypinyin import Style as _style, lazy_pinyin as _lazy
+    except ImportError:  # pragma: no cover
+        return False
+    lazy_pinyin, Style = _lazy, _style
+    return True
+
 
 MAX_INITIALS_LENGTH = 32
 
@@ -25,7 +39,7 @@ def pinyin_initials(name: str) -> str:
     - 任何异常或缺少 pypinyin → 返回空串，绝不让派生字段阻断主流程
     """
     text = (name or "").strip()
-    if not text or lazy_pinyin is None:
+    if not text or not _ensure_pypinyin():
         return ""
     try:
         parts = lazy_pinyin(text, style=Style.FIRST_LETTER, errors="default")

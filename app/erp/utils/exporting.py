@@ -6,9 +6,21 @@ from datetime import date
 from typing import Iterable, Sequence
 
 from flask import send_file
-from openpyxl import Workbook
 
 from erp.utils.money import cents_to_yuan
+
+# Deferred openpyxl seam: resolved on the first Excel export so app boot does not
+# pay openpyxl's import cost. Kept as a module-level name (None) so existing
+# callers/tests can still override `exporting.Workbook`.
+Workbook = None
+
+
+def _workbook():
+    global Workbook
+    if Workbook is None:
+        from openpyxl import Workbook as _Workbook
+        Workbook = _Workbook
+    return Workbook
 
 ORDER_TYPE_LABELS = {
     "sale": "销售单",
@@ -35,7 +47,7 @@ def workbook_download(
     sheet_title: str,
     filename: str,
 ):
-    workbook = Workbook()
+    workbook = _workbook()()
     sheet = workbook.active
     sheet.title = sheet_title[:31] or "导出"
     sheet.append(list(headers))

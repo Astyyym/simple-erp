@@ -23,12 +23,66 @@ if os.path.isdir(GTK_BIN):
 # Mark desktop shell so UI can enable native folder picker affordances.
 os.environ.setdefault("ERP_DESKTOP", "1")
 
-from erp import create_app
-from erp.config import load_config
-
-
 APP_URL = "http://127.0.0.1:5000"
 _window = None
+
+# Window background while WebView2 cold-starts, so the frame is never a stark
+# white flash before the splash paints. Matches the splash light background.
+SPLASH_BACKGROUND = "#f3f5f8"
+
+# Minimum time the branded splash stays visible after it paints. Without a floor
+# the swap fires as soon as the server is ready (<1s) and the splash only flashes
+# for a fraction of a second — which reads to users as "nothing happened".
+SPLASH_MIN_SECONDS = 0.9
+
+# Inline splash shown while the local service finishes booting. Same brand mark
+# and theme tokens as the app shell (base.html) so the first paint matches the
+# product; colors follow the OS theme via prefers-color-scheme, so it needs no
+# config read (which would slow first paint).
+SPLASH_HTML = """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>简单ERP</title>
+<style>
+:root{--sp-primary:#2563eb;--sp-bg:#f3f5f8;--sp-ink:#172033;--sp-muted:#667085;--sp-track:#e3e5e8}
+@media (prefers-color-scheme: dark){:root{--sp-primary:#3b82f6;--sp-bg:#0f141d;
+  --sp-ink:#e8eef9;--sp-muted:#9aa8c0;--sp-track:#2b3648}}
+html,body{height:100%;margin:0}
+body{background:var(--sp-bg);color:var(--sp-ink);
+  font-family:"Microsoft YaHei",system-ui,-apple-system,"Segoe UI",sans-serif}
+.box{height:100%;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:16px}
+.mark{width:56px;height:56px;border-radius:12px;background:var(--sp-primary);color:#fff;
+  display:grid;place-items:center;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}
+.mark svg{width:32px;height:32px;display:block}
+.title{font-size:19px;font-weight:600;letter-spacing:1px}
+.bar{width:200px;height:4px;border-radius:3px;background:var(--sp-track);overflow:hidden}
+.bar i{display:block;height:100%;width:40%;border-radius:3px;background:var(--sp-primary);
+  animation:run 1.1s infinite ease-in-out}
+.hint{font-size:13px;color:var(--sp-muted)}
+@keyframes run{0%{transform:translateX(-100%)}100%{transform:translateX(350%)}}
+</style></head><body><div class="box">
+<div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+ stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path
+ d="M14 2H8C5.79086 2 4 3.79086 4 6V18C4 20.2091 5.79086 22 8 22H16C18.2091 22 20 20.2091 20 18V8L14 2ZM14 2V5C14 6.65685 15.3431 8 17 8H20M8 12H10M14 12H16M8 16H10M14 16H16"/></svg></div>
+<div class="title">简单ERP</div>
+<div class="bar"><i></i></div>
+<div class="hint">正在启动本地服务…</div>
+</div></body></html>"""
+
+
+def _error_html(message: str) -> str:
+    """A dead-end error page so a failed boot never leaves a permanent splash."""
+    safe = (message or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return (
+        "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
+        "<title>简单ERP</title></head><body style=\"margin:0;height:100%;"
+        "font-family:'Microsoft YaHei',system-ui,sans-serif;background:#f3f5f8;color:#172033\">"
+        "<div style=\"height:100%;display:flex;flex-direction:column;align-items:center;"
+        "justify-content:center;gap:12px;padding:24px;text-align:center\">"
+        "<div style=\"font-size:18px;font-weight:600\">启动失败</div>"
+        f"<div style=\"font-size:13px;color:#667085;max-width:640px;word-break:break-all\">{safe}</div>"
+        "<div style=\"font-size:13px;color:#667085\">请关闭后重新打开，或联系维护人员。</div>"
+        "</div></body></html>"
+    )
 
 
 class DesktopApi:
@@ -96,9 +150,24 @@ def _port_is_open(host: str = "127.0.0.1", port: int = 5000) -> bool:
         return sock.connect_ex((host, port)) == 0
 
 
-def _run_server(startup_errors: queue.Queue[Exception] | None = None) -> None:
+def _create_app():
+    """Import and build the Flask app.
+
+    Imported here (not at module level) so merely importing this shell does not
+    pay the app's import cost; the caller decides when to build the app.
+    """
+    from erp import create_app
+
+    return create_app()
+
+
+def _run_server(
+    startup_errors: queue.Queue[Exception] | None = None,
+    *,
+    app: Any = None,
+) -> None:
     try:
-        app = create_app()
+        app = app if app is not None else _create_app()
         serve(app, host="127.0.0.1", port=5000, threads=8)
     except Exception as exc:
         logging.getLogger(__name__).exception("本地服务启动失败")
@@ -128,6 +197,8 @@ def _wait_for_server(
 
 def _window_title() -> str:
     try:
+        from erp.config import load_config
+
         name = str(load_config().get("shop_name") or "").strip()
     except Exception:
         name = ""
@@ -137,13 +208,23 @@ def _window_title() -> str:
 def main() -> None:
     global _window
     os.environ.setdefault("ERP_PORT", "5000")
-    if not _port_is_open():
-        startup_errors: queue.Queue[Exception] = queue.Queue()
-        server_thread = threading.Thread(target=_run_server, args=(startup_errors,), daemon=True)
-        server_thread.start()
-        _wait_for_server(startup_errors=startup_errors)
+    already_running = _port_is_open()
+    startup_errors: queue.Queue[Exception] = queue.Queue()
+    app = None
+    if not already_running:
+        # Build the app BEFORE anything is shown: a real database/config failure
+        # must surface immediately as a raised error (the startup regression
+        # tests pin this), never be hidden behind a window that then blocks.
+        try:
+            app = _create_app()
+        except Exception as exc:
+            logging.getLogger(__name__).exception("本地服务启动失败")
+            raise RuntimeError(f"简单ERP启动失败：{exc}") from exc
+        threading.Thread(
+            target=_run_server, args=(startup_errors,), kwargs={"app": app}, daemon=True
+        ).start()
 
-    title = _window_title()
+    title = _window_title() if app is not None else "简单ERP"
     try:
         import webview
     except Exception:
@@ -152,14 +233,50 @@ def main() -> None:
             time.sleep(3600)
 
     api = DesktopApi()
+    # Splash first: the window paints the brand immediately, so it is visible
+    # while the remaining boot (serve bind + first page) completes in parallel.
     _window = webview.create_window(
         title,
-        APP_URL,
+        html=SPLASH_HTML,
         width=1280,
         height=820,
         min_size=(1100, 700),
         js_api=api,
+        background_color=SPLASH_BACKGROUND,
     )
+
+    # The swap must wait for the splash to actually paint. Without this gate the
+    # server (ready in <1s after the lazy-import work) won the race, load_url ran
+    # before the splash HTML ever rendered, and the user saw only a blank window.
+    splash_painted = threading.Event()
+    painted_at: dict[str, float] = {}
+
+    def _on_loaded() -> None:
+        if not splash_painted.is_set():
+            painted_at["t"] = time.perf_counter()
+            splash_painted.set()
+
+    def _swap_to_app() -> None:
+        try:
+            if not already_running:
+                _wait_for_server(startup_errors=startup_errors)
+            # Never swap into a still-blank WebView2: wait for the splash paint,
+            # but do not hang forever if this WebView2 build omits the event.
+            splash_painted.wait(timeout=8.0)
+            # Keep the branded splash visible long enough to read as a loading
+            # state rather than an imperceptible flash.
+            started = painted_at.get("t")
+            if started is not None:
+                remaining = SPLASH_MIN_SECONDS - (time.perf_counter() - started)
+                if remaining > 0:
+                    time.sleep(remaining)
+            _window.load_url(APP_URL)
+        except Exception as exc:  # never leave a permanent splash on failure
+            logging.getLogger(__name__).exception("切换到主界面失败")
+            _window.load_html(_error_html(str(exc)))
+
+    _window.events.loaded += _on_loaded
+    threading.Thread(target=_swap_to_app, daemon=True).start()
     webview.start()
 
 

@@ -4,7 +4,6 @@ from collections import defaultdict
 from urllib.parse import urlencode, urlsplit, urlunsplit
 from flask import current_app, render_template, request, send_file
 from jinja2 import Environment, select_autoescape
-from weasyprint import HTML
 
 from erp.config import load_config, project_path, runtime_root
 from erp.db import get_db
@@ -13,6 +12,19 @@ from erp.services.reconciliation import get_reconciliation_print_context
 from erp.utils.errors import RecordNotFound
 from erp.utils.money import cents_to_yuan
 from erp.utils.quantity import format_quantity
+
+# Deferred WeasyPrint import: resolved on the first PDF render so app boot does not
+# pay WeasyPrint's import cost. Declared at module level (None) so the existing
+# test/caller override seam `monkeypatch.setattr(utils.pdf, "HTML", ...)` still works.
+HTML = None
+
+
+def _html_class():
+    global HTML
+    if HTML is None:
+        from weasyprint import HTML as _HTML
+        HTML = _HTML
+    return HTML
 
 
 def settings_print_preview_context() -> tuple[dict, list[dict], dict]:
@@ -58,7 +70,7 @@ def generate_settings_print_preview_pdf() -> Path:
         document_title="销售清单",
     )
     out = project_path("temp_pdf", "settings_print_preview.pdf")
-    HTML(string=html, base_url=str(runtime_root())).write_pdf(out)
+    _html_class()(string=html, base_url=str(runtime_root())).write_pdf(out)
     return out
 
 
@@ -131,7 +143,7 @@ def generate_order_pdf(order_id: int) -> Path:
         document_title=document_title,
     )
     out = project_path("temp_pdf", f"order_{order_id}.pdf")
-    HTML(string=html, base_url=str(runtime_root())).write_pdf(out)
+    _html_class()(string=html, base_url=str(runtime_root())).write_pdf(out)
     return out
 
 
@@ -270,7 +282,7 @@ def generate_account_summary_pdf_for_customers(customer_ids: list[int], start_da
     if len(customer_ids) > 8:
         ids_part += f"_n{len(customer_ids)}"
     out = project_path("temp_pdf", f"account_summary_{ids_part}_{safe_range}.pdf")
-    HTML(string=html, base_url=str(runtime_root())).write_pdf(out)
+    _html_class()(string=html, base_url=str(runtime_root())).write_pdf(out)
     return out
 
 
@@ -397,7 +409,7 @@ def generate_account_ledger_pdf(customer_id: int, start_date: str = "", end_date
         for value in (start_date, end_date)
     )
     out = project_path("temp_pdf", f"account_ledger_{int(customer_id)}_{safe_range}.pdf")
-    HTML(string=html, base_url=str(runtime_root())).write_pdf(out)
+    _html_class()(string=html, base_url=str(runtime_root())).write_pdf(out)
     return out
 
 
@@ -419,5 +431,5 @@ def generate_reconciliation_pdf(snapshot_id: int) -> Path:
         format_quantity=format_quantity,
     )
     out = project_path("temp_pdf", f"reconciliation_{int(snapshot_id)}.pdf")
-    HTML(string=html, base_url=str(runtime_root())).write_pdf(out)
+    _html_class()(string=html, base_url=str(runtime_root())).write_pdf(out)
     return out

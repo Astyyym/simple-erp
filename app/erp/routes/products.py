@@ -4,7 +4,7 @@ from decimal import Decimal, InvalidOperation
 import io
 from datetime import date
 from uuid import uuid4
-from PIL import Image, UnidentifiedImageError
+
 from erp.db import get_db
 from erp.services.accounting import create_product, update_product_record
 from erp.services.inventory import initialize_product, revise_initialization
@@ -27,6 +27,23 @@ from erp.services.master_data_import import (
 from erp.utils.importing import ImportFileError, ImportResult, excel_template, normalized_name, price_to_cents, read_upload_detailed
 from erp.utils.money import yuan_to_cents, cents_to_yuan, micro_to_yuan
 from erp.utils.backup import list_backups
+
+# Deferred Pillow seams: only the product-image route needs PIL, so it is imported
+# on first use to keep app boot cheap. Kept as module-level names for overrides.
+Image = None
+UnidentifiedImageError = None
+
+
+def _pil():
+    """Resolve Pillow lazily; raises the original ImportError if Pillow is absent."""
+    global Image, UnidentifiedImageError
+    if Image is None:
+        from PIL import Image as _Image
+        Image = _Image
+    if UnidentifiedImageError is None:
+        from PIL import UnidentifiedImageError as _Err
+        UnidentifiedImageError = _Err
+    return Image, UnidentifiedImageError
 
 products_bp = Blueprint("products", __name__, url_prefix="/products")
 
@@ -355,15 +372,16 @@ def upload_product_image(product_id: int):
         content = upload.stream.read(5 * 1024 * 1024 + 1)
         if len(content) > 5 * 1024 * 1024:
             raise ValueError("商品图片不能超过5MB")
+        image_cls, unidentified_error = _pil()
         try:
-            with Image.open(io.BytesIO(content)) as source:
+            with image_cls.open(io.BytesIO(content)) as source:
                 if source.format not in {"JPEG", "PNG"}:
                     raise ValueError("商品图片仅支持 JPEG 或 PNG")
                 if source.width * source.height > 20_000_000:
                     raise ValueError("商品图片像素总数不能超过2000万")
                 source.load()
                 converted = source.convert("RGB")
-        except (UnidentifiedImageError, OSError) as exc:
+        except (unidentified_error, OSError) as exc:
             raise ValueError("商品图片无法解析") from exc
         filename = f"{uuid4().hex}.jpg"
         target = _product_image_dir() / filename

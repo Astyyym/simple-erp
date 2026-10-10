@@ -2,13 +2,36 @@
 from pathlib import Path
 
 from flask import current_app
-from weasyprint import CSS, HTML
 
 from erp.config import load_config, project_path, runtime_root
 from erp.db import get_db
 from erp.utils.errors import RecordNotFound
 from erp.utils.money import cents_to_yuan
 from erp.utils.quantity import format_quantity_3dp
+
+# Deferred WeasyPrint seams: WeasyPrint is imported on first use so app boot does
+# not pay its cost. A PEP 562 module `__getattr__` keeps `purchase_pdf.HTML` /
+# `.CSS` readable as the real classes (tests/test_purchase_printing.py reads
+# `purchase_pdf.HTML`), and `_weasy()` still honours an explicit module-level
+# override such as `monkeypatch.setattr(purchase_pdf, "HTML", ...)`.
+def __getattr__(name):
+    if name in ("CSS", "HTML"):
+        from weasyprint import CSS as _CSS, HTML as _HTML
+        return {"CSS": _CSS, "HTML": _HTML}[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def _weasy():
+    global CSS, HTML
+    globals_css = globals().get("CSS")
+    globals_html = globals().get("HTML")
+    if globals_css is None:
+        from weasyprint import CSS as _CSS
+        CSS = globals_css = _CSS
+    if globals_html is None:
+        from weasyprint import HTML as _HTML
+        HTML = globals_html = _HTML
+    return globals_css, globals_html
 
 
 # Shared sales styling pads the first/last fragment only. Purchase-only paged
@@ -72,7 +95,8 @@ def generate_purchase_pdf(order_id: int, *, is_return: bool = False) -> Path:
         object_role='往来对象（本单卖方）',
     )
     out = project_path('temp_pdf', f"{'purchase_return' if is_return else 'purchase'}_{int(order_id)}.pdf")
-    HTML(string=html, base_url=str(runtime_root())).write_pdf(
-        out, stylesheets=[CSS(string=_PURCHASE_PAGE_FRAME)],
+    css_cls, html_cls = _weasy()
+    html_cls(string=html, base_url=str(runtime_root())).write_pdf(
+        out, stylesheets=[css_cls(string=_PURCHASE_PAGE_FRAME)],
     )
     return out
