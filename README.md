@@ -2,7 +2,7 @@
 
 面向本地单机门店的轻量进销存/开单系统，当前覆盖销售与退货开单、客户和商品资料、账款、采购统计、打印及本地数据管理。
 
-- 当前源码版本：以根目录 [`VERSION`](./VERSION) 为准；`v3.4.0` 在 v3.3.0 之上交付「EXE 启动速度优化」整批：惰性导入 `weasyprint`/`openpyxl`/`pypinyin`/`PIL`（`import erp` 1.85–3.28s → ~0.5s、服务就绪 ~2.53s → ~1.13s）、品牌启动画面先行与抢跑修复（冻结版窗口可见 ~4.43s → **~1.31s**）。本版为**本地成品打包**（fresh EXE + 版本化 ZIP），尚未提交/推送/发布 GitHub Release；v3.3.0 及更早版本的 Release 发布状态不受影响。
+- 当前源码版本：以根目录 [`VERSION`](./VERSION) 为准；`v3.4.0` 在 v3.3.0 之上交付「EXE 启动速度优化」整批：惰性导入 `weasyprint`/`openpyxl`/`pypinyin`/`PIL`（`import erp` 1.85–3.28s → ~0.5s、服务就绪 ~2.53s → ~1.13s）、品牌启动画面先行与抢跑修复（冻结版窗口可见 ~4.43s → **~1.31s**）。本版已推送 GitHub 并发布 Release（tag `v3.4.0`，资产 ZIP 已字节级回查）。
 - GitHub 仓库：`Astyyym/simple-erp`；[Releases 页面](https://github.com/Astyyym/simple-erp/releases)。README 不代表远端最新 Release/安装包已经核实。
 - 当前权威需求和实现边界：[`docs/需求/消防器材店ERP系统-需求文档.md`](./docs/需求/消防器材店ERP系统-需求文档.md)。全部文档入口见 [`docs/README.md`](./docs/README.md)。
 

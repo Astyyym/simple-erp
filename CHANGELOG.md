@@ -2,14 +2,14 @@
 
 > 各版本条目按当时发布口径保留。v0.8.0 永久免登录已经取代早期版本中记录的本机登录门；历史凭据不在更新记录中保存。
 
-## v3.4.0 - 桌面版启动提速与品牌启动画面（2026-10-10，本地成品打包）
+## v3.4.0 - 桌面版启动提速与品牌启动画面（2026-10-10，推送与 GitHub Release）
 
 - **惰性导入重依赖（Batch A）**：`weasyprint`/`openpyxl`/`pypinyin`/`PIL` 改为**首次使用时才导入**，涉及 `app/erp/utils/pdf.py`、`purchase_pdf.py`、`exporting.py`、`importing.py`、`pinyin.py`、`routes/products.py` 六个文件。`import erp` + `create_app` 从 **1.85–3.28s 降到 0.445–0.552s**，服务端口就绪 ~2.53s → **~1.13s**。**seam 保留**：`pdf.py`/`products.py` 用模块级 `None` 声明保住既有 monkeypatch 注入点；`purchase_pdf.py` 因测试会直接"读"`purchase_pdf.HTML`，改用 PEP 562 `__getattr__`（原计划的 `None` 写法单独跑会 3 failed）。
 - **品牌启动画面先行（Batch C）**：`desktop_app.py` 双击后先开内联 splash 窗口（与 `base.html` 同款 `--erp-*` token 和 `.brand-mark` SVG path，`prefers-color-scheme` 跟随系统浅色/深色），WebView2 冷启动与 Flask 启动并行；服务就绪后切真实首页，**切换失败落错误页**，绝不永久停在 splash。启动顺序必须是「**先同步建 app（数据库失败立即 raise、此时还没开窗口）再开窗口**」——"先开窗口"的实验稿会挂死 `test_main_reports_real_database_failure_before_opening_webview`。
 - **splash 抢跑修复（本轮真实根因）**：Batch A 后服务只需 ~0.95s，比窗口出现（~2.0s）还快，而切页线程只等「服务就绪」就切页，导致 **splash 一次都没画出来**、用户全程看到空白窗。改为：切页前等 `events.loaded`（splash **真正绘制**）、splash **至少停留 0.9s**、窗口背景色设为 `#f3f5f8`（消除窗口出现到绘制之间的刺眼纯白）。修复后抓屏确认 splash 出现，冻结版窗口可见 **~1.99s → ~1.31s**（n=5）。
 - **已知天花板（如实记录）**：窗口出现那一刻被 **WebView2 冷启动锁在 ~1.5s**，再优化 Python 也压不下去；splash 只是把等待可视化，不缩短总时长。`ui_theme` 显式设为 `dark` 而系统为浅色时，splash 与主界面配色可能不一致（未为此在 splash 前读 `config.json`）。首次 PDF 打印因惰性导入延迟 **+1.61–1.73s**（门店"开机一次、连续开单"净赚）。
 - **排除项**（调研已证伪，防止重新提出）：`private_mode=False` 提速（实测无差异）、UPX（只减体积、解压拖慢冷启动）、原生 `--splash`（onefolder 收益有限）、为提速改打印版式或业务规则。
-- 本轮验收：全量 pytest **789 passed / 0 skipped**、前端 Node **47 passed**；冻结包功能冒烟 **5/5**（首次 PDF / Excel 导出 / Excel 模板 / 图片上传 / 拼音搜索），隔离页面 200。**真实桌面观感人工验收待用户实机确认**。本版为**本地成品打包**（fresh Windows one-folder EXE + 版本化 ZIP，包内只含通用默认配置，不携带业务库、演示库或测试数据），未提交/未推送/未发布 GitHub Release；目标打印机实打、深色主题矩阵、独立新电脑与完全断网环境仍未验。
+- 本轮验收：全量 pytest **789 passed / 0 skipped**、前端 Node **47 passed**；冻结包功能冒烟 **5/5**（首次 PDF / Excel 导出 / Excel 模板 / 图片上传 / 拼音搜索），隔离页面 200。**真实桌面观感人工验收待用户实机确认**。本版 fresh 重打 Windows one-folder EXE 与版本化 ZIP（包内只含通用默认配置，不携带业务库、演示库或测试数据），已推送 `main`（提交 `bfc8e77`）并发布 GitHub Release `v3.4.0`（ZIP 下载回本地与构建产物字节级一致）；目标打印机实打、深色主题矩阵、独立新电脑与完全断网环境仍未验。
 
 ## v3.3.0 - 旧数据迁移承接、备份恢复与零建档起步（2026-10-09，推送与 GitHub Release）
 
