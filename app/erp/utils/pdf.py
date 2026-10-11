@@ -1,4 +1,5 @@
 import re
+import threading
 from pathlib import Path
 from collections import defaultdict
 from urllib.parse import urlencode, urlsplit, urlunsplit
@@ -25,6 +26,22 @@ def _html_class():
         from weasyprint import HTML as _HTML
         HTML = _HTML
     return HTML
+
+
+def prewarm_pdf_engine() -> threading.Thread:
+    """后台预热 WeasyPrint 导入（首次渲染约 0.75s 的导入成本挪到开机）。
+
+    只导入不渲染：失败也不影响启动（真正渲染时仍会按需导入并正常报错）。
+    """
+    def _warm() -> None:
+        try:
+            _html_class()
+        except Exception:  # noqa: BLE001 — 预热失败不能影响启动
+            pass
+
+    thread = threading.Thread(target=_warm, name="weasyprint-prewarm", daemon=True)
+    thread.start()
+    return thread
 
 
 def settings_print_preview_context() -> tuple[dict, list[dict], dict]:
@@ -74,23 +91,36 @@ def generate_settings_print_preview_pdf() -> Path:
     return out
 
 
+def render_desktop_preview(filename: str, title: str):
+    """桌面统一预览页（只渲染工具栏；PDF 由 iframe 用同一路径再请求一次）。
+
+    从 `send_pdf_for_preview` 抽出来，让路由可以在**不生成 PDF** 的前提下单独渲染它，
+    从而避免「一次点击渲染两遍」（实测预览页 1 遍 + iframe 1 遍，约 1.9s → 约 0.6s）。
+    """
+    args = request.args.to_dict(flat=True)
+    args.pop("desktop_preview", None)
+    return_url = _safe_internal_return_url(args.pop("return_to", ""))
+    if not return_url:
+        return_url = _safe_internal_return_url(request.referrer or "") or "/"
+    pdf_url = request.path + (f"?{urlencode(args)}" if args else "")
+    return render_template(
+        "desktop_pdf_preview.html",
+        pdf_url=pdf_url,
+        filename=filename,
+        title=title,
+        return_url=return_url,
+        ui_theme=load_config().get("ui_theme", "light"),
+    )
+
+
+def wants_desktop_preview() -> bool:
+    return request.args.get("desktop_preview") == "1"
+
+
 def send_pdf_for_preview(path: Path, filename: str, title: str):
     """Render every desktop PDF in one shared in-session preview page."""
-    if request.args.get("desktop_preview") == "1":
-        args = request.args.to_dict(flat=True)
-        args.pop("desktop_preview", None)
-        return_url = _safe_internal_return_url(args.pop("return_to", ""))
-        if not return_url:
-            return_url = _safe_internal_return_url(request.referrer or "") or "/"
-        pdf_url = request.path + (f"?{urlencode(args)}" if args else "")
-        return render_template(
-            "desktop_pdf_preview.html",
-            pdf_url=pdf_url,
-            filename=filename,
-            title=title,
-            return_url=return_url,
-            ui_theme=load_config().get("ui_theme", "light"),
-        )
+    if wants_desktop_preview():
+        return render_desktop_preview(filename, title)
     return send_file(path, as_attachment=False, download_name=filename)
 
 
@@ -102,6 +132,20 @@ def _safe_internal_return_url(value: str) -> str:
     if parsed.scheme or parsed.netloc or not parsed.path.startswith("/") or parsed.path.startswith("//"):
         return ""
     return urlunsplit(("", "", parsed.path, parsed.query, ""))
+
+
+def ensure_order_printable(order_id: int) -> None:
+    """校验订单可打印（存在且未删除），不做任何渲染。
+
+    与 `generate_order_pdf` 共用同一口径：桌面预览模式先调它来保住 404 契约，
+    又不必为预览页白渲染一遍 PDF。
+    """
+    with get_db() as conn:
+        order = conn.execute(
+            "SELECT 1 FROM orders WHERE id=? AND deleted_at IS NULL", (int(order_id),)
+        ).fetchone()
+    if order is None:
+        raise ValueError("订单不存在，可能已被移入回收站或从未存在。")
 
 
 def generate_order_pdf(order_id: int) -> Path:
@@ -203,17 +247,22 @@ def _account_summary_totals(rows) -> dict[str, int]:
     }
 
 
-def generate_account_summary_pdf(customer_id: int, start_date: str = "", end_date: str = "") -> Path:
-    # A7：指定客户不存在属于「资源不存在」，抛 RecordNotFound 让路由呈现 404，
-    # 与 /accounts/ledger_pdf 对不存在客户的处理保持一致。
-    # 注意：客户存在但该时间段无单据时，_load_account_summary_section 会返回空表段落，
-    # 仍正常出 PDF（不算错误），因此这里只拦「客户本身不存在」。
+def ensure_account_summary_printable(customer_id: int) -> None:
+    """只校验不渲染：桌面预览模式保住 404 契约，又不必白渲染一遍 PDF。"""
     with get_db() as conn:
         exists = conn.execute(
             "SELECT 1 FROM customers WHERE id=? AND deleted_at IS NULL", (int(customer_id),)
         ).fetchone()
     if exists is None:
         raise RecordNotFound(f"客户不存在: {customer_id}")
+
+
+def generate_account_summary_pdf(customer_id: int, start_date: str = "", end_date: str = "") -> Path:
+    # A7：指定客户不存在属于「资源不存在」，抛 RecordNotFound 让路由呈现 404，
+    # 与 /accounts/ledger_pdf 对不存在客户的处理保持一致。
+    # 注意：客户存在但该时间段无单据时，_load_account_summary_section 会返回空表段落，
+    # 仍正常出 PDF（不算错误），因此这里只拦「客户本身不存在」。
+    ensure_account_summary_printable(customer_id)
     return generate_account_summary_pdf_for_customers([int(customer_id)], start_date, end_date)
 
 

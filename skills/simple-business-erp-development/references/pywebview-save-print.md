@@ -50,6 +50,19 @@ Confirm all layers before editing:
 - Treat a `%PDF` header check as insufficient for validity. Evict cached bytes/object URLs and reset native-print readiness when parsing/rendering fails, then verify explicit retry fetches and renders the recovered server PDF without saving another order. Use a deliberately truncated real PDF fixture with the real renderer, not only a mock throwing an error.
 - Reveal the existing panel before an in-flight-load guard, so close/reopen does not drop the reopen click or start duplicate render tasks. Test both reopening and remaining closed until rendering completes; completion text must follow the actual panel state.
 
+## 一次点击只渲染一次（2026-10-11）
+
+桌面统一预览页最容易犯的错：**一次「保存并打印」把 PDF 渲染两遍**（预览页先渲染一遍，iframe 再请求同一路径又渲染一遍）。实测 10 行单：预览 1.31s + iframe 0.57s ≈ 1.9s，其中含首次导入 WeasyPrint 0.75s；用户感知为「保存并打印卡顿」，而 POST 保存本身只要 0.22~0.38s。
+
+落地约束：
+
+- `?desktop_preview=1` 时路由**不生成 PDF**，只渲染 `desktop_pdf_preview.html` 工具栏；PDF 由 iframe 用同一路径（不带 `desktop_preview`）请求一次。实现入口：`erp/utils/pdf.py` 的 `render_desktop_preview` / `wants_desktop_preview`。
+- **不渲染 ≠ 不校验**：预览模式必须先跑一遍与渲染同口径的校验函数（`ensure_order_printable` / `ensure_purchase_printable` / `ensure_account_summary_printable`），否则订单不存在、状态非法会从 404/400 退化成「空白工具栏」。
+- 校验函数与渲染函数必须共用同一处实现（抽成 `_load_*_context` 或 `ensure_*`），否则两套口径会漂移。
+- 启动后台预热 WeasyPrint 导入（`prewarm_pdf_engine`，只导入不渲染），把首次 0.75s 挪到开机；预热失败不得影响启动。
+- 实测（隔离库、10 行单、已预热）：渲染调用 **2 → 1**，预览页 0.012s + iframe 0.81s = **0.822s**（原 1.9s）。
+- 回归：`tests/test_pdf_render_once.py` 用计数探针钉住「预览页 0 次、完整链路 1 次」，并断言错误契约与浏览器直连 PDF 行为不变。
+
 ## Packaging pitfall
 
 Before rebuilding or recompressing `dist/消防ERP`, terminate every running packaged ERP process. Otherwise PyInstaller or `Compress-Archive` can fail on locked files such as `logs/app.log` or bundled DLLs. Preserve and restore writable `data/`, `logs/`, `temp_pdf/`, `backups/`, and `imports/` around smoke tests.

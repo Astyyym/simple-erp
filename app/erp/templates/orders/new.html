@@ -33,6 +33,8 @@
   .order-workspace{display:block}
   .order-entry-area{min-width:0}
   .order-table-scroll{overflow-x:auto;max-width:100%}
+  /* 行工具条：放在表格正下方、随表横向滚动；左留白对齐「产品名称」列起点（序号列 50px）。 */
+  .row-tools{display:flex;gap:8px;align-items:center;padding:8px 0 2px 50px;min-width:max-content}
   .suggest-list[popover]{position:fixed;inset:auto;margin:0;padding:0;box-sizing:border-box;color:var(--erp-ink);height:auto;min-width:min(240px,calc(100vw - 24px));max-width:calc(100vw - 24px)}
 
   @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
@@ -127,7 +129,13 @@
       {% endfor %}
     </tbody>
     <tfoot><tr><th colspan="5" class="text-end p-2">合计</th><th class="p-2" id="grandTotal">0.00</th><th colspan="2"></th></tr></tfoot>
-  </table></div>
+  </table>
+  <div class="row-tools" id="rowTools" role="group" aria-label="明细行工具">
+    <button type="button" class="btn btn-outline-primary" id="addRowButton" onclick="addRow()">新增一行</button>
+    <button type="button" class="btn btn-outline-secondary" id="removeRowButton" onclick="removeRow()" disabled>删除一行</button>
+    <button type="button" class="btn btn-outline-secondary" onclick="clearAllRows()">一键清空</button>
+  </div>
+  </div>
   <p class="text-muted small mt-2" id="zeroSetupHint">
     新商品需先到「商品管理」页启用库存后才能入库（拿货单）。
   </p>
@@ -135,8 +143,6 @@
   <textarea class="form-control mt-3" name="notes" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="备注">{{order.notes if is_edit else ''}}</textarea>
   </section>
   <div class="d-flex gap-2 align-items-center justify-content-end" id="orderActions">
-    <button type="button" class="btn btn-outline-secondary btn-lg" onclick="clearAllRows()">一键清空</button>
-    <button type="button" class="btn btn-outline-primary btn-lg" onclick="addRow()">新增一行</button>
     {% if is_edit %}
     <button class="btn btn-primary btn-lg" id="savePrintButton" name="save_action" value="save">保存修改</button>
     {% else %}
@@ -263,6 +269,7 @@ function clearAllRows() {
   if (regularOption) regularOption.style.display = 'none';
   document.querySelectorAll('.suggest-list').forEach(box => box.classList.add('d-none'));
   recalc();
+  syncRowToolState();
   document.getElementById('customer_name').focus();
 }
 function addRow() {
@@ -277,6 +284,20 @@ function addRow() {
   tbody.appendChild(tr);
   bindRow(tr);
   recalc();
+  syncRowToolState();
+}
+/* 删除最后一行；仅剩 1 行时按钮 disabled（保底永远留一行可录入）。 */
+function removeRow() {
+  const tbody = document.getElementById('orderBody');
+  if (tbody.rows.length <= 1) { syncRowToolState(); return; }
+  tbody.deleteRow(tbody.rows.length - 1);
+  recalc();
+  syncRowToolState();
+}
+function syncRowToolState() {
+  const button = document.getElementById('removeRowButton');
+  if (!button) return;
+  button.disabled = document.getElementById('orderBody').rows.length <= 1;
 }
 async function fetchJson(url) { const res = await fetch(url); return await res.json(); }
 function closeSuggestions(input, box) {
@@ -811,5 +832,6 @@ orderForm.addEventListener('submit', async event => {
 })();
 {% endif %}
 recalc();
+syncRowToolState();
 </script>
 {% endblock %}

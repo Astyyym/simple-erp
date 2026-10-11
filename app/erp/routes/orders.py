@@ -15,7 +15,13 @@ from erp.utils.errors import error_response, not_found
 from erp.utils.audit import log_action
 from erp.utils.filter_chips import order_filter_chips
 from erp.utils.money import cents_to_yuan, line_subtotal_cents, micro_to_yuan, yuan_to_cents
-from erp.utils.pdf import generate_order_pdf, send_pdf_for_preview
+from erp.utils.pdf import (
+    ensure_order_printable,
+    generate_order_pdf,
+    render_desktop_preview,
+    send_pdf_for_preview,
+    wants_desktop_preview,
+)
 
 orders_bp = Blueprint("orders", __name__, url_prefix="/orders")
 MAX_SQLITE_INTEGER = (1 << 63) - 1
@@ -36,6 +42,14 @@ def next_order_no(conn, order_date: str) -> str:
         match = pattern.fullmatch(row["order_no"])
         if match:
             max_seq = max(max_seq, int(match.group(1)))
+    # 「清空所有数据」会把 orders 清空，但当天已打出的纸质单流水必须让过，
+    # 否则同一天的新单会与纸质单撞号。高位记在 order_number_sequences。
+    reserved = conn.execute(
+        "SELECT last_sequence FROM order_number_sequences WHERE business_date=?",
+        (f"{day[:4]}-{day[4:6]}-{day[6:]}",),
+    ).fetchone()
+    if reserved:
+        max_seq = max(max_seq, int(reserved["last_sequence"]))
     # E-1b：补 9999 上限校验，避免溢出成 5 位破坏单号格式（对齐拿货侧 order_numbering）。
     if max_seq >= 9999:
         raise ValueError(f"{day} 的单号流水已达到9999，无法继续开单")
@@ -531,6 +545,10 @@ def orders_summary_pdf():
             "当前筛选范围内没有可导出的客户单据，请调整客户或日期范围后重试。",
             title="无可导出的汇总", back_url=url_for("orders.list_orders"),
         )
+    if wants_desktop_preview():
+        # 预览页只渲染工具栏；PDF 由 iframe 再请求一次（一次点击只渲染一次）。
+        # 客户范围的校验已经在上一步完成，这里不再白渲染一遍 PDF。
+        return render_desktop_preview("货款汇总表.pdf", "货款汇总表")
     try:
         path = generate_account_summary_pdf_for_customers(customer_ids, start_date, end_date)
     except ValueError as exc:
@@ -1196,6 +1214,14 @@ def api_next_order_no():
 
 @orders_bp.get("/<int:order_id>/pdf")
 def order_pdf(order_id: int):
+    # 桌面预览模式：先做与渲染同一套的「订单是否存在」校验（保持 404 契约），
+    # 但**不生成 PDF**——PDF 交给 iframe 用同一路径请求一次，避免一次点击渲染两遍。
+    if wants_desktop_preview():
+        try:
+            ensure_order_printable(order_id)
+        except ValueError as exc:
+            return not_found(str(exc), back_url=url_for("orders.list_orders"))
+        return render_desktop_preview(f"{order_id}.pdf", "销售单 PDF")
     try:
         path = generate_order_pdf(order_id)
     except ValueError as exc:

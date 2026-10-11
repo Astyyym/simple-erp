@@ -711,6 +711,13 @@ CREATE TABLE IF NOT EXISTS purchase_number_sequences (
     business_date TEXT PRIMARY KEY,
     last_sequence INTEGER NOT NULL CHECK(last_sequence BETWEEN 1 AND 9999)
 );
+-- 销售/退货共用 MD 日流水的**已用高位**。正常取号仍以 orders 表为准；本表只在
+-- 「清空所有数据」时写入清空前的当日最大流水，保证同一天的新单不会与已打出的
+-- 纸质单撞号（清空后 orders 为空，仅靠它才能续排高位）。
+CREATE TABLE IF NOT EXISTS order_number_sequences (
+    business_date TEXT PRIMARY KEY,
+    last_sequence INTEGER NOT NULL CHECK(last_sequence BETWEEN 1 AND 9999)
+);
 CREATE TABLE IF NOT EXISTS purchase_return_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     purchase_return_id INTEGER NOT NULL REFERENCES purchase_return_orders(id) ON DELETE CASCADE,

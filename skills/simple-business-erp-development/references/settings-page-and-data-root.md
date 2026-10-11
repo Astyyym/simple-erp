@@ -23,6 +23,7 @@
 - 可设置打印横纵偏移及缩放；改偏移前先核对当前 A4 竖版 PDF 页框与预览。偏移仅作用于销售/退货单及设置样张，不作用于账款汇总表；旧 241×140mm 版心见历史 reference `sales-slip-paper-241x140.md`。
 - 桌面壳提供原生选文件夹；浏览器预览可手动填写路径。
 - 修改数据根会拷贝业务目录并写入路径记忆；目标已有非空 `erp.db` 时拒绝覆盖；旧目录保留。
+- **清空所有数据**（`POST /settings/purge-all-data`，卡片 `#purgeSection`）：把系统恢复成「刚装好、还没录单」。清空四类单据与明细、客户/商品资料与客户价、库存状态/流水/期初、收付款与调整、对账快照、审计日志、单号序列表，以及 `product_images/`、`temp_pdf/`、`logs/` 的**内容**；并把公司名、打印信息、主题/缩放/字重、打印偏移回出厂。**保留** `backups/`、`legacy_archive/`、数据目录路径记忆与 `data/erp.db` 文件本身。安全：必须输入确认词「清空」，执行前自动 `create_backup("pre_purge")`，留痕写 `logs/purge.log`（审计表已被清空，故必须落文本）。**单号流水高位保留**：清空前把各业务日期的 MD/NH 最大流水写回 `order_number_sequences`/`purchase_number_sequences`，清空后同一天的新单续排高位，避免与已打出的纸质单撞号。清空实现集中在 `app/erp/utils/reset.py`。
 - 桌面壳支持原生保存 PDF 对话框。
 
 ## 鉴权边界

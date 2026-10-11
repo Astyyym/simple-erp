@@ -289,7 +289,15 @@ def test_real_many_line_purchase_pdf_pages_repeat_header_and_keep_amounts(tmp_pa
     assert len(every_page_box(response.data)) == len(pages)
     assert text.count('虚构采购商品') == 120
     assert all('名称规格' in page and '小计' in page for page in pages)
-    assert text.count('合计') == 1
+    # 2026-10-11：单联上限 10 行 → 120 行整 12 联，每联各一条合计（前 11 联「本张合计」、
+    # 末联「本单合计」），页脚只出现在最后一联。
+    assert len(pages) == 12
+    assert text.count('合计') == len(pages)
+    assert pages[-1].count('合计') == 1 and '本张合计' not in pages[-1]
+    for page in pages[:-1]:
+        assert '本张合计' in page and '续打在第' in page
+        assert '订货电话' not in page
+    assert '订货电话' in pages[-1]
     assert business_facts() == before
 
 

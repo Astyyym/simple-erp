@@ -464,8 +464,17 @@ def return_detail(return_id):
 
 @purchases_bp.get('/<int:purchase_id>/pdf')
 def purchase_pdf(purchase_id: int):
-    from erp.utils.purchase_pdf import generate_purchase_pdf
-    from erp.utils.pdf import send_pdf_for_preview
+    from erp.utils.pdf import render_desktop_preview, send_pdf_for_preview, wants_desktop_preview
+    from erp.utils.purchase_pdf import ensure_purchase_printable, generate_purchase_pdf
+    if wants_desktop_preview():
+        # 预览页只渲染工具栏；PDF 由 iframe 再请求一次（一次点击只渲染一次）。
+        try:
+            ensure_purchase_printable(purchase_id)
+        except RecordNotFound as exc:
+            return not_found(str(exc), title="拿货单不存在", back_url=url_for('orders.list_orders'))
+        except ValueError as exc:
+            return error_response(str(exc), title="拿货清单未能生成", back_url=url_for('orders.list_orders'))
+        return render_desktop_preview(f'purchase_{purchase_id}.pdf', '拿货清单')
     try:
         path = generate_purchase_pdf(purchase_id)
     except RecordNotFound as exc:
@@ -477,8 +486,16 @@ def purchase_pdf(purchase_id: int):
 
 @purchases_bp.get('/return/<int:return_id>/pdf')
 def purchase_return_pdf(return_id: int):
-    from erp.utils.purchase_pdf import generate_purchase_pdf
-    from erp.utils.pdf import send_pdf_for_preview
+    from erp.utils.pdf import render_desktop_preview, send_pdf_for_preview, wants_desktop_preview
+    from erp.utils.purchase_pdf import ensure_purchase_printable, generate_purchase_pdf
+    if wants_desktop_preview():
+        try:
+            ensure_purchase_printable(return_id, is_return=True)
+        except RecordNotFound as exc:
+            return not_found(str(exc), title="退拿货单不存在", back_url=url_for('orders.list_orders'))
+        except ValueError as exc:
+            return error_response(str(exc), title="退拿货清单未能生成", back_url=url_for('orders.list_orders'))
+        return render_desktop_preview(f'purchase_return_{return_id}.pdf', '退拿货清单')
     try:
         path = generate_purchase_pdf(return_id, is_return=True)
     except RecordNotFound as exc:

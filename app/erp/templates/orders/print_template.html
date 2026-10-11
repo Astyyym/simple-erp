@@ -95,7 +95,9 @@
     table.items tr { break-inside: avoid; page-break-inside: avoid; }
     table.items td, table.items th {
       border: 1px solid #333;
-      padding: 1.6mm 1.2mm;
+      /* 2026-10-11：单联容量 8 → 10 行，只压内边距、不动字号层级。
+         1.6mm 吃满版心时 10 行装不下；0.9mm 实测行高 6.51mm，10 行仍留余量。 */
+      padding: 0.9mm 1.2mm;
       text-align: center;
       word-break: break-all;
       line-height: 1.2;
@@ -110,6 +112,16 @@
       font-weight: 700;
       font-size: 15px;
     }
+    /* 分联提示行：仅在还有下一张时出现在本张末尾（跨列、浅灰底、字号同页脚 13px）。 */
+    .slip-notice td {
+      font-size: 13px;
+      text-align: left;
+      background: #f0f0f0;
+      font-weight: 400;
+      line-height: 1.3;
+    }
+    /* 强制换联：本张收口后，下一块明细从新的一联开始。 */
+    .slip-break { break-after: page; page-break-after: always; }
     .bottom {
       /* 紧贴表格下方，不贴页面底边 */
       margin-top: 2.5mm;
@@ -174,15 +186,22 @@
         {% if document_direction %}<div class="legal-note">交易方向：{{document_direction}} · 业务金额按本单正金额展示</div>{% endif %}
       </div>
 
+      {# 单联容量写死 10 行（用户 2026-10-11 确认，不做配置项）。
+         每 10 行自成一张纸：块内明细 + 本张合计（末块换成本单合计）+ 非末块追加续打提示，
+         末块之后才跟页脚（订货电话/签字/备注），保证页脚永远只落在最后一联。 #}
+      {% set slip_size = 10 %}
+      {% set slips = (items | batch(slip_size) | list) or [[]] %}
+      {% for chunk in slips %}
+      {% set slip_base = loop.index0 * slip_size %}
       <table class="items">
         <colgroup>
           <!-- 连续纸版心 201.3mm；列宽用 mm 定死，合计正好 201.3mm，不溢出右缘。 -->
           <col style="width:13mm">
-          <col style="width:76.3mm">
+          <col style="width:74.3mm">
           <col style="width:16mm">
           <col style="width:24mm">
-          <col style="width:34mm">
-          <col style="width:38mm">
+          <col style="width:35mm">
+          <col style="width:39mm">
         </colgroup>
         <thead>
         <tr>
@@ -190,9 +209,9 @@
         </tr>
         </thead>
         <tbody>
-        {% for item in items %}
+        {% for item in chunk %}
         <tr>
-          <td>{{loop.index}}</td>
+          <td>{{loop.index + slip_base}}</td>
           <td class="name-cell">{{item.product_name}}{% if item.spec %} {{item.spec}}{% endif %}</td>
           <td>{{item.unit}}</td>
           <td>{{item.quantity}}</td>
@@ -200,12 +219,24 @@
           <td>{{cents_to_yuan(item.subtotal_cents)}}</td>
         </tr>
         {% endfor %}
+        {% if loop.last %}
         <tr class="total-row">
           <td colspan="5" style="text-align:right">合计</td>
           <td>¥{{cents_to_yuan(order.total_amount_cents)}}</td>
         </tr>
+        {% else %}
+        <tr class="total-row">
+          <td colspan="5" style="text-align:right">本张合计</td>
+          <td>¥{{cents_to_yuan(chunk | sum(attribute='subtotal_cents'))}}</td>
+        </tr>
+        <tr class="slip-notice">
+          <td colspan="6">本张已满 {{slip_size}} 行；因行数限制，以下内容续打在第 {{loop.index + 1}} 张</td>
+        </tr>
+        {% endif %}
         </tbody>
       </table>
+      {% if not loop.last %}<div class="slip-break"></div>{% endif %}
+      {% endfor %}
 
       <div class="bottom">
         <table class="footer-grid">

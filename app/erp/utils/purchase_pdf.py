@@ -39,7 +39,11 @@ def _weasy():
 # A4 覆盖样式表，也不再强制 210×297。
 
 
-def generate_purchase_pdf(order_id: int, *, is_return: bool = False) -> Path:
+def _load_purchase_print_context(order_id: int, *, is_return: bool):
+    """校验拿货/退拿货单可打印，并返回表头与明细（同一 SQLite 快照）。
+
+    校验与渲染共用这一处，避免「桌面预览模式的校验」与「真实渲染」两套口径漂移。
+    """
     table = 'purchase_return_orders' if is_return else 'purchase_orders'
     item_table = 'purchase_return_items' if is_return else 'purchase_order_items'
     owner = 'purchase_return_id' if is_return else 'purchase_order_id'
@@ -62,6 +66,17 @@ def generate_purchase_pdf(order_id: int, *, is_return: bool = False) -> Path:
             f'SELECT product_name,spec,unit,quantity_3dp,{price} AS unit_price_cents,subtotal_cents '
             f'FROM {item_table} WHERE {owner}=? ORDER BY id', (order_id,),
         ).fetchall()
+    return order, items
+
+
+def ensure_purchase_printable(order_id: int, *, is_return: bool = False) -> None:
+    """只校验不渲染：桌面预览模式用它保住 404/400 契约，又不必白渲染一遍 PDF。"""
+    _load_purchase_print_context(order_id, is_return=is_return)
+
+
+def generate_purchase_pdf(order_id: int, *, is_return: bool = False) -> Path:
+    label = '退拿货单' if is_return else '拿货单'
+    order, items = _load_purchase_print_context(order_id, is_return=is_return)
     public_order = {
         'order_no': order['order_no'], 'order_date': order['business_date'],
         'customer_name': order['customer_name'], 'total_amount_cents': int(order['total_amount_cents']),

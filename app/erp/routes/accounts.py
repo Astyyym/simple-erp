@@ -14,9 +14,12 @@ from erp.services.accounting import (
 from erp.utils.errors import error_response, not_found, RecordNotFound
 from erp.utils.money import yuan_to_cents, cents_to_yuan
 from erp.utils.pdf import (
+    ensure_account_summary_printable,
     generate_account_summary_pdf,
     generate_account_ledger_pdf,
+    render_desktop_preview,
     send_pdf_for_preview,
+    wants_desktop_preview,
 )
 
 accounts_bp = Blueprint("accounts", __name__, url_prefix="/accounts")
@@ -108,6 +111,15 @@ def summary_pdf():
                               back_url=url_for("accounts.accounts"))
     start_date = request.args.get("start_date", "").strip()
     end_date = request.args.get("end_date", "").strip()
+    if wants_desktop_preview():
+        # 预览页只渲染工具栏；PDF 由 iframe 再请求一次（一次点击只渲染一次）。
+        try:
+            ensure_account_summary_printable(customer_id)
+        except RecordNotFound as error:
+            return not_found(str(error), back_url=url_for("accounts.accounts"))
+        except ValueError as error:
+            return error_response(str(error), title="客户货款汇总表未能生成", back_url=url_for("accounts.accounts"))
+        return render_desktop_preview("客户货款汇总表.pdf", "客户货款汇总表")
     try:
         path = generate_account_summary_pdf(customer_id, start_date, end_date)
     except RecordNotFound as error:
@@ -125,6 +137,14 @@ def ledger_pdf():
                               back_url=url_for("accounts.accounts"))
     start_date = request.args.get("start_date", "").strip()
     end_date = request.args.get("end_date", "").strip()
+    if wants_desktop_preview():
+        # 预览页只渲染工具栏；PDF 由 iframe 再请求一次（一次点击只渲染一次）。
+        try:
+            # 账流水的校验口径在 get_customer_account_ledger 内（客户不存在即 ValueError）。
+            get_customer_account_ledger(customer_id, start_date, end_date)
+        except ValueError as error:
+            return not_found(str(error), back_url=url_for("accounts.accounts"))
+        return render_desktop_preview("客户账款流水.pdf", "客户账款流水")
     try:
         path = generate_account_ledger_pdf(customer_id, start_date, end_date)
     except ValueError as error:

@@ -1,3 +1,4 @@
+import re
 from datetime import date
 from pathlib import Path
 from uuid import uuid4
@@ -85,7 +86,11 @@ def test_order_print_signatures_share_phone_and_address_rows():
     assert "margin: 6mm 7.3mm" in template or "margin:6mm 7.3mm" in template
     assert "order_pdf_page_width_mm" in template
     assert "order_pdf_page_height_mm" in template
-    assert "width:76.3mm" in template or "width: 76.3mm" in template
+    # 连续纸版心 201.3mm：列宽用 mm 定死，合计正好 201.3mm（2026-10-11 重算：13+74.3+16+24+35+39）。
+    assert "width:74.3mm" in template or "width: 74.3mm" in template
+    col_widths = [float(w) for w in re.findall(r"width:\s*([0-9.]+)mm\"", template)[:6]]
+    assert col_widths, "print template must declare explicit mm column widths"
+    assert abs(sum(col_widths) - 201.3) < 0.01, col_widths
     assert "business-row" not in template
     assert "maker-sign" not in template
     assert "translateX(-15mm)" not in template
@@ -197,6 +202,109 @@ def test_order_print_font_sizes_are_legible_and_ranked():
     # 正文实测字框高应达到秒账实拍水平（约 4.89mm），不再是最初的 3.84mm。
     assert box_height_mm("软密封闸阀") >= 4.7
     assert box_height_mm("名称规格") >= 4.7
+
+
+def test_order_print_slip_capacity_is_ten_rows_with_per_slip_totals_and_carry_notice():
+    """单联容量 10 行：分联、合计口径（本张合计/本单合计）、续打提示与序号连续。
+
+    用真实模板做 WeasyPrint 排版，按每页表格盒与文本盒断言，而不是 grep CSS 文本。
+    契约（2026-10-11 用户确认）：每张纸 10 行；非末张末尾给「本张合计」+ 续打提示；
+    页脚（订货电话/签字/备注）只出现在最后一联。
+    """
+    from pathlib import Path as _Path
+
+    import jinja2
+    from weasyprint import HTML
+
+    from erp.config import _merge_defaults
+
+    project = _Path(__file__).resolve().parents[1]
+    template_dir = project / "app/erp/templates/orders"
+    env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(template_dir)))
+    env.globals["cents_to_yuan"] = lambda c: f"{c / 100:.2f}"
+    config = _merge_defaults({"shop_name": "分联检查店"})
+
+    def render_pages(row_count):
+        order = {
+            "order_no": "MD202610110001", "order_date": "2026-10-11", "order_type": "sale",
+            "customer_name": "分联客户", "notes": "", "total_amount_cents": row_count * 10000,
+            "status": "saved",
+        }
+        items = [{"product_name": f"分联闸阀{index:03d}", "spec": "DN100", "unit": "只", "quantity": "2",
+                  "unit_price_cents": 5000, "subtotal_cents": 10000} for index in range(1, row_count + 1)]
+        html = env.get_template("print_template.html").render(
+            order=order, items=items, config=config, document_title="销售清单",
+        )
+        return HTML(string=html, base_url=str(project)).render().pages
+
+    def page_facts(page):
+        texts = []
+
+        def walk(box):
+            text = getattr(box, "text", "")
+            if text and text.strip():
+                texts.append(text.strip())
+            for child in (getattr(box, "children", None) or []):
+                walk(child)
+
+        walk(page._page_box)
+        joined = " ".join(texts)
+        # 明细行固定 6 列：序号/名称/单位/数量/单价/小计，序号为纯数字。
+        sequences, index = [], 0
+        while index + 5 < len(texts):
+            if (texts[index].isdigit() and texts[index + 4].replace(".", "").isdigit()
+                    and texts[index + 5].replace(".", "").isdigit()):
+                sequences.append(int(texts[index]))
+                index += 6
+            else:
+                index += 1
+        return {
+            "rows": sequences,
+            "slip_total": "本张合计" in joined,
+            "order_total": "合计" in joined and "本张合计" not in joined,
+            "notice": "续打在第" in joined,
+            "footer": "订货电话" in joined,
+        }
+
+    for row_count, expected_pages in ((1, 1), (9, 1), (10, 1), (11, 2), (20, 2), (21, 3), (31, 4)):
+        pages = [page_facts(page) for page in render_pages(row_count)]
+        assert len(pages) == expected_pages, (row_count, len(pages))
+
+        flattened = [number for page in pages for number in page["rows"]]
+        assert flattened == list(range(1, row_count + 1)), (row_count, flattened)
+
+        assert pages[-1]["order_total"] is True
+        assert pages[-1]["footer"] is True
+        assert pages[-1]["notice"] is False
+        for page in pages[:-1]:
+            assert len(page["rows"]) == 10, (row_count, page["rows"])
+            assert page["slip_total"] is True
+            assert page["notice"] is True
+            assert page["footer"] is False
+
+
+def test_order_print_slip_notice_names_the_next_slip_number():
+    """提示行必须报出真实的下一张序号（第 N 张），不能是固定文案。"""
+    from pathlib import Path as _Path
+
+    import jinja2
+    from erp.config import _merge_defaults
+
+    project = _Path(__file__).resolve().parents[1]
+    env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(project / "app/erp/templates/orders")))
+    env.globals["cents_to_yuan"] = lambda c: f"{c / 100:.2f}"
+    config = _merge_defaults({})
+    order = {"order_no": "MD202610110001", "order_date": "2026-10-11", "order_type": "sale",
+             "customer_name": "分联客户", "notes": "", "total_amount_cents": 210000, "status": "saved"}
+    items = [{"product_name": f"闸阀{index:03d}", "spec": "", "unit": "只", "quantity": "1",
+              "unit_price_cents": 10000, "subtotal_cents": 10000} for index in range(1, 22)]
+    html = env.get_template("print_template.html").render(
+        order=order, items=items, config=config, document_title="销售清单",
+    )
+    assert "以下内容续打在第 2 张" in html
+    assert "以下内容续打在第 3 张" in html
+    assert "以下内容续打在第 4 张" not in html
+    assert html.count("本张合计") == 2
 
 
 def test_print_defaults_are_continuous_paper_and_summary_a4():

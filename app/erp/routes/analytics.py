@@ -14,12 +14,18 @@ from erp.utils.money import cents_to_yuan
 from erp.utils.quantity import format_quantity_3dp
 from erp.services.reconciliation import (
     create_reconciliation_snapshot,
+    get_reconciliation_print_context,
     get_reconciliation_snapshot,
     get_reconciliation_order_detail,
     toggle_reconciliation_selection,
     update_reconciliation_selection,
 )
-from erp.utils.pdf import generate_reconciliation_pdf, send_pdf_for_preview
+from erp.utils.pdf import (
+    generate_reconciliation_pdf,
+    render_desktop_preview,
+    send_pdf_for_preview,
+    wants_desktop_preview,
+)
 
 analytics_bp = Blueprint("analytics", __name__, url_prefix="/analytics")
 
@@ -568,6 +574,17 @@ def reconciliation_order_detail(snapshot_id: int, order_id: int):
 
 @analytics_bp.get("/reconciliation/pdf/<int:snapshot_id>")
 def reconciliation_pdf(snapshot_id: int):
+    from erp.utils.pdf import render_desktop_preview, wants_desktop_preview
+    if wants_desktop_preview():
+        # 预览页只渲染工具栏；PDF 由 iframe 再请求一次（一次点击只渲染一次）。
+        try:
+            # 对账单的校验口径在 get_reconciliation_print_context 内（快照非法/未选单据即抛错）。
+            get_reconciliation_print_context(snapshot_id)
+        except RecordNotFound as exc:
+            return not_found(str(exc), title="对账查询不存在", back_url=url_for("analytics.reconciliation"))
+        except ValueError as exc:
+            return error_response(str(exc), title="对账单未能生成", back_url=url_for("analytics.reconciliation"))
+        return render_desktop_preview("往来交易对账单.pdf", "往来交易对账单")
     try:
         path = generate_reconciliation_pdf(snapshot_id)
     except RecordNotFound as exc:

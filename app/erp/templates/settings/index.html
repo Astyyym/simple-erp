@@ -231,6 +231,26 @@
   {% endif %}
 </section>
 
+<section class="settings-card settings-card-wide mt-4" id="purgeSection">
+  <h3>清空所有数据</h3>
+  <p class="text-muted small">
+    把系统恢复到「刚装好、还没录任何单」的状态：<strong>清空所有单据、客户与商品资料、库存与账款数据</strong>，
+    并把公司名、打印信息、界面主题等设置恢复出厂默认。
+  </p>
+  <p class="text-muted small mb-2">
+    <strong>不会删除</strong>：<code>backups/</code> 备份包、<code>legacy_archive/</code> 旧账留底存档、数据目录位置记忆。
+    清空前会<strong>自动创建一份备份</strong>（可在上方「备份与恢复」里找回），同一天已打出的纸质单号也会保留高位，新单不会撞号。
+  </p>
+  <p class="text-muted small mb-3">
+    <strong>此操作不可撤销</strong>（只能靠自动备份找回）。请先确认上面的备份确实存在，再输入确认词执行。
+  </p>
+  <form method="post" action="{{ url_for('settings.purge_all_data_view') }}" class="d-flex flex-wrap gap-2 align-items-center"
+        onsubmit="return confirm('将清空所有业务数据并恢复出厂设置。清空前会自动备份。确定继续？');">
+    <input class="form-control form-control-sm" style="max-width:140px" name="confirm_text" placeholder="输入 清空" required>
+    <button type="submit" class="btn btn-danger">清空所有数据</button>
+  </form>
+</section>
+
 <section class="settings-card settings-card-wide mt-4" id="legacyArchiveSection">
   <h3>旧账留底存档</h3>
   <p class="text-muted small">

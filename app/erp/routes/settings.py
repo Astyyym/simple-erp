@@ -32,8 +32,10 @@ from erp.utils.money import cents_to_yuan
 from erp.utils.legacy_archive import archive_dir, list_archives, save_archive
 from erp.utils.pdf import (
     generate_settings_print_preview_pdf,
+    render_desktop_preview,
     send_pdf_for_preview,
     settings_print_preview_context,
+    wants_desktop_preview,
 )
 from typing import Any
 
@@ -199,6 +201,9 @@ def print_preview():
 @settings_bp.get("/print-preview.pdf")
 def print_preview_pdf():
     """Render the Settings sample through the normal PDF preview/save workflow."""
+    if wants_desktop_preview():
+        # 样张不依赖任何业务数据，预览页无需先生成 PDF（避免一次点击渲染两遍）。
+        return render_desktop_preview("打印样张.pdf", "打印样张 PDF")
     path = generate_settings_print_preview_pdf()
     return send_pdf_for_preview(path, "打印样张.pdf", "打印样张 PDF")
 
@@ -248,6 +253,42 @@ def _backup_path_from_form(field: str = "backup_name") -> Path | None:
     except ValueError:
         return None
     return candidate if candidate.is_file() else None
+
+
+@settings_bp.post("/purge-all-data")
+def purge_all_data_view():
+    """清空所有数据（保留 backups/ 与 legacy_archive/），需要确认词「清空」。
+
+    顺序固定：先自动备份（安全网）→ 校验确认词 → 单事务清库 → 回出厂配置 →
+    清理运行目录 → 写留痕日志。备份失败或确认词不对都不执行清空。
+    """
+    from erp.utils.reset import PurgeError, purge_all_data, write_purge_trace
+
+    confirm_text = (request.form.get("confirm_text") or "").strip()
+    if confirm_text != "清空":
+        flash("清空已取消：确认词必须输入「清空」两个字。", "danger")
+        return redirect(url_for("settings.settings_page") + "#purgeSection")
+
+    try:
+        # 安全网：清空前强制自动备份（复用现成实现，含完整性检查）。
+        backup_path = create_backup("pre_purge")
+        result = purge_all_data()
+        write_purge_trace(result)
+        cleared_rows = sum(result["cleared_counts"].values())
+        warnings = result.get("directory_warnings") or []
+        message = (
+            f"已清空所有业务数据（共 {cleared_rows} 行），并恢复出厂设置。"
+            f"清空前的数据已备份为 {backup_path.name}，可在「备份与恢复」中找回；"
+            "备份包与旧账留底存档未删除。请完全退出程序后重新打开。"
+        )
+        if warnings:
+            message += "（部分文件被占用：" + "；".join(warnings) + "）"
+        flash(message, "success")
+    except PurgeError as exc:
+        flash(f"清空失败（数据未被改动）：{exc}", "danger")
+    except Exception as exc:  # noqa: BLE001 — surface as Chinese UI error
+        flash(f"清空失败（数据未被改动）：{exc}", "danger")
+    return redirect(url_for("settings.settings_page") + "#purgeSection")
 
 
 @settings_bp.post("/backup/create")

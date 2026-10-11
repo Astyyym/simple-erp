@@ -223,6 +223,14 @@ def main() -> None:
         threading.Thread(
             target=_run_server, args=(startup_errors,), kwargs={"app": app}, daemon=True
         ).start()
+        # Batch D：把 WeasyPrint 的首次导入成本（约 0.75s）挪到开机后台，
+        # 首次「保存并打印」不再为导入等待。
+        try:
+            from erp.utils.pdf import prewarm_pdf_engine
+
+            prewarm_pdf_engine()
+        except Exception:  # noqa: BLE001 — 预热失败不能影响启动
+            pass
 
     title = _window_title() if app is not None else "简单ERP"
     try:
