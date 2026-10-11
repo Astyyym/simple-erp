@@ -109,3 +109,15 @@ def main():
 3. 切主界面后确认加载的是**真实首页**（不是停在 splash）。
 4. 失败路径：服务起不来时窗口显示错误提示，**不永久停在 splash**。
 5. 「无闪烁 / 品牌观感 / 重复双击」属**真实桌面人工项**，脚本层不能替代。
+
+## ⚠️ 跑启动测试前必须确认 5000 端口空闲
+
+`main()` 第一步是 `already_running = _port_is_open()`；端口被占时它走「已有实例」分支，**不建 app、不抛错**。于是 `test_main_reports_real_database_failure_before_opening_webview` 报 `DID NOT RAISE` —— 看着像回归，其实是环境冲突（例如刚双击过 `dist\<ver>\简单ERP\简单ERP.exe` 没关）。
+
+排查顺序：
+
+1. `netstat -ano | grep :5000` 找 PID → `powershell -NoProfile -Command "Get-Process -Id <PID> | Select-Object -ExpandProperty Path"` 确认占用者是谁。
+2. 释放端口后**单文件复跑**该测试（应 6 passed），再跑全量。
+3. 想确认「端口被占必然导致该失败」时，用 `socket.bind(("127.0.0.1",5000))` 的假监听占住端口复现即可 —— 不必去怀疑业务代码。
+
+**注意**：`netstat` 有约 1 个刷新的滞后，且假监听退出后端口可能立刻空闲；判断「是否被占」要以同一次命令里的 `netstat` 输出为准，别跨命令推断。

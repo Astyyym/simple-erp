@@ -30,7 +30,7 @@
 | [windows-native-exe-packaging.md](./windows-native-exe-packaging.md) | Windows PyInstaller one-folder 构建和 EXE 冒烟 |
 | [windows-bat-crlf-invocation.md](./windows-bat-crlf-invocation.md) | 脚本行尾/编码：`.bat` 需 CRLF（`.gitattributes` 钉死）；含中文的 `.vbs` 需 ANSI/GBK（历史教训） |
 | [windows-installer-inno-peruser.md](./windows-installer-inno-peruser.md) | Inno Setup per-user 安装包：为什么不能装 Program Files、config/数据保留策略、静默安装验收 |
-| [desktop-splash-first.md](./desktop-splash-first.md) | 桌面壳 splash 先行：保住「数据库失败先抛错」契约的正确启动顺序 |
+| [desktop-splash-first.md](./desktop-splash-first.md) | 桌面壳 splash 先行：保住「数据库失败先抛错」契约的正确启动顺序；**跑启动测试前先确认 5000 端口空闲**（端口被占会走「已有实例」分支，报成假回归） |
 | [lazy-import-module-seam.md](./lazy-import-module-seam.md) | 惰性导入重依赖时保留测试 seam 的写法（`None` 声明 vs `__getattr__`）与「单独跑」验收 |
 | [windows-chinese-path-exe-smoke.md](./windows-chinese-path-exe-smoke.md) | 中文路径下的 Windows 构建与隔离冒烟注意事项 |
 | [green-folder-upgrade-and-data.md](./green-folder-upgrade-and-data.md) | 当前数据根、旧绿色目录及安全升级 |
