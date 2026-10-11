@@ -8,7 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import desktop_app as desk
-from pdf_test_utils import assert_a4_portrait_pdf
+from pdf_test_utils import assert_a4_portrait_pdf, assert_continuous_paper_pdf
 from erp import create_app
 from erp.db import init_db
 from erp.services.accounting import create_customer, create_order_from_typed_rows
@@ -99,18 +99,30 @@ def test_desktop_preview_uses_explicit_internal_source_return(monkeypatch):
 
 
 def test_browser_pdf_sources_still_return_real_pdf():
-    """The direct endpoints retain normal browser PDF behavior, including Settings."""
+    """The direct endpoints retain normal browser PDF behavior, including Settings.
+
+    四类开单与设置样张走 241mm 连续纸逻辑页；货款汇总走 A4 竖版。
+    """
     init_db()
     customer_id, sale_order_id, return_order_id = _make_order()
     client = create_app().test_client()
 
-    for path in (
+    continuous_paper_paths = (
         f"/orders/{sale_order_id}/pdf",
         f"/orders/{return_order_id}/pdf",
+        "/settings/print-preview.pdf",
+    )
+    a4_paths = (
         "/orders/summary_pdf",
         f"/accounts/summary_pdf?customer_id={customer_id}",
-        "/settings/print-preview.pdf",
-    ):
+    )
+    for path in continuous_paper_paths:
+        response = client.get(path)
+        assert response.status_code == 200, path
+        assert response.mimetype == "application/pdf", path
+        assert response.data.startswith(b"%PDF"), path
+        assert_continuous_paper_pdf(response.data)
+    for path in a4_paths:
         response = client.get(path)
         assert response.status_code == 200, path
         assert response.mimetype == "application/pdf", path

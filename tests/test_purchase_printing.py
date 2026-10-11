@@ -224,10 +224,16 @@ def test_purchase_print_does_not_inject_full_erp_configuration(monkeypatch):
 
 
 @pytest.mark.parametrize('is_return', [False, True])
-def test_purchase_a4_ignores_legacy_paper_configuration(tmp_path, is_return):
+def test_purchase_print_follows_order_page_config_without_mutating_config(tmp_path, is_return):
+    """风险4 原意图仍成立：打印过程不得改写配置。
+
+    四类开单现在共用 `order_pdf_page_*`（连续纸逻辑页），汇总类的
+    `printer_paper_*` 不得被开单打印串味，`load_config()` 也必须原样返回。
+    """
     from erp.config import save_config, load_config
     _, _, oid, rid, _ = seed()
-    save_config({'order_pdf_page_width_mm': 241, 'order_pdf_page_height_mm': 140})
+    save_config({'order_pdf_page_width_mm': 215.9, 'order_pdf_page_height_mm': 139.7,
+                 'printer_paper_width_mm': 210, 'printer_paper_height_mm': 297})
     original = load_config()
     path = f'/purchases/return/{rid}/pdf' if is_return else f'/purchases/{oid}/pdf'
     response = create_app().test_client().get(path)
@@ -252,8 +258,9 @@ def every_page_box(data):
              for m in re.finditer(rb'/MediaBox\s*\[\s*0(?:\.0+)?\s+0(?:\.0+)?\s+([0-9.]+)\s+([0-9.]+)\s*\]', source)]
     assert boxes
     for width, height in boxes:
-        assert width == pytest.approx(595.2756, abs=0.5)
-        assert height == pytest.approx(841.8898, abs=0.5)
+        # 四类开单共用 241mm 连续纸逻辑页（215.9×139.7mm），不是 A4。
+        assert width == pytest.approx(612.0, abs=0.5)
+        assert height == pytest.approx(396.0, abs=0.5)
     return boxes
 
 
@@ -308,7 +315,8 @@ def test_purchase_calibration_and_ui_zoom_do_not_change_pdf_geometry(monkeypatch
     assert pdf_text(first.data, tmp_path) == pdf_text(second.data, tmp_path)
     assert captured[0] == captured[1]
     assert 'translate(2mm, -1mm) scale(0.98)' in captured[0]
-    assert 'padding: 12mm' in captured[0]
+    # 连续纸页框由 @page 外边距给出，不再靠 .page padding。
+    assert 'margin: 6mm 7.3mm' in captured[0]
 
 
 def test_return_last_batch_keeps_zero_cent_tail_and_exact_quantity(tmp_path):
@@ -325,7 +333,7 @@ def test_return_last_batch_keeps_zero_cent_tail_and_exact_quantity(tmp_path):
         assert conn.execute('SELECT subtotal_cents FROM purchase_return_items WHERE purchase_return_id=?', (last['order_id'],)).fetchone()[0] == 0
 
 
-def test_purchase_real_pdf_keeps_twelve_mm_margins_on_every_fragment(monkeypatch):
+def test_purchase_real_pdf_keeps_continuous_paper_margins_on_every_fragment(monkeypatch):
     from erp.utils import purchase_pdf
     cid, pid, _, _, _ = seed()
     order = create_purchase_order('NH202610030009', '2026-10-03',
@@ -345,10 +353,13 @@ def test_purchase_real_pdf_keeps_twelve_mm_margins_on_every_fragment(monkeypatch
     assert response.status_code == 200
     assert len(every_page_box(response.data)) == len(pages) > 1
     for page in pages:
-        # Physical fragmentainer margins must repeat, not just .page padding on the first sheet.
+        # 物理分页片段的页框必须每联重复：左右各 7.3mm 版心、上下各 6mm，
+        # 而不是只对第一联生效（连续纸跨联时最容易出错的地方）。
         box = page._page_box
-        for side in ('margin_left', 'margin_right', 'margin_top', 'margin_bottom'):
-            assert getattr(box, side) == pytest.approx(12 * 96 / 25.4, abs=0.01)
+        assert box.margin_left == pytest.approx(7.3 * 96 / 25.4, abs=0.01)
+        assert box.margin_right == pytest.approx(7.3 * 96 / 25.4, abs=0.01)
+        assert box.margin_top == pytest.approx(6 * 96 / 25.4, abs=0.01)
+        assert box.margin_bottom == pytest.approx(6 * 96 / 25.4, abs=0.01)
 
 
 @pytest.mark.parametrize('unit,quantity,returned,expected', [

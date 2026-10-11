@@ -54,7 +54,7 @@ winget install --id JRSoftware.InnoSetup
 打包Windows桌面版.bat
 ```
 
-当前 PyInstaller one-folder 产物目录（本轮为 `dist\local-v3.6.0\简单ERP\`）：
+当前 PyInstaller one-folder 产物目录（本轮为 `dist\local-v3.7.0\简单ERP\`）：
 
 ```text
 dist\local-vX.Y.Z\简单ERP\
@@ -73,6 +73,8 @@ dist\simple-erp-windows-vX.Y.Z.zip
 仅本地存在 ZIP/EXE 不能证明其已上传 GitHub Releases；推送源码、构建包和发布 Release 是不同状态。
 
 本轮 `v2.0.0` 为独立新目录 `dist\local-v2.0.0\简单ERP\` 和 `dist\simple-erp-windows-v2.0.0.zip`。由当时Windows源码fresh构建，未覆盖上述常规目录或旧包。ZIP完整解压后使用；根配置与冻结内置配置都来自 `packaging/default_config.json`，不是本机config。Windows产品版本保留精确 `v2.0.0`，数字文件版本为 `2.0.0.0`。
+
+当前 `v3.7.0` 在 v3.6.0 之上修复**四类开单连续纸打印**：字号偏小（正文字框高 3.84→4.89mm，对齐门店旧软件实拍水平）与版式回归（恢复秒账式 241mm 连续纸模型，逻辑页 215.9×139.7mm、页内左右各 7.3mm 版心、正文约 201.3mm），并正式分离两套纸型（四类开单 = 241mm 连续纸；客户货款汇总 / 账款流水 / 往来对账 = A4 竖版）。产物为 `dist\local-v3.7.0\简单ERP\`、`dist\simple-erp-setup-v3.7.0.exe` 和 `dist\simple-erp-windows-v3.7.0.zip`，同样 fresh 构建、只含通用配置、不携带业务/演示/测试数据。Windows 产品版本 `v3.7.0`，数字文件版本 `3.7.0.0`。**未验**：目标打印机实打（`NantianPR-LQ` 纸面位置仍须实机确认）。
 
 当前 `v3.6.0` 在 v3.5.0 之上新增**安装包形态**：产物为 `dist\local-v3.6.0\简单ERP\`、`dist\simple-erp-setup-v3.6.0.exe` 和 `dist\simple-erp-windows-v3.6.0.zip`，同样 fresh 构建、只含通用配置、不携带业务/演示/测试数据。安装包为 per-user 安装（`%LOCALAPPDATA%\Programs\简单ERP`），不需要管理员；`config.json` 升级不覆盖、卸载保留；业务数据目录零接触。Windows 产品版本 `v3.6.0`，数字文件版本 `3.6.0.0`。
 

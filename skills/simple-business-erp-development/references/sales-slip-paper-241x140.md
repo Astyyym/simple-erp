@@ -1,6 +1,9 @@
 # 销售单纸张 241×140（二联连续纸）
 
-> **历史方案，不是现行规格。** 2026-09-25 已确认销售/退货及汇总 PDF 改用 A4 竖版，销售/退货内容正向重排；不要再把本文件中的 241×140mm 尺寸、版心和驱动选项当作当前要求。现行规则见 [`print-offset-calibration.md`](./print-offset-calibration.md)。
+> **当前依据（2026-10-11 恢复）**：四类开单（销售/退货/拿货/退拿货）使用本文件的 **241mm 连续纸** 几何。
+> 2026-09-25 曾把四类开单一并改成 A4 竖版，该依据已于 2026-10-11 推翻（打在 241mm 纸上只占约 78% 纸宽、字号偏小看不清）。
+> 本文件的实体纸尺寸、逻辑页尺寸（215.9×139.7mm）、左右 7.3mm 版心与 offset 默认 0 的结论**全部重新生效**。
+> 客户货款汇总/账款流水/往来对账仍走 A4 竖版，见 [`print-offset-calibration.md`](./print-offset-calibration.md)。
 
 User-measured 2026-07-14. Supersedes treating **280/288 as single-page height**.
 Short plan: `开发短计划/2026-07-14_销售单241x140二联纸版面_执行计划.md`.
@@ -9,17 +12,22 @@ Short plan: `开发短计划/2026-07-14_销售单241x140二联纸版面_执行�
 
 | 量 | 值 | 备注 |
 |----|-----|------|
-| 一联宽 | **241mm**（尺量约 240） | 含两侧导孔；行业 9.5" 连续纸 |
-| 一联高 | **140mm** | 撕开后打一单 |
-| 两联未撕总高 | ≈ **280mm** | 非 PDF 页高 |
+| 实体纸一联宽 | **241mm**（尺量约 240） | 含两侧导孔；行业 9.5" 连续纸 |
+| 实体纸一联高 | **140mm** | 撕开后打一单 |
+| 两联未撕总高 | ≈ **280mm** | **非** PDF 页高 |
 | 包装/旧文档 | 241×280 或 241×288 | 参考；**以一联尺子为准** |
-| 左孔带到正文 | ≈ **20mm** | 左边距硬约束 |
-| 右边距 | **20mm** | **与左等宽**；否则视觉偏右 |
-| 版心宽 | **201mm** | 241 − 20 − 20 |
+| **PDF 逻辑页宽** | **215.9mm** | 秒账实测（8.5"）；**不是 241** |
+| **PDF 逻辑页高** | **139.7mm** | 秒账实测（5.5"） |
+| 页内左右版心 | **各 7.3mm** | 正文约 **201.3mm** |
+| 实体纸到正文总留白 | ≈ **19.85mm** | 12.55（驱动居中）+ 7.3（页内） |
 | 联式 | 二联 | 一单一页 PDF + 叠打 |
 | 打法 | 一单一页 | 不是 PDF 画 280 高再撕 |
 
-`printer_paper_width_mm=241`，`printer_paper_height_mm=140`。
+**关键区分：实体纸尺寸 ≠ PDF 逻辑页尺寸。** 驱动 `NantianPR-LQ` 只公开 A4；PDF 用
+215.9×139.7mm 的逻辑页，驱动按 **A4 横向、实际大小/100%、居中** 映射，两侧各补约 12.55mm。
+
+配置键：`order_pdf_page_width_mm=215.9`、`order_pdf_page_height_mm=139.7`
+（`printer_paper_*` 是汇总类 A4 用的，**不要**拿来表达连续纸）。
 
 ## 包装 vs 尺子
 
@@ -53,16 +61,41 @@ Short plan: `开发短计划/2026-07-14_销售单241x140二联纸版面_执行�
 
 ### 当前落地（认居中前必过）
 
+页框放在 **`@page` 外边距** 上，而不是 `.page` 的 padding —— 这是长单自动进下一联时
+**每一联都有同样左右版心** 的关键（padding 只作用于首/末片段）。
+
 ```css
-.page { width:241mm; height:140mm; position:relative; overflow:hidden; }
-.sheet {
-  position:absolute; left:20mm; right:20mm; top:6mm; bottom:6mm;
-  width:201mm; overflow:hidden;
-}
-table.items { width:201mm; max-width:201mm; table-layout:fixed; }
+@page { size: 215.9mm 139.7mm; margin: 6mm 7.3mm; }
+.page { width: 100%; padding: 0; transform: translate(offsetXmm, offsetYmm) scale(S); }
+.sheet { width: 100%; }          /* 不再 max-width:186mm，不居中留白 */
+table.items { width: 100%; table-layout: fixed; }
+/* 列宽用 mm 定死，合计正好 201.3mm，不溢出右缘 */
+col: 13 / 76.3 / 16 / 24 / 34 / 38 mm
 ```
 
-页脚 `footer-sign` 约 **38mm**。offset 默认 0。
+页脚 `footer-sign` 固定 **38mm**；offset 默认 0。
+
+### 字号不得再退回（2026-10-11 修复）
+
+| 元素 | 值 | 实测字框高 |
+|---|---|---|
+| h1 公司名 | 24px | 8.381mm |
+| .subtitle 单据名 | 16px | 5.587mm |
+| .total-row 合计 | 15px | 5.238mm |
+| table.items 表头+正文 | 14px | 4.889mm |
+| .bottom / footer-grid / footer-sign | 13px | 4.540mm |
+| .legal-note 备注 | 12px | 4.190mm |
+| 单元格内边距 | 1.6mm 1.2mm | 文字不贴框线 |
+
+原先是 11px（正文 3.84mm）/9.5px（备注 3.32mm），实拍对比旧软件小约 1/4、看不清。
+**可读性优先于行数**：长单由用户拆单打印，自动跨页只是兜底。
+版心有富余，必要时正文可再上调至 15px。
+
+### 单联容量与跨联（2026-10-11 实测）
+
+- **单联可容 8 行**（第 9 行起自动进下一联）。实测：1/5/8 行 → 1 联，12/20 行 → 2 联。
+- 跨联时每联左右版心恒 **7.30mm**，表头重复（`thead { display: table-header-group }`）。
+- `.bottom` 必须带 `break-inside: avoid`：否则 9 行以上时页脚（订货电话/备注）会被拆到两联上。
 
 ### 页脚贴表，不贴页底（用户 2026-07-14）
 
@@ -85,16 +118,17 @@ table.items { width:201mm; max-width:201mm; table-layout:fixed; }
 1. WeasyPrint 写 `temp_pdf/*.pdf`
 2. `pypdfium2` 渲 PNG（scale≥2）
 3. 灰度墨迹 bbox → 左右边距 mm
-4. 目标：L≈R≈20、|L−R|<1mm、右缘不裁、小计完整
+4. 目标：L≈R≈**7.3**、|L−R|<1mm、右缘不裁、小计完整
 
-例（2026-07-14 修后）：L=19.87 R=20.10 差 0.24mm。页脚贴表后底部墨迹边距可远大于 6mm（空白正常）。
+实测（2026-10-11 修后）：逻辑页 215.9×139.7mm，L=7.23 R=6.97 差 **0.26mm**。
+底部墨迹边距可远大于 6mm（内容短时留白正常，**不是**缺陷）。
 
 ## 修法顺序
 
 1. 尺子：一联宽×高、孔边到正文。
-2. 改 `@page` / `.page` = 一联 mm。
-3. **绝对对称 `.sheet` + 列宽合计=版心**。
-4. 驱动：自定义 241×140；关适合页面。
+2. 改 `@page` = 逻辑页 215.9×139.7mm + 外边距 `6mm 7.3mm`。
+3. **版心占满 + 列宽合计 = 201.3mm**（用 mm，不用 %）。
+4. 驱动：A4 横向、实际大小/100%、居中；关适合页面。
 5. offset 仅 1–3mm 机差；默认 0。
 6. 交付：PDF 路径 + 可选 PNG；重启 5001。
 
@@ -104,8 +138,8 @@ table.items { width:201mm; max-width:201mm; table-layout:fixed; }
 
 优先：
 
-1. `temp_pdf/销售单_…预览.pdf` → **Windows 路径** 双击
-2. 登录设置页点「预览打印效果」
+1. `temp_pdf/` 下的真实 PDF → **Windows 路径** 双击
+2. 设置页点「预览打印效果」
 3. 真实订单 PDF
 
 ## 与 offset 文档
@@ -114,7 +148,8 @@ table.items { width:201mm; max-width:201mm; table-layout:fixed; }
 
 ## 验收
 
-- 预览 HTML：`size: 241mm 140mm` + `left:20mm`/`width:201mm`；无 `size: 241mm 280mm`
-- 墨迹边距 L≈R≈20；小计列完整
-- pytest：`tests/test_print_workflows.py`
-- 实打一联：左右对称、孔边≈20mm
+- 四类开单 PDF **每页** MediaBox = `612×396pt`（215.9×139.7mm）；汇总类仍 `595.28×841.89pt`
+- 每联墨迹 L≈R≈7.3；小计列完整、右缘不裁
+- 字号层级 h1 24 / 单据名 16 / 合计 15 / 正文 14 / 页脚 13 / 备注 12 px
+- pytest：`tests/test_print_workflows.py`、`tests/test_purchase_printing.py`、`tests/test_settings.py`
+- 实打一联：左右对称、字迹可辨（**自动测试与 PDF 预览都不代替实打**）

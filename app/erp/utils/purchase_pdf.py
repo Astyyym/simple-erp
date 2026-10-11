@@ -34,12 +34,9 @@ def _weasy():
     return globals_css, globals_html
 
 
-# Shared sales styling pads the first/last fragment only. Purchase-only paged
-# overrides repeat the same 12mm frame on all sheets, without changing sales PDFs.
-_PURCHASE_PAGE_FRAME = '''
-@page { size: 210mm 297mm !important; margin: 12mm !important; }
-.page { width: auto !important; min-height: 0 !important; padding: 0 !important; }
-'''
+# 四类开单共用连续纸页框：页框写在模板 @page 外边距上，WeasyPrint 会在每一联
+# 重复同样的左右版心（不再只 pad 首/末片段）。因此拿货/退拿货不再需要额外的
+# A4 覆盖样式表，也不再强制 210×297。
 
 
 def generate_purchase_pdf(order_id: int, *, is_return: bool = False) -> Path:
@@ -82,11 +79,8 @@ def generate_purchase_pdf(order_id: int, *, is_return: bool = False) -> Path:
         'print_offset_x_mm', 'print_offset_y_mm', 'print_scale',
         'print_order_phone', 'print_order_address', 'print_main_business', 'print_maker_name',
     )}
-    # Purchase documents follow the current A4 contract, including legacy user configs.
-    # Reuse only the sales calibration, never screen zoom or obsolete paper dimensions.
-    public_config['order_pdf_page_width_mm'] = 210
-    public_config['order_pdf_page_height_mm'] = 297
-    # Direct Jinja rendering avoids Flask context processors re-injecting full erp_config.
+    # 四类开单统一走连续纸逻辑页（配置默认 215.9×139.7），不再强制 A4。
+    # 仍只复用销售单据的偏移/缩放校准，不引入界面缩放或过时纸型。
     html = current_app.jinja_env.get_template('orders/print_template.html').render(
         order=public_order, items=public_items,
         config=public_config, cents_to_yuan=cents_to_yuan, document_title=title,
@@ -95,8 +89,6 @@ def generate_purchase_pdf(order_id: int, *, is_return: bool = False) -> Path:
         object_role='往来对象（本单卖方）',
     )
     out = project_path('temp_pdf', f"{'purchase_return' if is_return else 'purchase'}_{int(order_id)}.pdf")
-    css_cls, html_cls = _weasy()
-    html_cls(string=html, base_url=str(runtime_root())).write_pdf(
-        out, stylesheets=[css_cls(string=_PURCHASE_PAGE_FRAME)],
-    )
+    _, html_cls = _weasy()
+    html_cls(string=html, base_url=str(runtime_root())).write_pdf(out)
     return out

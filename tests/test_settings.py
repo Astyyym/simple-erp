@@ -29,10 +29,11 @@ def test_settings_page_renders_and_nav_link():
     assert 'id="settingsPrintPreviewPdf"' in html
     assert "/settings/print-preview.pdf" in html
     assert "打印位置校准" in html
+    # 两套纸型：四类开单 = 241mm 连续纸；汇总/流水/对账 = A4 竖版。
+    assert "连续纸" in html
     assert "A4 竖向（210×297mm）" in html
-    assert "A4 纵向" in html
+    assert "A4 横向" in html
     assert "实际大小/100%" in html
-    assert "241mm 长边先进" not in html
     assert 'name="print_offset_x_mm"' in html
     assert 'name="print_offset_y_mm"' in html
     assert 'name="print_scale"' in html

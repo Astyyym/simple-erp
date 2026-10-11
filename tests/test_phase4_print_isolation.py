@@ -6,7 +6,7 @@ from erp import create_app
 from erp import utils
 from erp.db import get_db, init_db
 from erp.services.accounting import create_customer, create_order_from_typed_rows, create_product
-from tests.pdf_test_utils import assert_a4_portrait_pdf
+from tests.pdf_test_utils import assert_a4_portrait_pdf, assert_continuous_paper_pdf
 
 
 def _saved_order(order_type="sale"):
@@ -107,9 +107,10 @@ def test_settings_and_customer_summary_templates_have_no_internal_field_names():
     assert all(set(item) <= {"product_name", "spec", "unit", "quantity", "unit_price_cents", "subtotal_cents"} for item in items)
 
 
-def test_real_order_pdf_is_a4_portrait(tmp_path):
+def test_real_order_pdf_is_continuous_paper(tmp_path):
+    """四类开单 = 241mm 连续纸逻辑页；A4 只用于汇总/流水/对账。"""
     order_id = _saved_order()
     response = create_app().test_client().get(f"/orders/{order_id}/pdf")
     assert response.status_code == 200
     assert response.mimetype == "application/pdf"
-    assert_a4_portrait_pdf(response.data)
+    assert_continuous_paper_pdf(response.data)

@@ -12,6 +12,20 @@ _MEDIA_BOX = re.compile(
 
 def assert_a4_portrait_pdf(pdf_bytes: bytes) -> None:
     """Check every exposed page box, including compressed page dictionaries."""
+    _assert_page_box(pdf_bytes, 595.2756, 841.8898, "A4", 210 / 297)
+
+
+def assert_continuous_paper_pdf(pdf_bytes: bytes) -> None:
+    """四类开单逻辑页 = 241mm 连续纸一联（秒账实测 215.9×139.7mm，横版）。
+
+    注意：这是**逻辑 PDF 页框**，不是实体纸 241×140mm。实体纸由 NantianPR-LQ
+    按 A4 横向、实际大小/100% 居中映射。
+    """
+    _assert_page_box(pdf_bytes, 612.0, 396.0, "连续纸逻辑页", 215.9 / 139.7)
+
+
+def _assert_page_box(pdf_bytes: bytes, width_pt: float, height_pt: float,
+                     label: str, ratio: float) -> None:
     sources = [pdf_bytes]
     for stream_match in re.finditer(rb"stream\r?\n", pdf_bytes):
         stream_end = pdf_bytes.find(b"endstream", stream_match.end())
@@ -28,13 +42,13 @@ def assert_a4_portrait_pdf(pdf_bytes: bytes) -> None:
     for source in sources:
         for match in _MEDIA_BOX.finditer(source):
             found = True
-            width_pt, height_pt = (float(value) for value in match.groups())
-            assert math.isclose(width_pt, 595.2756, rel_tol=0, abs_tol=0.5), (
-                f"expected A4 width 595.28 pt, got {width_pt:.4f} pt"
+            got_w, got_h = (float(value) for value in match.groups())
+            assert math.isclose(got_w, width_pt, rel_tol=0, abs_tol=0.5), (
+                f"expected {label} width {width_pt:.2f} pt, got {got_w:.4f} pt"
             )
-            assert math.isclose(height_pt, 841.8898, rel_tol=0, abs_tol=0.5), (
-                f"expected A4 height 841.89 pt, got {height_pt:.4f} pt"
+            assert math.isclose(got_h, height_pt, rel_tol=0, abs_tol=0.5), (
+                f"expected {label} height {height_pt:.2f} pt, got {got_h:.4f} pt"
             )
-            assert math.isclose(width_pt / height_pt, 210 / 297, rel_tol=1e-3)
+            assert math.isclose(got_w / got_h, ratio, rel_tol=1e-3)
     if not found:
         raise AssertionError("PDF page must expose a MediaBox")

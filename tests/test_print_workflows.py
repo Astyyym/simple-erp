@@ -2,7 +2,7 @@ from datetime import date
 from pathlib import Path
 from uuid import uuid4
 
-from pdf_test_utils import assert_a4_portrait_pdf
+from pdf_test_utils import assert_a4_portrait_pdf, assert_continuous_paper_pdf
 
 from erp import create_app
 from erp.db import get_db, init_db
@@ -80,12 +80,12 @@ def test_order_print_signatures_share_phone_and_address_rows():
     assert "print_offset_x_mm" in template
     assert "print_offset_y_mm" in template
     assert "print_scale" in template
-    assert "max-width: 186mm" in template or "max-width:186mm" in template
-    assert "width: 241mm" not in template and "width:241mm" not in template
-    assert "height: 140mm" not in template and "height:140mm" not in template
+    # 连续纸版心占满页框（左右各 7.3mm 由 @page 外边距给出），不再有 A4 的 186mm 上限。
+    assert "max-width: 186mm" not in template and "max-width:186mm" not in template
+    assert "margin: 6mm 7.3mm" in template or "margin:6mm 7.3mm" in template
     assert "order_pdf_page_width_mm" in template
     assert "order_pdf_page_height_mm" in template
-    assert "width:38%" in template or "width: 38%" in template
+    assert "width:76.3mm" in template or "width: 76.3mm" in template
     assert "business-row" not in template
     assert "maker-sign" not in template
     assert "translateX(-15mm)" not in template
@@ -125,21 +125,95 @@ def test_order_pdf_footer_sign_columns_share_fixed_width():
     # Only the page-level calibration translate(...) is allowed — not maker-sign hacks.
     assert "translateX" not in template
     assert "transform: translate({{config.print_offset_x_mm}}mm" in template or "print_offset_x_mm" in template
-    assert "max-width: 186mm" in template or "max-width:186mm" in template
+    assert "max-width: 186mm" not in template and "max-width:186mm" not in template
 
 
-def test_print_defaults_are_a4_portrait():
+def test_order_print_font_sizes_are_legible_and_ranked():
+    """§4.2 字号表：四类开单打印件字号层级必须保留（实拍对比旧软件偏小 1/4）。
+
+    用真实模板做 WeasyPrint 排版，量文本盒字框高，断言层级与下限，
+    而不是只 grep CSS 文本——防止某条规则被后写的选择器覆盖掉。
+    """
+    from pathlib import Path as _Path
+
+    import jinja2
+    from weasyprint import HTML
+
+    from erp.config import _merge_defaults
+
+    project = _Path(__file__).resolve().parents[1]
+    template_dir = project / "app/erp/templates/orders"
+    env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(template_dir)))
+    env.globals["cents_to_yuan"] = lambda c: f"{c / 100:.2f}"
+    config = _merge_defaults({"shop_name": "字号检查店"})
+    order = {
+        "order_no": "MD202610110001", "order_date": "2026-10-11", "order_type": "sale",
+        "customer_name": "字号客户", "notes": "", "total_amount_cents": 25000, "status": "saved",
+    }
+    items = [{"product_name": "软密封闸阀", "spec": "DN100", "unit": "只", "quantity": "2",
+              "unit_price_cents": 12500, "subtotal_cents": 25000}]
+    html = env.get_template("print_template.html").render(
+        order=order, items=items, config=config, document_title="销售清单",
+    )
+    document = HTML(string=html, base_url=str(project)).render()
+
+    boxes = []
+
+    def walk(box):
+        boxes.append(box)
+        for child in (getattr(box, "children", None) or []):
+            walk(child)
+
+    for page in document.pages:
+        walk(page._page_box)
+
+    def boxes_with_text(text):
+        return [b for b in boxes
+                if text in (getattr(b, "text", "") or "")
+                and (getattr(b, "text", "") or "").strip()]
+
+    mm = 96 / 25.4
+
+    def font_px(text):
+        matched = boxes_with_text(text)
+        assert matched, f"打印件上找不到文本 {text!r}"
+        return max(b.style["font_size"] for b in matched)
+
+    def box_height_mm(text):
+        matched = boxes_with_text(text)
+        assert matched, f"打印件上找不到文本 {text!r}"
+        return max(b.height / mm for b in matched)
+
+    # 字号层级：公司名 > 单据名 > 合计 > 正文 > 页脚/备注
+    assert font_px("字号检查店") == 24
+    assert font_px("销售清单") == 16
+    assert font_px("合计") == 15
+    assert font_px("名称规格") == 14
+    assert font_px("软密封闸阀") == 14
+    assert font_px("订货电话") == 13
+    assert font_px("备注") == 12
+    assert font_px("字号检查店") > font_px("销售清单") > font_px("合计") >= font_px("名称规格")
+
+    # 正文实测字框高应达到秒账实拍水平（约 4.89mm），不再是最初的 3.84mm。
+    assert box_height_mm("软密封闸阀") >= 4.7
+    assert box_height_mm("名称规格") >= 4.7
+
+
+def test_print_defaults_are_continuous_paper_and_summary_a4():
+    """四类开单 = 241mm 连续纸逻辑页；汇总类 = A4 竖版。两套模型不得混用。"""
     from erp.config import _merge_defaults
 
     config = _merge_defaults({})
 
+    # 汇总/流水/对账仍为 A4 竖版
     assert config["printer_paper_width_mm"] == 210
     assert config["printer_paper_height_mm"] == 297
-    assert config["order_pdf_page_width_mm"] == 210
-    assert config["order_pdf_page_height_mm"] == 297
+    # 四类开单为连续纸一联的逻辑页（秒账实测几何）
+    assert config["order_pdf_page_width_mm"] == 215.9
+    assert config["order_pdf_page_height_mm"] == 139.7
 
 
-def test_order_print_preview_and_sample_pdf_use_a4_portrait():
+def test_order_print_preview_and_sample_pdf_use_continuous_paper():
     from erp.config import load_config, save_config
 
     init_db()
@@ -147,48 +221,49 @@ def test_order_print_preview_and_sample_pdf_use_a4_portrait():
         {
             "printer_paper_width_mm": 210,
             "printer_paper_height_mm": 297,
-            "order_pdf_page_width_mm": 210,
-            "order_pdf_page_height_mm": 297,
+            "order_pdf_page_width_mm": 215.9,
+            "order_pdf_page_height_mm": 139.7,
         }
     )
     cfg = load_config()
+    # 汇总类键保持 A4，不被开单纸型串味
     assert int(cfg["printer_paper_width_mm"]) == 210
     assert int(cfg["printer_paper_height_mm"]) == 297
-    assert float(cfg["order_pdf_page_width_mm"]) == 210
-    assert float(cfg["order_pdf_page_height_mm"]) == 297
+    assert float(cfg["order_pdf_page_width_mm"]) == 215.9
+    assert float(cfg["order_pdf_page_height_mm"]) == 139.7
     app = create_app()
     client = app.test_client()
     html = client.get("/settings/print-preview").get_data(as_text=True)
-    assert "size: 210mm 297mm" in html or "size:210mm 297mm" in html
-    assert "max-width: 186mm" in html or "max-width:186mm" in html
-    assert "width: 241mm" not in html and "width:241mm" not in html
-    assert "height: 140mm" not in html and "height:140mm" not in html
+    assert "size: 215.9mm 139.7mm" in html or "size:215.9mm 139.7mm" in html
+    # 连续纸版心占满页框，不再有 A4 的 186mm 上限
+    assert "max-width: 186mm" not in html and "max-width:186mm" not in html
     settings_html = client.get("/settings/").get_data(as_text=True)
+    assert "连续纸" in settings_html
     assert "A4 竖向（210×297mm）" in settings_html
     assert "实际大小/100%" in settings_html
 
     pdf_response = client.get("/settings/print-preview.pdf")
     assert pdf_response.status_code == 200
     assert pdf_response.mimetype == "application/pdf"
-    assert_a4_portrait_pdf(pdf_response.data)
+    assert_continuous_paper_pdf(pdf_response.data)
 
 
-def test_sales_and_return_order_pdfs_use_a4_portrait():
+def test_sales_and_return_order_pdfs_use_continuous_paper():
     from erp.utils.pdf import generate_order_pdf
 
     init_db()
     suffix = uuid4().hex[:8]
-    customer_id = create_customer(f"竖版打印客户-{suffix}")
+    customer_id = create_customer(f"连续纸打印客户-{suffix}")
     sale_id = create_order_from_typed_rows(
         customer_id,
-        f"PORTRAIT-SALE-{suffix}",
+        f"PAPER-SALE-{suffix}",
         [{"product_name": "销售闸阀", "unit": "只", "unit_price_yuan": "20", "quantity": "1"}],
         status="saved",
         order_type="sale",
     )
     return_id = create_order_from_typed_rows(
         customer_id,
-        f"PORTRAIT-RETURN-{suffix}",
+        f"PAPER-RETURN-{suffix}",
         [{"product_name": "退货闸阀", "unit": "只", "unit_price_yuan": "20", "quantity": "1"}],
         status="saved",
         order_type="return",
@@ -198,7 +273,7 @@ def test_sales_and_return_order_pdfs_use_a4_portrait():
         for order_id in (sale_id, return_id):
             path = generate_order_pdf(order_id)
             assert path.exists() and path.stat().st_size > 0
-            assert_a4_portrait_pdf(path.read_bytes())
+            assert_continuous_paper_pdf(path.read_bytes())
 
 
 def test_order_print_preview_html_includes_configured_offsets():

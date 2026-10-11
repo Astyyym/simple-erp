@@ -8,12 +8,12 @@
 
 - 正式目录（唯一真源）：本地 Windows 项目根目录
 - GitHub：`Astyyym/simple-erp`，默认分支 `main`
-- 当前源码版本以根目录 `VERSION` 为准；当前工作区 `VERSION` 为 `v3.6.0`
+- 当前源码版本以根目录 `VERSION` 为准；当前工作区 `VERSION` 为 `v3.7.0`
 - 当前需求权威文档：`docs/需求/消防器材店ERP系统-需求文档.md`
 
 ## 怎么跑
 
-- Windows 源码开发：首次准备运行 `setup.bat`，启动使用 `启动系统.bat` / `启动系统.vbs`
+- Windows 源码开发：首次准备运行 `setup.bat`（创建 `.venv` 并装依赖），随后用 `.venv\Scripts\python.exe app\app.py` 起服务
 - Windows 桌面版（免安装）：`dist\local-vX.Y.Z\简单ERP\简单ERP.exe`
 - Windows 安装包（推荐给门店）：`打包Windows安装包.bat` → `dist\simple-erp-setup-vX.Y.Z.exe`，per-user 装到 `%LOCALAPPDATA%\Programs\简单ERP`
 - 测试：`.venv\Scripts\python.exe -m pytest tests\ -q`；打包 venv 可用 `.venv-win\Scripts\python.exe -m pytest tests\ -q`
@@ -53,7 +53,7 @@
 
 - 单号：`MD` + 8 位日期 + 4 位流水；销售与退货共用当天流水；新建日期可改，重编辑保号保日期。
 - 拿货/退拿货共用 `NH` + 8 位日期 + 4 位流水（同一日号池）；取号需让过历史 `TN` 退拿货流水，旧单号不重写。取号实现集中在 `app/erp/utils/order_numbering.py`。
-- 销售/退货、汇总及设置样张 PDF 为 A4 竖版（210×297mm）；旧 241×140mm PDF 版心已废止。
+- 四类开单（销售/退货/拿货/退拿货）PDF 为 **241mm 连续纸一联**（逻辑页 215.9×139.7mm、页内左右各 7.3mm 版心）；客户货款汇总、账款流水、往来对账单 PDF 为 **A4 竖版（210×297mm）**。两套纸型不得混用。
 - 打印相关改动必须说明 PDF 预览、页面尺寸和设置页偏移的验证方式；自动测试不代替目标打印机实打。
 
 ## 交付习惯

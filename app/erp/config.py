@@ -24,9 +24,10 @@ CONFIG_DEFAULTS: dict[str, Any] = {
     # 账款汇总表 PDF 默认使用标准 A4 竖版页面。
     "printer_paper_width_mm": 210,
     "printer_paper_height_mm": 297,
-    # 销售/退货单及其设置页样张默认使用 A4 竖版 PDF。
-    "order_pdf_page_width_mm": 210,
-    "order_pdf_page_height_mm": 297,
+    # 四类开单（销售/退货/拿货/退拿货）PDF 逻辑页：241mm 连续纸一联，
+    # 逻辑页沿用秒账实测几何 215.9×139.7mm（实体纸由驱动 A4 横向 100% 居中映射）。
+    "order_pdf_page_width_mm": 215.9,
+    "order_pdf_page_height_mm": 139.7,
     "local_access_password_enabled": False,
     "local_access_password_hash": "",
     "local_access_username": "",

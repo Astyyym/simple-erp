@@ -12,7 +12,8 @@
 | [md-order-number-and-date-lock.md](./md-order-number-and-date-lock.md) | MD 单号、创建日期、重编辑保护规则 |
 | [permanent-no-login.md](./permanent-no-login.md) | 当前永久免登录决策与禁止回潮事项 |
 | [settings-page-and-data-root.md](./settings-page-and-data-root.md) | 当前设置页与数据根目录行为 |
-| [print-offset-calibration.md](./print-offset-calibration.md) | 当前 A4 竖版输出、驱动选项与偏移校准边界 |
+| [print-offset-calibration.md](./print-offset-calibration.md) | 当前两套纸型（四类开单连续纸 / 汇总类 A4）、驱动选项与偏移校准边界 |
+| [sales-slip-paper-241x140.md](./sales-slip-paper-241x140.md) | 四类开单 241mm 连续纸版式：实体纸 241×140mm、逻辑页 215.9×139.7mm、左右 7.3mm 版心 |
 | [master-data-cleaning-before-import.md](./master-data-cleaning-before-import.md) | 在项目外安全清洗客户/商品资料的流程，不含真实客户清单 |
 | [erp-ui-redesign.md](./erp-ui-redesign.md) | UI 改版约束与视觉回归检查 |
 | [purchase-return-decoupling.md](./purchase-return-decoupling.md) | 四类开单解耦、两级商品选择器、手工退拿货与 schema13 迁移；NH 共用日流水取号 |
@@ -27,6 +28,7 @@
 | [user-visible-instance-verification.md](./user-visible-instance-verification.md) | 用户页面、测试结果与真实运行实例的证据等级 |
 | [wsl-windows-localhost-instance-mismatch.md](./wsl-windows-localhost-instance-mismatch.md) | Windows/WSL localhost 实例错配排查 |
 | [windows-native-exe-packaging.md](./windows-native-exe-packaging.md) | Windows PyInstaller one-folder 构建和 EXE 冒烟 |
+| [windows-bat-crlf-invocation.md](./windows-bat-crlf-invocation.md) | 脚本行尾/编码：`.bat` 需 CRLF（`.gitattributes` 钉死）；含中文的 `.vbs` 需 ANSI/GBK（历史教训） |
 | [windows-installer-inno-peruser.md](./windows-installer-inno-peruser.md) | Inno Setup per-user 安装包：为什么不能装 Program Files、config/数据保留策略、静默安装验收 |
 | [desktop-splash-first.md](./desktop-splash-first.md) | 桌面壳 splash 先行：保住「数据库失败先抛错」契约的正确启动顺序 |
 | [lazy-import-module-seam.md](./lazy-import-module-seam.md) | 惰性导入重依赖时保留测试 seam 的写法（`None` 声明 vs `__getattr__`）与「单独跑」验收 |
@@ -40,7 +42,6 @@
 | Reference | 历史边界 |
 |---|---|
 | [desktop-print-session.md](./desktop-print-session.md) | 旧登录会话导致外部浏览器体验的历史问题；当前永久免登录，仍需区分壳内与外部浏览器 |
-| [sales-slip-paper-241x140.md](./sales-slip-paper-241x140.md) | 旧 241×140mm 连续纸版心历史方案；已由 A4 竖版要求替代，不作为当前版式依据 |
 | [pywebview-save-print-405.md](./pywebview-save-print-405.md) | 旧 WebView 405 调查步骤，先复现请求再判断是否仍适用 |
 | [erp-session-notes.md](./erp-session-notes.md) | 已脱敏的历史流程与 UX 经验；不保存公司/客户真实联系信息 |
 | [_archived-full-body-20260725.md](_archived-full-body-20260725.md) | 旧版完整技能归档；不作为当前规则来源，凭据与个人信息不得恢复 |

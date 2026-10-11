@@ -1,0 +1,13 @@
+# Windows 批处理与脚本的行尾必须钉死为 CRLF。
+#
+# 原因：cmd.exe / cscript 是行式解析器，期望 CRLF 作为行终止。LF-only 的 .bat 会解析失步，
+# 把后续字节切碎成伪命令（如 'olicy' / '?setup.bat'），或干脆什么都不执行（stdout 全空、
+# 退出码 0）——两种都是静默跳过步骤，不报错。受控实验确认根因是行尾而非编码
+# （UTF-8+CRLF 正常，仅 UTF-8+LF 失败）。详见
+# skills/simple-business-erp-development/references/windows-bat-crlf-invocation.md
+#
+# 显式声明而不依赖各机器的 core.autocrlf：后者是本机设置，换台机器或换 git 发行版
+# 就可能变成 false，届时检出的 .bat 又是 LF-only。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.vbs text eol=crlf
