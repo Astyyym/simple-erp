@@ -48,6 +48,7 @@ def init_db() -> None:
         ensure_product_identity_constraint(conn)
         ensure_purchase_order_fields(conn)
         ensure_order_item_cost_fields(conn)
+        ensure_order_item_cost_source(conn)
         ensure_return_relation_fields(conn)
         ensure_order_submission_fields(conn)
         ensure_master_data_origin_fields(conn)
@@ -234,6 +235,17 @@ def ensure_order_item_cost_fields(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE order_items ADD COLUMN unit_cost_micro INTEGER")
     if "cost_total_micro" not in cols:
         conn.execute("ALTER TABLE order_items ADD COLUMN cost_total_micro INTEGER")
+
+
+def ensure_order_item_cost_source(conn: sqlite3.Connection) -> None:
+    """标记成本来源：NULL=销售时真实快照（不可改），'backfill'=人工补录（可再修正）。
+
+    幂等加列，**不推进** `CURRENT_SCHEMA_VERSION`——与 `ensure_master_data_origin_fields`、
+    `ensure_product_brand_field`、`ensure_initialization_cost_source` 同款惯例。
+    旧数据一律留空，即按真实快照处理。
+    """
+    if "cost_source" not in _columns(conn, "order_items"):
+        conn.execute("ALTER TABLE order_items ADD COLUMN cost_source TEXT")
 
 
 def ensure_return_relation_fields(conn: sqlite3.Connection) -> None:
@@ -792,6 +804,7 @@ CREATE TABLE IF NOT EXISTS order_items (
     subtotal_cents INTEGER NOT NULL CHECK(subtotal_cents >= 0),
     unit_cost_micro INTEGER,
     cost_total_micro INTEGER,
+    cost_source TEXT,
     source_item_id INTEGER REFERENCES order_items(id)
 );
 CREATE TABLE IF NOT EXISTS payments (

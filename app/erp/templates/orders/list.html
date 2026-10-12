@@ -79,6 +79,16 @@
       </div>
       <div class="form-text filter-type-hint">不勾选=全部状态。拿货与退拿货没有「已打印」状态。</div>
     </div>
+    <div class="filter-field-type">
+      <div class="filter-type-row" role="group" aria-label="成本完整性筛选">
+        <label class="form-label" id="orderCostLabel">成本完整性</label>
+        <div class="filter-type-options">
+          <input type="checkbox" class="btn-check" name="cost" id="orderCostMissing" value="missing" autocomplete="off" {{ 'checked' if cost_missing else '' }}>
+          <label class="btn btn-outline-primary" for="orderCostMissing">只看缺成本</label>
+        </div>
+      </div>
+      <div class="form-text filter-type-hint">只筛出缺少历史成本的正式销售单；勾选后拿货/退拿货与退货单不再显示。</div>
+    </div>
   </div>
   {% if filter_chips %}
   <div class="filter-chips" data-refresh-fragment id="ordersChips" aria-label="已选条件">
@@ -118,7 +128,7 @@
     <td title="{{o.order_no}}">{{o.order_no}}</td>
     <td title="{{o.customer_name}}">{{o.customer_name or '历史未关联对象'}}</td>
     <td>{{o.business_date}}</td>
-    <td><span class="badge {{o.type_badge}}">{{o.type_label}}</span></td>
+    <td><span class="badge {{o.type_badge}}">{{o.type_label}}</span>{% if o.has_missing_cost %} <span class="badge bg-warning text-dark" title="该销售单缺少历史成本，毛利无法完整计算">缺成本</span>{% endif %}</td>
     <td>¥{{cents_to_yuan(o.total_amount_cents)}}</td>
     <td><span class="badge {{o.status_badge}}">{{o.status_label}}</span></td>
     <td class="action-cell"><div class="action-wrap">

@@ -62,6 +62,12 @@
 中文 Windows 控制台原生就是 936，GBK 与它一致，无解析漂移。注意 `打包Windows桌面版.bat`、`setup.bat`、`dev_start.bat`
 若也含 `chcp 65001` + 中文 echo，同样风险，改动时一并处理。
 
+**连带坑：改编码后要同步测试的读取编码。** `tests/test_installer_packaging.py` 原先用
+`read_text(encoding="utf-8")` 读这个 `.bat`，脚本转 GBK 后立刻 `UnicodeDecodeError`
+→ 全量 2 failed（2026-10-12 才发现）。现在统一走 `_build_script_text()`（GBK 解码）。
+教训：**编码是脚本与其契约测试之间共享的接口**，改一边必须改另一边；
+`file <script>.bat` 报 `ISO-8859 text` 就是 GBK/ANSI 的信号，不是脚本坏了。
+
 **判定**：脚本坏不坏，看**两个维度**——① 行尾是否 CRLF（根因一）；② 编码/代码页是否 UTF-8+65001（本条）。任一不合就坏。
 
 ## 根因二：含中文的 `.vbs` 必须是 ANSI/GBK（历史教训）

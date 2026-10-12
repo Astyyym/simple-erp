@@ -15,6 +15,18 @@ INSTALLER_DIR = ROOT / "packaging" / "installer"
 ISS = INSTALLER_DIR / "简单ERP.iss"
 
 
+def _build_script_text() -> str:
+    """读根目录 `打包Windows安装包.bat`。
+
+    **必须按 GBK 解码**：该脚本含中文，且 v3.8.0 起固定为 GBK + `chcp 936`——
+    `chcp 65001` + UTF-8 中文行 + 全角标点会让 cmd.exe 按字节漂移、把命令切碎
+    （实测 `：` 吃掉 `%DISTDIR%` 的 `%`，静默跳过补 config.json 并少产出两个资产）。
+    详见项目 reference `windows-bat-crlf-invocation.md`。按 UTF-8 读会
+    UnicodeDecodeError，不是脚本坏了。
+    """
+    return (ROOT / "打包Windows安装包.bat").read_text(encoding="gbk")
+
+
 @pytest.fixture(scope="module")
 def iss_text() -> str:
     assert ISS.exists(), f"缺少安装脚本 {ISS}"
@@ -86,7 +98,7 @@ def test_installer_warns_instead_of_silently_installing_webview2(iss_text):
 
 
 def test_installer_build_script_reuses_the_one_folder_output():
-    script = (ROOT / "打包Windows安装包.bat").read_text(encoding="utf-8")
+    script = _build_script_text()
     assert "简单ERP.spec" in script, "安装包必须建立在既有 one-folder 构建之上"
     assert "ISCC.exe" in script
     assert "packaging\\default_config.json" in script
@@ -97,7 +109,7 @@ def test_installer_build_script_reuses_the_one_folder_output():
 
 def test_build_script_always_produces_all_three_artifacts():
     """交付标准是三种形态齐备；脚本少做一个，下次发版就会缺资产。"""
-    script = (ROOT / "打包Windows安装包.bat").read_text(encoding="utf-8")
+    script = _build_script_text()
     assert "[1/3]" in script and "[2/3]" in script and "[3/3]" in script
     assert "simple-erp-setup-%APPVER%.exe" in script
     assert "simple-erp-windows-%APPVER%.zip" in script

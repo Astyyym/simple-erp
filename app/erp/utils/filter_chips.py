@@ -45,8 +45,8 @@ def _multi_chip(values, order, labels, *, caption: str, key: str):
     return {"key": key, "label": f"{caption}：{_labels(values, order, labels)}", "url": removal_url({key})}
 
 
-def order_filter_chips(*, customer_q: str, order_types, order_statuses) -> list[dict]:
-    """单据管理页的 chip：客户 / 订单类型 / 单据状态。"""
+def order_filter_chips(*, customer_q: str, order_types, order_statuses, cost_missing: bool = False) -> list[dict]:
+    """单据管理页的 chip：客户 / 订单类型 / 单据状态 / 成本完整性。"""
     chips: list[dict] = []
     if customer_q:
         chips.append({"key": "customer", "label": f"客户：{customer_q}", "url": removal_url({"customer"})})
@@ -56,6 +56,8 @@ def order_filter_chips(*, customer_q: str, order_types, order_statuses) -> list[
     ):
         if chip:
             chips.append(chip)
+    if cost_missing:
+        chips.append({"key": "cost", "label": "成本：只看缺成本", "url": removal_url({"cost"})})
     return chips
 
 

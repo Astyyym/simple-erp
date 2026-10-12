@@ -138,10 +138,17 @@ def test_order_detail_has_no_void_controls_and_keeps_header_actions(pages):
     assert any(node["attrs"].get("href") == f"/orders/{order_id}/edit" for node in dom.nodes)
     assert any(node["attrs"].get("href") == f"/orders/{order_id}/pdf" for node in dom.nodes)
     # 标题行动作顺序与不换行排布保持既有契约。
+    # 2026-10-12 决策变更：历史成本补录（2026-10-11 计划 Phase 2）在「编辑」与「打印」
+    # 之间新增「补录历史成本」入口；仅当该单存在可补录行时才渲染，本单为零建档缺成本单。
     header = next(node for node in dom.nodes if node["tag"] == "header" and "page-header" in node["attrs"].get("class", "").split())
     actions = next(node for node in dom.nodes if node["parent"] is header and "page-actions" in node["attrs"].get("class", "").split())
     buttons = [node for node in dom.nodes if node["parent"] is actions and node["tag"] == "a"]
-    assert [button["attrs"]["href"] for button in buttons] == [f"/orders/{order_id}/edit", f"/orders/{order_id}/pdf", "/orders/"]
+    assert [button["attrs"]["href"] for button in buttons] == [
+        f"/orders/{order_id}/edit",
+        f"/orders/{order_id}/cost_backfill",
+        f"/orders/{order_id}/pdf",
+        "/orders/",
+    ]
     assert "flex-wrap:nowrap" in _css_rule(html, ".order-detail-header .page-actions")
     # 标题行动作仍保持既有排布契约。
     assert "white-space:nowrap" in _css_rule(html, ".page-actions .btn")
