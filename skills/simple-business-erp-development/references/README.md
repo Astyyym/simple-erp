@@ -9,6 +9,7 @@
 | [customer-analytics-and-master-data-import.md](./customer-analytics-and-master-data-import.md) | 客户统计、日期筛选、导入规则与测试边界 |
 | [document-management-summary-export.md](./document-management-summary-export.md) | 单据管理筛选、货款汇总 PDF 的统计口径 |
 | [cost-backfill.md](./cost-backfill.md) | 历史成本人工补录（销售单）：只补利润不动库存、`cost_source` 标记、补录后禁编辑、已有退货时拒绝再修正 |
+| [data-root-probe-pitfalls.md](./data-root-probe-pitfalls.md) | 排查正式数据根时别把 `-wal`/`-shm` 或主库 mtime 当成「有人在写」；只读连接也会创建它们；用 WAL 大小 + 结构指纹判定 |
 | [excel-data-export.md](./excel-data-export.md) | Excel 导出字段、筛选语义及回归测试 |
 | [md-order-number-and-date-lock.md](./md-order-number-and-date-lock.md) | MD 单号、创建日期、重编辑保护规则 |
 | [permanent-no-login.md](./permanent-no-login.md) | 当前永久免登录决策与禁止回潮事项 |

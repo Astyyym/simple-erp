@@ -58,9 +58,29 @@
 把后续命令切碎（实测 `：` 吃掉了 `%DISTDIR%` 的 `%`，输出成 `目录?DISTDIR`）。
 **截断到前 59 行仍复现**，证明与文件长度无关，只与该行本身有关。
 
-**修复（已落地）**：`打包Windows安装包.bat` 转 **GBK + CRLF**，`chcp 65001` → `chcp 936`。
-中文 Windows 控制台原生就是 936，GBK 与它一致，无解析漂移。注意 `打包Windows桌面版.bat`、`setup.bat`、`dev_start.bat`
-若也含 `chcp 65001` + 中文 echo，同样风险，改动时一并处理。
+> **2026-10-12 复测：没能复现「UTF-8 + CRLF + chcp 65001 会错位」。**
+> 受控实验（真实 `cmd.exe`，同一含中文 + 全角 `：` 紧跟 `%变量%` 的脚本，2×2 对照）：
+>
+> | 编码 | chcp | 行尾 | 结果 |
+> |---|---|---|---|
+> | UTF-8 | 65001 | **CRLF** | ✓ 全部步骤执行，`copy` 成功 |
+> | UTF-8 | 65001 | LF | ✗ 跳过（stdout 空） |
+> | GBK | 936 | **CRLF** | ✓ 全部步骤执行，`copy` 成功 |
+> | GBK | 936 | LF | ✗ 跳过（stdout 空） |
+>
+> 结论：**行尾是决定性变量，编码/chcp 在本实验里不是。** 所以：
+> - **不要**以「编码不是 UTF-8」为理由去转 GBK。GBK+936 与 UTF-8+65001 在 CRLF 下等价；
+>   UTF-8 反而对 git/编辑器/CI 更友好，也没有「测试按 UTF-8 读会炸」的连带坑。
+> - 上表 2026-10-11 那次观察到的错位，**未能复现，成因存疑**——当时的状态无法排除
+>   `core.autocrlf` 检出或编辑器保存引入的隐式差异。它留下的实证结论只有一条：
+>   **行尾必须 CRLF**（与根因一同源），这条有 2×2 对照支撑。
+> - 现有落点因此保持不变：4 个 `.bat` 都是 CRLF，`.gitattributes` 钉死 `eol=crlf`，
+>   `tests/test_windows_packaging.py::test_all_batch_scripts_have_crlf_line_endings`
+>   对全部 `*.bat` 断言 CRLF 且无裸 LF。**没有**做任何 GBK 转换（`打包Windows安装包.bat`
+>   是 v3.8.0 遗留的 GBK，可跑，但不作为其他脚本的模板）。
+
+**修复（已落地）**：`打包Windows安装包.bat` 在 v3.8.0 期间被转成 **GBK + `chcp 936`**（当时按本条判断）。
+按 2026-10-12 复测，**这不是必需项**；其他脚本保持 **UTF-8 + CRLF** 即可，不要跟风转换。
 
 **连带坑：改编码后要同步测试的读取编码。** `tests/test_installer_packaging.py` 原先用
 `read_text(encoding="utf-8")` 读这个 `.bat`，脚本转 GBK 后立刻 `UnicodeDecodeError`

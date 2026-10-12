@@ -34,6 +34,33 @@ def test_pyinstaller_bundles_only_generic_configuration():
     assert "packaging\\default_config.json" in bat
 
 
+def test_all_batch_scripts_have_crlf_line_endings():
+    """`.bat` 必须是 CRLF，否则 cmd.exe 行式解析失步、步骤被静默跳过。
+
+    受控实验（2026-10-12，真实 cmd.exe，2×2 对照）确认**决定因素是行尾、不是编码**：
+
+    | 编码 | chcp | 行尾 | 结果 |
+    |---|---|---|---|
+    | UTF-8 | 65001 | CRLF | ✓ 全部步骤执行 |
+    | UTF-8 | 65001 | LF | ✗ 跳过（stdout 空） |
+    | GBK | 936 | CRLF | ✓ 全部步骤执行 |
+    | GBK | 936 | LF | ✗ 跳过（stdout 空） |
+
+    所以**不要**以「编码不是 UTF-8」为理由去转 GBK——UTF-8 + CRLF 完全正常。
+    详见 `skills/simple-business-erp-development/references/windows-bat-crlf-invocation.md`。
+
+    用 `read_bytes` 数字节，**不要**用 `read_text().splitlines()` 或
+    `grep -c $'\\r'`：两者都会把行尾 normalize/吞掉，导致 LF-only 也判成通过。
+    """
+    scripts = sorted(ROOT.glob("*.bat"))
+    assert scripts, "根目录应存在批处理脚本"
+    for script in scripts:
+        raw = script.read_bytes()
+        bare_lf = raw.count(b"\n") - raw.count(b"\r\n")
+        assert raw.count(b"\r\n") > 0, f"{script.name} 不是 CRLF 行尾（cmd.exe 会解析失步）"
+        assert bare_lf == 0, f"{script.name} 含 {bare_lf} 个裸 LF，行尾混用会让 cmd.exe 静默跳过步骤"
+
+
 def test_source_health_and_page_expose_exact_authorized_version(monkeypatch):
     from erp import create_app
 
