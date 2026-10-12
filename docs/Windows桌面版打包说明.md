@@ -54,7 +54,7 @@ winget install --id JRSoftware.InnoSetup
 打包Windows桌面版.bat
 ```
 
-当前 PyInstaller one-folder 产物目录（本轮为 `dist\local-v3.8.0\简单ERP\`）：
+当前 PyInstaller one-folder 产物目录（本轮为 `dist\local-v3.9.0\简单ERP\`）：
 
 ```text
 dist\local-vX.Y.Z\简单ERP\
@@ -73,6 +73,8 @@ dist\simple-erp-windows-vX.Y.Z.zip
 仅本地存在 ZIP/EXE 不能证明其已上传 GitHub Releases；推送源码、构建包和发布 Release 是不同状态。
 
 本轮 `v2.0.0` 为独立新目录 `dist\local-v2.0.0\简单ERP\` 和 `dist\simple-erp-windows-v2.0.0.zip`。由当时Windows源码fresh构建，未覆盖上述常规目录或旧包。ZIP完整解压后使用；根配置与冻结内置配置都来自 `packaging/default_config.json`，不是本机config。Windows产品版本保留精确 `v2.0.0`，数字文件版本为 `2.0.0.0`。
+
+当前 `v3.9.0` 在 v3.8.0 之上交付**历史成本人工补录（销售单）**：零建档/先卖后补路径下的老销售单可人工填成本、系统补快照并留痕（**只补利润、不动库存**，库存三表逐行不变）；新增 `order_items.cost_source` 标记（真实快照不可覆盖 / `backfill` 可再修正，幂等加列、不升 schema 版本）；补录后该单禁止重编辑，已有有效退货时拒绝再修正。产物为 `dist\local-v3.9.0\简单ERP\`、`dist\simple-erp-setup-v3.9.0.exe` 和 `dist\simple-erp-windows-v3.9.0.zip`，同样 fresh 构建、只含通用配置、不携带业务/演示/测试数据。Windows 产品版本 `v3.9.0`，数字文件版本 `3.9.0.0`。**未验**：真实门店数据与桌面 EXE；目标打印机实打（10 行单 / 11 行单）。
 
 当前 `v3.8.0` 在 v3.7.0 之上交付**单联 10 行续打、开单行工具条、一键清空数据与打印渲染提速**：单联容量 8 → **10 行**（压单元格内边距 1.6→0.9mm，字号不动），非末联给「本张合计」+ 续打提示行并强制换联、末联给「本单合计」+ 页脚；四类开单表格下方新增 `[新增一行] [删除一行] [一键清空]` 工具条；设置页新增「清空所有数据」（保留 `backups/`+`legacy_archive/`+数据目录记忆+库文件，保留当日 MD 流水高位，清前自动 `pre_purge` 备份 + 输确认词）；「保存并打印」PDF 渲染 **2 次 → 1 次**（1.9s → 0.822s）。产物为 `dist\local-v3.8.0\简单ERP\`、`dist\simple-erp-setup-v3.8.0.exe` 和 `dist\simple-erp-windows-v3.8.0.zip`，同样 fresh 构建、只含通用配置、不携带业务/演示/测试数据。Windows 产品版本 `v3.8.0`，数字文件版本 `3.8.0.0`。**未验**：目标打印机实打（10 行单 / 11 行单）。
 
