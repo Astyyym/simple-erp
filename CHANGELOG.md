@@ -22,7 +22,7 @@
 - **零改聚合**：分析/利润服务本就按 `cost_total_micro IS NULL` 判定未知成本，**补录数据落库即自动生效**。连锁效果：补录后该单进入退货来源下拉，可按补录成本参与关联退货（商品未启用库存时退货仍被拒绝）；分析页该单离开「未覆盖」范围，毛利参与计算。
 - **顺带修掉 v3.8.0 遗留回归**：`tests/test_installer_packaging.py` 两条契约测试仍按 UTF-8 读已改成 GBK 的 `打包Windows安装包.bat` → `UnicodeDecodeError`、全量 2 failed。改为统一走 `_build_script_text()`（GBK 解码）后通过。脚本内容本身完好。
 - **新增 `.bat` 行尾契约测试与根因更正**：受控实验（真实 `cmd.exe`，2×2 对照）确认**决定因素是行尾、不是编码**——UTF-8+CRLF 与 GBK+CRLF 均正常，LF 一律跳过。因此**没有**把 `setup.bat`/`打包Windows桌面版.bat` 转 GBK（此前打算建立在被推翻的说法上，已取消）。新增 `test_all_batch_scripts_have_crlf_line_endings` 对全部 `*.bat` 断言 CRLF 且无裸 LF（用 `read_bytes` 数字节，避免 normalize 误判）。
-- 本轮验收：全量 pytest **876 passed / 0 skipped / 0 failed**（v3.8.0 基线 855 + 新增 21）、前端 Node **57 passed**；新增 `tests/test_cost_backfill.py` 20 条行为测试（RED 已确认 19 failed）。隔离端到端真实 HTTP 页面走通：零建档缺成本 → 分析「未覆盖」→ 列表「缺成本」徽标 → `cost=missing` 筛选 → 补录页双披露 → POST 补录 → 详情页「人工补录」+「含人工补录成本」→ 落库 60.00 元/120.00 元/`backfill` → **库存三表逐行一致、流水 0 条不变** → 分析毛利 8000 分 → 退货来源下拉 0 条 → 1 条 → 编辑入口 HTTP 400。**未验**：真实门店数据与桌面 EXE（正式库当前为空，功能面向「以后先卖后补」）；目标打印机实打（10 行单 / 11 行单）仍未验。
+- 本轮验收：全量 pytest **876 passed / 0 skipped / 0 failed**（v3.8.0 基线 855 + 新增 21）、前端 Node **57 passed**；新增 `tests/test_cost_backfill.py` 20 条行为测试（RED 已确认 19 failed）。隔离端到端真实 HTTP 页面走通：零建档缺成本 → 分析「未覆盖」→ 列表「缺成本」徽标 → `cost=missing` 筛选 → 补录页双披露 → POST 补录 → 详情页「人工补录」+「含人工补录成本」→ 落库 60.00 元/120.00 元/`backfill` → **库存三表逐行一致、流水 0 条不变** → 分析毛利 8000 分 → 退货来源下拉 0 条 → 1 条 → 编辑入口 HTTP 400。**用户侧人工验收（2026-10-12，已确认完成）**：真实门店数据上的补录流程已走通；目标打印机实打（10 行单 / 11 行单）已完成——**PDF 分联正确且纸面位置与字迹已实机确认**。非中文 Windows / 无 WebView2 / 中文用户目录路径下的安装行为仍未验。
 - 产物：`dist\local-v3.9.0\简单ERP\`、`dist\simple-erp-setup-v3.9.0.exe`、`dist\simple-erp-windows-v3.9.0.zip`（三种形态同源，per-user 安装不变）。
 
 ## v3.8.0 - 单联 10 行续打、开单行工具条、一键清空数据与打印渲染提速（2026-10-11，打包）
@@ -32,7 +32,7 @@
 - **四类开单表格下方新增行工具条**：`[新增一行] [删除一行] [一键清空]` 随表横向滚动、左缘对齐「产品名称」列；新增 `removeRow()`（删最后一行，仅剩 1 行时按钮 disabled）；右侧动作区只留「保存 / 保存并打印」。
 - **设置页新增「清空所有数据」**：清空全部业务数据（单据/明细、往来对象、商品与库存、账款、对账快照、审计）与 `product_images/`、`temp_pdf/`、`logs/` 内容并**回出厂设置**；**保留** `backups/`、`legacy_archive/`、数据目录路径记忆与库文件本身（清表不删库）。安全设计：执行前自动 `pre_purge` 备份 → 必须输入确认词「清空」→ 单事务执行、失败整体回滚 → 完成后提示完全退出重开；审计同时写入 `logs/purge.log`（因 `audit_logs` 会被同批清掉）。**新增 `order_number_sequences` 表保留当日 MD 流水高位**——清空后 `orders` 为空，仅靠现算会与已打出的纸质单撞号；`next_order_no` 在实时最大值与保留高位之间取大，正常开单口径不变。此为本批唯一超出「删表」范围的设计。
 - **「保存并打印」不再渲染两遍**：桌面预览页原先渲染 PDF 一遍、iframe 再请求一遍（实测一次点击 `generate_order_pdf` 调用 **2 次**，合计约 1.9s）。改为预览页只渲染工具栏、PDF 交给 iframe 请求一次；启动后台线程预热 WeasyPrint 导入（把首次约 0.75s 挪到开机）。实测计数 **2 → 1**、一次点击 **0.822s**（原 1.9s）。
-- 本轮验收：全量 pytest **855 passed / 0 skipped**、前端 Node **57 passed**；新增 `test_pdf_render_once.py`（8）、`test_purge_all_data.py`（10）等契约测试。隔离库实测：16 张业务表全清、`backups/`+`legacy_archive/` 保留、配置回出厂、MD/NH 单号续排（`MD202610110007` → 清空后 `...0008`）。**未验**：目标打印机实打（10 行单 / 11 行单各一张）——**PDF 分联正确不等于纸面位置与字迹已确认**。
+- 本轮验收：全量 pytest **855 passed / 0 skipped**、前端 Node **57 passed**；新增 `test_pdf_render_once.py`（8）、`test_purge_all_data.py`（10）等契约测试。隔离库实测：16 张业务表全清、`backups/`+`legacy_archive/` 保留、配置回出厂、MD/NH 单号续排（`MD202610110007` → 清空后 `...0008`）。**目标打印机实打（10 行单 / 11 行单各一张）已完成（用户侧人工验收，2026-10-12 确认）**——**PDF 分联正确且纸面位置与字迹已实机确认**。
 - 产物：`dist\local-v3.8.0\简单ERP\`、`dist\simple-erp-setup-v3.8.0.exe`、`dist\simple-erp-windows-v3.8.0.zip`（三种形态同源，per-user 安装不变）。
 
 ## v3.7.0 - 四类开单连续纸打印：版式回归与字号修复（2026-10-11，打包）
