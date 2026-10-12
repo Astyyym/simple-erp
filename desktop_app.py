@@ -23,8 +23,47 @@ if os.path.isdir(GTK_BIN):
 # Mark desktop shell so UI can enable native folder picker affordances.
 os.environ.setdefault("ERP_DESKTOP", "1")
 
-APP_URL = "http://127.0.0.1:5000"
+APP_URL_DEFAULT_PORT = 5000
 _window = None
+
+
+def _valid_port(value: Any) -> int | None:
+    """把候选值收敛成合法端口；非法返回 None。
+
+    不抛异常：端口解析失败不该让桌面壳起不来，回退默认值即可。
+    """
+    try:
+        port = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return port if 1 <= port <= 65535 else None
+
+
+def resolve_port() -> int:
+    """桌面壳监听端口：`ERP_PORT` 环境变量 > `config.json` 的 `port` > 5000。
+
+    原先端口在 `APP_URL` / `_run_server` / `_port_is_open` 三处**写死 5000**，
+    既不读 `config.json` 也不读 `ERP_PORT`——于是「换个端口跑隔离实例」根本做不到，
+    只能让 5000 空着等它。现在与 `app/app.py` 同一口径（env 覆盖 config），
+    隔离冒烟/预览可用 `ERP_PORT` 避开端口占用。
+
+    **host 仍固定 `127.0.0.1`，不从配置读**：产品永久免登录，
+    绝不能因为 `config.json` 里写了 `0.0.0.0` 就把服务暴露到局域网/公网。
+    """
+    env_port = _valid_port(os.environ.get("ERP_PORT"))
+    if env_port is not None:
+        return env_port
+    try:
+        from erp.config import load_config
+
+        return _valid_port(load_config().get("port")) or APP_URL_DEFAULT_PORT
+    except Exception:  # noqa: BLE001 — 配置读不到不该阻止启动，回退默认端口
+        return APP_URL_DEFAULT_PORT
+
+
+def _app_url(port: int | None = None) -> str:
+    """桌面壳要加载的地址；host 恒为回环地址（见 `resolve_port` 的安全约束）。"""
+    return f"http://127.0.0.1:{port if port is not None else resolve_port()}"
 
 # Window background while WebView2 cold-starts, so the frame is never a stark
 # white flash before the splash paints. Matches the splash light background.
@@ -144,7 +183,13 @@ class DesktopApi:
             return {"ok": False, "message": f"保存失败：{exc}"}
 
 
-def _port_is_open(host: str = "127.0.0.1", port: int = 5000) -> bool:
+def _port_is_open(host: str = "127.0.0.1", port: int | None = None) -> bool:
+    """端口是否已被监听；`port=None` 时按 `resolve_port()` 解析。
+
+    保持**零参可调用**：既有启动测试用零参 lambda 替换本函数，签名不能要求实参。
+    """
+    if port is None:
+        port = resolve_port()
     with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
         sock.settimeout(0.3)
         return sock.connect_ex((host, port)) == 0
@@ -168,7 +213,8 @@ def _run_server(
 ) -> None:
     try:
         app = app if app is not None else _create_app()
-        serve(app, host="127.0.0.1", port=5000, threads=8)
+        # host 固定回环：产品永久免登录，不得从配置读成 0.0.0.0。
+        serve(app, host="127.0.0.1", port=resolve_port(), threads=8)
     except Exception as exc:
         logging.getLogger(__name__).exception("本地服务启动失败")
         if startup_errors is None:
@@ -207,8 +253,12 @@ def _window_title() -> str:
 
 def main() -> None:
     global _window
-    os.environ.setdefault("ERP_PORT", "5000")
-    already_running = _port_is_open()
+    # 端口只解析一次并贯穿本次启动（探测/绑定/加载地址必须同一个值，
+    # 否则探测的是一个端口、绑的是另一个，会误判「已在运行」）。
+    port = resolve_port()
+    os.environ.setdefault("ERP_PORT", str(port))
+    app_url = _app_url(port)
+    already_running = _port_is_open(port=port)
     startup_errors: queue.Queue[Exception] = queue.Queue()
     app = None
     if not already_running:
@@ -236,7 +286,7 @@ def main() -> None:
     try:
         import webview
     except Exception:
-        webbrowser.open(APP_URL)
+        webbrowser.open(app_url)
         while True:
             time.sleep(3600)
 
@@ -278,7 +328,7 @@ def main() -> None:
                 remaining = SPLASH_MIN_SECONDS - (time.perf_counter() - started)
                 if remaining > 0:
                     time.sleep(remaining)
-            _window.load_url(APP_URL)
+            _window.load_url(app_url)
         except Exception as exc:  # never leave a permanent splash on failure
             logging.getLogger(__name__).exception("切换到主界面失败")
             _window.load_html(_error_html(str(exc)))
