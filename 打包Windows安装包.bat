@@ -1,22 +1,22 @@
 @echo off
-chcp 65001 >nul
+chcp 936 >nul
 cd /d "%~dp0"
 
 rem ============================================================
-rem  ç®€å•ERP Windows äº¤ä»˜æ„å»ºï¼ˆä¸€æ¬¡å‡ºé½ä¸‰ç§äº§ç‰©ï¼‰
+rem  ¼òµ¥ERP Windows ½»¸¶¹¹½¨£¨Ò»´Î³öÆëÈıÖÖ²úÎï£©
 rem
-rem  1) PyInstaller one-folder äº§ç‰©  ->  dist\local-<ç‰ˆæœ¬>\ç®€å•ERP\
-rem  2) Inno Setup ç¼–è¯‘å®‰è£…åŒ…        ->  dist\simple-erp-setup-<ç‰ˆæœ¬>.exe
-rem  3) äº¤ä»˜ ZIP                     ->  dist\simple-erp-windows-<ç‰ˆæœ¬>.zip
+rem  1) PyInstaller one-folder ²úÎï  ->  dist\local-<°æ±¾>\¼òµ¥ERP\
+rem  2) Inno Setup ±àÒë°²×°°ü        ->  dist\simple-erp-setup-<°æ±¾>.exe
+rem  3) ½»¸¶ ZIP                     ->  dist\simple-erp-windows-<°æ±¾>.zip
 rem
-rem  ä¸‰ç§å½¢æ€ç¼ºä¸€ä¸å¯ï¼ˆAGENTS.mdã€Œäº¤ä»˜ä¹ æƒ¯ã€ï¼‰ï¼š
-rem    ç»¿è‰²ç‰ˆç›®å½• = æœ¬æœºç›´æ¥è·‘ï¼›å®‰è£…åŒ… = é—¨åº—ç”¨æˆ·è£…ï¼›ZIP = å‘ç»™åˆ«äºº
-rem  ç‰ˆæœ¬åªæœ‰ä¸€ä¸ªçœŸæºï¼šæ ¹ç›®å½• VERSION
+rem  ÈıÖÖĞÎÌ¬È±Ò»²»¿É£¨AGENTS.md¡¸½»¸¶Ï°¹ß¡¹£©£º
+rem    ÂÌÉ«°æÄ¿Â¼ = ±¾»úÖ±½ÓÅÜ£»°²×°°ü = ÃÅµêÓÃ»§×°£»ZIP = ·¢¸ø±ğÈË
+rem  °æ±¾Ö»ÓĞÒ»¸öÕæÔ´£º¸ùÄ¿Â¼ VERSION
 rem ============================================================
 
 set /p APPVER=<VERSION
 if "%APPVER%"=="" (
-  echo è¯»å– VERSION å¤±è´¥ã€‚
+  echo ¶ÁÈ¡ VERSION Ê§°Ü¡£
   pause
   exit /b 1
 )
@@ -25,72 +25,72 @@ set DISTDIR=dist\local-%APPVER%
 set WORKDIR=build\local-%APPVER%
 
 if not exist .venv-win\Scripts\python.exe (
-  echo æ­£åœ¨åˆ›å»º Windows æ‰“åŒ…ç¯å¢ƒ .venv-win ...
+  echo ÕıÔÚ´´½¨ Windows ´ò°ü»·¾³ .venv-win ...
   py -V:Astral/CPython3.11.15 -m venv .venv-win
   if errorlevel 1 py -3.14 -m venv .venv-win
   if errorlevel 1 (
-    echo åˆ›å»º Windows Python è™šæ‹Ÿç¯å¢ƒå¤±è´¥ï¼Œè¯·å…ˆå®‰è£…å¯ç”¨çš„ Windows Pythonã€‚
+    echo ´´½¨ Windows Python ĞéÄâ»·¾³Ê§°Ü£¬ÇëÏÈ°²×°¿ÉÓÃµÄ Windows Python¡£
     pause
     exit /b 1
   )
 )
 
-echo æ­£åœ¨å®‰è£…/æ£€æŸ¥æ‰“åŒ…ä¾èµ–...
+echo ÕıÔÚ°²×°/¼ì²é´ò°üÒÀÀµ...
 .venv-win\Scripts\python.exe -m pip install --upgrade pip
 .venv-win\Scripts\pip.exe install -r requirements.txt pyinstaller pywebview
 if errorlevel 1 (
-  echo ä¾èµ–å®‰è£…å¤±è´¥ã€‚
+  echo ÒÀÀµ°²×°Ê§°Ü¡£
   pause
   exit /b 1
 )
 
 echo.
-echo [1/3] æ­£åœ¨æ‰“åŒ… one-folder ç¨‹åºç›®å½•ï¼š%DISTDIR%\ç®€å•ERP
-rem ç”¨ python -m PyInstallerï¼šMSYS ä¸‹ç›´æ¥è°ƒ pyinstaller.exe å¯èƒ½æ²¡æœ‰è¾“å‡º
-.venv-win\Scripts\python.exe -m PyInstaller ç®€å•ERP.spec --clean --noconfirm --distpath %DISTDIR% --workpath %WORKDIR%
+echo [1/3] ÕıÔÚ´ò°ü one-folder ³ÌĞòÄ¿Â¼£º%DISTDIR%\¼òµ¥ERP
+rem ÓÃ python -m PyInstaller£ºMSYS ÏÂÖ±½Óµ÷ pyinstaller.exe ¿ÉÄÜÃ»ÓĞÊä³ö
+.venv-win\Scripts\python.exe -m PyInstaller ¼òµ¥ERP.spec --clean --noconfirm --distpath %DISTDIR% --workpath %WORKDIR%
 if errorlevel 1 (
-  echo PyInstaller æ‰“åŒ…å¤±è´¥ã€‚
+  echo PyInstaller ´ò°üÊ§°Ü¡£
   pause
   exit /b 1
 )
 
-rem æ‰‹åŠ¨ --distpath ä¸ä¼šç”Ÿæˆäº§ç‰©æ ¹ config.jsonï¼ˆåªæœ‰ _internal\config.jsonï¼‰ï¼Œå¿…é¡»è¡¥é½ã€‚
-if not exist "%DISTDIR%\ç®€å•ERP\config.json" copy packaging\default_config.json "%DISTDIR%\ç®€å•ERP\config.json" >nul
+rem ÊÖ¶¯ --distpath ²»»áÉú³É²úÎï¸ù config.json£¨Ö»ÓĞ _internal\config.json£©£¬±ØĞë²¹Æë¡£
+if not exist "%DISTDIR%\¼òµ¥ERP\config.json" copy packaging\default_config.json "%DISTDIR%\¼òµ¥ERP\config.json" >nul
 
 set ISCC=%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe
 if not exist "%ISCC%" set ISCC=%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe
 if not exist "%ISCC%" set ISCC=%ProgramFiles%\Inno Setup 6\ISCC.exe
 if not exist "%ISCC%" (
-  echo æœªæ‰¾åˆ° Inno Setup 6 ç¼–è¯‘å™¨ ISCC.exeã€‚
-  echo å®‰è£…æ–¹å¼ï¼šwinget install --id JRSoftware.InnoSetup
+  echo Î´ÕÒµ½ Inno Setup 6 ±àÒëÆ÷ ISCC.exe¡£
+  echo °²×°·½Ê½£ºwinget install --id JRSoftware.InnoSetup
   pause
   exit /b 1
 )
 
 echo.
-echo [2/3] æ­£åœ¨ç¼–è¯‘å®‰è£…åŒ…ï¼šdist\simple-erp-setup-%APPVER%.exe
-"%ISCC%" /Qp /DAppVersion=%APPVER% /DSourceDir=%~dp0%DISTDIR%\ç®€å•ERP /DOutputDir=%~dp0dist packaging\installer\ç®€å•ERP.iss
+echo [2/3] ÕıÔÚ±àÒë°²×°°ü£ºdist\simple-erp-setup-%APPVER%.exe
+"%ISCC%" /Qp /DAppVersion=%APPVER% /DSourceDir=%~dp0%DISTDIR%\¼òµ¥ERP /DOutputDir=%~dp0dist packaging\installer\¼òµ¥ERP.iss
 if errorlevel 1 (
-  echo å®‰è£…åŒ…ç¼–è¯‘å¤±è´¥ã€‚
+  echo °²×°°ü±àÒëÊ§°Ü¡£
   pause
   exit /b 1
 )
 
 echo.
-echo [3/3] æ­£åœ¨ç”Ÿæˆäº¤ä»˜ ZIPï¼šdist\simple-erp-windows-%APPVER%.zip
+echo [3/3] ÕıÔÚÉú³É½»¸¶ ZIP£ºdist\simple-erp-windows-%APPVER%.zip
 .venv-win\Scripts\python.exe packaging\make_release_zip.py --version %APPVER%
 if errorlevel 1 (
-  echo ZIP ç”Ÿæˆå¤±è´¥ã€‚
+  echo ZIP Éú³ÉÊ§°Ü¡£
   pause
   exit /b 1
 )
 
 echo.
-echo æ„å»ºå®Œæˆï¼Œä¸‰ç§äº§ç‰©é½å¤‡ï¼š
-echo   ç»¿è‰²ç‰ˆç›®å½•ï¼š%DISTDIR%\ç®€å•ERP\
-echo   å®‰è£…åŒ…ã€€ã€€ï¼šdist\simple-erp-setup-%APPVER%.exe
-echo   äº¤ä»˜ ZIPã€€ï¼šdist\simple-erp-windows-%APPVER%.zip
+echo ¹¹½¨Íê³É£¬ÈıÖÖ²úÎïÆë±¸£º
+echo   ÂÌÉ«°æÄ¿Â¼£º%DISTDIR%\¼òµ¥ERP\
+echo   °²×°°ü¡¡¡¡£ºdist\simple-erp-setup-%APPVER%.exe
+echo   ½»¸¶ ZIP¡¡£ºdist\simple-erp-windows-%APPVER%.zip
 echo.
-echo å®‰è£…åŒ…ä¸º per-user å®‰è£…ï¼ˆ%%LOCALAPPDATA%%\Programs\ç®€å•ERPï¼‰ï¼Œä¸éœ€è¦ç®¡ç†å‘˜æƒé™ï¼›
-echo ä¸šåŠ¡æ•°æ®åœ¨ã€Œæ–‡æ¡£\ç®€å•ERPæ•°æ®ã€ï¼Œå®‰è£…/å‡çº§/å¸è½½éƒ½ä¸ä¼šåˆ é™¤ã€‚
+echo °²×°°üÎª per-user °²×°£¨%%LOCALAPPDATA%%\Programs\¼òµ¥ERP£©£¬²»ĞèÒª¹ÜÀíÔ±È¨ÏŞ£»
+echo ÒµÎñÊı¾İÔÚ¡¸ÎÄµµ\¼òµ¥ERPÊı¾İ¡¹£¬°²×°/Éı¼¶/Ğ¶ÔØ¶¼²»»áÉ¾³ı¡£
 pause
