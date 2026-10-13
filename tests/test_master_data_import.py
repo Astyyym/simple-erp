@@ -49,8 +49,9 @@ def test_product_and_customer_excel_templates_have_extended_headers():
     assert "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" in product_response.content_type
     assert "attachment" in product_response.headers["Content-Disposition"]
     product_sheet = load_workbook(io.BytesIO(product_response.data), read_only=True).active
+    # 决策变更（v14）：商品身份 = 单一名称，模板不再有「型号」列（型号直接写进商品名称）。
     assert list(next(product_sheet.iter_rows(values_only=True))) == [
-        "商品名称", "型号", "品牌", "单位", "默认价", "期初数量", "期初成本（元）", "备注"
+        "商品名称", "品牌", "单位", "默认价", "期初数量", "期初成本（元）", "备注"
     ]
 
     assert customer_response.status_code == 200
@@ -76,7 +77,7 @@ def test_product_import_preview_then_confirm_writes_rows():
     fresh = _name("新增商品")
     with get_db() as conn:
         conn.execute(
-            "INSERT INTO products(name, spec, unit, default_price_cents) VALUES (?, '', '箱', 999)",
+            "INSERT INTO products(name, unit, default_price_cents) VALUES (?, '箱', 999)",
             (existing,),
         )
     csv_data = f"商品名称,价格\n{fresh},12.34\n{existing},88\n{fresh},20\n空价商品,\n负价商品,-1\n,10\n".encode("utf-8-sig")
@@ -145,7 +146,7 @@ def test_import_rejects_bad_suffix_header_empty_file_and_oversize_without_500():
     keep_name = _name("保留商品")
     with get_db() as conn:
         conn.execute(
-            "INSERT INTO products(name, spec, unit, default_price_cents) VALUES (?, '', '个', 100)",
+            "INSERT INTO products(name, unit, default_price_cents) VALUES (?, '个', 100)",
             (keep_name,),
         )
     client = create_app().test_client()
@@ -184,29 +185,34 @@ def test_customer_csv_import_accepts_gb18030():
         assert conn.execute("SELECT id FROM customers WHERE name=?", (fresh,)).fetchone() is not None
 
 
-def test_product_import_supports_old_and_new_headers_and_distinct_specs():
+def test_product_import_rejects_spec_header_and_still_supports_two_column_header():
+    """决策变更（v14）：商品身份 = 单一名称，`spec`（型号）已并入名称。
+
+    原「同名不同型号」用例依赖已删除的型号列，改为钉住新契约：
+    - 含「型号」列的旧文件必须**明确报错（表头错误）**，不静默丢型号、也不落库；
+    - 旧的两列模板「商品名称,价格」仍可导入（单位回落「个」），旧库不被阻塞。
+    """
     init_db()
     name = _name("同名型号商品")
     deleted = _name("回收站商品")
     with get_db() as conn:
-        conn.execute("INSERT INTO products(name, spec, unit, default_price_cents) VALUES (?, 'DN20', '个', 100)", (name,))
-        conn.execute("INSERT INTO products(name, spec, unit, default_price_cents, deleted_at) VALUES (?, 'DN25', '个', 100, CURRENT_TIMESTAMP)", (deleted,))
+        conn.execute("INSERT INTO products(name, unit, default_price_cents) VALUES (?, '个', 100)", (name,))
+        conn.execute("INSERT INTO products(name, unit, default_price_cents, deleted_at) VALUES (?, '个', 100, CURRENT_TIMESTAMP)", (deleted,))
 
-    csv_data = (
-        f"商品名称,型号,价格\n{name}, DN20 ,99\n{name},DN25,20\n{name},,30\n{name},DN25,40\n{deleted},DN25,50\n"
+    # 含「型号」列的旧文件：整表头精确匹配挡下，明确报错。
+    legacy_csv = (
+        f"商品名称,型号,价格\n{name}, DN20 ,99\n{name},DN25,20\n{deleted},DN25,50\n"
     ).encode("utf-8-sig")
     client = create_app().test_client()
-    preview = _upload(client, "/products/import", "products.csv", csv_data)
-    html = preview.get_data(as_text=True)
-    assert preview.status_code == 200
-    # DN20 已存在→跳过；DN25 新增；空型号新增；DN25 重复→跳过；回收站占名→错误
-    assert "将新增：2" in html and "跳过：2" in html and "错误：1" in html
-
-    confirmed = _confirm(client, "/products/import/confirm", _preview_json(html))
-    assert confirmed.status_code == 200
+    rejected = _upload(client, "/products/import", "products.csv", legacy_csv)
+    rejected_html = rejected.get_data(as_text=True)
+    assert rejected.status_code == 400
+    assert "表头错误" in rejected_html
+    # 报错即零写入：既有商品价不动，回收站记录不动，也不新增。
     with get_db() as conn:
-        rows = conn.execute("SELECT id, spec, default_price_cents FROM products WHERE name=? ORDER BY id", (name,)).fetchall()
-    assert [(row["spec"], row["default_price_cents"]) for row in rows] == [("DN20", 100), ("DN25", 2000), ("", 3000)]
+        assert conn.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 2
+        assert conn.execute("SELECT default_price_cents FROM products WHERE name=?", (name,)).fetchone()[0] == 100
+        assert conn.execute("SELECT deleted_at FROM products WHERE name=?", (deleted,)).fetchone()[0] is not None
 
     # 旧两列模板仍可导入（单位回落「个」）。
     old_name = _name("旧格式商品")
@@ -216,5 +222,5 @@ def test_product_import_supports_old_and_new_headers_and_distinct_specs():
     assert old_preview.status_code == 200
     _confirm(client, "/products/import/confirm", _preview_json(old_html))
     with get_db() as conn:
-        old_row = conn.execute("SELECT spec, unit, default_price_cents FROM products WHERE name=?", (old_name,)).fetchone()
-    assert old_row["spec"] == "" and old_row["unit"] == "个" and old_row["default_price_cents"] == 888
+        old_row = conn.execute("SELECT unit, default_price_cents FROM products WHERE name=?", (old_name,)).fetchone()
+    assert old_row["unit"] == "个" and old_row["default_price_cents"] == 888

@@ -63,7 +63,7 @@ def _load_purchase_print_context(order_id: int, *, is_return: bool):
         if not order['customer_id'] or not (order['customer_name'] or '').strip():
             raise ValueError(f'{label}未关联明确往来对象，需人工确认，不能打印')
         items = conn.execute(
-            f'SELECT product_name,spec,unit,quantity_3dp,{price} AS unit_price_cents,subtotal_cents '
+            f'SELECT product_name,unit,quantity_3dp,{price} AS unit_price_cents,subtotal_cents '
             f'FROM {item_table} WHERE {owner}=? ORDER BY id', (order_id,),
         ).fetchall()
     return order, items
@@ -83,7 +83,7 @@ def generate_purchase_pdf(order_id: int, *, is_return: bool = False) -> Path:
         'notes': '',
     }
     public_items = [{
-        'product_name': i['product_name'], 'spec': i['spec'] or '', 'unit': i['unit'],
+        'product_name': i['product_name'], 'unit': i['unit'],
         'quantity': format_quantity_3dp(i['quantity_3dp'], i['unit']),
         'unit_price_cents': int(i['unit_price_cents']), 'subtotal_cents': int(i['subtotal_cents']),
     } for i in items]

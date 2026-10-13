@@ -90,7 +90,7 @@
         const response = await fetch(detail.dataset.detailUrl);
         const data = await response.json();
         if (!response.ok) throw new Error(data.error);
-        window.alert(`${data.order.type_label} · ${data.order.direction}\n${data.order.order_no}\n` + data.items.map(item => `${item.product_name} ${item.spec || ''} × ${item.quantity} ${item.unit} = ¥${(item.subtotal_cents / 100).toFixed(2)}`).join('\n') + `\n整单交易金额：¥${(data.order.total_amount_cents / 100).toFixed(2)}`);
+        window.alert(`${data.order.type_label} · ${data.order.direction}\n${data.order.order_no}\n` + data.items.map(item => `${item.product_name} × ${item.quantity} ${item.unit} = ¥${(item.subtotal_cents / 100).toFixed(2)}`).join('\n') + `\n整单交易金额：¥${(data.order.total_amount_cents / 100).toFixed(2)}`);
       } catch (error) { showError(error.message); }
     }
   });

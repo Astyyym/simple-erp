@@ -14,7 +14,6 @@ from erp.services.master_data_quality import (
     ORIGIN_MANUAL,
     ORIGIN_ORDER,
     origin_label,
-    product_needs_completion,
     customer_needs_completion,
 )
 
@@ -38,9 +37,9 @@ def _audit_summaries(action: str) -> list[str]:
 def test_manual_creation_writes_manual_origin():
     init_db()
     create_customer("手工客户")
-    create_product("手工商品", "4kg", "个", 12000)
+    create_product("手工商品4kg", "个", 12000)
     assert _row("customers", "手工客户")["origin"] == ORIGIN_MANUAL
-    assert _row("products", "手工商品")["origin"] == ORIGIN_MANUAL
+    assert _row("products", "手工商品4kg")["origin"] == ORIGIN_MANUAL
 
 
 def test_zero_setup_order_auto_creates_with_order_origin_and_audit():
@@ -49,8 +48,7 @@ def test_zero_setup_order_auto_creates_with_order_origin_and_audit():
         "/orders/create",
         data={
             "customer_name": "零建档客户",
-            "product_name": "零建档灭火器",
-            "spec": "4kg",
+            "product_name": "零建档灭火器4kg",
             "unit": "个",
             "unit_price": "88",
             "quantity": "1",
@@ -60,7 +58,7 @@ def test_zero_setup_order_auto_creates_with_order_origin_and_audit():
     assert resp.status_code in (302, 303)
 
     customer = _row("customers", "零建档客户")
-    product = _row("products", "零建档灭火器")
+    product = _row("products", "零建档灭火器4kg")
     assert customer["origin"] == ORIGIN_ORDER
     assert product["origin"] == ORIGIN_ORDER
 
@@ -71,15 +69,15 @@ def test_zero_setup_order_auto_creates_with_order_origin_and_audit():
     assert any("零建档灭火器" in s and "MD" in s for s in product_logs)
 
 
-def test_same_name_same_spec_does_not_duplicate():
+def test_same_name_does_not_duplicate():
+    """同一名称重复开单只复用一条档案（v14 身份 = 名称）。"""
     client = _client()
     for _ in range(2):
         client.post(
             "/orders/create",
             data={
                 "customer_name": "去重客户",
-                "product_name": "重复商品",
-                "spec": "1个",
+                "product_name": "重复商品1个",
                 "unit": "个",
                 "unit_price": "10",
                 "quantity": "1",
@@ -87,13 +85,12 @@ def test_same_name_same_spec_does_not_duplicate():
             },
         )
     with get_db() as conn:
-        count = conn.execute("SELECT COUNT(*) AS c FROM products WHERE name='重复商品'").fetchone()["c"]
+        count = conn.execute("SELECT COUNT(*) AS c FROM products WHERE name='重复商品1个'").fetchone()["c"]
     assert count == 1
 
 
-# 注：手输「型号」目前传不到后端（开单明细缺 `spec` 字段，见计划 G-3），
-# 所以「同名不同型号建两条」要到 G 段二补齐 spec 通道后才能验证。
-# 本文件只验证「型号为空」这一零建档默认路径的行为。
+# v14：型号已并入名称，「同名不同型号建两条」由「不同名称建两条」承担，
+# 见 tests/test_zero_setup_entry.py::test_different_names_create_two_products。
 
 
 def test_import_writes_import_origin():
@@ -114,13 +111,19 @@ def test_import_writes_import_origin():
     assert _row("customers", "导入客户甲")["origin"] == ORIGIN_IMPORT
 
 
-def test_product_pending_completion_is_spec_empty_only():
+def test_product_side_pending_completion_is_gone_with_the_spec_column():
+    """决策变更（v14）：商品侧「待补全（型号为空）」随 spec 列删除 → 判定函数不再存在。
+
+    不保留「型号为空」口径：删列后该条件对所有商品恒为真，留着只会让筛选永远全亮。
+    客户侧「待补全（开单攒出且无联系方式）」不受影响，见下一条用例。
+    """
+    import erp.services.master_data_quality as quality
+
+    assert not hasattr(quality, "product_needs_completion")
     init_db()
-    # 型号为空 → 待补全；未启用库存不算待补全（那是零建档路径的正常状态）。
-    create_product("无型号商品", "", "个", 1000)
-    create_product("有型号商品", "4kg", "个", 1000)
-    assert product_needs_completion(_row("products", "无型号商品")) is True
-    assert product_needs_completion(_row("products", "有型号商品")) is False
+    # 未启用库存仍是零建档路径的正常状态：不建任何库存状态行。
+    create_product("无型号商品", "个", 1000)
+    create_product("有型号商品4kg", "个", 1000)
     with get_db() as conn:
         assert conn.execute("SELECT COUNT(*) AS c FROM product_inventory_state").fetchone()["c"] == 0
 
@@ -140,8 +143,7 @@ def test_zero_setup_customer_shows_in_todo_filter_then_leaves_after_completion()
         "/orders/create",
         data={
             "customer_name": "待补全客户",
-            "product_name": "随便商品",
-            "spec": "x",
+            "product_name": "随便商品x",
             "unit": "个",
             "unit_price": "5",
             "quantity": "1",
@@ -162,14 +164,14 @@ def test_zero_setup_customer_shows_in_todo_filter_then_leaves_after_completion()
     assert f"/customers/{cid}/edit" not in after
 
 
-def test_product_todo_filter_and_origin_label_on_list():
+def test_product_list_shows_origin_label_and_has_no_todo_filter():
+    """决策变更（v14）：商品列表只剩来源标记；`quality=todo` 不再是商品侧筛选。"""
     client = _client()
     client.post(
         "/orders/create",
         data={
             "customer_name": "商品筛选客户",
             "product_name": "空型号商品",
-            "spec": "",
             "unit": "个",
             "unit_price": "9",
             "quantity": "1",
@@ -179,13 +181,15 @@ def test_product_todo_filter_and_origin_label_on_list():
     page = client.get("/products/?quality=todo").get_data(as_text=True)
     assert "空型号商品" in page
     assert "开单攒出" in page  # 来源标记
+    # 商品侧「待补全」筛选随 spec 列删除 → 商品列表不再有档案筛选区。
+    assert 'class="list-facet"' not in page
 
 
 def test_g9_product_in_recycle_bin_is_reused_and_restored():
     client = _client()
     init_db()
-    # 开单明细目前不传 spec（G-3 属 G 段二），所以回收站档案用空型号来命中。
-    pid = create_product("回收站商品", "", "个", 10000)
+    # v14：明细只按名称匹配回收站档案（型号已并入名称）。
+    pid = create_product("回收站商品", "个", 10000)
     with get_db() as conn:
         conn.execute("UPDATE products SET deleted_at=CURRENT_TIMESTAMP, delete_reason='用户删除' WHERE id=?", (pid,))
 
@@ -221,8 +225,7 @@ def test_g9_customer_in_recycle_bin_is_reused_and_restored_without_new_row():
         "/orders/create",
         data={
             "customer_name": "回收站客户",
-            "product_name": "任意商品",
-            "spec": "z",
+            "product_name": "任意商品z",
             "unit": "个",
             "unit_price": "1",
             "quantity": "1",
@@ -248,8 +251,7 @@ def test_g9_historical_order_link_unchanged_after_reuse():
         data={
             "customer_id": str(cid),
             "customer_name": "历史关联客户",
-            "product_name": "历史商品",
-            "spec": "1",
+            "product_name": "历史商品1",
             "unit": "个",
             "unit_price": "10",
             "quantity": "2",
@@ -265,8 +267,7 @@ def test_g9_historical_order_link_unchanged_after_reuse():
         "/orders/create",
         data={
             "customer_name": "历史关联客户",
-            "product_name": "历史商品",
-            "spec": "1",
+            "product_name": "历史商品1",
             "unit": "个",
             "unit_price": "10",
             "quantity": "1",

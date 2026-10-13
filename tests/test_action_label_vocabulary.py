@@ -35,15 +35,15 @@ def _seed_documents():
     client = app.test_client()
     customer_id = create_customer("标签统一客户")
     # 销售单用「未启用库存」的商品 → 无库存流水 → 可编辑，才能验证「编辑」按钮。
-    plain_pid = create_product("标签统一无库存商品", "P1", "个", 3000)
+    plain_pid = create_product("标签统一无库存商品P1", "个", 3000)
     sale_id = create_order_from_typed_rows(
         customer_id, "MD202610101001",
-        [{"product_id": plain_pid, "product_name": "标签统一无库存商品", "spec": "P1", "unit": "个",
+        [{"product_id": plain_pid, "product_name": "标签统一无库存商品P1", "unit": "个",
           "quantity": "1", "unit_price_yuan": "30"}],
         status="saved", order_date="2026-10-10",
     )
     # 拿货单要求商品已启用库存。
-    stock_pid = create_product("标签统一库存商品", "T1", "个", 3000)
+    stock_pid = create_product("标签统一库存商品T1", "个", 3000)
     initialize_product(stock_pid, "10", "10", "2026-10-01", "系统上线期初", "label-unify-init", confirm_zero=False)
     purchase = create_purchase_order(
         "NH202610100001", "2026-10-10",
@@ -53,7 +53,7 @@ def _seed_documents():
     # 回收站要有已删除记录，否则行内按钮渲染不出来。
     draft_id = create_order_from_typed_rows(
         customer_id, "MD202610101002",
-        [{"product_id": plain_pid, "product_name": "标签统一无库存商品", "spec": "P1", "unit": "个",
+        [{"product_id": plain_pid, "product_name": "标签统一无库存商品P1", "unit": "个",
           "quantity": "1", "unit_price_yuan": "10"}],
         status="draft", order_date="2026-10-10",
     )

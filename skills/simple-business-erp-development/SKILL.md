@@ -1,7 +1,7 @@
 ---
 name: simple-business-erp-development
 description: Use when developing or verifying the local simple ERP project in this directory.
-version: 1.2.0
+version: 1.4.0
 author: Project
 license: MIT
 metadata:
@@ -23,6 +23,7 @@ metadata:
 - 技术边界：Flask + SQLite，可选 Windows PyWebView 桌面壳。
 - 当前产品永久免登录，默认仅本机 `127.0.0.1` 使用；不能暴露局域网/公网，也不能把“免登录”说成有权限保护。
 - 单号为 `MD` + `YYYYMMDD` + 四位流水；销售/退货共用当天流水，新建日期可改，重编辑保号保日期。
+- 商品身份 = **单一名称**（2026-10-13 / schema 14 起：型号并入名称、直接拼接；四张表的 `spec` 列已删除，导入不再接受「型号」列）。门店库升级前必须先跑 `tools/precheck_product_identity_merge.py`，撞名即中止交用户裁决，绝不静默合并。
 - 打印分两套纸型，不得混用：**四类开单**（销售/退货/拿货/退拿货）走 241mm 连续纸（逻辑页 215.9×139.7mm、页内左右各 7.3mm 版心）；**客户货款汇总、账款流水、往来对账单**走 A4 竖版（210×297mm）。打印机实打需另行验收。
 - 源码运行数据默认在项目运行目录；冻结桌面版默认数据根为 Documents 下的 `简单ERP数据`；路径记忆只保存数据根位置。
 - 不提交真实订单库、日志、密钥或个人联系信息。业务数据、日志、备份及构建文件不得纳入交付包，除非用户明确要求且已安全审查。
@@ -37,6 +38,7 @@ metadata:
 5. 用隔离的临时 SQLite 数据库运行相关测试；优先使用 Windows 项目环境：`.venv\\Scripts\\python.exe -m pytest tests\\ -q`。
 6. 需要时做 Windows 页面/桌面 EXE/打印机等对应层级的真实验收；测试通过不代替用户路径验证。
 7. 分别报告 `passed`、`failed`、`blocked`、`unverified`；代码修改、测试、用户验收、打包、Git 推送和 Release 各自记录，不能互相推断。
+8. 桌面壳（pywebview + WebView2）的 UI 缺陷**可以自验**，不要默认归为「不可自验」：用真实 WebView2 窗口 + JS 探针跑 DOM 状态，再截「应用自身窗口」的屏拿渲染像素，两路证据缺一不可。方法见 [`references/pywebview-webview2-ui-self-verification.md`](references/pywebview-webview2-ui-self-verification.md)。
 
 ## Planning and task-record lifecycle
 

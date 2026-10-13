@@ -9,7 +9,7 @@ from erp.services.inventory import create_purchase_order, finalize_purchase_orde
 def _seed(quantity='0', cost='0'):
     init_db()
     cid = create_customer('成本守恒虚构对象')
-    pid = create_product('成本守恒商品', 'S', '米', 2000)
+    pid = create_product('成本守恒商品' 'S', '米', 2000)
     initialize_product(pid, quantity, cost, '2026-10-02', '虚构期初', 'cost-init', confirm_zero=quantity == '0')
     return cid, pid
 
@@ -64,7 +64,7 @@ def test_sale_clearance_and_void_conserve_exact_cost(quantities):
     assert _state_and_postings(pid) == (3000, 10000000)
     sale_ids = []
     for n, quantity in enumerate(quantities, 1):
-        sale_ids.append(create_order_from_typed_rows(cid, f'MD20261002{n:04d}', [{'product_id': pid, 'product_name': '成本守恒商品', 'spec': 'S', 'unit': '米', 'quantity': quantity, 'unit_price_yuan': '20'}], status='saved', order_date='2026-10-02', request_key=f'clearance-sale-{n}'))
+        sale_ids.append(create_order_from_typed_rows(cid, f'MD20261002{n:04d}', [{'product_id': pid, 'product_name': '成本守恒商品' 'S', 'unit': '米', 'quantity': quantity, 'unit_price_yuan': '20'}], status='saved', order_date='2026-10-02', request_key=f'clearance-sale-{n}'))
         _state_and_postings(pid)
     assert _state_and_postings(pid) == (0, 0)
     with get_db() as conn:

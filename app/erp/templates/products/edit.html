@@ -6,11 +6,6 @@
 </div>
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
 {% if inventory_message %}<div class="alert alert-success">{{ inventory_message }}</div>{% endif %}
-{% if product_needs_completion(product) %}
-<div class="alert alert-warning" role="alert">
-  <strong>这份档案待补全：</strong>{{ product_completion_hint(product) }}。补全后会自动退出「待补全」筛选。
-</div>
-{% endif %}
 <section class="card mb-3" aria-label="当前库存与计算成本">
   <div class="card-body">
     <div class="d-flex flex-wrap justify-content-between gap-2 mb-3"><h3 class="h5 mb-0">当前库存与成本</h3><span class="text-muted small">由库存流水计算，只读</span></div>
@@ -25,7 +20,6 @@
 </section>
 <form method="post" class="col-6">
   <label class="form-label">商品名称</label><input class="form-control mb-3" name="name" value="{{product.name}}" required>
-  <label class="form-label">型号</label><input class="form-control mb-3" name="spec" value="{{product.spec}}">
   <label class="form-label">品牌</label><input class="form-control mb-3" name="brand" value="{{product.brand or ''}}" placeholder="可留空">
   <label class="form-label">单位</label><input class="form-control mb-3" name="unit" value="{{product.unit}}" {% if inventory_state and inventory_state.enabled %}readonly title="单位已锁定"{% endif %} required>
   <label class="form-label">默认单价(元)</label><input class="form-control mb-3" name="default_price" value="{{cents_to_yuan(product.default_price_cents)}}" required>

@@ -38,30 +38,24 @@
         </select>
         <button class="btn btn-primary text-nowrap">预检并导入</button>
       </form>
-      <p class="list-import-hint">支持.xlsx/.csv，最大5MB；列：商品名称/型号/品牌/单位/默认价/期初数量/期初成本（元）/备注（品牌可留空）；旧表头仍兼容（无品牌列时品牌留空，单位回落“个”）。</p>
+      <p class="list-import-hint">支持.xlsx/.csv，最大5MB；列：商品名称/品牌/单位/默认价/期初数量/期初成本（元）/备注（品牌可留空）；旧表头仍兼容（无品牌列时品牌留空，单位回落“个”）。<strong>不再识别「型号」列</strong>：请把型号直接写进商品名称（例如 闸阀DN50），含「型号」列的旧文件会报「表头错误」而不是静默丢数据。</p>
     </details>
   </div>
 </div>
 <div class="list-tools">
   <form class="list-search" method="get" data-inplace action="/products/">
-    <input class="form-control" id="productSearchInput" name="q" value="{{q}}" list="product_name_suggestions" placeholder="输入相似字符查找商品">
-    <datalist id="product_name_suggestions">{% for s in suggestions %}<option value="{{s.name}}"></option>{% endfor %}</datalist>
-    {% if quality == 'todo' %}<input type="hidden" name="quality" value="todo">{% endif %}
+    <div class="suggest-wrap">
+      <input class="form-control" id="productSearchInput" name="q" value="{{q}}" autocomplete="off" placeholder="输入相似字符查找商品">
+      <div class="suggest-list d-none" id="product_name_suggestions" role="listbox" aria-label="商品建议"></div>
+    </div>
     <button class="btn btn-primary">查找商品</button>
     <a class="btn btn-outline-secondary" href="/products/">清除信息</a>
   </form>
-  <div class="list-facet">
-    <span class="list-facet-cap">档案筛选：</span>
-    <a class="btn btn-sm {{ 'btn-primary' if quality != 'todo' else 'btn-outline-secondary' }}" data-inplace href="/products/{% if q %}?q={{ q|urlencode }}{% endif %}">全部</a>
-    <a class="btn btn-sm {{ 'btn-primary' if quality == 'todo' else 'btn-outline-secondary' }}" data-inplace href="/products/?quality=todo{% if q %}&q={{ q|urlencode }}{% endif %}">待补全{% if todo_count %}（{{ todo_count }}）{% endif %}</a>
-    {% if quality == 'todo' %}<span class="list-facet-hint">仅显示型号为空的商品；补全型号后会自动移出本筛选。</span>{% endif %}
-  </div>
   <details class="list-create-panel" {% if create_open %}open{% endif %}>
     <summary class="list-create-toggle">新增商品</summary>
     <form class="list-create" method="post" action="/products/create">
       <div class="list-create-fields">
         <input class="form-control" name="name" placeholder="商品名" required>
-        <input class="form-control" name="spec" placeholder="规格">
         <input class="form-control" name="brand" placeholder="品牌(可选)">
         <input class="form-control" name="unit" placeholder="单位" required>
         <input class="form-control" name="default_price" placeholder="默认单价(元)" required>
@@ -86,10 +80,10 @@
 <section id="productsResults" data-refresh-fragment>
 <div class="table-responsive product-table-shell">
 <table class="table table-striped align-middle stable-table product-inventory-table">
-  <thead><tr><th class="selection-cell"><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>名称</th><th>规格</th><th>品牌</th><th>单位</th><th class="numeric-cell">默认价</th><th class="numeric-cell">当前库存</th><th class="numeric-cell">安全库存</th><th class="numeric-cell">移动平均成本</th><th class="numeric-cell">库存金额</th><th>启用状态</th><th>库存状况</th><th>来源</th><th class="action-cell">操作</th></tr></thead>
+  <thead><tr><th class="selection-cell"><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>名称</th><th>品牌</th><th>单位</th><th class="numeric-cell">默认价</th><th class="numeric-cell">当前库存</th><th class="numeric-cell">安全库存</th><th class="numeric-cell">移动平均成本</th><th class="numeric-cell">库存金额</th><th>启用状态</th><th>库存状况</th><th>来源</th><th class="action-cell">操作</th></tr></thead>
   <tbody>{% for p in products %}
   <tr data-product-id="{{p.id}}">
-    <td class="selection-cell"><input form="bulkProductsForm" type="checkbox" name="ids" value="{{p.id}}"></td><td title="{{p.name}}">{{p.name}}</td><td title="{{p.spec}}">{{p.spec}}{% if product_needs_completion(p) %}<span class="badge text-bg-warning ms-1" title="缺型号：请补全型号，避免与同名不同规格的商品混在一起">待补全</span>{% endif %}</td><td title="{{p.brand}}">{{p.brand or ''}}</td><td>{{p.unit}}</td>
+    <td class="selection-cell"><input form="bulkProductsForm" type="checkbox" name="ids" value="{{p.id}}"></td><td title="{{p.name}}">{{p.name}}</td><td title="{{p.brand}}">{{p.brand or ''}}</td><td>{{p.unit}}</td>
     <td class="numeric-cell">¥{{cents_to_yuan(p.default_price_cents)}}</td>
     <td class="numeric-cell">{{format_quantity_3dp(p.quantity_3dp, p.unit) if p.inventory_enabled else '—'}}</td>
     <td class="numeric-cell">{{format_quantity_3dp(p.safety_stock_3dp, p.unit)}}</td>
@@ -104,20 +98,28 @@
 </table>
 </div>
 </section>
+<script src="{{ url_for('static', filename='order-entry-common.js') }}?v=2"></script>
 <script>
-const productSearchInput = document.getElementById('productSearchInput');
-const productSuggestions = document.getElementById('product_name_suggestions');
-productSearchInput.addEventListener('input', async () => {
-  const q = productSearchInput.value.trim();
-  if (!q) { productSuggestions.replaceChildren(); return; }
-  const response = await fetch('/products/api/suggestions?q=' + encodeURIComponent(q));
-  const names = await response.json();
-  productSuggestions.replaceChildren();
-  names.forEach(name => {
-    const option = document.createElement('option');
-    option.value = name;
-    productSuggestions.appendChild(option);
-  });
-});
+// Phase 3 S6：原生 datalist 在 WebView2 不渲染弹层 → 搜索框改自有 popover 联想（共享实现）。
+(function () {
+  const input = document.getElementById('productSearchInput');
+  const box = document.getElementById('product_name_suggestions');
+  if (!input || !box) return;
+  ErpOrderEntry.bindAutocomplete(
+    input,
+    box,
+    async query => {
+      const response = await fetch('/products/api/suggestions?q=' + encodeURIComponent(query));
+      const names = await response.json();
+      return (Array.isArray(names) ? names : []).map(name => ({name}));
+    },
+    item => {
+      const node = document.createElement('span');
+      node.textContent = item.name;
+      return node;
+    },
+    item => { input.value = item.name; },
+  );
+})();
 </script>
 {% endblock %}

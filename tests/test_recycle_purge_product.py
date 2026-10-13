@@ -12,7 +12,7 @@ def test_purge_deleted_product_clears_order_item_reference_without_losing_snapsh
     """
     init_db()
     customer_id = create_customer("回收站客户")
-    product_id = create_product("回收站商品", "", "个", 1200)
+    product_id = create_product("回收站商品", "个", 1200)
     order_id = create_order_from_typed_rows(customer_id, "REC-001", [{"product_name": "回收站商品", "unit": "个", "unit_price_yuan": "12", "quantity": "1"}], status="saved")
     # 先把引用它的单据删掉，商品才满足「无活引用」。
     assert create_app().test_client().post(f"/orders/{order_id}/delete").status_code == 302

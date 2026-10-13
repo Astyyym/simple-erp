@@ -96,10 +96,10 @@ def _products():
     with get_db() as conn:
         return conn.execute(
             """
-            SELECT id, name, COALESCE(spec, '') AS spec
+            SELECT id, name
             FROM products
             WHERE deleted_at IS NULL
-            ORDER BY name COLLATE NOCASE, COALESCE(spec, ''), id
+            ORDER BY name COLLATE NOCASE, id
             """
         ).fetchall()
 
@@ -232,7 +232,7 @@ def _rank_bar_rows(key, group_rows, size):
             negative = False
         rows.append({
             "product_id": row["product_id"],
-            "label": f"{row['product_name']} · {row['spec'] or '未填写型号'}",
+            "label": row["product_name"],
             "value_text": label,
             "bar_percent": round(value * 100 / peak, 1) if peak else 0,
             # 柱高直接用像素：最高柱 = RANK_BAR_MAX_HEIGHT_PX，其余按同榜比例，标注贴在各自柱顶。
@@ -263,7 +263,7 @@ def _cost_diagnostics(result, limit=10):
         if gap > 0:
             missing.append({
                 "product_id": row["product_id"],
-                "label": f"{row['product_name']} · {row['spec'] or '未填写型号'}",
+                "label": row["product_name"],
                 "value_text": f"¥{cents_to_yuan(gap)} · 缺 {row['unknown_line_count']} 行",
                 "amount_cents": gap,
             })
@@ -360,7 +360,6 @@ def analytics_center():
         date_mode = "range"
     document_types = [item for item in request.args.getlist("document_type") if item.strip()]
     product_name = request.args.get("product_name", "").strip()
-    spec = request.args.get("spec", "").strip()
     metric = request.args.get("metric", "amount").strip() or "amount"
     customer_raw = request.args.get("customer_id", "").strip()
     year_raw = request.args.get("year", "").strip()
@@ -394,7 +393,7 @@ def analytics_center():
     result = None
     view = None
     filters = dict(start_date=requested_start, end_date=requested_end,
-                   customer_id=customer_raw, product_name=product_name, spec=spec, metric=metric,
+                   customer_id=customer_raw, product_name=product_name, metric=metric,
                    document_types=document_types)
     try:
         result = summarize_analytics(**filters)
@@ -437,7 +436,6 @@ def analytics_center():
             customer_id=customer_raw,
             customer_name=_customer_name(customer_raw),
             product_name=product_name,
-            spec=spec,
             document_types=document_types,
         ),
     ), (400 if error else 200)

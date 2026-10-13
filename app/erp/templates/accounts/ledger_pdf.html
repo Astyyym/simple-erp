@@ -24,7 +24,6 @@
     .col-date { width: 18mm; white-space: nowrap; }
     .col-type { width: 13mm; }
     .col-ref { width: 27mm; }
-    .col-spec { width: 12mm; }
     .col-quantity { width: 10mm; text-align: right; }
     .col-unit { width: 8mm; text-align: center; }
     .col-price { width: 14mm; text-align: right; }
@@ -98,8 +97,8 @@
   </section>
 
   <table>
-    <colgroup><col class="col-date"><col class="col-type"><col class="col-ref"><col><col class="col-spec"><col class="col-quantity"><col class="col-unit"><col class="col-price"><col class="col-amount"><col class="col-doc-amount"><col class="col-status"></colgroup>
-    <thead><tr><th>日期</th><th>类型</th><th>单号 / 方式</th><th>商品</th><th>型号</th><th>数量</th><th>单位</th><th class="col-price">单价</th><th class="col-amount">明细金额</th><th class="col-doc-amount">单据金额</th><th class="col-status">状态</th></tr></thead>
+    <colgroup><col class="col-date"><col class="col-type"><col class="col-ref"><col><col class="col-quantity"><col class="col-unit"><col class="col-price"><col class="col-amount"><col class="col-doc-amount"><col class="col-status"></colgroup>
+    <thead><tr><th>日期</th><th>类型</th><th>单号 / 方式</th><th>商品</th><th>数量</th><th>单位</th><th class="col-price">单价</th><th class="col-amount">明细金额</th><th class="col-doc-amount">单据金额</th><th class="col-status">状态</th></tr></thead>
     {% for entry in ledger.entries %}
     {% if entry.source == 'order' %}
     {# 整单一块：能一页放下就不分段；放不下由排版引擎自然跨页。
@@ -118,7 +117,6 @@
         <td></td><td></td><td></td>
         {% endif %}
         <td>{{ item.product_name if item else entry.description }}{% if loop.first and entry.status == 'void' and entry.void_reason %}<div class="void-reason">作废原因：{{ entry.void_reason }}</div>{% endif %}</td>
-        <td>{{ (item.spec or '—') if item else '—' }}</td>
         <td class="amount">{{ format_quantity(item.quantity, item.unit) if item else '—' }}</td>
         <td>{{ item.unit if item else '—' }}</td>
         <td class="amount">{{ cents_to_yuan(item.unit_price_cents) if item else '—' }}</td>

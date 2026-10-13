@@ -3,10 +3,13 @@ import fs from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 
-const source = fs.readFileSync(new URL('../../app/erp/templates/orders/new.html', import.meta.url), 'utf8');
-const start = source.indexOf('function money(');
-const end = source.indexOf('function clearAllRows()', start);
-const code = source.slice(start, end).replace(/const orderSign = .*?;/, 'const orderSign = 1;');
+// 决策变更（Phase 3 S1）：money/costMoney 已统一到 order-entry-common.js；本页只剩行计算逻辑。
+const pageSource = fs.readFileSync(new URL('../../app/erp/templates/orders/new.html', import.meta.url), 'utf8');
+const sharedSource = fs.readFileSync(new URL('../../app/erp/static/order-entry-common.js', import.meta.url), 'utf8');
+const helpers = sharedSource.slice(sharedSource.indexOf('function money('), sharedSource.indexOf('function closeSuggestions('));
+const start = pageSource.indexOf('function recalc(');
+const end = pageSource.indexOf('function clearAllRows()', start);
+const code = 'const orderSign = 1;\n' + helpers + '\n' + pageSource.slice(start, end);
 
 function page(cost) {
   const inputs = {'.quantity': {value: '2'}, '.unit-price': {value: '25'}, '.product-id': {value: '1'}, '.unit-select': {value: '个'}};

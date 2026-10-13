@@ -5,7 +5,7 @@ products 加**可空** `brand` 列；导入可空；列表/编辑页可填可显
 
 本文件锁四件事：
 1. schema 迁移幂等，旧库（无 brand 列）加列后旧数据留空、**不猜**；
-2. 品牌可空、写入归一成 NULL，且**不参与业务唯一键**（同名同型号不同品牌仍是同一件商品）；
+2. 品牌可空、写入归一成 NULL，且**不参与业务唯一键**（v14 身份 = 单一名称，同名不同品牌仍是同一件商品）；
 3. 导入新旧表头都能走通（无品牌列 → 品牌留空）；
 4. 页面（新建/编辑/列表）与导出的品牌列真的落地。
 """
@@ -96,17 +96,17 @@ def test_brand_column_migration_is_idempotent_and_keeps_legacy_rows_blank():
 
 def test_brand_is_not_part_of_the_business_identity_key():
     init_db()
-    first = create_product("阀门", "DN20", "个", 1000, brand="沪工")
+    first = create_product("阀门DN20", "个", 1000, brand="沪工")
     assert _brand_of(first) == "沪工"
     # 品牌不进唯一键：同名同型号换品牌仍是同一件商品，必须被唯一约束挡住。
     try:
-        create_product("阀门", "DN20", "个", 1000, brand="远大")
+        create_product("阀门DN20", "个", 1000, brand="远大")
     except ValueError as exc:
         assert "已存在" in str(exc)
     else:
         raise AssertionError("品牌不得参与业务唯一键，同名同型号应被拒绝")
     # 同名不同型号可以各带品牌。
-    second = create_product("阀门", "DN25", "个", 1000, brand="远大")
+    second = create_product("阀门DN25", "个", 1000, brand="远大")
     assert _brand_of(second) == "远大"
 
 
@@ -115,25 +115,25 @@ def test_brand_is_not_part_of_the_business_identity_key():
 def test_blank_brand_is_stored_as_null_not_empty_string():
     init_db()
     for value in ("", "   ", None):
-        pid = create_product(f"空品牌{value!r}", "", "个", 100, brand=value)
+        pid = create_product(f"空品牌{value!r}", "个", 100, brand=value)
         assert _brand_of(pid) is None
 
 
 def test_update_product_sets_and_clears_brand_but_omitted_brand_is_preserved():
     init_db()
-    pid = create_product("编辑品牌商品", "S1", "个", 2000, brand="沪工")
+    pid = create_product("编辑品牌商品S1", "个", 2000, brand="沪工")
 
     # 显式传品牌 → 覆盖
-    update_product_record(pid, "编辑品牌商品", "S1", "个", 2000, brand="远大")
+    update_product_record(pid, "编辑品牌商品S1", "个", 2000, brand="远大")
     assert _brand_of(pid) == "远大"
 
     # 显式传空 → 清空（用户主动删掉品牌）
-    update_product_record(pid, "编辑品牌商品", "S1", "个", 2000, brand="")
+    update_product_record(pid, "编辑品牌商品S1", "个", 2000, brand="")
     assert _brand_of(pid) is None
 
     # 不传 brand（旧调用点/局部更新）→ 保持原值，不误清
-    update_product_record(pid, "编辑品牌商品", "S1", "个", 2000, brand="沪工")
-    update_product_record(pid, "编辑品牌商品", "S1", "个", 2100)
+    update_product_record(pid, "编辑品牌商品S1", "个", 2000, brand="沪工")
+    update_product_record(pid, "编辑品牌商品S1", "个", 2100)
     assert _brand_of(pid) == "沪工"
 
 
@@ -144,17 +144,19 @@ def test_product_import_template_has_optional_brand_column():
     response = client.get("/products/import/template")
     assert response.status_code == 200
     sheet = load_workbook(io.BytesIO(response.data), read_only=True).active
+    # 决策变更（v14）：模板不再有「型号」列，品牌仍是可选列（紧随商品名称）。
     assert list(next(sheet.iter_rows(values_only=True))) == [
-        "商品名称", "型号", "品牌", "单位", "默认价", "期初数量", "期初成本（元）", "备注"
+        "商品名称", "品牌", "单位", "默认价", "期初数量", "期初成本（元）", "备注"
     ]
 
 
 def test_product_import_with_brand_writes_it_and_blank_stays_null():
     init_db()
+    # 决策变更（v14）：表头不再含「型号」列（型号直接写进商品名称）。
     csv = (
-        "商品名称,型号,品牌,单位,默认价,期初数量,期初成本（元）,备注\n"
-        "有品牌商品,4kg,沪工,个,120,,\n"
-        "空品牌商品,8kg,,个,220,,\n"
+        "商品名称,品牌,单位,默认价,期初数量,期初成本（元）,备注\n"
+        "有品牌商品,沪工,个,120,,\n"
+        "空品牌商品,,个,220,,\n"
     ).encode("utf-8-sig")
     client = create_app().test_client()
     preview = _upload(client, "/products/import", "p.csv", csv)
@@ -167,9 +169,13 @@ def test_product_import_with_brand_writes_it_and_blank_stays_null():
 
 
 def test_product_import_still_accepts_pre_brand_header():
-    """E-2 之前的表头（无品牌列）必须继续可导入，品牌留空——不阻塞迁移。"""
+    """E-2 之前的表头（无品牌列）必须继续可导入，品牌留空——不阻塞迁移。
+
+    决策变更（v14）：带「型号」列的旧表头已被整表头精确匹配挡下（明确报错），
+    这里改用**无型号、无品牌**的旧宽表头，仍验证「旧表头能导入、品牌留空」这一原意。
+    """
     init_db()
-    csv = "商品名称,型号,单位,默认价,期初数量,期初成本（元）,备注\n旧表头商品,4kg,个,120,,\n".encode("utf-8-sig")
+    csv = "商品名称,单位,默认价,期初数量,期初成本（元）,备注\n旧表头商品,个,120,,\n".encode("utf-8-sig")
     client = create_app().test_client()
     preview = _upload(client, "/products/import", "old.csv", csv)
     assert preview.status_code == 200
@@ -182,14 +188,15 @@ def test_product_import_still_accepts_pre_brand_header():
 
 def test_product_import_update_branch_can_fill_brand():
     init_db()
-    create_product("补品牌商品", "S1", "个", 500)
-    csv = "商品名称,型号,品牌,单位,默认价,期初数量,期初成本（元）,备注\n补品牌商品,S1,沪工,个,600,,\n".encode("utf-8-sig")
+    create_product("补品牌商品S1", "个", 500)
+    # 决策变更（v14）：身份 = 名称，型号写进名称；表头不再含「型号」列。
+    csv = "商品名称,品牌,单位,默认价,期初数量,期初成本（元）,备注\n补品牌商品S1,沪工,个,600,,\n".encode("utf-8-sig")
     client = create_app().test_client()
     preview = _upload(client, "/products/import", "p.csv", csv, same_name="update")
     assert "将更新：1" in preview.get_data(as_text=True)
     client.post("/products/import/confirm", data={"preview_json": _preview_json(preview), "same_name": "update"}, follow_redirects=True)
     with get_db() as conn:
-        row = conn.execute("SELECT brand, default_price_cents FROM products WHERE name='补品牌商品'").fetchone()
+        row = conn.execute("SELECT brand, default_price_cents FROM products WHERE name='补品牌商品S1'").fetchone()
     assert row["brand"] == "沪工"
     assert row["default_price_cents"] == 60000
 
@@ -198,7 +205,7 @@ def test_product_import_update_branch_can_fill_brand():
 
 def test_product_pages_show_optional_brand_controls_and_value():
     init_db()
-    pid = create_product("页面品牌商品", "S1", "个", 2000, brand="沪工")
+    pid = create_product("页面品牌商品S1", "个", 2000, brand="沪工")
     client = create_app().test_client()
 
     list_html = client.get("/products/").get_data(as_text=True)
@@ -211,7 +218,7 @@ def test_product_pages_show_optional_brand_controls_and_value():
 
     # 编辑页提交空品牌 → 真的清空（不是「不填就保留」）。
     client.post(f"/products/{pid}/edit", data={
-        "name": "页面品牌商品", "spec": "S1", "brand": "", "unit": "个",
+        "name": "页面品牌商品", "brand": "", "unit": "个",
         "default_price": "20", "safety_stock": "0",
     })
     assert _brand_of(pid) is None
@@ -219,12 +226,13 @@ def test_product_pages_show_optional_brand_controls_and_value():
 
 def test_product_export_includes_brand_column():
     init_db()
-    create_product("导出品牌商品", "S1", "个", 1234, brand="沪工")
+    create_product("导出品牌商品S1", "个", 1234, brand="沪工")
     client = create_app().test_client()
     response = client.get("/products/export.xlsx")
     assert response.status_code == 200
     sheet = load_workbook(io.BytesIO(response.data), read_only=True, data_only=True).active
     rows = list(sheet.iter_rows(values_only=True))
-    assert list(rows[0])[:4] == ["商品名称", "型号", "品牌", "单位"]
-    row = next(r for r in rows[1:] if r[0] == "导出品牌商品")
-    assert row[2] == "沪工"
+    # 决策变更（v14）：导出不再有「型号」列，品牌紧随商品名称（索引 1）。
+    assert list(rows[0])[:3] == ["商品名称", "品牌", "单位"]
+    row = next(r for r in rows[1:] if r[0] == "导出品牌商品S1")
+    assert row[1] == "沪工"

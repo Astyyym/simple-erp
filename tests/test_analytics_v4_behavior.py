@@ -20,13 +20,13 @@ def rendered(app):
 
 
 def legacy_sale(customer, product, no, day, quantity="1", price="10"):
-    return create_order_from_typed_rows(customer, no, [{"product_id": product, "product_name": "历史商品", "spec": "", "unit": "个", "quantity": quantity, "unit_price_yuan": price}], status="saved", order_date=day)
+    return create_order_from_typed_rows(customer, no, [{"product_id": product, "product_name": "历史商品", "unit": "个", "quantity": quantity, "unit_price_yuan": price}], status="saved", order_date=day)
 
 
 def test_explicit_empty_dates_route_keeps_open_scope_and_prior_month_sales():
     init_db()
     customer = create_customer("虚构往来")
-    product = create_product("历史商品", "", "个", 1000)
+    product = create_product("历史商品", "个", 1000)
     legacy_sale(customer, product, "MD202509010001", "2025-09-01")
     app = create_app()
     with rendered(app) as contexts:
@@ -43,7 +43,7 @@ def test_explicit_empty_dates_route_keeps_open_scope_and_prior_month_sales():
 def test_single_open_date_heatmap_uses_observed_boundary_not_one_day():
     init_db()
     customer = create_customer("单边日期对象")
-    product = create_product("历史商品", "", "个", 1000)
+    product = create_product("历史商品", "个", 1000)
     legacy_sale(customer, product, "MD202509010001", "2025-09-01")
     legacy_sale(customer, product, "MD202509030001", "2025-09-03")
     for query in ({"start_date": "2025-08-31"}, {"end_date": "2025-09-04"}):
@@ -60,11 +60,11 @@ def test_single_open_date_heatmap_uses_observed_boundary_not_one_day():
 import pytest
 
 
-@pytest.mark.parametrize("bad", [{"start_date": "bad-date"}, {"start_date": "2026-10-03", "end_date": "2026-10-01"}, {"customer_id": "true"}, {"customer_id": "0"}, {"customer_id": "-1"}, {"customer_id": "99999"}, {"metric": "fake"}, {"spec": "fake"}])
+@pytest.mark.parametrize("bad", [{"start_date": "bad-date"}, {"start_date": "2026-10-03", "end_date": "2026-10-01"}, {"customer_id": "true"}, {"customer_id": "0"}, {"customer_id": "-1"}, {"customer_id": "99999"}, {"metric": "fake"}])
 def test_invalid_route_scope_retains_inputs_without_fallback_results(bad):
     init_db()
     customer = create_customer("错误筛选对象")
-    product = create_product("历史商品", "", "个", 1000)
+    product = create_product("历史商品", "个", 1000)
     legacy_sale(customer, product, "MD202610010001", "2026-10-01")
     query = {"start_date": "", "end_date": "", "customer_id": str(customer), "product_name": "历史商品", **bad}
     app = create_app()
@@ -78,10 +78,29 @@ def test_invalid_route_scope_retains_inputs_without_fallback_results(bad):
     assert 'id="analysisMetrics"' not in html
 
 
+def test_removed_spec_parameter_is_ignored_not_rejected():
+    """决策变更（v14）：型号筛选整条删除 —— 传 spec 不再报错，也不再改变结果。
+
+    旧用例把 {"spec": "fake"} 列为非法筛选（应 400）；该维度删除后 spec 被路由忽略。
+    """
+    init_db()
+    customer = create_customer("忽略型号对象")
+    product = create_product("历史商品", "个", 1000)
+    legacy_sale(customer, product, "MD202610010001", "2026-10-01")
+    app = create_app()
+    with rendered(app) as contexts:
+        response = app.test_client().get("/analytics/", query_string={
+            "start_date": "", "end_date": "", "customer_id": str(customer),
+            "product_name": "历史商品", "spec": "fake"})
+    assert response.status_code == 200
+    assert contexts[-1]["result"] is not None
+    assert contexts[-1]["result"]["summary"]["net_sales_amount_cents"] == 1000
+
+
 def test_historical_cost_micro_is_aggregated_before_rounding_in_every_projection():
     init_db()
     customer = create_customer("微元历史对象")
-    product = create_product("历史商品", "", "个", 100)
+    product = create_product("历史商品", "个", 100)
     first = legacy_sale(customer, product, "MD202509010001", "2025-09-01", price="1")
     second = legacy_sale(customer, product, "MD202509010002", "2025-09-01", price="1")
     with get_db() as conn:
@@ -101,7 +120,7 @@ def test_historical_cost_micro_is_aggregated_before_rounding_in_every_projection
 def test_partial_historical_cost_coverage_is_explicit_not_zero_or_full_profit():
     init_db()
     customer = create_customer("部分成本对象")
-    product = create_product("历史商品", "", "个", 100)
+    product = create_product("历史商品", "个", 100)
     known = legacy_sale(customer, product, "MD202509010001", "2025-09-01", price="1")
     legacy_sale(customer, product, "MD202509030001", "2025-09-03", price="2")
     with get_db() as conn:
@@ -121,31 +140,42 @@ def test_partial_historical_cost_coverage_is_explicit_not_zero_or_full_profit():
     assert result["heatmap"][1]["has_transactions"] is False
 
 
-def test_unfilled_model_is_distinct_from_all_models_and_retains_selected_party():
+def test_unfilled_model_sentinel_and_model_dimension_are_removed():
+    """决策变更（v14）：型号筛选整条删除 —— `__unfilled__`「未填写型号」哨兵随之消失。
+
+    旧用例钉「未填写型号是独立于『全部型号』的可选值，且只筛出无型号商品」。
+    该维度删除：spec 参数被忽略、页面不再有未填写型号选项；商品身份=单一名称，
+    「历史商品」与「历史商品Q1」是两条独立名称。
+    """
     init_db()
     customer = create_customer("型号与对象留存")
-    blank = create_product("历史商品", "", "个", 1000)
-    model = create_product("历史商品", "Q1", "个", 1000)
+    blank = create_product("历史商品", "个", 1000)
+    model = create_product("历史商品Q1", "个", 1000)
     legacy_sale(customer, blank, "MD202509010001", "2025-09-01")
-    create_order_from_typed_rows(customer, "MD202509010002", [{"product_id": model, "product_name": "历史商品", "spec": "Q1", "unit": "个", "quantity": "1", "unit_price_yuan": "20"}], status="saved", order_date="2025-09-01")
+    create_order_from_typed_rows(customer, "MD202509010002", [{"product_id": model, "product_name": "历史商品Q1", "unit": "个", "quantity": "1", "unit_price_yuan": "20"}], status="saved", order_date="2025-09-01")
     app = create_app()
     with rendered(app) as contexts:
         response = app.test_client().get("/analytics/", query_string={"start_date": "", "end_date": "", "customer_id": customer, "product_name": "历史商品", "spec": "__unfilled__"})
     assert response.status_code == 200
     result = contexts[-1]["result"]
+    # 名称精确匹配「历史商品」→ 只命中它自身；型号商品是另一条独立身份。
     assert [row["product_id"] for row in result["product_rows"]] == [blank]
     assert result["summary"]["net_sales_amount_cents"] == 1000
     assert str(contexts[-1]["filters"]["customer_id"]) == str(customer)
     html = response.get_data(as_text=True)
     assert f'value="{customer}" selected' in html
-    assert 'value="__unfilled__" selected' in html
-    assert summarize_analytics(customer_id=customer, product_name="历史商品")["summary"]["net_sales_amount_cents"] == 3000
+    # `__unfilled__` 哨兵已删除：页面不再提供型号选择控件，也没有「未填写型号 / 全部型号」选项。
+    assert 'id="specFilter"' not in html
+    assert "未填写型号" not in html and "全部型号" not in html
+    # 不按商品筛选时覆盖两条独立名称商品，合计 3000。
+    assert summarize_analytics(customer_id=customer)["summary"]["net_sales_amount_cents"] == 3000
 
 
 def sale_for_product(customer, product, no, day, quantity="1", price="10"):
     with get_db() as conn:
         row = conn.execute("SELECT * FROM products WHERE id=?", (product,)).fetchone()
-    return create_order_from_typed_rows(customer, no, [{"product_id": product, "product_name": row["name"], "spec": row["spec"], "unit": row["unit"], "quantity": quantity, "unit_price_yuan": price}], status="saved", order_date=day)
+    # 决策变更（v14）：商品身份=单一名称，明细 payload 不再有 spec；row 已无 spec 键。
+    return create_order_from_typed_rows(customer, no, [{"product_id": product, "product_name": row["name"], "unit": row["unit"], "quantity": quantity, "unit_price_yuan": price}], status="saved", order_date=day)
 
 
 def test_quantity_rankings_keep_one_all_product_chart_and_classify_real_sales():
@@ -156,18 +186,18 @@ def test_quantity_rankings_keep_one_all_product_chart_and_classify_real_sales():
     customer = create_customer("完整排行对象")
     ids = []
     for index in range(13):
-        product = create_product(f"排行计件{index:02}", "", "个", 1000)
+        product = create_product(f"排行计件{index:02}", "个", 1000)
         initialize_product(product, "100", "0", "2025-01-01", "虚构", f"rank-{index}")
         sale_for_product(customer, product, f"MD20250901{index+1:04}", "2025-09-01", quantity=str(index+1))
         ids.append(product)
-    meter = create_product("排行计量", "", "米", 1000)
+    meter = create_product("排行计量", "米", 1000)
     sale_for_product(customer, meter, "MD202509010101", "2025-09-01", quantity="100")
-    free = create_product("零价实际销售", "", "个", 0)
+    free = create_product("零价实际销售", "个", 0)
     sale_for_product(customer, free, "MD202509010102", "2025-09-01", price="0")
-    unsold = create_product("期末前未销售", "", "个", 0)
-    too_new = create_product("期末后建档", "", "个", 0)
-    inactive = create_product("停用未销售", "", "个", 0)
-    returned = create_product("全部退回", "", "个", 1000)
+    unsold = create_product("期末前未销售", "个", 0)
+    too_new = create_product("期末后建档", "个", 0)
+    inactive = create_product("停用未销售", "个", 0)
+    returned = create_product("全部退回", "个", 1000)
     initialize_product(returned, "10", "1", "2025-01-01", "虚构", "rank-return")
     source = sale_for_product(customer, returned, "MD202509010103", "2025-09-01", quantity="2")
     with get_db() as conn:
@@ -201,7 +231,7 @@ def test_formal_v4_layout_renders_every_month_inside_the_applied_scope():
     from test_readonly_cost_display import RenderedHTML
     init_db()
     customer = create_customer("跨年完整范围对象")
-    product = create_product("历史商品", "", "个", 1000)
+    product = create_product("历史商品", "个", 1000)
     legacy_sale(customer, product, "MD202401010001", "2024-01-01")
     legacy_sale(customer, product, "MD202610010001", "2026-10-01")
     app = create_app()
@@ -234,13 +264,15 @@ def test_ranking_size_selector_replaces_pagination_and_keeps_aggregate_scope():
     customer=create_customer("排行分页对象")
     ids=[]
     for index in range(13):
-        pid=create_product("分页商品",str(index),"个",1000)
+        # 决策变更（v14）：商品身份=单一名称 —— 旧 (名称'分页商品', 型号=index) 合并为「分页商品0…12」。
+        pid=create_product(f"分页商品{index}","个",1000)
         sale_for_product(customer,pid,f"MD20250901{index+1:04}","2025-09-01",quantity=str(index+1))
         ids.append(pid)
     app=create_app()
     client=app.test_client()
     before=business_snapshot()
-    query={"start_date":"", "end_date":"", "customer_id":customer, "product_name":"分页商品", "tab":"rank", "sort":"profit", "rank_key":"hot_sales"}
+    # 合并后名称唯一、无法再用基名一次选中整个系列，故改为只按客户筛选（13 个商品即全部）。
+    query={"start_date":"", "end_date":"", "customer_id":customer, "product_name":"", "tab":"rank", "sort":"profit", "rank_key":"hot_sales"}
     with rendered(app) as contexts:
         response=client.get('/analytics/',query_string=query)
     assert response.status_code==200
@@ -283,7 +315,9 @@ def test_invalid_filter_values_stay_visible_instead_of_appearing_as_all_party():
     app=create_app()
     html=app.test_client().get('/analytics/',query_string={'start_date':'bad-date','end_date':'','customer_id':'99999','product_name':'未知商品','spec':'错误型号'}).get_data(as_text=True)
     assert 'id="invalidScopeInputs"' in html
-    assert all(value in html for value in ('bad-date','99999','未知商品','错误型号'))
+    assert all(value in html for value in ('bad-date','99999','未知商品'))
+    # 决策变更（v14）：型号不再是筛选维度 —— 无效 spec 值不再被回显/参与校验。
+    assert '错误型号' not in html
     assert 'id="analysisMetrics"' not in html
 
 
@@ -331,7 +365,7 @@ def test_cost_view_switches_between_stack_and_ring_with_correct_semantics():
 
     init_db()
     customer = create_customer("环形视图对象")
-    product = create_product("历史商品", "", "个", 100)
+    product = create_product("历史商品", "个", 100)
     # 一行有历史成本、一行没有 → 覆盖 < 100%，两段都非零。
     known = legacy_sale(customer, product, "MD202509010001", "2025-09-01", price="10")
     legacy_sale(customer, product, "MD202509020001", "2025-09-02", price="20")
@@ -416,7 +450,7 @@ def test_cost_missing_source_is_vertical_columns_not_horizontal_rows():
 
     init_db()
     customer = create_customer("缺失竖向对象")
-    product = create_product("历史商品", "", "个", 100)
+    product = create_product("历史商品", "个", 100)
     legacy_sale(customer, product, "MD202509010001", "2025-09-01", price="10")
     # 无历史成本 → 进入缺失来源。
     result = summarize_analytics(start_date="2025-09-01", end_date="2025-09-01", customer_id=customer)

@@ -17,7 +17,7 @@ from erp.services.accounting import (
 def test_customer_ledger_uses_opening_orders_adjustments_and_active_payments():
     init_db()
     customer_id = create_customer("华润消防工程", opening_balance_cents=10000)
-    product_id = create_product("黄铜截止阀", "DN20", "个", 3500)
+    product_id = create_product("黄铜截止阀DN20", "个", 3500)
     order_id = create_order(customer_id, "T-001", [{"product_id": product_id, "quantity": "2"}], status="saved")
     assert customer_balance_cents(customer_id) == 17000
 
@@ -37,7 +37,7 @@ def test_customer_ledger_uses_opening_orders_adjustments_and_active_payments():
 def test_draft_order_does_not_affect_balance_but_printed_order_does():
     init_db()
     customer_id = create_customer("中建消防")
-    product_id = create_product("闸阀", "DN50", "只", 6800)
+    product_id = create_product("闸阀DN50", "只", 6800)
     create_order(customer_id, "T-002", [{"product_id": product_id, "quantity": "1"}], status="draft")
     assert customer_balance_cents(customer_id) == 0
     order_id = create_order(customer_id, "T-003", [{"product_id": product_id, "quantity": "1.5"}], status="saved")
@@ -48,7 +48,7 @@ def test_draft_order_does_not_affect_balance_but_printed_order_does():
 def test_customer_specific_price_overrides_default_without_changing_history():
     init_db()
     customer_id = create_customer("专价客户")
-    product_id = create_product("沟槽卡箍", "DN100", "个", 1200)
+    product_id = create_product("沟槽卡箍DN100", "个", 1200)
     assert price_for_customer(customer_id, product_id) == 1200
     set_customer_price(customer_id, product_id, 1000)
     assert price_for_customer(customer_id, product_id) == 1000

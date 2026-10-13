@@ -8,7 +8,7 @@ from erp.services.inventory import create_purchase_order, initialize_product
 def _seed():
     init_db()
     cid = create_customer("来源关联对象")
-    pid = create_product("来源关联商品", "S1", "个", 2000)
+    pid = create_product("来源关联商品S1", "个", 2000)
     initialize_product(pid, "10", "10", "2026-10-01", "期初", "src-init")
     return cid, pid
 
@@ -17,7 +17,7 @@ def test_return_page_offers_optional_sales_source_linkage():
     cid, pid = _seed()
     create_order_from_typed_rows(
         cid, "MD202610060001",
-        [{"product_id": pid, "product_name": "来源关联商品", "spec": "S1", "unit": "个", "quantity": "2", "unit_price_yuan": "30"}],
+        [{"product_id": pid, "product_name": "来源关联商品S1", "unit": "个", "quantity": "2", "unit_price_yuan": "30"}],
         status="saved", order_date="2026-10-06",
     )
     html = create_app().test_client().get("/orders/return/new").get_data(as_text=True)
@@ -36,7 +36,7 @@ def test_return_source_api_returns_rows_available_and_reference_price():
     cid, pid = _seed()
     sale_id = create_order_from_typed_rows(
         cid, "MD202610060001",
-        [{"product_id": pid, "product_name": "来源关联商品", "spec": "S1", "unit": "个", "quantity": "3", "unit_price_yuan": "30"}],
+        [{"product_id": pid, "product_name": "来源关联商品S1", "unit": "个", "quantity": "3", "unit_price_yuan": "30"}],
         status="saved", order_date="2026-10-06",
     )
     client = create_app().test_client()
@@ -104,7 +104,7 @@ def test_analytics_flow_heatmap_uses_signed_flow_net():
     cid, pid = _seed()
     create_order_from_typed_rows(
         cid, "MD202610060001",
-        [{"product_id": pid, "product_name": "来源关联商品", "spec": "S1", "unit": "个", "quantity": "1", "unit_price_yuan": "30"}],
+        [{"product_id": pid, "product_name": "来源关联商品S1", "unit": "个", "quantity": "1", "unit_price_yuan": "30"}],
         status="saved", order_date="2026-10-06",
     )
     create_purchase_order(

@@ -18,7 +18,7 @@ from erp.services import purchase_returns
 def seed(quantity='3', price='12.34', unit='米', return_quantity='0.25'):
     init_db()
     cid = create_customer('虚构采购卖方', opening_balance_cents=12345)
-    pid = create_product('虚构采购商品', 'C3-B', unit, 2000)
+    pid = create_product('虚构采购商品' 'C3-B', unit, 2000)
     initialize_product(pid, '0', '0', '2026-10-03', '虚构期初', 'c3-print-init', confirm_zero=True)
     purchase = create_purchase_order('NH202610030001', '2026-10-03',
         [{'product_id': pid, 'quantity': quantity, 'unit_cost_yuan': price}],
@@ -78,7 +78,8 @@ def test_purchase_template_receives_only_explicit_public_dictionaries(monkeypatc
         purchase_pdf.generate_purchase_pdf(rid if is_return else oid, is_return=is_return)
     assert set(captured['order']) == {'order_no', 'order_date', 'customer_name', 'notes', 'total_amount_cents'}
     assert captured['order']['notes'] == ''
-    assert all(set(item) == {'product_name', 'spec', 'unit', 'quantity', 'unit_price_cents', 'subtotal_cents'} for item in captured['items'])
+    # 决策变更（v14）：明细投影去掉了型号键，只剩商品名/单位/数量/单价/小计。
+    assert all(set(item) == {'product_name', 'unit', 'quantity', 'unit_price_cents', 'subtotal_cents'} for item in captured['items'])
     assert set(captured['config']) == {
         'shop_name', 'order_pdf_page_width_mm', 'order_pdf_page_height_mm',
         'print_offset_x_mm', 'print_offset_y_mm', 'print_scale',
@@ -288,7 +289,7 @@ def test_real_many_line_purchase_pdf_pages_repeat_header_and_keep_amounts(tmp_pa
     assert len(pages) > 1
     assert len(every_page_box(response.data)) == len(pages)
     assert text.count('虚构采购商品') == 120
-    assert all('名称规格' in page and '小计' in page for page in pages)
+    assert all('商品名称' in page and '小计' in page for page in pages)
     # 2026-10-11：单联上限 10 行 → 120 行整 12 联，每联各一条合计（前 11 联「本张合计」、
     # 末联「本单合计」），页脚只出现在最后一联。
     assert len(pages) == 12

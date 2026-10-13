@@ -42,6 +42,11 @@ def _source(conn, customer_id, source_order_id):
 
 
 def _prepare(items):
+    """整备**源绑定**退拿货行：数量 + 可选单位覆盖。
+
+    §4.3 / #20：单位默认沿用源拿货单快照（由 `_allocations` 的 `dict(original) | item` 合并得到），
+    若表单提交了 unit 则以提交值为准。
+    """
     if not items:
         raise ValueError('退拿货至少需要一行商品')
     prepared = []
@@ -54,14 +59,18 @@ def _prepare(items):
         qty = _scaled_quantity(quantity)
         if qty <= 0:
             raise ValueError('本次数量必须大于0')
-        prepared.append({'source_item_id': iid, 'quantity_3dp': qty})
+        row = {'source_item_id': iid, 'quantity_3dp': qty}
+        raw_unit = str(raw.get('unit') or '').strip()
+        if raw_unit:
+            row['unit'] = raw_unit
+        prepared.append(row)
     if len({row['source_item_id'] for row in prepared}) != len(prepared):
         raise ValueError('原拿货行不能重复')
     return sorted(prepared, key=lambda row: row['source_item_id'])
 
 
 def _prepare_typed(items):
-    """Validate decoupled manual rows: 商品 + 数量 + 手输单价。"""
+    """Validate decoupled manual rows: 商品 + 数量 + 手输单价（+ 可选单位）。"""
     if not items:
         raise ValueError('退拿货至少需要一行商品')
     from erp.services.inventory import _decimal
@@ -78,7 +87,8 @@ def _prepare_typed(items):
         if qty <= 0:
             raise ValueError('本次数量必须大于0')
         prepared.append({'product_id': product_id, 'quantity_3dp': qty,
-                         'unit_price_cents': _price_cents(raw.get('unit_price_yuan'))})
+                         'unit_price_cents': _price_cents(raw.get('unit_price_yuan')),
+                         'unit': str(raw.get('unit') or '').strip()})
     return prepared
 
 
@@ -95,10 +105,12 @@ def _write_typed_items(conn, order_id, rows, business_date, *, post):
         if post else [{'unit_cost_micro': None, 'cost_total_micro': None, 'posting_seq': None} for _ in rows]
     )
     for row, snapshot in zip(rows, snapshots):
-        product = conn.execute('SELECT name, spec, unit FROM products WHERE id=?', (row['product_id'],)).fetchone()
+        product = conn.execute('SELECT name, unit FROM products WHERE id=?', (row['product_id'],)).fetchone()
+        # 手工退拿货无源单：提交空单位回落商品档案单位；不回写 products.unit。
+        row_unit = str(row.get('unit') or '').strip() or str(product['unit'] or '')
         conn.execute(
-            '''INSERT INTO purchase_return_items(purchase_return_id,source_item_id,product_id,product_name,spec,unit,quantity_3dp,unit_price_cents,subtotal_cents,unit_cost_micro,cost_total_micro,posting_seq) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)''',
-            (order_id, None, row['product_id'], product['name'], product['spec'] or '', product['unit'],
+            '''INSERT INTO purchase_return_items(purchase_return_id,source_item_id,product_id,product_name,unit,quantity_3dp,unit_price_cents,subtotal_cents,unit_cost_micro,cost_total_micro,posting_seq) VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
+            (order_id, None, row['product_id'], product['name'], row_unit,
              row['quantity_3dp'], row['unit_price_cents'], _subtotal_cents(row['quantity_3dp'], row['unit_price_cents']),
              snapshot['unit_cost_micro'], snapshot['cost_total_micro'], snapshot['posting_seq']),
         )
@@ -147,7 +159,7 @@ def _write_items(conn, order_id, rows, business_date, *, post):
             seq = cur.lastrowid
             conn.execute('UPDATE product_inventory_state SET quantity_3dp=?,cost_total_micro=?,avg_cost_micro=?,last_posting_seq=?,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE product_id=?', (qty,total,new_average,seq,row['product_id']))
             conn.execute('UPDATE inventory_initializations SET locked=1 WHERE product_id=?', (row['product_id'],))
-        conn.execute('''INSERT INTO purchase_return_items(purchase_return_id,source_item_id,product_id,product_name,spec,unit,quantity_3dp,unit_price_cents,subtotal_cents,unit_cost_micro,cost_total_micro,posting_seq) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)''', (order_id,row['source_item_id'],row['product_id'],row['product_name'],row['spec'],row['unit'],row['quantity_3dp'],row['unit_cost_cents'],row['subtotal_cents'],avg,cost,seq))
+        conn.execute('''INSERT INTO purchase_return_items(purchase_return_id,source_item_id,product_id,product_name,unit,quantity_3dp,unit_price_cents,subtotal_cents,unit_cost_micro,cost_total_micro,posting_seq) VALUES (?,?,?,?,?,?,?,?,?,?,?)''', (order_id,row['source_item_id'],row['product_id'],row['product_name'],row['unit'],row['quantity_3dp'],row['unit_cost_cents'],row['subtotal_cents'],avg,cost,seq))
 
 
 def create(*, customer_id, business_date, items, request_key, status='saved', notes='', source_order_id=None):

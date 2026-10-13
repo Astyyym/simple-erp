@@ -44,8 +44,10 @@
     </div>
     <div class="filter-field-plain">
       <label class="form-label mb-1" for="customerFilterInput">客户名称</label>
-      <input class="form-control" id="customerFilterInput" name="customer" value="{{customer_q}}" list="order_customer_suggestions" placeholder="输入可自动匹配库内客户" autocomplete="off">
-      <datalist id="order_customer_suggestions">{% for s in customer_suggestions %}<option value="{{s.name}}"></option>{% endfor %}</datalist>
+      <div class="suggest-wrap">
+        <input class="form-control" id="customerFilterInput" name="customer" value="{{customer_q}}" autocomplete="off" placeholder="输入可自动匹配库内客户">
+        <div class="suggest-list d-none" id="order_customer_suggestions" role="listbox" aria-label="客户建议"></div>
+      </div>
     </div>
   </div>
   <div class="filter-tier-conditions">
@@ -239,6 +241,7 @@
   .purchase-ranking-pane{max-width:100%}
 }
 </style>
+<script src="{{ url_for('static', filename='order-entry-common.js') }}?v=2"></script>
 <script>
 (() => {
   const form = document.getElementById('ordersFilterForm');
@@ -299,24 +302,23 @@
   const customerInput = document.getElementById('customerFilterInput');
   const suggestions = document.getElementById('order_customer_suggestions');
   if (customerInput && suggestions) {
-    let timer = null;
-    customerInput.addEventListener('input', () => {
-      clearTimeout(timer);
-      timer = setTimeout(async () => {
-        const q = customerInput.value.trim();
-        if (!q) { suggestions.replaceChildren(); return; }
-        try {
-          const response = await fetch('/orders/api/customers?q=' + encodeURIComponent(q));
-          const rows = await response.json();
-          suggestions.replaceChildren();
-          rows.forEach(row => {
-            const option = document.createElement('option');
-            option.value = row.name;
-            suggestions.appendChild(option);
-          });
-        } catch (_) {}
-      }, 180);
-    });
+    // Phase 3 S6：原生 datalist 在 WebView2 不渲染弹层 → 改自有 popover 联想（共享实现）。
+    // 本脚本块在 data-refresh-fragment 之外，就地刷新后仍会重新执行（constraint 见 page-refresh.mjs）。
+    ErpOrderEntry.bindAutocomplete(
+      customerInput,
+      suggestions,
+      async query => {
+        const response = await fetch('/orders/api/customers?q=' + encodeURIComponent(query));
+        const rows = await response.json();
+        return (Array.isArray(rows) ? rows : []).map(row => ({name: row.name}));
+      },
+      item => {
+        const node = document.createElement('span');
+        node.textContent = item.name;
+        return node;
+      },
+      item => { customerInput.value = item.name; syncExportLink(); },
+    );
   }
 })();
 </script>

@@ -17,10 +17,10 @@ table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}td,t
 <h1>{{ config.shop_name }}</h1><div class="subtitle">往来交易对账单</div>
 <div class="meta"><span>往来对象：{{ snapshot.customer.name }}</span><span>对账期间：{{ snapshot.start_date or '最早' }} 至 {{ snapshot.end_date or '最新' }}</span></div>
 <table><colgroup><col><col style="width:28mm"><col style="width:12mm"><col style="width:20mm"><col style="width:24mm"><col style="width:28mm"></colgroup>
-<thead><tr><th>商品名称</th><th>型号</th><th>单位</th><th>数量</th><th>业务单价</th><th>明细金额</th></tr></thead>
+<thead><tr><th>商品名称</th><th>单位</th><th>数量</th><th>业务单价</th><th>明细金额</th></tr></thead>
 {% for doc in documents %}<tbody class="document {{ 'return-row' if doc.order.total_amount_cents < 0 else '' }}">
 <tr class="document-head"><td colspan="6">{{ doc.order.order_date }} · {{ doc.order.order_no }} · {{ doc.order.type_label }} · {{ doc.order.direction }}</td></tr>
-{% for item in doc['items'] %}<tr><td class="name">{{ item.product_name }}</td><td>{{ item.spec }}</td><td>{{ item.unit }}</td><td>{{ format_quantity(item.quantity, item.unit) }}</td><td>{{ cents_to_yuan(item.unit_price_cents) }}</td><td>{{ cents_to_yuan(item.subtotal_cents) }}</td></tr>{% endfor %}
+{% for item in doc['items'] %}<tr><td class="name">{{ item.product_name }}</td><td>{{ item.unit }}</td><td>{{ format_quantity(item.quantity, item.unit) }}</td><td>{{ cents_to_yuan(item.unit_price_cents) }}</td><td>{{ cents_to_yuan(item.subtotal_cents) }}</td></tr>{% endfor %}
 <tr class="document-total"><td colspan="5">整单交易金额</td><td>{{ cents_to_yuan(doc.order.total_amount_cents) }}</td></tr>
 {% if doc.order.notes %}<tr class="notes"><td colspan="6">备注：{{ doc.order.notes }}</td></tr>{% endif %}</tbody>{% endfor %}</table>
 <div class="summary"><div>选中单据：{{ snapshot.selected_count }} / {{ snapshot.scope_count }} 笔</div><div>销售（+）：{{ cents_to_yuan(snapshot.type_totals_cents.sale) }}　客户退货（−）：{{ cents_to_yuan(snapshot.type_totals_cents.customer_return) }}</div><div>拿货（−）：{{ cents_to_yuan(snapshot.type_totals_cents.purchase) }}　退拿货（+）：{{ cents_to_yuan(snapshot.type_totals_cents.purchase_return) }}</div><div class="total">交易对账净额：¥{{ cents_to_yuan(snapshot.selected_total_cents) }}</div><div>仅供交易核对，不代表应收、应付或已结清。</div></div>

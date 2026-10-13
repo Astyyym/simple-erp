@@ -51,27 +51,34 @@ def test_orders_chips_treat_all_types_or_all_statuses_as_no_filter():
     assert "状态：草稿、正式保存" in html
 
 
-def test_analytics_chips_cover_party_product_model_and_type():
+def test_analytics_chips_cover_party_and_product_without_model_dimension():
+    """决策变更（v14）：型号筛选整条删除 —— chip 只剩 客户 / 商品（完整名称）/ 类型 三类。
+
+    旧用例钉「客户 / 商品 / 型号 三类 chip，且商品 chip 的移除链接要同时清掉 spec」。
+    型号维度删除后不再有『型号：…』chip，商品 chip 也不再携带 spec 参数。
+    """
     suffix = uuid.uuid4().hex[:8]
     init_db()
     customer_id = create_customer(f"分析chip客户{suffix}")
     create_order_from_typed_rows(
         customer_id, f"chip-{suffix}",
-        [{"product_name": f"片商品{suffix}", "spec": "Q1", "unit": "个",
+        [{"product_name": (f"片商品{suffix}") + ("Q1"), "unit": "个",
           "quantity": "1", "unit_price_yuan": "10"}],
         status="saved", order_date="2026-07-10",
     )
     client = create_app().test_client()
     html = client.get("/analytics/", query_string={
-        "customer_id": customer_id, "product_name": f"片商品{suffix}", "spec": "Q1",
+        "customer_id": customer_id, "product_name": (f"片商品{suffix}") + ("Q1"),
         "start_date": "", "end_date": "",
     }).get_data(as_text=True)
     assert 'class="filter-chips"' in html
     assert f"客户：分析chip客户{suffix}" in html
-    assert f"商品：片商品{suffix}" in html
-    assert "型号：Q1" in html
+    # 商品身份=单一名称：chip 展示合并后的完整名称。
+    assert f"商品：片商品{suffix}Q1" in html
+    # 型号不再是筛选维度：页面不再出现『型号：…』chip。
+    assert "型号：" not in html
 
-    # 商品 chip 的移除链接同时清掉 spec（型号从属于商品）。
+    # 商品 chip 的移除链接只清掉 product_name，不带 spec。
     product_chip = next(chip for chip in html.split('class="filter-chip"') if f"片商品{suffix}" in chip)
     assert "spec=" not in product_chip.split("</a>")[0]
 

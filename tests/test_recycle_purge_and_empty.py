@@ -18,7 +18,7 @@ from erp.services.inventory import create_purchase_order, initialize_product
 
 
 def _product(spec="PURGE"):
-    product_id = create_product("回收站清理商品", spec, "个", 2000)
+    product_id = create_product("回收站清理商品" + spec, "个", 2000)
     initialize_product(product_id, "10", "10", "2026-10-01", "系统上线期初", f"purge-init-{spec}", confirm_zero=False)
     return product_id
 

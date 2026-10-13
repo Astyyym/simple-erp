@@ -303,7 +303,7 @@
     .card-body{padding:18px}
     /*
       共享筛选卡：单据管理与数据分析使用同一套排版（三段式）。
-      ① 查询三要素：时间（模式 + 日期输入合成一个组合控件）· 客户 · 商品/型号，常驻最高频。
+      ① 查询三要素：时间（模式 + 日期输入合成一个组合控件）· 客户 · 商品，常驻最高频。
       ② 条件多选：订单类型 / 单据状态，降权；不勾选 = 全部，因此不再提供「全选」按钮。
       ③ 已选条件 chip 行（可单独移除）+ 动作条（主操作在左、导出/重置贴右）。
     */
@@ -367,6 +367,15 @@
     .list-search{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0}
     .list-search .form-control{flex:1 1 260px;min-width:0}
     .list-search .btn{flex:0 0 auto;min-width:104px}
+    /* Phase 3 S6：列表页搜索框也改自有 popover 联想（原生 datalist 在 WebView2 不渲染）。
+       .suggest-wrap 撑满查找行的剩余宽度，浮层样式与开单页同源。 */
+    .list-search .suggest-wrap{position:relative;flex:1 1 260px;min-width:0}
+    .list-search .suggest-wrap .form-control{width:100%}
+    .suggest-list{position:absolute;z-index:20;left:0;right:0;top:100%;background:var(--erp-surface);border:1px solid var(--erp-border-strong);max-height:220px;overflow-y:auto;border-radius:0 0 7px 7px;box-shadow:0 12px 28px rgba(16,24,40,.14)}
+    .suggest-item{display:block;width:100%;padding:9px 11px;cursor:pointer;border:0;border-bottom:1px solid var(--erp-border);background:transparent;color:var(--erp-ink);text-align:left;font:inherit}
+    .suggest-item:hover,.suggest-item[aria-selected="true"]{background:var(--erp-primary-soft)}
+    .suggest-item:focus-visible{outline:2px solid var(--erp-primary);outline-offset:-2px}
+    .suggest-list[popover]{position:fixed;inset:auto;margin:0;padding:0;box-sizing:border-box;color:var(--erp-ink);height:auto;min-width:min(240px,calc(100vw - 24px));max-width:calc(100vw - 24px)}
     .list-facet{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
     .list-facet .list-facet-cap{color:var(--erp-muted);font-size:12.5px;font-weight:600}
     .list-facet .list-facet-hint{color:var(--erp-muted);font-size:12.5px}
@@ -425,14 +434,13 @@
     .order-workspace{display:block;min-width:0}
     /* 侧栏宽度全局统一为 224px（默认值）：此前 4 个开单页被单独收窄到 200px，
        导致点开单入口与点其他入口时侧栏宽度不一致。已移除该覆盖。 */
-    /* shared two-level product picker (名称 → 型号)，名称与型号同一行并排。
+    /* shared product picker（商品名称即身份，v14 起没有型号列）。
        注意：flex 必须放在内层 div 上。若直接放在 <td> 上，td 会从 table-cell
        变成 flex 容器，高度塌成内容高（实测 38px vs 行高 51px）并贴顶对齐，
        vertical-align:middle 随之失效。 */
     .product-picker{padding:4px}
     .product-picker .picker-row{display:flex;flex-direction:row;align-items:center;gap:6px;min-width:330px}
-    .product-picker .picker-name{flex:1 1 58%;min-width:0}
-    .product-picker .picker-spec{flex:1 1 42%;min-width:0}
+    .product-picker .picker-name{flex:1 1 auto;min-width:0}
     .product-picker select{min-height:34px;font-size:13px}
     /* 原单关联：置顶一行 + 同层级的原单预览（不浮在明细卡之上） */
     .order-source-row{display:flex;flex-direction:column;gap:6px;padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--erp-border)}
@@ -491,7 +499,7 @@
       .page-topbar{padding:0 20px}
       .page-body{padding:20px 20px 32px}
       .stable-table .action-cell{width:300px;min-width:300px}
-      /* 窄屏仍保持名称/型号并排；靠 .order-table-scroll 横向滚动，不把下拉压到不可用 */
+      /* 窄屏仍保持商品选择器可用；靠 .order-table-scroll 横向滚动，不把下拉压到不可用 */
       .product-picker .picker-row{min-width:300px}
     }
   </style>

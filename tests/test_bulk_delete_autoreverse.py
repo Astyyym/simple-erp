@@ -21,7 +21,7 @@ from erp.services.inventory import create_purchase_order, initialize_product
 
 
 def _product(name="自动冲回商品", spec="AR"):
-    product_id = create_product(name, spec, "个", 2000)
+    product_id = create_product((name) + (spec), "个", 2000)
     initialize_product(product_id, "10", "10", "2026-10-01", "系统上线期初", f"ar-init-{spec}", confirm_zero=False)
     return product_id
 
@@ -49,7 +49,7 @@ def test_saved_sale_delete_reverses_stock_and_balance_then_soft_deletes():
     order_id = create_order_from_typed_rows(
         customer_id,
         "MD202610070101",
-        [{"product_id": product_id, "product_name": "自动冲回商品", "spec": "AR-SALE", "unit": "个",
+        [{"product_id": product_id, "product_name": "自动冲回商品AR-SALE", "unit": "个",
           "unit_price_yuan": "30", "quantity": "3"}],
         status="saved",
         order_date="2026-10-07",
@@ -142,7 +142,7 @@ def test_bulk_delete_mixes_all_four_types_and_stays_conserved():
     sale_id = create_order_from_typed_rows(
         customer_id,
         "MD202610070301",
-        [{"product_id": sale_product, "product_name": "批量销售商品", "spec": "AR-B1", "unit": "个",
+        [{"product_id": sale_product, "product_name": "批量销售商品AR-B1", "unit": "个",
           "unit_price_yuan": "30", "quantity": "2"}],
         status="saved",
         order_date="2026-10-07",
@@ -201,7 +201,7 @@ def test_delete_allows_non_last_inventory_posting_and_reverses_what_it_can():
     sale_id = create_order_from_typed_rows(
         customer_id,
         "MD202610070401",
-        [{"product_id": product_id, "product_name": "自动冲回商品", "spec": "AR-LAST", "unit": "个",
+        [{"product_id": product_id, "product_name": "自动冲回商品AR-LAST", "unit": "个",
           "unit_price_yuan": "30", "quantity": "1"}],
         status="saved",
         order_date="2026-10-07",
@@ -235,7 +235,7 @@ def test_bulk_delete_mixes_reversible_and_draft_rows_without_skipping_any():
     blocked_id = create_order_from_typed_rows(
         customer_id,
         "MD202610070501",
-        [{"product_id": product_id, "product_name": "自动冲回商品", "spec": "AR-MIX", "unit": "个",
+        [{"product_id": product_id, "product_name": "自动冲回商品AR-MIX", "unit": "个",
           "unit_price_yuan": "30", "quantity": "1"}],
         status="saved",
         order_date="2026-10-07",

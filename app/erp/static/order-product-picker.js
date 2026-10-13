@@ -1,4 +1,8 @@
-/* Shared two-level product picker (产品名称 → 型号) for all order-entry pages. */
+/* Shared product picker for all order-entry pages.
+   v14（2026-10-13）：商品身份只剩「名称」——名称与型号合并为一个字段，因此
+   两种挂载方式都变成单框：
+     mountRow   —— 单一下拉（拿货 / 退拿货：必须选定已建档商品，取值是 product id）
+     mountHybrid —— 单行输入框 + 建议（销售 / 退货：可手输，未命中交给后端自动建档）*/
 (function () {
   'use strict';
 
@@ -9,108 +13,77 @@
     return o;
   }
 
-  function groupByName(catalog) {
-    var map = new Map();
-    (catalog || []).forEach(function (p) {
-      if (!map.has(p.name)) map.set(p.name, []);
-      map.get(p.name).push(p);
-    });
-    return map;
-  }
+  function norm(s) { return String(s == null ? '' : s).trim(); }
 
-  // row: a <tr>/container holding .picker-name and .picker-spec selects.
-  // catalog: [{id, name, spec, unit, default_price_cents}]
-  // onPick: called with the chosen product object, or null when nothing valid is selected.
+  // row: a <tr>/container holding one .picker-name select.
+  // catalog: [{id, name, unit, default_price_cents, inventory_enabled}]
+  // onPick: the chosen product object, or null when the placeholder is selected.
   function mountRow(row, catalog, onPick) {
     var nameSel = row.querySelector('.picker-name');
-    var specSel = row.querySelector('.picker-spec');
-    if (!nameSel || !specSel) return null;
-    var byName = groupByName(catalog);
+    if (!nameSel) return null;
 
-    function fillNames() {
+    function sortedCatalog() {
+      return (catalog || []).slice().sort(function (a, b) {
+        return String(a.name).localeCompare(String(b.name), 'zh-Hans-CN') || (a.id - b.id);
+      });
+    }
+
+    function label(product) {
+      var text = product.name;
+      if (product.inventory_enabled === false) text += ' · 未启用，仅可保存草稿';
+      return text;
+    }
+
+    function fill(selectedId) {
       nameSel.replaceChildren(option('选择产品名称', ''));
-      Array.from(byName.keys())
-        .sort(function (a, b) { return a.localeCompare(b, 'zh-Hans-CN'); })
-        .forEach(function (name) { nameSel.appendChild(option(name, name)); });
-    }
-
-    function specLabel(product) {
-      var label = product.spec || '未填写型号';
-      if (product.inventory_enabled === false) label += ' · 未启用，仅可保存草稿';
-      return label;
-    }
-
-    function fillSpecs(name, selectedId) {
-      var list = byName.get(name) || [];
-      specSel.replaceChildren();
-      specSel.appendChild(option(list.length > 1 ? '选择型号' : '型号', ''));
-      list.forEach(function (p) { specSel.appendChild(option(specLabel(p), p.id)); });
+      sortedCatalog().forEach(function (p) { nameSel.appendChild(option(label(p), p.id)); });
       if (selectedId !== undefined && selectedId !== null && String(selectedId) !== '') {
-        specSel.value = String(selectedId);
-      } else if (list.length === 1) {
-        specSel.value = String(list[0].id);
+        nameSel.value = String(selectedId);
       }
     }
 
     function emit() {
       var picked = null;
       for (var i = 0; i < (catalog || []).length; i += 1) {
-        if (String(catalog[i].id) === specSel.value) { picked = catalog[i]; break; }
+        if (String(catalog[i].id) === nameSel.value) { picked = catalog[i]; break; }
       }
       onPick(picked);
     }
 
-    nameSel.addEventListener('change', function () {
-      fillSpecs(nameSel.value, '');
-      emit();
-    });
-    specSel.addEventListener('change', emit);
+    nameSel.addEventListener('change', emit);
 
     var api = {
       reset: function () {
-        fillNames();
+        fill('');
         nameSel.value = '';
-        fillSpecs('', '');
-        specSel.value = '';
       },
       set: function (product) {
         if (!product || product.id === undefined || product.id === null || product.id === '') {
           api.reset();
           return;
         }
-        if (!byName.has(product.name)) {
-          byName.set(product.name, [product]);
-          fillNames();
-        }
-        nameSel.value = product.name;
-        fillSpecs(product.name, product.id);
-        specSel.value = String(product.id);
+        fill(product.id);
+        nameSel.value = String(product.id);
       },
     };
     api.reset();
     return api;
   }
 
-  // G 段二（2026-10-09）：混合控件 —— 名称/型号可直接手输，命中已有商品则绑定，
-  // 未命中则留纯文本由后端自动建档。仅供 orders/new.html（销售/退货）使用；
-  // 拿货两页继续用上面的两级下拉（mountRow），互不影响。
-  // row 需含：.picker-name-input .picker-spec-input .product-id .product-name .product-spec
+  // 销售 / 退货：单框手输 + 名称建议；命中已有商品则绑定 id，未命中留纯文本交给
+  // 后端按名称自动建档（零建档路径）。
+  // row 需含：.picker-name-input .product-id .product-name
   function mountHybrid(row, catalog, onPick) {
     var nameInput = row.querySelector('.picker-name-input');
-    var specInput = row.querySelector('.picker-spec-input');
-    if (!nameInput || !specInput) return null;
+    if (!nameInput) return null;
     var productIdField = row.querySelector('.product-id');
     var productNameField = row.querySelector('.product-name');
-    var productSpecField = row.querySelector('.product-spec');
 
-    function norm(s) { return String(s == null ? '' : s).trim(); }
-
-    function findMatch(name, spec) {
-      var n = norm(name), sp = norm(spec);
-      if (!n) return null;
+    function findMatch(name) {
+      var target = norm(name);
+      if (!target) return null;
       for (var i = 0; i < (catalog || []).length; i += 1) {
-        var p = catalog[i];
-        if (norm(p.name) === n && norm(p.spec) === sp) return p;
+        if (norm(catalog[i].name) === target) return catalog[i];
       }
       return null;
     }
@@ -121,39 +94,24 @@
       return Array.from(seen);
     }
 
-    function specSuggestions(name) {
-      var n = norm(name);
-      var seen = new Set();
-      (catalog || []).forEach(function (p) { if (norm(p.name) === n) seen.add(p.spec || ''); });
-      return Array.from(seen);
-    }
-
     function syncHidden() {
       productNameField.value = norm(nameInput.value);
-      productSpecField.value = norm(specInput.value);
     }
 
     function refresh() {
       syncHidden();
-      var match = findMatch(nameInput.value, specInput.value);
-      if (match) {
-        productIdField.value = match.id;
-      } else {
-        // 未命中：清空 id，交给后端按「名称+型号」自动建档（零建档路径）。
-        productIdField.value = '';
-      }
+      var match = findMatch(nameInput.value);
+      // 未命中：清空 id，交给后端按名称自动建档（零建档路径）。
+      productIdField.value = match ? match.id : '';
       onPick(match);
     }
 
     nameInput.addEventListener('input', refresh);
-    specInput.addEventListener('input', refresh);
     nameInput.addEventListener('change', refresh);
-    specInput.addEventListener('change', refresh);
 
     var api = {
       reset: function () {
         nameInput.value = '';
-        specInput.value = '';
         productIdField.value = '';
         syncHidden();
       },
@@ -163,20 +121,16 @@
           return;
         }
         nameInput.value = product.name || '';
-        specInput.value = product.spec || '';
         productIdField.value = product.id;
         syncHidden();
       },
       names: nameSuggestions,
-      specs: specSuggestions,
     };
-    // 初次渲染：已有 id 说明是重编辑，回填名称/型号。
+    // 初次渲染：已有 id 说明是重编辑，回填名称。
     if (productIdField.value) {
-      var existing = null;
       for (var i = 0; i < (catalog || []).length; i += 1) {
-        if (String(catalog[i].id) === String(productIdField.value)) { existing = catalog[i]; break; }
+        if (String(catalog[i].id) === String(productIdField.value)) { api.set(catalog[i]); break; }
       }
-      if (existing) api.set(existing);
     }
     syncHidden();
     return api;

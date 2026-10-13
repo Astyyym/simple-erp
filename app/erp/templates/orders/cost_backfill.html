@@ -29,7 +29,7 @@
 <form method="post" action="/orders/{{order.id}}/cost_backfill" autocomplete="off">
 <table class="table table-bordered align-middle">
   <thead><tr>
-    <th>序号</th><th>产品名称</th><th>型号</th><th>单位</th><th>数量</th><th>小计</th>
+    <th>序号</th><th>产品名称</th><th>单位</th><th>数量</th><th>小计</th>
     <th>成本来源</th><th>单位成本（元）</th><th>总成本（元，可选）</th>
   </tr></thead>
   <tbody>
@@ -37,7 +37,6 @@
   <tr>
     <td>{{loop.index}}</td>
     <td>{{row.product_name}}</td>
-    <td>{{row.spec}}</td>
     <td>{{row.unit}}</td>
     <td>{{row.quantity}}</td>
     <td>¥{{cents_to_yuan(row.subtotal_cents)}}</td>

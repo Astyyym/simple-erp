@@ -76,7 +76,7 @@ def _typed_order_payload(
 ) -> dict:
     canonical_rows = []
     for row in rows:
-        name, spec = normalize_product_identity(row.get("product_name", ""), row.get("spec", ""))
+        name = normalize_product_name(row.get("product_name", ""))
         quantity_3dp = _quantity_3dp(row.get("quantity", ""))
         unit = str(row.get("unit", "")).strip() or "个"
         unit_price_cents = yuan_to_cents(row.get("unit_price_yuan", "0"))
@@ -84,7 +84,6 @@ def _typed_order_payload(
         canonical_rows.append({
             "product_id": product_id,
             "product_name": "" if product_id is not None else name,
-            "spec": "" if product_id is not None else spec,
             "unit": unit,
             "quantity_3dp": quantity_3dp,
             "unit_price_cents": unit_price_cents,
@@ -112,20 +111,20 @@ def _average_cost_micro_for_accounting(quantity_3dp: int, cost_total_micro: int)
 def create_customer(name: str, phone: str = "", address: str = "", opening_balance_cents: int = 0) -> int:
     with get_db() as conn:
         cur = conn.execute(
-            "INSERT INTO customers(name, phone, address, opening_balance_cents, origin) VALUES (?, ?, ?, ?, 'manual')",
-            (name, phone, address, opening_balance_cents),
+            "INSERT INTO customers(name, phone, address, opening_balance_cents, pinyin_initials, origin) VALUES (?, ?, ?, ?, ?, 'manual')",
+            (name, phone, address, opening_balance_cents, build_pinyin_initials(name)),
         )
         customer_id = cur.lastrowid
     log_action("create_customer", "customer", customer_id, f"新增客户: {name}")
     return int(customer_id)
 
 
-def normalize_product_identity(name: str, spec: str = "") -> tuple[str, str]:
+def normalize_product_name(name: str) -> str:
+    """商品身份 = 名称本身（v14 起型号已并进名称），只去首尾空白。"""
     normalized_name = str(name or "").strip()
-    normalized_spec = str(spec or "").strip()
     if not normalized_name:
         raise ValueError("商品名称不能为空")
-    return normalized_name, normalized_spec
+    return normalized_name
 
 
 def _validate_safety_stock(value) -> int:
@@ -149,29 +148,29 @@ def normalize_product_brand(brand) -> str | None:
     return text or None
 
 
-def create_product(name: str, spec: str, unit: str, default_price_cents: int, pinyin_initials: str = "", *, safety_stock=None, brand=None) -> int:
-    name, spec = normalize_product_identity(name, spec)
+def create_product(name: str, unit: str, default_price_cents: int, pinyin_initials: str = "", *, safety_stock=None, brand=None) -> int:
+    name = normalize_product_name(name)
     safety_stock_3dp = _validate_safety_stock(safety_stock)
     with get_db() as conn:
         try:
             cur = conn.execute(
-                "INSERT INTO products(name, spec, unit, default_price_cents, pinyin_initials, safety_stock_3dp, origin, brand) VALUES (?, ?, ?, ?, ?, ?, 'manual', ?)",
-                (name, spec, unit, default_price_cents, pinyin_initials, safety_stock_3dp, normalize_product_brand(brand)),
+                "INSERT INTO products(name, unit, default_price_cents, pinyin_initials, safety_stock_3dp, origin, brand) VALUES (?, ?, ?, ?, ?, 'manual', ?)",
+                (name, unit, default_price_cents, pinyin_initials, safety_stock_3dp, normalize_product_brand(brand)),
             )
         except sqlite3.IntegrityError as exc:
             if "idx_products_business_identity" in str(exc) or "UNIQUE constraint failed: index" in str(exc):
-                raise ValueError("商品名称和型号已存在") from exc
+                raise ValueError("商品名称已存在") from exc
             raise
         product_id = cur.lastrowid
-    log_action("create_product", "product", product_id, f"新增商品: {name} {spec}")
+    log_action("create_product", "product", product_id, f"新增商品: {name}")
     return int(product_id)
 
 
 _BRAND_UNSET = object()
 
 
-def update_product_record(product_id: int, name: str, spec: str, unit: str, default_price_cents: int, *, safety_stock=None, brand=_BRAND_UNSET) -> None:
-    name, spec = normalize_product_identity(name, spec)
+def update_product_record(product_id: int, name: str, unit: str, default_price_cents: int, *, safety_stock=None, brand=_BRAND_UNSET) -> None:
+    name = normalize_product_name(name)
     safety_stock_3dp = _validate_safety_stock(safety_stock)
     with get_db() as conn:
         inventory_state = conn.execute(
@@ -189,23 +188,23 @@ def update_product_record(product_id: int, name: str, spec: str, unit: str, defa
                 cursor = conn.execute(
                     """
                     UPDATE products
-                    SET name=?, spec=?, unit=?, default_price_cents=?, safety_stock_3dp=?, pinyin_initials=?, updated_at=CURRENT_TIMESTAMP
+                    SET name=?, unit=?, default_price_cents=?, safety_stock_3dp=?, pinyin_initials=?, updated_at=CURRENT_TIMESTAMP
                     WHERE id=? AND deleted_at IS NULL
                     """,
-                    (name, spec, unit, default_price_cents, safety_stock_3dp, build_pinyin_initials(name), product_id),
+                    (name, unit, default_price_cents, safety_stock_3dp, build_pinyin_initials(name), product_id),
                 )
             else:
                 cursor = conn.execute(
                     """
                     UPDATE products
-                    SET name=?, spec=?, unit=?, default_price_cents=?, safety_stock_3dp=?, pinyin_initials=?, brand=?, updated_at=CURRENT_TIMESTAMP
+                    SET name=?, unit=?, default_price_cents=?, safety_stock_3dp=?, pinyin_initials=?, brand=?, updated_at=CURRENT_TIMESTAMP
                     WHERE id=? AND deleted_at IS NULL
                     """,
-                    (name, spec, unit, default_price_cents, safety_stock_3dp, build_pinyin_initials(name), normalize_product_brand(brand), product_id),
+                    (name, unit, default_price_cents, safety_stock_3dp, build_pinyin_initials(name), normalize_product_brand(brand), product_id),
                 )
         except sqlite3.IntegrityError as exc:
             if "idx_products_business_identity" in str(exc) or "UNIQUE constraint failed: index" in str(exc):
-                raise ValueError("商品名称和型号已存在") from exc
+                raise ValueError("商品名称已存在") from exc
             raise
         if cursor.rowcount == 0:
             raise ValueError("商品不存在")
@@ -253,27 +252,27 @@ def create_order(customer_id: int, order_no: str, items: Iterable[dict], status:
             quantity = _validate_quantity(item["quantity"])
             subtotal = line_subtotal_cents(quantity, unit_price_cents)
             total += subtotal
-            prepared.append((item["product_id"], product["name"], product["spec"], product["unit"], quantity, unit_price_cents, subtotal))
+            prepared.append((item["product_id"], product["name"], product["unit"], quantity, unit_price_cents, subtotal))
         cur = conn.execute(
             "INSERT INTO orders(order_no, customer_id, order_date, total_amount_cents, status, notes) VALUES (?, ?, ?, ?, ?, ?)",
             (order_no, customer_id, order_date, total, status, notes),
         )
         order_id = int(cur.lastrowid)
         conn.executemany(
-            "INSERT INTO order_items(order_id, product_id, product_name, spec, unit, quantity, unit_price_cents, subtotal_cents) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO order_items(order_id, product_id, product_name, unit, quantity, unit_price_cents, subtotal_cents) VALUES (?, ?, ?, ?, ?, ?, ?)",
             [(order_id, *row) for row in prepared],
         )
     log_action("create_order", "order", order_id, f"新增订单 {order_no}，状态 {status}，金额 {total} 分")
     return order_id
 
 
-def _upsert_product_and_customer_price(conn, customer_id: int, product_name: str, spec: str, unit: str, unit_price_cents: int, *, order_no: str = "") -> int:
-    product_name, spec = normalize_product_identity(product_name, spec)
-    product = conn.execute("SELECT * FROM products WHERE TRIM(name)=? AND TRIM(COALESCE(spec, ''))=? ORDER BY id LIMIT 1", (product_name, spec)).fetchone()
+def _upsert_product_and_customer_price(conn, customer_id: int, product_name: str, unit: str, unit_price_cents: int, *, order_no: str = "") -> int:
+    product_name = normalize_product_name(product_name)
+    product = conn.execute("SELECT * FROM products WHERE TRIM(name)=? ORDER BY id LIMIT 1", (product_name,)).fetchone()
     if product is None:
         cur_product = conn.execute(
-            "INSERT INTO products(name, spec, unit, default_price_cents, pinyin_initials, usage_count, origin) VALUES (?, ?, ?, ?, ?, 1, 'order')",
-            (product_name, spec, unit, unit_price_cents, build_pinyin_initials(product_name)),
+            "INSERT INTO products(name, unit, default_price_cents, pinyin_initials, usage_count, origin) VALUES (?, ?, ?, ?, 1, 'order')",
+            (product_name, unit, unit_price_cents, build_pinyin_initials(product_name)),
         )
         new_id = int(cur_product.lastrowid)
         # G-0b：自动建档必须留痕，否则事后无法追溯是谁/哪张单建出来的。
@@ -281,7 +280,7 @@ def _upsert_product_and_customer_price(conn, customer_id: int, product_name: str
             "auto_create_product",
             "product",
             new_id,
-            f"开单自动建档商品：{product_name} {spec}，来源 {order_no}".strip() if order_no else f"开单自动建档商品：{product_name} {spec}".strip(),
+            f"开单自动建档商品：{product_name}，来源 {order_no}".strip() if order_no else f"开单自动建档商品：{product_name}".strip(),
             conn=conn,
         )
         return new_id
@@ -296,7 +295,7 @@ def _upsert_product_and_customer_price(conn, customer_id: int, product_name: str
             "restore_product_on_order",
             "product",
             product_id,
-            f"开单复用回收站商品档案并恢复可见性：{product_name} {spec}".strip(),
+            f"开单复用回收站商品档案并恢复可见性：{product_name}".strip(),
             conn=conn,
         )
         _learn_customer_price(conn, customer_id, product_id, unit_price_cents, int(product["default_price_cents"]))
@@ -322,18 +321,29 @@ def _learn_customer_price(conn, customer_id: int, product_id: int, unit_price_ce
         )
 
 
-def _select_existing_product(conn, customer_id: int, product_id, unit_price_cents: int) -> tuple[int, str, str, str]:
+def _select_existing_product(conn, customer_id: int, product_id, unit_price_cents: int, unit: str = "") -> tuple[int, str, str]:
+    """选中已有商品：以**提交的单位**为准（空则回落档案单位），并同步商品档案单位。
+
+    决策（2026-10-12 §4.1 / §六 #14）：门店实际动作是「输入商品名 → 命中 → 改单位」，
+    历史上这里直接返回 `product["unit"]`，把用户输入的单位整条丢弃且无提示。
+    现在与手输路径 `_upsert_product_and_customer_price` 行为统一：都以提交值为准，
+    同时写明细 + 同步 `products.unit`。
+    """
     try:
         product_id = int(product_id)
     except (TypeError, ValueError):
         raise ValueError("必须选择具体商品") from None
     product = conn.execute(
-        "SELECT id, name, spec, unit, default_price_cents, deleted_at FROM products WHERE id=?",
+        "SELECT id, name, unit, default_price_cents, deleted_at FROM products WHERE id=?",
         (product_id,),
     ).fetchone()
     if product is None or product["deleted_at"] is not None:
         raise ValueError("商品不存在或已删除")
-    conn.execute("UPDATE products SET usage_count=usage_count+1, updated_at=CURRENT_TIMESTAMP WHERE id=?", (product_id,))
+    effective_unit = str(unit or "").strip() or str(product["unit"] or "")
+    conn.execute(
+        "UPDATE products SET unit=?, usage_count=usage_count+1, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (effective_unit, product_id),
+    )
     if unit_price_cents != int(product["default_price_cents"]):
         conn.execute(
             """
@@ -343,7 +353,7 @@ def _select_existing_product(conn, customer_id: int, product_id, unit_price_cent
             """,
             (customer_id, product_id, unit_price_cents),
         )
-    return int(product["id"]), product["name"], product["spec"] or "", product["unit"]
+    return int(product["id"]), product["name"], effective_unit
 
 
 def create_order_from_typed_rows(
@@ -358,9 +368,9 @@ def create_order_from_typed_rows(
 ) -> int:
     """Create an order from Excel-like typed rows.
 
-    Each row may contain product_name, unit, unit_price_yuan, quantity and optional spec.
+    Each row may contain product_name, unit, unit_price_yuan and quantity.
     Unknown products are saved into products as the operator's product dictionary.
-    Existing products with the same name/spec are updated with the latest typed unit/price,
+    Existing products with the same name are updated with the latest typed unit/price,
     while each order item keeps its own historical snapshot.
     """
     if status not in {"draft", "saved"}:
@@ -386,17 +396,20 @@ def create_order_from_typed_rows(
             raw_product_name = str(row.get("product_name", ""))
             if not raw_product_name.strip():
                 continue
-            product_name, spec = normalize_product_identity(raw_product_name, row.get("spec", ""))
+            product_name = normalize_product_name(raw_product_name)
             quantity = _validate_quantity(row.get("quantity", ""))
-            unit = str(row.get("unit", "")).strip() or "个"
+            raw_unit = str(row.get("unit", "")).strip()
+            unit = raw_unit or "个"
             unit_price_cents = yuan_to_cents(row.get("unit_price_yuan", "0"))
             if row.get("product_id"):
-                product_id, product_name, spec, unit = _select_existing_product(conn, customer_id, row["product_id"], unit_price_cents)
+                # 选中路径：提交空单位时回落**商品档案**单位（而非硬编码「个」）
+                product_id, product_name, unit = _select_existing_product(conn, customer_id, row["product_id"], unit_price_cents, raw_unit)
             else:
-                product_id = _upsert_product_and_customer_price(conn, customer_id, product_name, spec, unit, unit_price_cents, order_no=order_no)
+                product_id = _upsert_product_and_customer_price(conn, customer_id, product_name, unit, unit_price_cents, order_no=order_no)
             subtotal = line_subtotal_cents(quantity, unit_price_cents)
             total += subtotal * sign
-            prepared.append((product_id, product_name, spec, unit, quantity, unit_price_cents, subtotal))
+            # 元组顺序：product_id, product_name, unit, quantity, unit_price_cents, subtotal
+            prepared.append((product_id, product_name, unit, quantity, unit_price_cents, subtotal))
         cur = conn.execute(
             """
             INSERT INTO orders(
@@ -411,7 +424,7 @@ def create_order_from_typed_rows(
             snapshots = post_sale_order(
                 conn,
                 order_id,
-                [{"product_id": item[0], "quantity": item[4]} for item in prepared],
+                [{"product_id": item[0], "quantity": item[3]} for item in prepared],
                 order_date,
             )
         elif status == "saved" and order_type == "return":
@@ -419,7 +432,7 @@ def create_order_from_typed_rows(
             snapshots = post_typed_return_order(
                 conn,
                 order_id,
-                [{"product_id": item[0], "quantity": item[4]} for item in prepared],
+                [{"product_id": item[0], "quantity": item[3]} for item in prepared],
                 order_date,
             )
         else:
@@ -427,9 +440,9 @@ def create_order_from_typed_rows(
         conn.executemany(
             """
             INSERT INTO order_items(
-                order_id, product_id, product_name, spec, unit, quantity,
+                order_id, product_id, product_name, unit, quantity,
                 unit_price_cents, subtotal_cents, unit_cost_micro, cost_total_micro
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [(order_id, *item, snapshot["unit_cost_micro"], snapshot["cost_total_micro"])
              for item, snapshot in zip(prepared, snapshots)],
@@ -510,12 +523,13 @@ def _prepare_return_items(conn, source_order_id: int, rows: list[dict], customer
         else:
             cumulative_amount = _proportional_amount(original_amount, cumulative_quantity, original_quantity)
             cumulative_cost = _proportional_amount(original_cost, cumulative_quantity, original_quantity)
+        submitted_unit = str(raw.get("unit") or "").strip()
         prepared.append({
             "source_item_id": source_item_id,
             "product_id": int(source_item["product_id"]),
             "product_name": source_item["product_name"],
-            "spec": source_item["spec"] or "",
-            "unit": source_item["unit"],
+            # §4.3 / #20：来源带入默认沿用源销售单快照单位；表单提交了不同值则以提交值为准。
+            "unit": submitted_unit or source_item["unit"],
             "quantity": str(raw.get("quantity")).strip(),
             "quantity_3dp": requested_quantity,
             "unit_price_cents": int(source_item["unit_price_cents"]),
@@ -553,7 +567,8 @@ def create_return_order_from_source(
         "order_date": order_date,
         "notes": notes or "",
         "rows": [
-            {"source_item_id": int(row["source_item_id"]), "quantity_3dp": _quantity_3dp(row.get("quantity"))}
+            {"source_item_id": int(row["source_item_id"]), "quantity_3dp": _quantity_3dp(row.get("quantity")),
+             "unit": str(row.get("unit") or "").strip()}
             for row in rows
         ],
     }
@@ -578,13 +593,13 @@ def create_return_order_from_source(
         conn.executemany(
             """
             INSERT INTO order_items(
-                order_id, product_id, product_name, spec, unit, quantity,
+                order_id, product_id, product_name, unit, quantity,
                 unit_price_cents, subtotal_cents, unit_cost_micro, cost_total_micro, source_item_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
-                    order_id, item["product_id"], item["product_name"], item["spec"], item["unit"], item["quantity"],
+                    order_id, item["product_id"], item["product_name"], item["unit"], item["quantity"],
                     item["unit_price_cents"], item["subtotal_cents"], item["unit_cost_micro"], item["cost_total_micro"], item["source_item_id"],
                 )
                 for item in prepared
@@ -630,13 +645,13 @@ def update_return_draft_from_source(
         conn.executemany(
             """
             INSERT INTO order_items(
-                order_id, product_id, product_name, spec, unit, quantity,
+                order_id, product_id, product_name, unit, quantity,
                 unit_price_cents, subtotal_cents, unit_cost_micro, cost_total_micro, source_item_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
-                    order_id, item["product_id"], item["product_name"], item["spec"], item["unit"], item["quantity"],
+                    order_id, item["product_id"], item["product_name"], item["unit"], item["quantity"],
                     item["unit_price_cents"], item["subtotal_cents"], item["unit_cost_micro"], item["cost_total_micro"], item["source_item_id"],
                 )
                 for item in prepared
@@ -688,31 +703,34 @@ def update_order_from_typed_rows(
             raw_product_name = str(row.get("product_name", ""))
             if not raw_product_name.strip():
                 continue
-            product_name, spec = normalize_product_identity(raw_product_name, row.get("spec", ""))
+            product_name = normalize_product_name(raw_product_name)
             quantity = _validate_quantity(row.get("quantity", ""))
-            unit = str(row.get("unit", "")).strip() or "个"
+            raw_unit = str(row.get("unit", "")).strip()
+            unit = raw_unit or "个"
             unit_price_cents = yuan_to_cents(row.get("unit_price_yuan", "0"))
             if row.get("product_id"):
-                product_id, product_name, spec, unit = _select_existing_product(conn, customer_id, row["product_id"], unit_price_cents)
+                # 选中路径：提交空单位时回落**商品档案**单位（而非硬编码「个」）
+                product_id, product_name, unit = _select_existing_product(conn, customer_id, row["product_id"], unit_price_cents, raw_unit)
             else:
-                product_id = _upsert_product_and_customer_price(conn, customer_id, product_name, spec, unit, unit_price_cents, order_no=order_no)
+                product_id = _upsert_product_and_customer_price(conn, customer_id, product_name, unit, unit_price_cents, order_no=order_no)
             subtotal = line_subtotal_cents(quantity, unit_price_cents)
             total += subtotal * sign
-            prepared.append((order_id, product_id, product_name, spec, unit, quantity, unit_price_cents, subtotal))
+            # 元组顺序：order_id, product_id, product_name, unit, quantity, unit_price_cents, subtotal
+            prepared.append((order_id, product_id, product_name, unit, quantity, unit_price_cents, subtotal))
         conn.execute(
             "UPDATE orders SET order_no=?, customer_id=?, order_date=?, total_amount_cents=?, status=?, order_type=?, notes=?, version=version+1, updated_at=CURRENT_TIMESTAMP WHERE id=?",
             (order_no, customer_id, order_date, total, status, order_type, notes, order_id),
         )
         conn.execute("DELETE FROM order_items WHERE order_id=?", (order_id,))
         conn.executemany(
-            "INSERT INTO order_items(order_id, product_id, product_name, spec, unit, quantity, unit_price_cents, subtotal_cents) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO order_items(order_id, product_id, product_name, unit, quantity, unit_price_cents, subtotal_cents) VALUES (?, ?, ?, ?, ?, ?, ?)",
             prepared,
         )
         if finalize_sale:
             snapshots = post_sale_order(
                 conn,
                 order_id,
-                [{"product_id": item[1], "quantity": item[5]} for item in prepared],
+                [{"product_id": item[1], "quantity": item[4]} for item in prepared],
                 order_date,
             )
             item_ids = conn.execute("SELECT id FROM order_items WHERE order_id=? ORDER BY id", (order_id,)).fetchall()
@@ -963,7 +981,7 @@ def get_customer_account_ledger(customer_id: int, start_date: str = "", end_date
                     o.order_no AS reference,
                     COALESCE((
                         SELECT group_concat(
-                            trim(oi.product_name || CASE WHEN COALESCE(oi.spec, '')='' THEN '' ELSE ' ' || oi.spec END),
+                            trim(oi.product_name),
                             '、'
                         )
                         FROM order_items oi WHERE oi.order_id=o.id
@@ -1019,7 +1037,7 @@ def get_customer_account_ledger(customer_id: int, start_date: str = "", end_date
                     po.business_date AS date,
                     po.created_at AS sort_at,
                     po.order_no AS reference,
-                    COALESCE((SELECT group_concat(trim(pi.product_name || CASE WHEN COALESCE(pi.spec,'')='' THEN '' ELSE ' ' || pi.spec END), '、') FROM purchase_order_items pi WHERE pi.purchase_order_id=po.id), '拿货') AS description,
+                    COALESCE((SELECT group_concat(trim(pi.product_name), '、') FROM purchase_order_items pi WHERE pi.purchase_order_id=po.id), '拿货') AS description,
                     po.total_amount_cents AS amount_cents,
                     CASE WHEN po.status='void' THEN 0 ELSE -po.total_amount_cents END AS balance_delta_cents,
                     CASE WHEN po.status='void' THEN 'void' ELSE 'active' END AS status,
@@ -1036,7 +1054,7 @@ def get_customer_account_ledger(customer_id: int, start_date: str = "", end_date
                     pr.business_date AS date,
                     pr.created_at AS sort_at,
                     pr.order_no AS reference,
-                    COALESCE((SELECT group_concat(trim(pri.product_name || CASE WHEN COALESCE(pri.spec,'')='' THEN '' ELSE ' ' || pri.spec END), '、') FROM purchase_return_items pri WHERE pri.purchase_return_id=pr.id), '退拿货') AS description,
+                    COALESCE((SELECT group_concat(trim(pri.product_name), '、') FROM purchase_return_items pri WHERE pri.purchase_return_id=pr.id), '退拿货') AS description,
                     pr.total_amount_cents AS amount_cents,
                     CASE WHEN pr.status='void' THEN 0 ELSE pr.total_amount_cents END AS balance_delta_cents,
                     CASE WHEN pr.status='void' THEN 'void' ELSE 'active' END AS status,

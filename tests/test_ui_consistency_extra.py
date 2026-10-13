@@ -25,7 +25,7 @@ def _client():
 def test_purchase_detail_returns_to_document_management():
     client = _client()
     cid = create_customer("E5客户")
-    pid = create_product("E5商品", "", "个", 1000)
+    pid = create_product("E5商品", "个", 1000)
     # 用草稿拿货单：无需先启用库存；详情页返回按钮与状态无关。
     purchase = create_purchase_order(
         "NH202610010001", "2026-10-01",
@@ -51,7 +51,7 @@ def test_topbar_status_point_uses_health_endpoint():
 def test_list_amounts_show_yuan_symbol():
     client = _client()
     cid = create_customer("E9客户")
-    create_product("E9商品", "", "个", 1234)
+    create_product("E9商品", "个", 1234)
     create_order_from_typed_rows(
         cid, "MD202610010001",
         [{"product_name": "E9商品", "unit": "个", "unit_price_yuan": "10", "quantity": "1"}],
@@ -119,8 +119,10 @@ def test_truncation_hints_render_on_product_and_customer_lists():
     cid = None
     client = _client()
     for i in range(205):
-        name = f"E4商品{i:03d}"
-        _cp(name, f"S{i:03d}", "个", 1000, build(name))
+        # 决策变更（v14）：create_product 签名收窄为 (name, unit, default_price_cents,
+        # pinyin_initials="", ...)，原「型号」直接并进名称。
+        name = f"E4商品{i:03d}S{i:03d}"
+        _cp(name, "个", 1000, build(name))
     html = client.get("/products/").get_data(as_text=True)
     # Batch B（B-9）：截断提示强化，并明确「不要据此认为数据丢失」。
     assert "列表已截断" in html and "仅显示前 200 条" in html

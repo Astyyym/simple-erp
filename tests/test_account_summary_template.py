@@ -27,9 +27,9 @@ def test_account_summary_template_marks_return_rows_red_and_prints_net_formula()
         order_type="return",
     )
     rows = [
-        {"order_date": "2026-07-10", "order_no": "SALE-SUMMARY-TPL", "order_type": "sale", "product_name": "销售阀门", "spec": "", "unit": "个", "quantity": "1", "unit_price_cents": 10000, "subtotal_cents": 10000, "order_total_cents": 10000},
-        {"order_date": "2026-07-11", "order_no": "RETURN-SUMMARY-TPL", "order_type": "return", "product_name": "退货阀门A", "spec": "", "unit": "个", "quantity": "1", "unit_price_cents": 2000, "subtotal_cents": 2000, "order_total_cents": -5000},
-        {"order_date": "2026-07-11", "order_no": "RETURN-SUMMARY-TPL", "order_type": "return", "product_name": "退货阀门B", "spec": "", "unit": "个", "quantity": "1", "unit_price_cents": 3000, "subtotal_cents": 3000, "order_total_cents": -5000},
+        {"order_date": "2026-07-10", "order_no": "SALE-SUMMARY-TPL", "order_type": "sale", "product_name": "销售阀门", "unit": "个", "quantity": "1", "unit_price_cents": 10000, "subtotal_cents": 10000, "order_total_cents": 10000},
+        {"order_date": "2026-07-11", "order_no": "RETURN-SUMMARY-TPL", "order_type": "return", "product_name": "退货阀门A", "unit": "个", "quantity": "1", "unit_price_cents": 2000, "subtotal_cents": 2000, "order_total_cents": -5000},
+        {"order_date": "2026-07-11", "order_no": "RETURN-SUMMARY-TPL", "order_type": "return", "product_name": "退货阀门B", "unit": "个", "quantity": "1", "unit_price_cents": 3000, "subtotal_cents": 3000, "order_total_cents": -5000},
     ]
     with app.app_context():
         html = render_template(

@@ -88,8 +88,11 @@ def test_workbench_layout_fills_the_content_area_without_a_width_cap():
     assert "max-width:1360px" not in html
 
 
-def test_order_entry_product_picker_shows_name_and_spec_side_by_side():
-    """四类开单共用一处 .product-picker 样式：名称与型号必须并排，不能上下堆叠。
+def test_order_entry_product_picker_uses_single_name_field():
+    """四类开单共用一处 .product-picker 样式，商品身份＝单一名称，控件是单框。
+
+    决策变更（v14）：商品身份由 (名称, 型号) 合并为单一名称，型号框/型号列已删除，
+    名称框独占整行（flex:1 1 auto;min-width:0），不再与型号并排。
 
     flex 必须挂在内层 .picker-row 上，不能挂在 <td> 上：td 变成 flex 容器后
     会丢掉 table-cell 身份，高度塌成内容高并贴顶对齐（vertical-align 失效）。
@@ -99,8 +102,10 @@ def test_order_entry_product_picker_shows_name_and_spec_side_by_side():
     assert ".product-picker .picker-row{display:flex;flex-direction:row" in base
     assert ".product-picker{display:flex" not in base
     assert ".product-picker{display:flex;flex-direction:column" not in base
-    assert ".product-picker .picker-name{flex:1 1 58%" in base
-    assert ".product-picker .picker-spec{flex:1 1 42%" in base
+    assert ".product-picker .picker-name{flex:1 1 auto;min-width:0}" in base
+    # 决策变更（v14）：型号框样式已随型号字段一并删除。
+    assert ".product-picker .picker-spec" not in base
+    assert ".picker-spec-input" not in base
     for path, table in (("/orders/new", "orderTable"), ("/orders/return/new", "orderTable"),
                         ("/purchases/new", "purchaseTable"), ("/purchases/return/new", "returnTable")):
         page = create_app().test_client().get(path).get_data(as_text=True)
@@ -108,3 +113,6 @@ def test_order_entry_product_picker_shows_name_and_spec_side_by_side():
         assert 'min-width:340px">产品名称</th>' in page, path
         # 单元格里必须有内层 flex 容器，否则 td 会自己变成 flex。
         assert '<td class="product-picker"><div class="picker-row">' in page, path
+        # 决策变更（v14）：不再有型号输入框 / name="spec"。
+        assert "picker-spec-input" not in page, path
+        assert 'name="spec"' not in page, path

@@ -36,7 +36,6 @@ def _empty_product(product: Any) -> dict[str, Any]:
     return {
         "product_id": int(product["id"]),
         "product_name": product["name"],
-        "spec": product["spec"] or "",
         "unit": product["unit"],
         "is_active": bool(product["is_active"]),
         "created_date": product["created_at"][:10],
@@ -78,7 +77,6 @@ def summarize_analytics(
     end_date: str | None = None,
     customer_id: int | None = None,
     product_name: str = "",
-    spec: str = "",
     metric: str = "amount",
     document_types: list[str] | None = None,
 ) -> dict[str, Any]:
@@ -103,10 +101,6 @@ def summarize_analytics(
     if unknown := document_filter - _VALID_DOCUMENT_TYPES:
         raise ValueError("订单类型不合法")
     product_name = (product_name or "").strip()
-    spec = (spec or "").strip()
-    query_spec = "" if spec == "__unfilled__" else spec
-    if spec and not product_name:
-        raise ValueError("选择型号前必须先选择商品名称")
 
     with get_db() as conn:
         if customer_id not in (None, ""):
@@ -117,25 +111,20 @@ def summarize_analytics(
                 raise ValueError("往来对象不存在")
         else:
             customer_id = None
-        if spec and product_name and not conn.execute("SELECT 1 FROM products WHERE name=? AND COALESCE(spec,'')=?", (product_name, query_spec)).fetchone():
-            raise ValueError("所选型号不存在")
         product_conditions = ["p.deleted_at IS NULL"]
         product_params: list[Any] = []
         if product_name:
             product_conditions.append("p.name = ?")
             product_params.append(product_name)
-        if spec and product_name:
-            product_conditions.append("COALESCE(p.spec, '') = ?")
-            product_params.append(query_spec)
         products = conn.execute(
             f"""
-            SELECT p.id, p.name, p.spec, p.unit, p.safety_stock_3dp, p.is_active, p.created_at,
+            SELECT p.id, p.name, p.unit, p.safety_stock_3dp, p.is_active, p.created_at,
                    COALESCE(s.enabled, 0) AS inventory_enabled,
                    s.quantity_3dp, s.avg_cost_micro, s.cost_total_micro
             FROM products p
             LEFT JOIN product_inventory_state s ON s.product_id=p.id
             WHERE {' AND '.join(product_conditions)}
-            ORDER BY p.name COLLATE NOCASE, COALESCE(p.spec, ''), p.id
+            ORDER BY p.name COLLATE NOCASE, p.id
             """,
             product_params,
         ).fetchall()
@@ -440,7 +429,6 @@ def summarize_analytics(
             "end_date": end_date or "",
             "customer_id": int(customer_id) if customer_id is not None else None,
             "product_name": product_name,
-            "spec": spec,
             "metric": metric,
             "document_types": sorted(document_filter),
         },

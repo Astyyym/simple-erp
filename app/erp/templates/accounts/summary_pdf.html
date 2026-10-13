@@ -40,9 +40,9 @@
     </div>
     <table>
       <colgroup><col style="width:22mm"><col style="width:42mm"><col><col style="width:12mm"><col style="width:14mm"><col style="width:17mm"><col style="width:18mm"><col style="width:20mm"></colgroup>
-      <tr><th>日期</th><th>单号</th><th>名称规格</th><th>单位</th><th>数量</th><th>单价</th><th>小计</th><th>单号合计</th></tr>
+      <tr><th>日期</th><th>单号</th><th>商品名称</th><th>单位</th><th>数量</th><th>单价</th><th>小计</th><th>单号合计</th></tr>
       {% for row in section.rows %}
-      <tr class="{{ 'return-row' if row.is_return else '' }}">{% if row.show_date %}<td class="date-cell" rowspan="{{row.date_rowspan}}">{{row.order_date}}</td>{% endif %}{% if row.show_order_no %}<td class="order-no-cell" rowspan="{{row.order_no_rowspan}}">{{row.order_no}}</td>{% endif %}<td class="name-cell">{{row.product_name}} {{row.spec}}</td><td>{{row.unit}}</td><td>{{row.quantity}}</td><td>{{cents_to_yuan(row.unit_price_cents)}}</td><td>{{cents_to_yuan(row.subtotal_cents)}}</td>{% if row.show_order_total %}<td rowspan="{{row.order_total_rowspan}}">¥{{cents_to_yuan(row.order_total_cents)}}</td>{% endif %}</tr>
+      <tr class="{{ 'return-row' if row.is_return else '' }}">{% if row.show_date %}<td class="date-cell" rowspan="{{row.date_rowspan}}">{{row.order_date}}</td>{% endif %}{% if row.show_order_no %}<td class="order-no-cell" rowspan="{{row.order_no_rowspan}}">{{row.order_no}}</td>{% endif %}<td class="name-cell">{{row.product_name}}</td><td>{{row.unit}}</td><td>{{row.quantity}}</td><td>{{cents_to_yuan(row.unit_price_cents)}}</td><td>{{cents_to_yuan(row.subtotal_cents)}}</td>{% if row.show_order_total %}<td rowspan="{{row.order_total_rowspan}}">¥{{cents_to_yuan(row.order_total_cents)}}</td>{% endif %}</tr>
       {% endfor %}
       <tr><td colspan="7" style="text-align:right;font-weight:bold">总金额</td><td style="font-weight:bold">¥{{cents_to_yuan(section.total_cents)}}</td></tr>
     </table>

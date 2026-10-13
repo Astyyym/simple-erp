@@ -13,7 +13,7 @@ from erp.services.inventory import create_purchase_order, initialize_product, fi
 def _seed():
     db.init_db()
     customer_id = create_customer('双向测试对象', opening_balance_cents=12345)
-    product_id = create_product('C1测试商品', '4kg', '个', 2000)
+    product_id = create_product('C1测试商品' '4kg', '个', 2000)
     initialize_product(product_id, '10', '10', '2026-10-01', '测试期初', 'c1-init')
     return customer_id, product_id
 
@@ -53,7 +53,7 @@ def test_legacy_draft_must_bind_before_posting_and_edit_posts_current_values_ato
     cid, pid = _seed()
     with db.get_db() as conn:
         oid = conn.execute("INSERT INTO purchase_orders(order_no,business_date,total_amount_cents,status,source_notes,request_key,payload_hash) VALUES ('NH202610010903','2026-10-01',1400,'draft','不推断','legacy-draft','legacy')").lastrowid
-        conn.execute("INSERT INTO purchase_order_items(purchase_order_id,product_id,product_name,spec,unit,quantity_3dp,unit_cost_cents,subtotal_cents) VALUES (?,?,'旧快照','4kg','个',1000,1400,1400)", (oid,pid))
+        conn.execute("INSERT INTO purchase_order_items(purchase_order_id,product_id,product_name,unit,quantity_3dp,unit_cost_cents,subtotal_cents) VALUES (?,?,'旧快照','个',1000,1400,1400)", (oid,pid))
     with pytest.raises(ValueError, match='往来对象'):
         finalize_purchase_order(oid)
     with db.get_db() as conn:
@@ -183,8 +183,8 @@ def test_schema9_migration_keeps_legacy_purchases_and_balances(tmp_path):
     db.init_db()
     db.init_db()
     with db.get_db() as conn:
-        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 13
-        assert conn.execute("SELECT COUNT(*) FROM schema_version WHERE version=13").fetchone()[0] == 1
+        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 14
+        assert conn.execute("SELECT COUNT(*) FROM schema_version WHERE version=14").fetchone()[0] == 1
         columns = {r['name']: r for r in conn.execute('PRAGMA table_info(purchase_orders)')}
         assert columns['customer_id']['notnull'] == 0
         assert columns['customer_name']['notnull'] == 1
@@ -222,7 +222,7 @@ def test_schema9_partial_migration_failure_rolls_back_columns_and_version(tmp_pa
     assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0] == 9
     with conn:
         db.apply_schema(conn)
-    assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0] == 13
+    assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0] == 14
     conn.close()
 
 
@@ -269,7 +269,7 @@ def test_hidden_counterparty_blocks_new_business_but_preserves_history(disabled)
 def test_failed_draft_edit_keeps_original_object_rows_and_inventory():
     cid, pid = _seed()
     other = create_customer('失败不得替换对象')
-    unknown = create_product('未启用测试商品','x','个',100)
+    unknown = create_product('未启用测试商品' 'x','个',100)
     draft = create_purchase_order('NH202610010910','2026-10-01',[{'product_id':pid,'quantity':'1','unit_cost_yuan':'14'}],customer_id=cid,request_key='c1-failed-edit',status='draft')
     with db.get_db() as conn:
         before = tuple(conn.execute('SELECT * FROM purchase_orders').fetchone())

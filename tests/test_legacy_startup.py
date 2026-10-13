@@ -13,6 +13,11 @@ LEGACY_TABLES = (
     "payments", "adjustments", "audit_logs",
 )
 
+# 决策变更（v14）：商品身份 = 单一名称。迁移会把 `spec` 并进名称
+#（products.name / order_items.product_name，直接拼接、中间不加字符）并删除 `spec` 列。
+# 合并公式必须与 erp.db.MERGED_PRODUCT_NAME_SQL 逐字一致。
+MERGED_SPEC_NAME_COLUMNS = {"products": "name", "order_items": "product_name"}
+
 
 def seed_legacy_database(conn):
     """Only fictional records; do not copy or read a user's business database."""
@@ -43,15 +48,27 @@ def legacy_snapshot(conn):
 def assert_legacy_rows_unchanged(conn, before):
     # pinyin_initials 是纯派生字段：init_db 会按名称幂等回填空值（Batch E7），
     # 因此与历史业务列分开比较——业务列必须逐字节不变，派生列（回填）另行断言。
+    # 决策变更（v14）：spec 已并入名称并删列；迁移完成后待比较列按合并结果取，
+    # 迁移前（spec 仍在）按原样比较，两个调用点都能用。
     derived_columns = {"products": {"pinyin_initials"}}
     for table, rows in before.items():
-        skip = derived_columns.get(table, set())
+        merged_name_column = MERGED_SPEC_NAME_COLUMNS.get(table)
+        spec_merged = merged_name_column is not None and "spec" not in {col[1] for col in conn.execute(f"PRAGMA table_info({table})")}
+        skip = set(derived_columns.get(table, set()))
+        if spec_merged:
+            skip.add("spec")
         current = [dict(row) for row in conn.execute(f"SELECT * FROM {table} ORDER BY id")]
         assert len(current) == len(rows), table
+        expected = []
+        for original in rows:
+            row = {key: value for key, value in original.items() if key not in skip}
+            if spec_merged:
+                row[merged_name_column] = f"{original[merged_name_column]}{original['spec']}"
+            expected.append(row)
         assert [
             {key: row[key] for key in original if key not in skip}
             for row, original in zip(current, rows)
-        ] == [{key: value for key, value in original.items() if key not in skip} for original in rows], table
+        ] == expected, table
 
 
 def test_schema2_application_startup_preserves_legacy_business_rows():
@@ -66,8 +83,8 @@ def test_schema2_application_startup_preserves_legacy_business_rows():
             assert client.get(path).status_code == 200, path
     with db.get_db() as conn:
         assert_legacy_rows_unchanged(conn, before)
-        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 13
-        assert conn.execute("SELECT COUNT(*) FROM schema_version WHERE version=13").fetchone()[0] == 1
+        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 14
+        assert conn.execute("SELECT COUNT(*) FROM schema_version WHERE version=14").fetchone()[0] == 1
         assert {"request_key", "payload_hash", "version"} <= db._columns(conn, "orders")
         assert any(row[1] == "idx_orders_request_key" and row[2] for row in conn.execute("PRAGMA index_list(orders)"))
         assert [tuple(row) for row in conn.execute("SELECT unit_cost_micro,cost_total_micro,source_item_id FROM order_items")] == [(None, None, None), (None, None, None)]
@@ -99,5 +116,5 @@ def test_schema2_failed_index_creation_rolls_back_and_can_retry():
         assert_legacy_rows_unchanged(conn, before)
     db.init_db()
     with db.get_db() as conn:
-        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 13
+        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 14
         assert_legacy_rows_unchanged(conn, before)

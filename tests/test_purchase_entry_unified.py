@@ -11,7 +11,7 @@ from erp.services.inventory import create_purchase_order, initialize_product
 def _seed():
     init_db()
     cid = create_customer("统一页虚构对象")
-    pid = create_product("统一页商品", "U1", "个", 2000)
+    pid = create_product("统一页商品U1", "个", 2000)
     initialize_product(pid, "10", "10", "2026-10-02", "期初", "unified-init")
     return cid, pid
 
@@ -42,7 +42,8 @@ def test_object_autocomplete_api_lists_matching_customers():
 def test_purchase_create_autocreates_new_object_with_real_product():
     _seed()
     with get_db() as conn:
-        pid = conn.execute("SELECT id FROM products WHERE name='统一页商品'").fetchone()["id"]
+        # 决策变更（v14）：商品身份=单一名称，型号 U1 已并进名称。
+        pid = conn.execute("SELECT id FROM products WHERE name='统一页商品U1'").fetchone()["id"]
     client = create_app().test_client()
     response = client.post(
         "/purchases/create",

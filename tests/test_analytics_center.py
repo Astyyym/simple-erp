@@ -6,9 +6,9 @@ from erp.services.inventory import initialize_product
 
 def _seed_analytics_orders():
     init_db()
-    product_a = create_product("灭火器", "4kg", "个", 3000, safety_stock="5")
-    product_b = create_product("灭火器", "8kg", "个", 5000, safety_stock="2")
-    other_product = create_product("消防水带", "20m", "卷", 8000, safety_stock="1")
+    product_a = create_product("灭火器4kg", "个", 3000, safety_stock="5")
+    product_b = create_product("灭火器8kg", "个", 5000, safety_stock="2")
+    other_product = create_product("消防水带20m", "卷", 8000, safety_stock="1")
     initialize_product(product_a, "20", "10", "2026-10-01", "期初", "analytics-init-a")
     initialize_product(product_b, "10", "12", "2026-10-01", "期初", "analytics-init-b")
     initialize_product(other_product, "1", "50", "2026-10-01", "期初", "analytics-init-other")
@@ -19,14 +19,14 @@ def _seed_analytics_orders():
     sale_a = create_order_from_typed_rows(
         customer_id,
         "MD202610010101",
-        [{"product_id": product_a, "product_name": "灭火器", "spec": "4kg", "unit": "个", "unit_price_yuan": "20", "quantity": "2"}],
+        [{"product_id": product_a, "product_name": "灭火器4kg", "unit": "个", "unit_price_yuan": "20", "quantity": "2"}],
         status="saved",
         order_date="2026-10-01",
     )
     create_order_from_typed_rows(
         customer_id,
         "MD202610020101",
-        [{"product_id": product_b, "product_name": "灭火器", "spec": "8kg", "unit": "个", "unit_price_yuan": "30", "quantity": "3"}],
+        [{"product_id": product_b, "product_name": "灭火器8kg", "unit": "个", "unit_price_yuan": "30", "quantity": "3"}],
         status="saved",
         order_date="2026-10-02",
     )
@@ -45,7 +45,7 @@ def _seed_analytics_orders():
     void_id = create_order_from_typed_rows(
         customer_id,
         "MD202610040101",
-        [{"product_id": other_product, "product_name": "消防水带", "spec": "20m", "unit": "卷", "unit_price_yuan": "80", "quantity": "1"}],
+        [{"product_id": other_product, "product_name": "消防水带20m", "unit": "卷", "unit_price_yuan": "80", "quantity": "1"}],
         status="saved",
         order_date="2026-10-02",
     )
@@ -57,7 +57,7 @@ def test_analytics_summary_uses_shared_filters_and_net_sales_heatmap():
     from erp.services.analytics import summarize_analytics
     from erp.services.inventory import create_purchase_order
 
-    customer_id, product_a, product_b, _ = _seed_analytics_orders()
+    customer_id, product_a, product_b, other_product = _seed_analytics_orders()
     create_purchase_order(
         "NH202610020101",
         "2026-10-02",
@@ -65,15 +65,18 @@ def test_analytics_summary_uses_shared_filters_and_net_sales_heatmap():
         request_key="analytics-purchase-not-sales-001",
         customer_id=customer_id,
     )
+    # 决策变更（v14）：商品身份合并为单一名称，型号不再是筛选维度。
+    # 旧用例以基名 '灭火器' 一次命中 4kg / 8kg 两个商品；合并后名称即完整身份且精确匹配，
+    # 基名匹配不到任何商品，故改为只按客户这一共享筛选口径取值，仍覆盖两个灭火器商品的合计。
     result = summarize_analytics(
         start_date="2026-10-01",
         end_date="2026-10-02",
         customer_id=customer_id,
-        product_name="灭火器",
+        product_name="",
         metric="amount",
     )
 
-    assert result["filters"]["product_name"] == "灭火器"
+    assert result["filters"]["product_name"] == ""
     assert result["summary"]["sales_amount_cents"] == 13000
     assert result["summary"]["returns_amount_cents"] == 2000
     assert result["summary"]["net_sales_amount_cents"] == 11000
@@ -82,27 +85,38 @@ def test_analytics_summary_uses_shared_filters_and_net_sales_heatmap():
     assert result["summary"]["cost_complete"] is True
     assert [cell["date"] for cell in result["heatmap"]] == ["2026-10-01", "2026-10-02"]
     assert [cell["net_amount_cents"] for cell in result["heatmap"]] == [4000, 7000]
-    assert {row["product_id"] for row in result["product_rows"]} == {product_a, product_b}
-    assert result["product_rows"][0]["product_name"] == "灭火器"
+    assert {row["product_id"] for row in result["product_rows"]} == {product_a, product_b, other_product}
+    # 排行按流水净额降序：8kg (9000) 在 4kg (2000) 之前；名称已是合并后的完整身份。
+    assert result["product_rows"][0]["product_name"] == "灭火器8kg"
 
 
-def test_analytics_product_name_includes_models_and_spec_filter_narrows_one_product():
+def test_analytics_product_identity_is_single_name_so_merged_name_narrows_exactly():
+    """决策变更（v14）：商品身份合并为单一名称（名称+型号直拼），型号不再是筛选维度。
+
+    旧用例钉「product_name=灭火器 命中两个商品，再叠加 spec=4kg 收窄到一个」。
+    (名称,型号) 合并为单一名称后，名称即完整身份、精确匹配单个商品，spec 参数被删除。
+    """
     from erp.services.analytics import summarize_analytics
+    import pytest
 
-    customer_id, product_a, product_b, _ = _seed_analytics_orders()
-    all_models = summarize_analytics(start_date="2026-10-01", end_date="2026-10-02", customer_id=customer_id, product_name="灭火器")
-    one_model = summarize_analytics(
+    customer_id, product_a, product_b, other_product = _seed_analytics_orders()
+    all_products = summarize_analytics(start_date="2026-10-01", end_date="2026-10-02", customer_id=customer_id)
+    one_product = summarize_analytics(
         start_date="2026-10-01",
         end_date="2026-10-02",
         customer_id=customer_id,
-        product_name="灭火器",
-        spec="4kg",
+        product_name="灭火器4kg",
     )
 
-    assert {row["product_id"] for row in all_models["product_rows"]} == {product_a, product_b}
-    assert [row["product_id"] for row in one_model["product_rows"]] == [product_a]
-    assert one_model["summary"]["net_sales_quantity_3dp"] == 1000
-    assert one_model["summary"]["net_sales_amount_cents"] == 2000
+    # 合并后的两个灭火器商品是两条独立身份记录。
+    assert {row["product_id"] for row in all_products["product_rows"]} == {product_a, product_b, other_product}
+    # 完整名称精确命中单一商品。
+    assert [row["product_id"] for row in one_product["product_rows"]] == [product_a]
+    assert one_product["summary"]["net_sales_quantity_3dp"] == 1000
+    assert one_product["summary"]["net_sales_amount_cents"] == 2000
+    # 型号已从筛选契约删除：服务层不再接受 spec 关键字参数。
+    with pytest.raises(TypeError):
+        summarize_analytics(product_name="灭火器4kg", spec="4kg")
 
 
 def test_analytics_separates_current_inventory_status_and_rejects_invalid_range():
@@ -111,7 +125,9 @@ def test_analytics_separates_current_inventory_status_and_rejects_invalid_range(
     customer_id, product_a, _, _ = _seed_analytics_orders()
     with get_db() as conn:
         conn.execute("UPDATE product_inventory_state SET quantity_3dp=0 WHERE product_id=?", (product_a,))
-    result = summarize_analytics(start_date="2026-10-01", end_date="2026-10-02", customer_id=customer_id, product_name="灭火器")
+    # 决策变更（v14）：型号不再是筛选维度；旧用例用基名 '灭火器' 选中该系列，这里改为按客户筛选，
+    # 仍同时覆盖缺货商品与其余正常商品（statuses 里必然同时存在 product_a 与别的商品）。
+    result = summarize_analytics(start_date="2026-10-01", end_date="2026-10-02", customer_id=customer_id, product_name="")
     statuses = {row["product_id"]: row["inventory_status"] for row in result["product_rows"]}
     assert statuses[product_a] == "缺货"
     assert statuses[next(product_id for product_id in statuses if product_id != product_a)] == "正常"
@@ -164,13 +180,13 @@ def test_analytics_cross_year_range_marks_mixed_units_as_not_comparable():
     from erp.services.analytics import summarize_analytics
 
     init_db()
-    extinguisher = create_product("跨年灭火器", "4kg", "个", 2000)
-    hose = create_product("跨年水带", "20m", "卷", 5000)
+    extinguisher = create_product("跨年灭火器4kg", "个", 2000)
+    hose = create_product("跨年水带20m", "卷", 5000)
     initialize_product(extinguisher, "10", "8", "2025-12-31", "期初", "cross-year-init-a")
     initialize_product(hose, "10", "20", "2025-12-31", "期初", "cross-year-init-b")
     customer_id = create_customer("跨年分析客户")
-    create_order_from_typed_rows(customer_id, "MD202512310001", [{"product_id": extinguisher, "product_name": "跨年灭火器", "spec": "4kg", "unit": "个", "unit_price_yuan": "20", "quantity": "2"}], status="saved", order_date="2025-12-31")
-    create_order_from_typed_rows(customer_id, "MD202601010001", [{"product_id": hose, "product_name": "跨年水带", "spec": "20m", "unit": "卷", "unit_price_yuan": "50", "quantity": "1"}], status="saved", order_date="2026-01-01")
+    create_order_from_typed_rows(customer_id, "MD202512310001", [{"product_id": extinguisher, "product_name": "跨年灭火器4kg", "unit": "个", "unit_price_yuan": "20", "quantity": "2"}], status="saved", order_date="2025-12-31")
+    create_order_from_typed_rows(customer_id, "MD202601010001", [{"product_id": hose, "product_name": "跨年水带20m", "unit": "卷", "unit_price_yuan": "50", "quantity": "1"}], status="saved", order_date="2026-01-01")
 
     result = summarize_analytics(start_date="2025-12-31", end_date="2026-01-01", customer_id=customer_id, metric="quantity")
 
@@ -194,13 +210,13 @@ def test_analytics_zero_denominator_and_unknown_cost_are_explicit():
         source_sale = conn.execute("SELECT id FROM orders WHERE order_no='MD202610010101'").fetchone()["id"]
         source_item = conn.execute("SELECT id FROM order_items WHERE order_id=?", (source_sale,)).fetchone()["id"]
     create_return_order_from_source(customer_id, "MD202610020102", source_sale, [{"source_item_id": source_item, "quantity": "1"}], status="saved", order_date="2026-10-02")
-    zero = summarize_analytics(start_date="2026-10-01", end_date="2026-10-02", customer_id=customer_id, product_name="灭火器", spec="4kg")
+    zero = summarize_analytics(start_date="2026-10-01", end_date="2026-10-02", customer_id=customer_id, product_name="灭火器4kg")
     assert zero["summary"]["net_sales_amount_cents"] == 0
     assert zero["summary"]["gross_margin_rate"] is None
 
-    unknown_product = create_product("未知成本商品", "U1", "个", 1000)
-    create_order_from_typed_rows(customer_id, "MD202610020103", [{"product_id": unknown_product, "product_name": "未知成本商品", "spec": "U1", "unit": "个", "unit_price_yuan": "10", "quantity": "1"}], status="saved", order_date="2026-10-02")
-    unknown = summarize_analytics(start_date="2026-10-01", end_date="2026-10-02", customer_id=customer_id, product_name="未知成本商品")
+    unknown_product = create_product("未知成本商品U1", "个", 1000)
+    create_order_from_typed_rows(customer_id, "MD202610020103", [{"product_id": unknown_product, "product_name": "未知成本商品U1", "unit": "个", "unit_price_yuan": "10", "quantity": "1"}], status="saved", order_date="2026-10-02")
+    unknown = summarize_analytics(start_date="2026-10-01", end_date="2026-10-02", customer_id=customer_id, product_name="未知成本商品U1")
     assert unknown["summary"]["net_sales_amount_cents"] == 1000
     assert unknown["summary"]["cost_complete"] is False
     assert unknown["summary"]["unknown_line_count"] == 1
@@ -208,12 +224,25 @@ def test_analytics_zero_denominator_and_unknown_cost_are_explicit():
     assert unknown["summary"]["gross_margin_rate"] is None
 
 
-def test_analytics_rejects_model_filter_without_product_name_and_keeps_empty_range_stable():
+def test_analytics_drops_model_filter_and_keeps_empty_range_stable():
+    """决策变更（v14）：型号筛选整条删除 —— 「必须先选择商品名称」的联动校验随之删除。
+
+    旧用例钉「只传型号（未选名称）时报错必须先选商品名称」。该筛选维度连同它的前置校验
+    一起删除：服务层不再接受 spec 关键字（TypeError），路由也忽略 spec（不再报型号错误）。
+    """
     from erp.services.analytics import summarize_analytics
     import pytest
 
-    with pytest.raises(ValueError, match="必须先选择商品名称"):
+    # 服务层已无 spec 参数：型号不再是筛选维度。
+    with pytest.raises(TypeError):
         summarize_analytics(start_date="2026-01-01", end_date="2026-01-02", spec="4kg")
+    # 路由忽略 spec：不再因「只传型号」报错，页面正常渲染且不提示型号相关错误。
+    page = create_app().test_client().get(
+        "/analytics/", query_string={"start_date": "2026-01-01", "end_date": "2026-01-02", "spec": "4kg"}
+    )
+    assert page.status_code == 200
+    assert "必须先选择商品名称" not in page.get_data(as_text=True)
+
     init_db()
     result = summarize_analytics(start_date="2026-01-01", end_date="2026-01-03", product_name="不存在的商品")
     assert result["summary"]["net_sales_amount_cents"] == 0
@@ -227,11 +256,11 @@ def test_analytics_top_filter_supports_year_month_range_and_document_types():
 
     init_db()
     customer = create_customer("P7筛选对象")
-    product = create_product("P7商品", "S1", "个", 2000)
+    product = create_product("P7商品S1", "个", 2000)
     initialize_product(product, "10", "10", "2026-01-01", "期初", "p7-init")
     create_order_from_typed_rows(
         customer, "MD202602100001",
-        [{"product_id": product, "product_name": "P7商品", "spec": "S1", "unit": "个",
+        [{"product_id": product, "product_name": "P7商品S1", "unit": "个",
           "quantity": "2", "unit_price_yuan": "30"}],
         status="saved", order_date="2026-02-10",
     )
@@ -270,11 +299,11 @@ def test_document_type_filter_only_affects_flow_not_profit_metrics():
 
     init_db()
     customer = create_customer("P7口径对象")
-    product = create_product("P7口径商品", "S1", "个", 2000)
+    product = create_product("P7口径商品S1", "个", 2000)
     initialize_product(product, "10", "10", "2026-03-01", "期初", "p7-scope-init")
     create_order_from_typed_rows(
         customer, "MD202603100001",
-        [{"product_id": product, "product_name": "P7口径商品", "spec": "S1", "unit": "个",
+        [{"product_id": product, "product_name": "P7口径商品S1", "unit": "个",
           "quantity": "2", "unit_price_yuan": "30"}],
         status="saved", order_date="2026-03-10",
     )
@@ -321,7 +350,7 @@ def test_analytics_page_renders_document_flow_card():
 
     init_db()
     customer = create_customer("P7流水卡片对象")
-    product = create_product("P7流水卡片商品", "S1", "个", 2000)
+    product = create_product("P7流水卡片商品S1", "个", 2000)
     initialize_product(product, "10", "10", "2026-04-01", "期初", "p7-flow-init")
     create_purchase_order(
         "NH202604010001", "2026-04-01",

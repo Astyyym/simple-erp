@@ -31,12 +31,6 @@ def origin_label(origin: str | None) -> str:
     return ORIGIN_LABELS.get((origin or "").strip(), UNKNOWN_ORIGIN_LABEL)
 
 
-def product_needs_completion(product) -> bool:
-    """商品待补全：仅「型号为空」。接受 sqlite3.Row 或映射。"""
-    spec = product["spec"] if "spec" in product.keys() else None
-    return not str(spec or "").strip()
-
-
 def customer_needs_completion(customer) -> bool:
     """客户待补全：开单自动建档 且 电话与地址均为空。"""
     keys = customer.keys()
@@ -44,13 +38,6 @@ def customer_needs_completion(customer) -> bool:
     phone = str((customer["phone"] if "phone" in keys else "") or "").strip()
     address = str((customer["address"] if "address" in keys else "") or "").strip()
     return origin == ORIGIN_ORDER and not phone and not address
-
-
-def product_completion_hint(product) -> str:
-    """给编辑页/列表用的「缺什么」说明；完整时返回空串。"""
-    if product_needs_completion(product):
-        return "缺型号：请补全型号，避免与同名不同规格的商品混在一起"
-    return ""
 
 
 def customer_completion_hint(customer) -> str:

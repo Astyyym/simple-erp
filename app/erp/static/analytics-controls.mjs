@@ -66,18 +66,6 @@ export function withViewState(source, updates) {
   return url.href;
 }
 
-export function specOptions(products, name) {
-  const options=[{value:'',label:'全部型号'}];
-  if (!name) return options;
-  const seen=new Set();
-  for (const product of products) {
-    if (product.name !== name || seen.has(product.spec)) continue;
-    seen.add(product.spec);
-    options.push({value:product.spec || '__unfilled__',label:product.spec || '未填写型号'});
-  }
-  return options;
-}
-
 export function initAnalytics(doc) {
   const root=doc.querySelector('.erp-analytics');
   if (!root) return;
@@ -247,17 +235,6 @@ export function initAnalytics(doc) {
     event.preventDefault();
     applyViewChange(collectRefreshUpdates(form));
   });
-  const product=doc.getElementById('productFilter'), spec=doc.getElementById('specFilter');
-  const data=doc.getElementById('analysisProductOptions');
-  if (product && spec && data) {
-    const products=JSON.parse(data.textContent);
-    product.addEventListener('change',()=>{
-      spec.replaceChildren(...specOptions(products,product.value).map(option=>{
-        const element=doc.createElement('option');element.value=option.value;element.textContent=option.label;return element;
-      }));
-      spec.disabled=!product.value;
-    });
-  }
 }
 
 if (typeof document !== 'undefined') initAnalytics(document);

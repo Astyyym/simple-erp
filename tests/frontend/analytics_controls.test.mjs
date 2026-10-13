@@ -1,14 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync} from 'node:fs';
+import {existsSync, readFileSync} from 'node:fs';
 const moduleUrl = new URL('../../app/erp/static/analytics-controls.mjs', import.meta.url);
 
 test('view changes preserve the applied scope and blank date boundaries', async () => {
   assert(existsSync(moduleUrl), 'formal analytics interaction controller is missing');
   const {withViewState} = await import(moduleUrl);
-  const before = 'http://127.0.0.1:5000/analytics/?start_date=&end_date=&customer_id=7&product_name=%E6%B6%88%E9%98%B2%26A&spec=__unfilled__&metric=amount&tab=rank&rank_page=2';
+  // 决策变更（v14）：型号筛选整条删除 —— 应用范围的 URL 不再携带 spec/__unfilled__ 哨兵。
+  const before = 'http://127.0.0.1:5000/analytics/?start_date=&end_date=&customer_id=7&product_name=%E6%B6%88%E9%98%B2%26A&metric=amount&tab=rank&rank_page=2';
   const after = new URL(withViewState(before, {metric:'quantity', sort:'profit', rank_page:null, tab:'health'}));
-  for (const key of ['start_date','end_date','customer_id','product_name','spec']) {
+  for (const key of ['start_date','end_date','customer_id','product_name']) {
     assert.equal(after.searchParams.get(key), new URL(before).searchParams.get(key));
   }
   assert.equal(after.searchParams.get('metric'),'quantity');
@@ -17,14 +18,14 @@ test('view changes preserve the applied scope and blank date boundaries', async 
   assert.throws(() => withViewState(before,{customer_id:9}), /展示/);
 });
 
-test('changing product rebuilds only its models and gives the blank model its own value', async () => {
+test('product identity is a single name so the controller no longer builds model options', async () => {
   assert(existsSync(moduleUrl), 'formal analytics interaction controller is missing');
-  const {specOptions} = await import(moduleUrl);
-  const products=[{name:'部件',spec:''},{name:'部件',spec:'Q1'},{name:'水带',spec:'20m'}];
-  assert.deepEqual(specOptions(products,'部件'),[
-    {value:'',label:'全部型号'}, {value:'__unfilled__',label:'未填写型号'}, {value:'Q1',label:'Q1'},
-  ]);
-  assert.deepEqual(specOptions(products,''),[{value:'',label:'全部型号'}]);
+  const module = await import(moduleUrl);
+  // 决策变更（v14）：型号筛选整条删除 —— 不再导出 specOptions，也没有「未填写型号」哨兵。
+  assert.equal('specOptions' in module, false, '型号选项构造器已被删除');
+  const source = readFileSync(moduleUrl, 'utf8');
+  assert.equal(source.includes('specOptions'), false);
+  assert.equal(source.includes('__unfilled__'), false);
 });
 
 test('rank_size is an allowed view key so 每组显示 can refresh without reloading', async () => {

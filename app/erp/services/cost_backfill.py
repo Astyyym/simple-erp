@@ -106,7 +106,7 @@ def backfill_order_costs(order_id: int, entries: list[dict], reason: str) -> dic
             raise ValueError("草稿单不需要补录成本，直接重编辑即可")
 
         rows = conn.execute(
-            "SELECT id, quantity, unit_cost_micro, cost_total_micro, cost_source, product_name, spec "
+            "SELECT id, quantity, unit_cost_micro, cost_total_micro, cost_source, product_name "
             "FROM order_items WHERE order_id=? ORDER BY id",
             (order_id,),
         ).fetchall()
@@ -154,7 +154,7 @@ def backfill_order_costs(order_id: int, entries: list[dict], reason: str) -> dic
                     else 0
                 )
             prepared.append((unit_cost_micro, cost_total_micro, item_id))
-            label = target["product_name"] + (f" · {target['spec']}" if target["spec"] else "")
+            label = target["product_name"]
             summaries.append(f"{label} 单位成本 {unit_cost_micro / 1_000_000:.6f} 元")
 
         for unit_cost_micro, cost_total_micro, item_id in prepared:

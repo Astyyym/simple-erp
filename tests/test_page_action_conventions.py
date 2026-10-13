@@ -57,7 +57,7 @@ def pages():
         [{"product_name": "页面测试商品", "unit": "个", "quantity": "1", "unit_price_yuan": "20"}],
         status="saved", order_date="2026-10-02",
     )
-    product_id = create_product("页面草稿商品", "测试", "个", 2000)
+    product_id = create_product("页面草稿商品测试", "个", 2000)
     purchase = create_purchase_order(
         "NH202610020901", "2026-10-02",
         [{"product_id": product_id, "quantity": "1", "unit_cost_yuan": "10"}],

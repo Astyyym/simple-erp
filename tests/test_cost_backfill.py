@@ -23,12 +23,12 @@ def _seed_sale_without_cost(*, order_no="MD202610110001", name="缺成本商品"
                             price="100", quantity="2", order_date="2026-10-11"):
     """零建档路径：商品没有库存状态行 → 销售时不写成本快照（NULL）。"""
     init_db()
-    product_id = create_product(name, spec, "个", 1000)
+    product_id = create_product((name) + (spec), "个", 1000)
     customer_id = create_customer(f"{name}客户")
     order_id = create_order_from_typed_rows(
         customer_id,
         order_no,
-        [{"product_id": product_id, "product_name": name, "spec": spec, "unit": "个",
+        [{"product_id": product_id, "product_name": (name) + (spec), "unit": "个",
           "unit_price_yuan": price, "quantity": quantity}],
         status="saved",
         order_date=order_date,
@@ -155,12 +155,12 @@ def test_backfill_refuses_to_overwrite_real_sale_snapshot():
     from erp.services.cost_backfill import backfill_order_costs
 
     init_db()
-    product_id = create_product("真实快照商品", "A", "个", 1000)
+    product_id = create_product("真实快照商品A", "个", 1000)
     customer_id = create_customer("真实快照客户")
     initialize_product(product_id, "10", "10", "2026-10-01", "期初", "bf-init-1")
     order_id = create_order_from_typed_rows(
         customer_id, "MD202610110002",
-        [{"product_id": product_id, "product_name": "真实快照商品", "spec": "A", "unit": "个",
+        [{"product_id": product_id, "product_name": "真实快照商品A", "unit": "个",
           "unit_price_yuan": "25", "quantity": "2"}],
         status="saved", order_date="2026-10-11",
     )
@@ -223,12 +223,12 @@ def test_backfill_rejects_non_sale_order_and_uneditable_states():
     from erp.services.cost_backfill import backfill_order_costs
 
     init_db()
-    product_id = create_product("状态保护商品", "A", "个", 1000)
+    product_id = create_product("状态保护商品A", "个", 1000)
     customer_id = create_customer("状态保护客户")
 
     draft_id = create_order_from_typed_rows(
         customer_id, "MD202610110004",
-        [{"product_id": product_id, "product_name": "状态保护商品", "spec": "A", "unit": "个",
+        [{"product_id": product_id, "product_name": "状态保护商品A", "unit": "个",
           "unit_price_yuan": "10", "quantity": "1"}],
         status="draft", order_date="2026-10-11",
     )
@@ -244,7 +244,7 @@ def test_backfill_rejects_non_sale_order_and_uneditable_states():
 
     return_id = create_order_from_typed_rows(
         customer_id, "MD202610110005",
-        [{"product_id": product_id, "product_name": "状态保护商品", "spec": "A", "unit": "个",
+        [{"product_id": product_id, "product_name": "状态保护商品A", "unit": "个",
           "unit_price_yuan": "10", "quantity": "1"}],
         status="saved", order_date="2026-10-11", order_type="return",
     )

@@ -54,7 +54,7 @@ Short plan: `开发短计划/2026-07-14_销售单241x140二联纸版面_执行�
 | 左 20 / 右 10 | 左右必须对称 20 |
 | 仅 `padding: 6mm 20mm` 就说居中 | WeasyPrint 下表格仍可能挤出右缘；用户会贴图问「这居中吗？」 |
 | 标题 `text-align:center` + `letter-spacing` | 字距会视觉右偏；公司名 `letter-spacing:0` |
-| 名称规格 `<col>` 无宽度吞整行 | 列宽合计 **= 201mm**（约 12/78/18/24/32/37） |
+| 商品名称 `<col>` 无宽度吞整行 | 列宽合计 **= 201mm**（约 12/78/18/24/32/37）；v14 起表头为「商品名称」（原「名称规格」） |
 | 只丢 `/settings/print-preview` URL | 大屏白底矮条像空白；给 **Windows PDF 路径** |
 
 用户原话：量了左边孔距后，右边也应等宽；「这居中吗？」时先认错再量，勿辩。
@@ -157,6 +157,13 @@ col: 13 / 76.3 / 16 / 24 / 34 / 38 mm
 ## 与 offset 文档
 
 `references/print-offset-calibration.md` = **最后**微调。页尺寸错、左右不等宽、表格溢出时禁止大 offset 当主修法。
+
+## 单联容量真源与录入页换页提示行（2026-10-13）
+
+- **单联行数的唯一真源是 `app/erp/config.py` 的 `SLIP_SIZE`（现 10）**，`create_app()` 把它注入成 jinja 全局 `slip_size`。打印模板 `orders/print_template.html`（4 个渲染点共用）**不再**自带 `{% set slip_size = 10 %}`；三份录入页模板取同一个值（新增页面不用改路由）。裸 `jinja2.Environment` 的测试要自己 `env.globals["slip_size"] = SLIP_SIZE`，否则 `batch(Undefined)` 会**静默不分联**（不报错、不抛异常）。
+- **录入页的换页提示行不要用 Jinja `batch` 分块**：录入行数运行时变化（加行/删行/清空/来源带入），Jinja 只覆盖首屏，两套机制必然漂移。用 JS 按数据行重排（`refreshSlipNotices()` 插 `tr.slip-notice` + 跨列 `td`），文案与打印单一致（`本张已满 N 行；因行数限制，以下内容续打在第 M 张`）；最后一行刚好满 10 行时不插。
+- 加了提示行后，**所有对该 tbody 的遍历都要只走数据行**：`recalc`/`bindRow` 用 `tr:not(.slip-notice)`，`removeRow`/`syncRowToolState` 按数据行计数；**`addRow()` 必须返回新建行**（调用方原来用 `tbody.rows[最后一行]`，提示行可能排在它之后）；`clearAllRows()` 靠 `tbody.rows[0]` 保底仍成立。提示行不带 `name`、无输入控件，天然不进表单提交。
+- 实测（真实浏览器，四页）：9/10 行 0 条提示、11 行 1 条、20 行 1 条、21 行 2 条；行号 1..N 连续；`FormData` 里 `quantity` 键数 = 数据行数。
 
 ## 验收
 

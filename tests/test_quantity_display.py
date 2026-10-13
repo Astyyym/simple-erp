@@ -46,8 +46,8 @@ def test_product_list_renders_count_and_measure_quantities_in_separate_columns()
     from erp.services.inventory import initialize_product
 
     app = create_app()
-    count_id = create_product("计件展示商品", "件型", "个", 1000, safety_stock="3")
-    measure_id = create_product("计量展示商品", "米型", "米", 2000, safety_stock="1.125")
+    count_id = create_product("计件展示商品件型", "个", 1000, safety_stock="3")
+    measure_id = create_product("计量展示商品米型", "米", 2000, safety_stock="1.125")
     initialize_product(count_id, "15", "11.333333", "2026-10-01", "测试", "quantity-list-count")
     initialize_product(measure_id, "12.345", "2", "2026-10-01", "测试", "quantity-list-measure")
 
@@ -80,12 +80,14 @@ def test_product_list_renders_count_and_measure_quantities_in_separate_columns()
     parser = TableRows()
     parser.feed(html)
     header = next(row for row in parser.rows if "名称" in row)
-    assert header == ["", "名称", "规格", "品牌", "单位", "默认价", "当前库存", "安全库存", "移动平均成本", "库存金额", "启用状态", "库存状况", "来源", "操作"]
-    count_row = next(row for row in parser.rows if "计件展示商品" in row)
-    measure_row = next(row for row in parser.rows if "计量展示商品" in row)
-    assert count_row[6:8] == ["15", "3"]
-    assert measure_row[6:8] == ["12.345", "1.125"]
-    assert count_row[10:12] == measure_row[10:12] == ["已启用", "正常"]
+    # 决策变更（v14）：商品列表删除「规格」列，身份=单一名称。
+    assert header == ["", "名称", "品牌", "单位", "默认价", "当前库存", "安全库存", "移动平均成本", "库存金额", "启用状态", "库存状况", "来源", "操作"]
+    count_row = next(row for row in parser.rows if "计件展示商品件型" in row)
+    measure_row = next(row for row in parser.rows if "计量展示商品米型" in row)
+    # 删掉「规格」列后列位整体前移 1：当前库存/安全库存 = 5:7，启用/库存状况 = 9:11。
+    assert count_row[5:7] == ["15", "3"]
+    assert measure_row[5:7] == ["12.345", "1.125"]
+    assert count_row[9:11] == measure_row[9:11] == ["已启用", "正常"]
     assert 'class="table-responsive product-table-shell"' in html
     assert 'class="selection-cell"' in html
     assert 'class="numeric-cell"' in html
@@ -100,11 +102,13 @@ def test_analytics_displays_unit_aware_quantity_in_summary_heatmap_ranking_and_p
     from erp.services.inventory import initialize_product
 
     app = create_app()
-    product_id = create_product("分析数量商品", "Q1", unit, 2000)
+    product_id = create_product("分析数量商品Q1", unit, 2000)
     initialize_product(product_id, "10", "3", "2026-10-01", "测试", "quantity-analytics-init")
     customer_id = create_customer("数量分析往来")
-    create_order_from_typed_rows(customer_id, "MD202610010901", [{"product_id": product_id, "product_name": "分析数量商品", "spec": "Q1", "unit": unit, "unit_price_yuan": "20", "quantity": sale_quantity}], status="saved", order_date="2026-10-01")
-    response = app.test_client().get("/analytics/", query_string={"start_date": "2026-10-01", "end_date": "2026-10-01", "product_name": "分析数量商品", "metric": "quantity"})
+    create_order_from_typed_rows(customer_id, "MD202610010901", [{"product_id": product_id, "product_name": "分析数量商品Q1", "unit": unit, "unit_price_yuan": "20", "quantity": sale_quantity}], status="saved", order_date="2026-10-01")
+    # 决策变更（v14）：分析中心商品筛选走精确名称匹配（p.name = ?），
+    # 商品身份=合并后的单一名称，故筛选值与排行标签都用完整名。
+    response = app.test_client().get("/analytics/", query_string={"start_date": "2026-10-01", "end_date": "2026-10-01", "product_name": "分析数量商品Q1", "metric": "quantity"})
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     # 日历格子只显示日期数字；数量保留在悬停/无障碍标签里（不再占格子）
@@ -118,5 +122,5 @@ def test_analytics_displays_unit_aware_quantity_in_summary_heatmap_ranking_and_p
     # 柱高按同榜最大值等比（px），标注紧贴各自柱顶：唯一一项 = 最高柱 190px。
     assert '<span class="rank-bar-fill" style="height:190.0px"></span>' in html
     assert '<span class="rank-bar-value" style="bottom:190.0px">' in html
-    assert '分析数量商品 · Q1' in html
+    assert '分析数量商品Q1' in html
     assert f'<td class="numeric-cell">{expected} {unit}</td>' in html

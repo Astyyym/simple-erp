@@ -73,9 +73,10 @@ def test_order_entry_disables_browser_history_but_keeps_erp_suggestions():
         assert 'name="quantity" class="quantity" autocomplete="new-password"' in html
         assert 'name="unit_price" class="unit-price" autocomplete="new-password"' in html
         assert 'data-lpignore="true"' in html
-        # G 段二：商品名/型号改为可手输的混合控件（datalist 建议），仍带防历史填充属性。
+        # 决策变更（v14）：商品身份合并为单一名称，控件只剩一个可手输的名称框（datalist 建议），
+        # 型号框已删除，仍带防历史填充属性。
         assert 'class="form-control form-control-sm picker-name-input"' in html
-        assert 'class="form-control form-control-sm picker-spec-input"' in html
+        assert "picker-spec-input" not in html
         assert 'autocomplete="off"' in html
         assert "fetchJson('/orders/api/customers?q='" in html
         assert "fetchJson('/orders/api/products?q='" in html

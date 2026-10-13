@@ -16,7 +16,7 @@ def test_health_endpoint_ok():
 def test_order_pdf_endpoint_generates_real_pdf():
     init_db()
     customer_id = create_customer("PDF客户")
-    product_id = create_product("测试阀门", "DN20", "个", 1234)
+    product_id = create_product("测试阀门DN20", "个", 1234)
     order_id = create_order(customer_id, "PDF-001", [{"product_id": product_id, "quantity": "2"}], status="saved")
     app = create_app()
     client = app.test_client()

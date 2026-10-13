@@ -36,14 +36,17 @@ def _preview_json(html: str) -> str:
 
 
 def test_master_data_pages_share_one_tool_card_and_import_card():
-    """两页都用同一套 .list-tools / .list-import-card 结构，不再各写一份 row/col。"""
+    """两页都用同一套 .list-tools / .list-import-card 结构，不再各写一份 row/col。
+
+    决策变更（v14）：商品身份 = 单一名称，商品侧「待补全（型号为空）」筛选随 spec 列删除，
+    `.list-facet` 只剩客户页保留。
+    """
     for path in PAGES:
         html = _html(path)
         assert 'class="list-import-card"' in html, path
         assert 'class="list-tools"' in html, path
         for hook in (
             'class="list-search"',
-            'class="list-facet"',
             'class="list-create"',
             'class="list-create-fields"',
             'class="list-import-row"',
@@ -54,6 +57,9 @@ def test_master_data_pages_share_one_tool_card_and_import_card():
         # 旧结构必须彻底消失：等分 col 会让控件按格子分而不是按语义分。
         assert 'class="row g-2 mb-3"' not in html, f"{path} 仍在用 row/col 平铺"
         assert '<button class="btn btn-primary col-2">' not in html, path
+    # 客户页仍保留档案筛选 chip 行；商品页已删除（v14）。
+    assert 'class="list-facet"' in _html("/customers/")
+    assert 'class="list-facet"' not in _html("/products/"), "商品侧待补全筛选应已删除"
 
 
 def test_shared_layout_classes_are_defined_once_in_base():
@@ -92,31 +98,40 @@ def test_search_row_keeps_input_and_both_buttons_in_one_flex_row():
         assert 'class="form-control"' in search
         assert "查找商品" in search or "查找客户" in search
         assert "清除信息" in search
-        assert 'list="product_name_suggestions"' in search or 'list="customer_name_suggestions"' in search
+        # 决策变更（Phase 3 S6）：datalist → 自有 popover（.suggest-wrap 承载输入框与浮层）。
+        assert 'class="suggest-wrap"' in search
+        assert 'id="product_name_suggestions"' in search or 'id="customer_name_suggestions"' in search
+        assert "<datalist" not in search
         # 清除信息仍是回到本页的链接，不改成按钮。
         assert f'href="{action}"' in search, path
 
 
-def test_facet_row_keeps_cap_and_chips_together():
-    """档案筛选：标签 + 全部/待补全 chip 同属一行，且仍沿用 btn-sm 语义。"""
-    for path in PAGES:
-        html = _html(path)
-        facet = html.split('class="list-facet"', 1)[1].split("</div>", 1)[0]
-        assert 'class="list-facet-cap"' in facet, path
-        assert "档案筛选" in facet
-        assert "全部" in facet and "待补全" in facet
-        assert facet.count("btn-sm") == 2, path
+def test_customer_facet_row_keeps_cap_and_chips_together():
+    """档案筛选只剩客户页；标签 + 全部/待补全 chip 同属一行，仍沿用 btn-sm 语义。
+
+    决策变更（v14）：商品侧「待补全（型号为空）」口径已删除，故本用例只针对客户页。
+    """
+    facet = _html("/customers/").split('class="list-facet"', 1)[1].split("</div>", 1)[0]
+    assert 'class="list-facet-cap"' in facet
+    assert "档案筛选" in facet
+    assert "全部" in facet and "待补全" in facet
+    assert facet.count("btn-sm") == 2
 
 
-def test_facet_hint_uses_shared_hint_class_when_todo_filter_active():
-    """待补全筛选生效时，说明文字走 .list-facet-hint，不再用 Bootstrap text-muted small。"""
-    for path, keyword in zip(PAGES, ("型号为空", "电话与地址都为空")):
-        html = _html(f"{path}?quality=todo")
-        facet = html.split('class="list-facet"', 1)[1].split("</div>", 1)[0]
-        assert 'class="list-facet-hint"' in facet, path
-        assert keyword in facet, path
-        # 旧写法（档案筛选行里用 text-muted small）应已移除。
-        assert 'class="text-muted small"' not in facet, path
+def test_customer_facet_hint_uses_shared_hint_class_when_todo_filter_active():
+    """客户待补全筛选生效时，说明文字走 .list-facet-hint，不再用 Bootstrap text-muted small。
+
+    决策变更（v14）：商品侧「待补全（型号为空）」筛选已删除，只对客户页断言。
+    """
+    facet = _html("/customers/?quality=todo").split('class="list-facet"', 1)[1].split("</div>", 1)[0]
+    assert 'class="list-facet-hint"' in facet
+    assert "电话与地址都为空" in facet
+    # 旧写法（档案筛选行里用 text-muted small）应已移除。
+    assert 'class="text-muted small"' not in facet
+    # /products/?quality=todo 不再是筛选：商品页没有 facet 说明文字。
+    products_html = _html("/products/?quality=todo")
+    assert 'class="list-facet"' not in products_html
+    assert "型号为空" not in products_html
 
 
 def test_create_forms_keep_their_fields_and_action_endpoints():
@@ -124,8 +139,10 @@ def test_create_forms_keep_their_fields_and_action_endpoints():
     products = _html("/products/")
     create = products.split('class="list-create"', 1)[1].split("</form>", 1)[0]
     assert 'action="/products/create"' in create
-    for name in ("name", "spec", "brand", "unit", "default_price", "safety_stock"):
+    # 决策变更（v14）：商品身份 = 单一名称，型号输入（spec）已删除。
+    for name in ("name", "brand", "unit", "default_price", "safety_stock"):
         assert f'name="{name}"' in create, name
+    assert 'name="spec"' not in create, "型号输入应已删除"
     assert 'name="name"' in create and "required" in create
 
     customers = _html("/customers/")

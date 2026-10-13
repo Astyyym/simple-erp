@@ -66,10 +66,9 @@ def analytics_filter_chips(
     customer_id: str,
     customer_name: str,
     product_name: str,
-    spec: str,
     document_types,
 ) -> list[dict]:
-    """数据分析页的 chip：客户 / 商品 / 型号 / 订单类型。"""
+    """数据分析页的 chip：客户 / 商品 / 订单类型。"""
     chips: list[dict] = []
     if customer_id:
         chips.append({
@@ -78,14 +77,11 @@ def analytics_filter_chips(
             "url": removal_url({"customer_id"}),
         })
     if product_name:
-        # 移除商品时同时清掉型号（型号是商品的从属条件）。
         chips.append({
             "key": "product_name",
             "label": f"商品：{product_name}",
-            "url": removal_url({"product_name", "spec"}),
+            "url": removal_url({"product_name"}),
         })
-    if spec and spec != "__unfilled__":
-        chips.append({"key": "spec", "label": f"型号：{spec}", "url": removal_url({"spec"})})
     chip = _multi_chip(document_types, ORDER_TYPE_ORDER, ORDER_TYPE_LABELS, caption="类型", key="document_type")
     if chip:
         chips.append(chip)

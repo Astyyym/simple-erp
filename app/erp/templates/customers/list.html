@@ -38,8 +38,10 @@
 </div>
 <div class="list-tools">
   <form class="list-search" method="get" data-inplace action="/customers/">
-    <input class="form-control" id="customerSearchInput" name="q" value="{{q}}" list="customer_name_suggestions" placeholder="输入相似字符查找客户">
-    <datalist id="customer_name_suggestions">{% for s in suggestions %}<option value="{{s.name}}"></option>{% endfor %}</datalist>
+    <div class="suggest-wrap">
+      <input class="form-control" id="customerSearchInput" name="q" value="{{q}}" autocomplete="off" placeholder="输入相似字符查找客户">
+      <div class="suggest-list d-none" id="customer_name_suggestions" role="listbox" aria-label="客户建议"></div>
+    </div>
     {% if quality == 'todo' %}<input type="hidden" name="quality" value="todo">{% endif %}
     <button class="btn btn-primary">查找客户</button>
     <a class="btn btn-outline-secondary" href="/customers/">清除信息</a>
@@ -80,20 +82,28 @@
   </tbody>
 </table>
 </section>
+<script src="{{ url_for('static', filename='order-entry-common.js') }}?v=2"></script>
 <script>
-const customerSearchInput = document.getElementById('customerSearchInput');
-const customerSuggestions = document.getElementById('customer_name_suggestions');
-customerSearchInput.addEventListener('input', async () => {
-  const q = customerSearchInput.value.trim();
-  if (!q) { customerSuggestions.replaceChildren(); return; }
-  const response = await fetch('/customers/api/suggestions?q=' + encodeURIComponent(q));
-  const names = await response.json();
-  customerSuggestions.replaceChildren();
-  names.forEach(name => {
-    const option = document.createElement('option');
-    option.value = name;
-    customerSuggestions.appendChild(option);
-  });
-});
+// Phase 3 S6：原生 datalist 在 WebView2 不渲染弹层 → 搜索框改自有 popover 联想（共享实现）。
+(function () {
+  const input = document.getElementById('customerSearchInput');
+  const box = document.getElementById('customer_name_suggestions');
+  if (!input || !box) return;
+  ErpOrderEntry.bindAutocomplete(
+    input,
+    box,
+    async query => {
+      const response = await fetch('/customers/api/suggestions?q=' + encodeURIComponent(query));
+      const names = await response.json();
+      return (Array.isArray(names) ? names : []).map(name => ({name}));
+    },
+    item => {
+      const node = document.createElement('span');
+      node.textContent = item.name;
+      return node;
+    },
+    item => { input.value = item.name; },
+  );
+})();
 </script>
 {% endblock %}

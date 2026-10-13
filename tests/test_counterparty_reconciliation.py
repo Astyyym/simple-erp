@@ -19,11 +19,11 @@ from pdf_test_utils import assert_a4_portrait_pdf
 def seed_four():
     init_db()
     cid = create_customer('四向虚构往来', opening_balance_cents=12345)
-    pid = create_product('公开商品', '型号-A', '米', 2000)
+    pid = create_product('公开商品' '型号-A', '米', 2000)
     initialize_product(pid, '20', '10', '2026-10-01', 'INTERNAL-INIT', 'c3-init')
     sale = create_order_from_typed_rows(cid, 'MD202610010001', [
-        {'product_id': pid, 'product_name': '公开商品', 'spec': '型号-A', 'unit': '米', 'quantity': '2', 'unit_price_yuan': '20'},
-        {'product_id': pid, 'product_name': '公开商品', 'spec': '型号-A', 'unit': '米', 'quantity': '1', 'unit_price_yuan': '30'},
+        {'product_id': pid, 'product_name': '公开商品' '型号-A', 'unit': '米', 'quantity': '2', 'unit_price_yuan': '20'},
+        {'product_id': pid, 'product_name': '公开商品' '型号-A', 'unit': '米', 'quantity': '1', 'unit_price_yuan': '30'},
     ], status='saved', order_date='2026-10-01', notes='PUBLIC-SALE-NOTE')
     with get_db() as conn:
         sale_item = conn.execute('SELECT id FROM order_items WHERE order_id=? ORDER BY id', (sale,)).fetchone()[0]
@@ -111,7 +111,7 @@ def test_empty_legacy_snapshot_migration_preserves_deleted_id_high_water():
     sid = service.create_reconciliation_snapshot(cid)
     assert sid == 78  # Never reuse a snapshot identity held by another window.
     with get_db() as conn:
-        assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0] == 13
+        assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0] == 14
         assert conn.execute("SELECT name FROM sqlite_master WHERE name='synthetic_recon_hash'").fetchone()
         assert conn.execute('PRAGMA foreign_key_check').fetchall() == []
 
@@ -180,7 +180,7 @@ def test_legacy_snapshot_migration_is_byte_preserving_orders_only_and_retryable(
     with conn: db.apply_schema(conn)
     with conn: db.apply_schema(conn)
     assert tuple(conn.execute('SELECT * FROM reconciliation_snapshots').fetchone()) == (*old,1)
-    assert conn.execute('SELECT COUNT(*) FROM schema_version WHERE version=13').fetchone()[0] == 1
+    assert conn.execute('SELECT COUNT(*) FROM schema_version WHERE version=14').fetchone()[0] == 1
     assert conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND tbl_name='reconciliation_snapshots'").fetchone()[0] == 2
     conn.close()
     result = service.get_reconciliation_snapshot(41)
@@ -199,20 +199,32 @@ def test_legacy_snapshot_migration_is_byte_preserving_orders_only_and_retryable(
     assert funds_and_inventory() == before_business
 
 
+def test_item_tables_have_no_spec_column():
+    """决策变更（v14）：商品身份合并为单一名称 —— 四张明细表不再有 spec 列。"""
+    init_db()
+    with get_db() as conn:
+        for table in ('products', 'order_items', 'purchase_order_items', 'purchase_return_items'):
+            columns = {row['name'] for row in conn.execute(f'PRAGMA table_info({table})')}
+            assert 'spec' not in columns, f'{table} 仍有 spec 列'
+
+
+# 决策变更（v14）：四张明细表的 spec 列已随「商品身份=单一名称」彻底删除，'spec' 不再是
+# 可被改动的业务字段——身份文本变化由 product_name 覆盖；表结构删除本身由
+# test_item_tables_have_no_spec_column 单独钉住。
 @pytest.mark.parametrize('key,table,items,owner,oid', [
     ('order:1','orders','order_items','order_id',1),
     ('order:2','orders','order_items','order_id',2),
     ('purchase:1','purchase_orders','purchase_order_items','purchase_order_id',1),
     ('purchase_return:1','purchase_return_orders','purchase_return_items','purchase_return_id',1),
 ])
-@pytest.mark.parametrize('mutation', ['product_name','spec','unit','quantity','unit_price','subtotal','business_date','total','status','customer','deleted'])
+@pytest.mark.parametrize('mutation', ['product_name','unit','quantity','unit_price','subtotal','business_date','total','status','customer','deleted'])
 def test_unselected_candidate_business_changes_block_every_print_and_detail(key,table,items,owner,oid,mutation):
     cid, *_ = seed_four()
     sid = service.create_reconciliation_snapshot(cid)
     service.toggle_reconciliation_selection(sid, key, False)
     with get_db() as conn:
         stored_selection = conn.execute('SELECT selected_json FROM reconciliation_snapshots WHERE id=?',(sid,)).fetchone()[0]
-        if mutation in {'product_name','spec','unit'}:
+        if mutation in {'product_name','unit'}:
             conn.execute(f"UPDATE {items} SET {mutation}=? WHERE {owner}=?", ('CHANGED-IN-SAME-SECOND',oid))
         elif mutation in {'quantity','unit_price','subtotal'}:
             column = {'quantity':'quantity' if table=='orders' else 'quantity_3dp', 'unit_price':'unit_cost_cents' if table=='purchase_orders' else 'unit_price_cents', 'subtotal':'subtotal_cents'}[mutation]
@@ -275,7 +287,7 @@ def test_print_projection_has_one_read_transaction_during_real_concurrent_write(
     context = service.get_reconciliation_print_context(sid)
     assert len(connections) == 1
     assert trace[0] == 'BEGIN' and trace[-1] == 'COMMIT'
-    assert context['documents'][0]['items'][0]['product_name'] == '公开商品'
+    assert context['documents'][0]['items'][0]['product_name'] == '公开商品型号-A'
     assert context['snapshot']['selected_total_cents'] == 3000
     monkeypatch.setattr(service,'_read_scope',original_read)
     assert service.validate_reconciliation_snapshot(sid) == '查询结果已变化，请重新查询后打印'
@@ -346,7 +358,7 @@ def test_typed_api_filters_cross_object_dedupe_and_new_candidate_reset():
 
 def test_partial_return_print_preserves_allocated_cent_tail_and_business_price():
     cid,pid,*_ = seed_four()
-    sale = create_order_from_typed_rows(cid,'MD202610010010',[{'product_id':pid,'product_name':'公开商品','spec':'型号-A','unit':'米','quantity':'0.500','unit_price_yuan':'0.01'}],status='saved',order_date='2026-10-01')
+    sale = create_order_from_typed_rows(cid,'MD202610010010',[{'product_id':pid,'product_name':'公开商品' '型号-A','unit':'米','quantity':'0.500','unit_price_yuan':'0.01'}],status='saved',order_date='2026-10-01')
     purchase = create_purchase_order('NH202610010010','2026-10-01',[{'product_id':pid,'quantity':'0.500','unit_cost_yuan':'0.01'}],customer_id=cid,request_key='tail-purchase')['order_id']
     with get_db() as conn:
         si = conn.execute('SELECT id FROM order_items WHERE order_id=?',(sale,)).fetchone()[0]

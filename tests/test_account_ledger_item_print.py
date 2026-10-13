@@ -10,14 +10,14 @@ from pdf_test_utils import assert_a4_portrait_pdf
 def _two_item_sale():
     app = create_app()
     customer_id = accounting.create_customer("明细测试往来", opening_balance_cents=10000)
-    for name, spec, unit, price in (("明细消防器材10","DN65","个",2850),("明细消防器材12","20m","米",3050)):
-        product_id = accounting.create_product(name,spec,unit,price)
+    for name, unit, price in (("明细消防器材10DN65","个",2850),("明细消防器材1220m","米",3050)):
+        product_id = accounting.create_product(name,unit,price)
         initialize_product(product_id,"20","10.00","2026-09-01","虚构PDF测试期初",f"ledger-item-init-{product_id}")
     sale_id = accounting.create_order_from_typed_rows(
         customer_id, "MD202610020950",
         [
-            {"product_name":"明细消防器材10", "spec":"DN65", "unit":"个", "quantity":"1", "unit_price_yuan":"28.50"},
-            {"product_name":"明细消防器材12", "spec":"20m", "unit":"米", "quantity":"1", "unit_price_yuan":"30.50"},
+            {"product_name":"明细消防器材10DN65", "unit":"个", "quantity":"1", "unit_price_yuan":"28.50"},
+            {"product_name":"明细消防器材1220m", "unit":"米", "quantity":"1", "unit_price_yuan":"30.50"},
         ],status="saved",order_date="2026-10-02",
     )
     return app, customer_id, sale_id
@@ -46,17 +46,17 @@ def test_multi_product_ledger_pdf_expands_exact_lines_counts_order_once_and_excl
     captured = _capture_print(app,customer_id,monkeypatch)
     entry = captured["ledger"]["entries"][0]
     assert len(entry["items"]) == 2
-    allowed = {"product_name","spec","unit","quantity","unit_price_cents","subtotal_cents"}
+    allowed = {"product_name","unit","quantity","unit_price_cents","subtotal_cents"}
     assert all(set(item) == allowed for item in entry["items"])
     assert [item["quantity"] for item in entry["items"]] == ["1","1"]
     assert [item["subtotal_cents"] for item in entry["items"]] == [2850,3050]
     html = captured["html"]
     table = html[html.index("<table"):html.index("</table>")+8]
     assert "余额影响" not in html
-    assert "<th>商品</th>" in html and "<th>型号</th>" in html
+    # v14：型号已并入名称，流水表不再有「型号」列。
+    assert "<th>商品</th>" in html and "<th>型号</th>" not in html
     assert "<th>数量</th>" in html and "<th>单位</th>" in html
-    assert "明细消防器材10" in table and "明细消防器材12" in table
-    assert "DN65" in table and "20m" in table
+    assert "明细消防器材10DN65" in table and "明细消防器材1220m" in table
     assert table.count("MD202610020950") == 1
     # 单据金额写在每一行上：续页行也能看出属于哪张单，且不出现假分段标注。
     assert 'rowspan=' not in table
@@ -111,9 +111,9 @@ def test_long_ledger_pdf_continues_instead_of_starting_a_blank_page(monkeypatch)
     customer_id = accounting.create_customer("跨页真实往来", opening_balance_cents=0)
     items = []
     for i in range(1, 46):
-        product_id = accounting.create_product(f"跨页真实器材{i:03d}", f"DN{i*10}", "个", 1000 + i)
+        product_id = accounting.create_product(f"跨页真实器材{i:03d}DN{i*10}", "个", 1000 + i)
         initialize_product(product_id, "100", "10.00", "2026-09-01", "虚构期初", f"cont-{product_id}")
-        items.append({"product_name": f"跨页真实器材{i:03d}", "spec": f"DN{i*10}", "unit": "个",
+        items.append({"product_name": f"跨页真实器材{i:03d}DN{i*10}", "unit": "个",
                       "quantity": "1", "unit_price_yuan": f"{10 + i}.00"})
     accounting.create_order_from_typed_rows(customer_id, "MD202610010001", items, status="saved", order_date="2026-10-01")
 
@@ -233,7 +233,7 @@ def test_print_item_scope_matches_customer_and_date_filter(monkeypatch):
     app, customer_id, _ = _two_item_sale()
     other = accounting.create_customer("其他客户隔离")
     accounting.create_order_from_typed_rows(other,"MD202610020952",
-        [{"product_name":"OTHER_CUSTOMER_ONLY","spec":"私人型号","unit":"个","quantity":"1","unit_price_yuan":"12.00"}],
+        [{"product_name":"OTHER_CUSTOMER_ONLY私人型号","unit":"个","quantity":"1","unit_price_yuan":"12.00"}],
         status="saved",order_date="2026-10-02")
     captured = _capture_print(app,customer_id,monkeypatch,"2026-09-01","2026-09-30")
     assert captured["ledger"]["entries"] == []

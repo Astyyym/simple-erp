@@ -117,13 +117,13 @@ def _documents(conn, customer_id, start_date, end_date, type_filter, scope_versi
             price = "unit_cost_cents" if namespace == "purchase" else "unit_price_cents"
             source_item = "NULL" if namespace == "purchase" else "source_item_id"
             lines = conn.execute(f"""SELECT id, product_id, {source_item} AS source_item_id,
-                product_name, spec, unit, {quantity} AS quantity, {price} AS unit_price_cents,
+                product_name, unit, {quantity} AS quantity, {price} AS unit_price_cents,
                 subtotal_cents FROM {items_table} WHERE {owner}=? ORDER BY id""", (head["id"],)).fetchall()
             sign = -1 if kind in {"customer_return", "purchase"} else 1
             public_items = []
             for line in lines:
                 qty = line["quantity"] if namespace == "order" else format(Decimal(line["quantity"]) / 1000, 'f')
-                public_items.append({"product_name": line["product_name"], "spec": line["spec"] or "",
+                public_items.append({"product_name": line["product_name"],
                     "unit": line["unit"], "quantity": qty,
                     "unit_price_cents": int(line["unit_price_cents"]), "subtotal_cents": sign * int(line["subtotal_cents"])})
             # orders already store signed amounts; never reverse customer returns twice.

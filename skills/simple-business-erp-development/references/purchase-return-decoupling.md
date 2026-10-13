@@ -11,7 +11,7 @@
 ## 当前规则
 
 - 销售单、退货单、拿货单、退拿货单四类互相独立：退货单不依赖销售单，退拿货单不依赖原拿货单。
-- 四类开单的商品选择统一为“产品名称 → 型号”两级原生下拉，共用 `app/erp/static/order-product-picker.js`；目录以 JSON（`#productCatalog`）喂数据，选项文本用 `textContent` 注入，不拼 HTML。未启用库存的商品在型号项标注“未启用，仅可保存草稿”。
+- 四类开单的商品选择共用 `app/erp/static/order-product-picker.js`（**v14：商品身份只剩名称，单框**）：销售 / 退货走 `mountHybrid`（单框手输 + 名称建议，未命中交给后端自动建档），拿货 / 退拿货走 `mountRow`（单一下拉，取值是 product id）；目录以 JSON（`#productCatalog`）喂数据，选项文本用 `textContent` 注入，不拼 HTML。未启用库存的商品标注“未启用，仅可保存草稿”。
 - 退拿货手工开单：往来对象 + 业务日期 + 商品行 + 手输单价；库存出库成本按**当前移动平均成本**精确分摊（`inventory.post_typed_purchase_return`）；缺货 / 未启用 / 未知商品整单拒绝且不产生半成品。
 - 旧带来源行的退拿货单只读兼容且可作废；`void/delete/restore/edit_notes` 与来源无关（作废按 `posting_seq` join 库存流水反向）。
 - `purchase_returns.create/update_draft/finalize` 支持双模：传 `source_order_id` 走旧来源路径，否则走手工 `items=[{product_id, quantity, unit_price_yuan}]` 路径。

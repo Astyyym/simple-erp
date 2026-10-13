@@ -13,7 +13,7 @@ from erp.services.reconciliation import create_reconciliation_snapshot, get_reco
 
 def test_phase7_complete_inventory_to_reconciliation_path_keeps_contract_values():
     init_db()
-    product_id = create_product("Phase7灭火器", "4kg", "个", 2000, safety_stock="2")
+    product_id = create_product("Phase7灭火器4kg", "个", 2000, safety_stock="2")
     customer_id = create_customer("Phase7验收客户")
     initialize_product(product_id, "10", "10", "2026-10-01", "Phase 7 期初", "phase7-e2e-init")
 
@@ -27,7 +27,7 @@ def test_phase7_complete_inventory_to_reconciliation_path_keeps_contract_values(
     sale_id = create_order_from_typed_rows(
         customer_id,
         "MD202610010701",
-        [{"product_id": product_id, "product_name": "Phase7灭火器", "spec": "4kg", "unit": "个", "unit_price_yuan": "20", "quantity": "5"}],
+        [{"product_id": product_id, "product_name": "Phase7灭火器4kg", "unit": "个", "unit_price_yuan": "20", "quantity": "5"}],
         status="saved",
         order_date="2026-10-01",
     )
@@ -68,12 +68,12 @@ def test_phase7_complete_inventory_to_reconciliation_path_keeps_contract_values(
     assert (return_item["subtotal_cents"], return_item["cost_total_micro"]) == (4000, 24_000_000)
     assert first_purchase["order_id"] != second_purchase["order_id"]
 
+    # 决策变更（v14）：商品身份合并为单一名称（Phase7灭火器4kg），型号不再是独立筛选参数。
     analytics = summarize_analytics(
         start_date="2026-10-01",
         end_date="2026-10-02",
         customer_id=customer_id,
-        product_name="Phase7灭火器",
-        spec="4kg",
+        product_name="Phase7灭火器4kg",
         metric="amount",
     )
     assert analytics["summary"]["net_sales_amount_cents"] == 6000
@@ -105,7 +105,7 @@ def test_phase7_complete_inventory_to_reconciliation_path_keeps_contract_values(
     assert client.get(f"/orders/{sale_id}").status_code == 200
     analytics_page = client.get(
         "/analytics/",
-        query_string={"start_date": "2026-10-01", "end_date": "2026-10-02", "customer_id": customer_id, "product_name": "Phase7灭火器", "spec": "4kg", "metric": "amount"},
+        query_string={"start_date": "2026-10-01", "end_date": "2026-10-02", "customer_id": customer_id, "product_name": "Phase7灭火器4kg", "metric": "amount"},
     )
     reconciliation_page = client.get(
         "/analytics/reconciliation",

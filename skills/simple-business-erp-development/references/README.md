@@ -17,8 +17,9 @@
 | [print-offset-calibration.md](./print-offset-calibration.md) | 当前两套纸型（四类开单连续纸 / 汇总类 A4）、驱动选项与偏移校准边界 |
 | [sales-slip-paper-241x140.md](./sales-slip-paper-241x140.md) | 四类开单 241mm 连续纸版式：实体纸 241×140mm、逻辑页 215.9×139.7mm、左右 7.3mm 版心 |
 | [master-data-cleaning-before-import.md](./master-data-cleaning-before-import.md) | 在项目外安全清洗客户/商品资料的流程，不含真实客户清单 |
+| [product-identity-single-name.md](./product-identity-single-name.md) | **v14 商品身份 = 单一名称**：`spec` 四列已删、迁移三步（预检中止 → 自动备份 → 四表重建）、导入不再接受「型号」列、同类改动的测试适配经验 |
 | [erp-ui-redesign.md](./erp-ui-redesign.md) | UI 改版约束与视觉回归检查 |
-| [purchase-return-decoupling.md](./purchase-return-decoupling.md) | 四类开单解耦、两级商品选择器、手工退拿货与 schema13 迁移；NH 共用日流水取号 |
+| [purchase-return-decoupling.md](./purchase-return-decoupling.md) | 四类开单解耦、商品选择器（v14 起单框：销售/退货手输、拿货/退拿货下拉）、手工退拿货与 schema13 迁移；NH 共用日流水取号 |
 | [analytics-visualization.md](./analytics-visualization.md) | 数据分析页月历热力图、条形排行、成本诊断三层图与顶部筛选口径 |
 
 ## 开发、部署与排障流程
@@ -28,6 +29,7 @@
 | [plan-item-admission-three-questions.md](./plan-item-admission-three-questions.md) | 写计划/需求清单时用「三问」（数据存在？需求真实？已解决？）筛掉无效条目 |
 | [agent-managed-dev-preview.md](./agent-managed-dev-preview.md) | Windows/WSL 预览端口、实例确认与链接交付 |
 | [user-visible-instance-verification.md](./user-visible-instance-verification.md) | 用户页面、测试结果与真实运行实例的证据等级 |
+| [pywebview-webview2-ui-self-verification.md](./pywebview-webview2-ui-self-verification.md) | 桌面壳 UI 可自验：真实 pywebview/WebView2 窗口 + JS 探针 + 只截自身窗口；DOM 状态 ≠ 渲染证据；原生 datalist 画不出 / 自有 popover 画得出（实测） |
 | [wsl-windows-localhost-instance-mismatch.md](./wsl-windows-localhost-instance-mismatch.md) | Windows/WSL localhost 实例错配排查 |
 | [windows-native-exe-packaging.md](./windows-native-exe-packaging.md) | Windows PyInstaller one-folder 构建和 EXE 冒烟 |
 | [windows-bat-crlf-invocation.md](./windows-bat-crlf-invocation.md) | 脚本行尾/编码：`.bat` 需 CRLF（`.gitattributes` 钉死）；含中文的 `.vbs` 需 ANSI/GBK（历史教训） |

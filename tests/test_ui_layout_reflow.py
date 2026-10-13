@@ -27,7 +27,7 @@ def _seed_recycle_bin():
         customer_id = accounting.create_customer("回收站卡片往来", opening_balance_cents=0)
         draft_id = accounting.create_order_from_typed_rows(
             customer_id, "MD202610070001",
-            [{"product_name": "回收站卡片器材", "spec": "R1", "unit": "个",
+            [{"product_name": "回收站卡片器材R1", "unit": "个",
               "quantity": "1", "unit_price_yuan": "10.00"}],
             status="draft", order_date="2026-10-07",
         )

@@ -47,14 +47,17 @@ def test_orders_mark_return_orders_red_and_account_ledger_preserves_return_sign_
 
 def test_products_page_has_similarity_suggestions_and_clear_info_button():
     init_db()
-    create_product("沟槽闸阀", "DN100", "个", 12300, "gczf")
+    create_product("沟槽闸阀DN100", "个", 12300, "gczf")
     client = create_app().test_client()
 
     html = client.get("/products/?q=沟").get_data(as_text=True)
 
     assert "沟槽闸阀" in html
-    assert 'list="product_name_suggestions"' in html
-    assert '<datalist id="product_name_suggestions">' in html
+    # 决策变更（Phase 3 S6）：原生 datalist 在 WebView2 不渲染弹层 → 改自有 popover 联想。
+    assert 'id="product_name_suggestions"' in html
+    assert "<datalist" not in html
+    assert 'role="listbox"' in html
+    assert "order-entry-common.js" in html
     assert "清除信息" in html
     assert 'href="/products/"' in html
 
@@ -69,7 +72,10 @@ def test_customers_page_has_similarity_suggestions_search_and_clear_info_button(
     html = client.get(f"/customers/?q={suffix[:4]}").get_data(as_text=True)
 
     assert f"杭州消防客户{suffix}" in html
-    assert 'list="customer_name_suggestions"' in html
-    assert '<datalist id="customer_name_suggestions">' in html
+    # 决策变更（Phase 3 S6）：datalist → 自有 popover 联想。
+    assert 'id="customer_name_suggestions"' in html
+    assert "<datalist" not in html
+    assert 'role="listbox"' in html
+    assert "order-entry-common.js" in html
     assert "清除信息" in html
     assert 'href="/customers/"' in html

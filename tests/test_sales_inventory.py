@@ -11,7 +11,7 @@ from erp.services.inventory import create_purchase_order, initialize_product
 
 def _enabled_product():
     init_db()
-    product_id = create_product("销售成本商品", "S1", "个", 3000)
+    product_id = create_product("销售成本商品S1", "个", 3000)
     initialize_product(product_id, "10", "10", "2026-10-01", "系统上线期初", "sale-init-001")
     return product_id
 
@@ -23,7 +23,7 @@ def test_saved_sale_decrements_inventory_and_keeps_historical_cost_after_later_p
     sale_id = create_order_from_typed_rows(
         customer_id,
         "MD202610010001",
-        [{"product_name": "销售成本商品", "spec": "S1", "unit": "个", "unit_price_yuan": "30", "quantity": "3"}],
+        [{"product_name": "销售成本商品S1", "unit": "个", "unit_price_yuan": "30", "quantity": "3"}],
         status="saved",
         order_date="2026-10-01",
     )
@@ -69,7 +69,7 @@ def test_saved_sale_with_insufficient_inventory_rolls_back_order_and_inventory()
         create_order_from_typed_rows(
             customer_id,
             "MD202610010002",
-            [{"product_name": "销售成本商品", "spec": "S1", "unit": "个", "unit_price_yuan": "30", "quantity": "11"}],
+            [{"product_name": "销售成本商品S1", "unit": "个", "unit_price_yuan": "30", "quantity": "11"}],
             status="saved",
             order_date="2026-10-01",
         )
@@ -109,7 +109,7 @@ def test_sales_browser_path_returns_inventory_error_and_detail_shows_cost_snapsh
     sale_id = create_order_from_typed_rows(
         customer_id,
         "MD202610010003",
-        [{"product_name": "销售成本商品", "spec": "S1", "unit": "个", "unit_price_yuan": "30", "quantity": "1"}],
+        [{"product_name": "销售成本商品S1", "unit": "个", "unit_price_yuan": "30", "quantity": "1"}],
         status="saved",
         order_date="2026-10-01",
     )
@@ -152,7 +152,7 @@ def test_inventory_posted_sale_rejects_economic_re_edit_without_changing_stock()
     sale_id = create_order_from_typed_rows(
         customer_id,
         "MD202610010004",
-        [{"product_name": "销售成本商品", "spec": "S1", "unit": "个", "unit_price_yuan": "30", "quantity": "2"}],
+        [{"product_name": "销售成本商品S1", "unit": "个", "unit_price_yuan": "30", "quantity": "2"}],
         status="saved",
         order_date="2026-10-01",
     )
@@ -183,7 +183,7 @@ def _saved_sale_for_return(*, quantity="5", customer_name="退货客户"):
     sale_id = create_order_from_typed_rows(
         customer_id,
         "MD202610010005",
-        [{"product_id": product_id, "product_name": "销售成本商品", "spec": "S1", "unit": "个", "unit_price_yuan": "20", "quantity": quantity}],
+        [{"product_id": product_id, "product_name": "销售成本商品S1", "unit": "个", "unit_price_yuan": "20", "quantity": quantity}],
         status="saved",
         order_date="2026-10-01",
     )
@@ -390,7 +390,7 @@ def test_sale_draft_to_saved_posts_inventory_and_cost_snapshot_atomically():
     sale_id = create_order_from_typed_rows(
         customer_id,
         "MD202610010012",
-        [{"product_id": product_id, "product_name": "销售成本商品", "spec": "S1", "unit": "个", "unit_price_yuan": "30", "quantity": "2"}],
+        [{"product_id": product_id, "product_name": "销售成本商品S1", "unit": "个", "unit_price_yuan": "30", "quantity": "2"}],
         status="draft",
         order_date="2026-10-01",
     )
@@ -454,7 +454,7 @@ def test_profit_summary_uses_cost_snapshots_and_excludes_void_orders():
 def test_sale_submission_is_idempotent_and_rejects_same_key_with_different_content():
     product_id = _enabled_product()
     customer_id = create_customer("销售幂等客户")
-    rows = [{"product_id": product_id, "product_name": "销售成本商品", "spec": "S1", "unit": "个", "unit_price_yuan": "20", "quantity": "2"}]
+    rows = [{"product_id": product_id, "product_name": "销售成本商品S1", "unit": "个", "unit_price_yuan": "20", "quantity": "2"}]
 
     first = create_order_from_typed_rows(
         customer_id, "MD202610010014", rows, status="saved", order_date="2026-10-01", request_key="sale-idempotent-001"

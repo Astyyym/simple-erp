@@ -1,3 +1,4 @@
+import re
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -6,7 +7,12 @@ from datetime import datetime, timedelta
 
 from .config import project_path
 
-CURRENT_SCHEMA_VERSION = 13
+CURRENT_SCHEMA_VERSION = 14
+
+# Phase 2（v14）：商品身份 = 单一名称。这四张表都带 `spec` 快照列，迁移时整表重建。
+PRODUCT_SPEC_TABLES = ("products", "order_items", "purchase_order_items", "purchase_return_items")
+# 合并公式必须与 tools/precheck_product_identity_merge.py 逐字一致。
+MERGED_PRODUCT_NAME_SQL = "TRIM(COALESCE(name, '')) || TRIM(COALESCE(spec, ''))"
 
 # Correlated NOT EXISTS is NULL-safe for historical unbound purchases.
 CUSTOMER_REFERENCE_GUARD_SQL = " AND ".join(
@@ -37,6 +43,9 @@ def get_db():
 def init_db() -> None:
     project_path("data").mkdir(parents=True, exist_ok=True)
     migrate_purchase_return_decoupling()
+    # v14：spec 并进 name（必须在 apply_schema 之前——SCHEMA_SQL 已无 spec 列，
+    # 老库要先被重建，否则两套 schema 分叉）。内部会先预检、再自动备份。
+    migrate_merge_product_spec_into_name()
     with get_db() as conn:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
@@ -54,7 +63,9 @@ def init_db() -> None:
         ensure_master_data_origin_fields(conn)
         ensure_product_brand_field(conn)
         ensure_initialization_cost_source(conn)
+        ensure_customer_pinyin_field(conn)
         backfill_product_pinyin_initials(conn)
+        backfill_customer_pinyin_initials(conn)
         purge_expired_recycle_bin(conn)
         row = conn.execute("PRAGMA integrity_check").fetchone()
         if row[0] != "ok":
@@ -148,7 +159,7 @@ def ensure_product_brand_field(conn: sqlite3.Connection) -> None:
     """E-2：商品品牌（可选）。
 
     旧软件的商品档案带品牌，本系统原先无此字段，迁移即丢数据。取值自由文本；
-    **可空、不做必填、不参与业务唯一键**（唯一键仍是 `(TRIM(name), TRIM(spec))`），
+    **可空、不做必填、不参与业务唯一键**（唯一键是 `TRIM(name)`），
     因此加列不会阻塞迁移、不会与既有商品冲突。幂等：列已存在即跳过。
     """
     if "brand" not in _columns(conn, "products"):
@@ -186,28 +197,54 @@ def backfill_product_pinyin_initials(conn: sqlite3.Connection) -> None:
             conn.execute("UPDATE products SET pinyin_initials=? WHERE id=?", (initials, row["id"]))
 
 
+def ensure_customer_pinyin_field(conn: sqlite3.Connection) -> None:
+    """Phase 3 S3：客户拼音首字母（纯派生字段，用于客户联想/搜索）。
+
+    与 `products.pinyin_initials` 同规矩：可空、不参与业务唯一键、幂等加列。
+    **幂等加列不推进 schema 版本**（与既有 `ensure_*` 一致）。
+    """
+    if "pinyin_initials" not in _columns(conn, "customers"):
+        conn.execute("ALTER TABLE customers ADD COLUMN pinyin_initials TEXT DEFAULT ''")
+
+
+def backfill_customer_pinyin_initials(conn: sqlite3.Connection) -> None:
+    """客户拼音首字母回填（幂等，不覆盖已有值）。
+
+    同 `backfill_product_pinyin_initials`：只补空值，纯派生、无业务影响。
+    """
+    from erp.utils.pinyin import pinyin_initials
+
+    empty_rows = conn.execute(
+        "SELECT id, name FROM customers WHERE COALESCE(pinyin_initials, '') = ''"
+    ).fetchall()
+    for row in empty_rows:
+        initials = pinyin_initials(row["name"])
+        if initials:
+            conn.execute("UPDATE customers SET pinyin_initials=? WHERE id=?", (initials, row["id"]))
+
+
 def ensure_product_identity_constraint(conn: sqlite3.Connection) -> None:
-    """Keep the name/spec business identity unique, including soft-deleted rows."""
+    """Keep the product name unique, including soft-deleted rows.
+
+    v14 起商品身份只有「名称」一列（`spec` 已并入名称），故唯一键与冲突提示
+    都不再提型号。
+    """
     conflicts = conn.execute(
         """
         SELECT TRIM(name) AS normalized_name,
-               TRIM(COALESCE(spec, '')) AS normalized_spec,
                COUNT(*) AS row_count
         FROM products
-        GROUP BY TRIM(name), TRIM(COALESCE(spec, ''))
+        GROUP BY TRIM(name)
         HAVING COUNT(*) > 1
         LIMIT 1
         """
     ).fetchone()
     if conflicts is not None:
-        spec = conflicts["normalized_spec"] or "（空型号）"
-        raise RuntimeError(
-            f"商品名称和型号存在重复，无法启用唯一约束: {conflicts['normalized_name']} / {spec}"
-        )
+        raise RuntimeError(f"商品名称存在重复，无法启用唯一约束: {conflicts['normalized_name']}")
     conn.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_products_business_identity
-        ON products(TRIM(name), TRIM(COALESCE(spec, '')))
+        ON products(TRIM(name))
         """
     )
 
@@ -313,6 +350,9 @@ CREATE TABLE purchase_return_items_new (
     source_item_id INTEGER REFERENCES purchase_order_items(id),
     product_id INTEGER NOT NULL REFERENCES products(id),
     product_name TEXT NOT NULL,
+    -- 保留 `spec`：这是 v13 老库的重建路径，先原样搬列，紧接着由 v14 的
+    -- migrate_merge_product_spec_into_name() 把型号并进名称并删列（顺序在 init_db 里有保证），
+    -- 这样老库的型号数据不会在两步之间被丢掉。
     spec TEXT NOT NULL DEFAULT '',
     unit TEXT NOT NULL,
     quantity_3dp INTEGER NOT NULL CHECK(quantity_3dp > 0),
@@ -372,6 +412,163 @@ def migrate_purchase_return_decoupling() -> None:
         violations = conn.execute("PRAGMA foreign_key_check").fetchall()
         if violations:
             raise RuntimeError(f"退拿货解耦迁移后外键校验失败: {violations[:3]}")
+    finally:
+        conn.close()
+
+
+def _strip_spec_column_from_table_ddl(ddl: str) -> str:
+    """从庫内建表语句里删掉 `spec` 列那一行（SQLite 不能 ALTER DROP COLUMN）。"""
+    lines = ddl.splitlines()
+    kept = [line for line in lines if not re.match(r"^\s*spec\s", line)]
+    if len(kept) != len(lines) - 1:
+        raise RuntimeError(f"无法从建表语句里唯一定位 spec 列，迁移中止：{ddl}")
+    return "\n".join(kept)
+
+
+def migrate_merge_product_spec_into_name() -> None:
+    """v14：把 `spec` 并进 `name` —— 商品身份只剩单一名称。
+
+    规则（用户 2026-10-12 拍板）：**直接拼接、中间不加任何字符**（`闸阀` + `DN50`
+    → `闸阀DN50`），规格不再单独保留。
+
+    四张带 spec 快照列的表整体重建（SQLite 不能删列）：沿用库内原 DDL 建新表（去掉 spec 行）
+    → 复制数据并把名称拼上型号（`products.name` 与明细表的 `product_name` 都拼）
+    → DROP + RENAME → 重建索引（唯一索引改成 `ON products(TRIM(name))`）→ 恢复自增高位
+    → 外键校验（不过就整笔回滚）。
+
+    两条硬约束：
+    - 合并后会撞名 → **先预检、中止且不做任何写入**，列出冲突清单（绝不静默合并）。
+    - 真的开始写库之前，先自动做一次整库快照备份（新装空库没有 spec 列，直接跳过、不备份）。
+    """
+    path = db_path()
+    if not path.exists():
+        return
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    try:
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='products'").fetchone() is None:
+            return
+        if "spec" not in {row[1] for row in conn.execute("PRAGMA table_info(products)")}:
+            return  # 已经是 v14 形态
+        # 与 migrate_purchase_return_decoupling 同规矩：不对更新版本程序建的库动 DDL。
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_version'").fetchone() is not None:
+            version = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
+            if version is not None and version >= CURRENT_SCHEMA_VERSION:
+                return
+
+        empty_names = conn.execute(
+            f"SELECT COUNT(*) FROM products WHERE {MERGED_PRODUCT_NAME_SQL} = ''"
+        ).fetchone()[0]
+        if empty_names:
+            raise RuntimeError(
+                f"有 {empty_names} 个商品的名称与型号都为空，合并后名称会变成空串，迁移已中止（未做任何写入）。"
+                "请先在旧版本里给这些商品补一个名称。"
+            )
+        conflicts = conn.execute(
+            f"""
+            SELECT {MERGED_PRODUCT_NAME_SQL} AS merged_name,
+                   COUNT(*) AS row_count,
+                   GROUP_CONCAT(id) AS ids
+            FROM products
+            GROUP BY merged_name
+            HAVING COUNT(*) > 1
+            ORDER BY row_count DESC, merged_name
+            """
+        ).fetchall()
+        if conflicts:
+            detail = "；".join(f"「{row['merged_name']}」id {row['ids']}" for row in conflicts[:5])
+            more = "" if len(conflicts) <= 5 else f"（另有 {len(conflicts) - 5} 组未列出）"
+            raise RuntimeError(
+                f"商品名称与型号合并后会出现 {len(conflicts)} 组重名，迁移已中止，未做任何写入。"
+                f"冲突清单：{detail}{more}。请先在旧版本里把其中一个商品改名，"
+                "或运行 tools/precheck_product_identity_merge.py 查看完整清单后再升级。"
+            )
+
+        table_sql: dict[str, str] = {}
+        for table in PRODUCT_SPEC_TABLES:
+            row = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)
+            ).fetchone()
+            if row is None or not row["sql"]:
+                continue
+            if "spec" not in {col[1] for col in conn.execute(f"PRAGMA table_info({table})")}:
+                continue
+            table_sql[table] = row["sql"]
+        if not table_sql:
+            return
+
+        index_sql = [
+            (name, sql)
+            for table in table_sql
+            for name, sql in conn.execute(
+                "SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL",
+                (table,),
+            )
+        ]
+        sequences: dict[str, int] = {}
+        try:
+            for table in table_sql:
+                row = conn.execute("SELECT seq FROM sqlite_sequence WHERE name=?", (table,)).fetchone()
+                if row is not None:
+                    sequences[table] = int(row[0])
+        except sqlite3.OperationalError:
+            sequences = {}
+
+        # 从这里开始才是写库：先整库快照（erp.db + config.json + 商品图片 + 旧账存档）。
+        from erp.utils.backup import create_backup  # 延迟导入避免与 utils.backup 循环引用
+
+        create_backup("pre_merge_product_spec")
+
+        conn.execute("PRAGMA foreign_keys=OFF")
+        conn.execute("PRAGMA legacy_alter_table=ON")
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            for table, ddl in table_sql.items():
+                new_table = f"{table}_spec_merged_new"
+                new_ddl, replaced = re.subn(
+                    r"CREATE TABLE\s+(?:IF NOT EXISTS\s+)?" + re.escape(table) + r"\b",
+                    f"CREATE TABLE {new_table}",
+                    _strip_spec_column_from_table_ddl(ddl),
+                    count=1,
+                )
+                if not replaced:
+                    raise RuntimeError(f"无法重命名建表语句里的表名，迁移中止：{table}")
+                kept = [col[1] for col in conn.execute(f"PRAGMA table_info({table})") if col[1] != "spec"]
+                selects = []
+                for column in kept:
+                    if column == "name":
+                        selects.append(MERGED_PRODUCT_NAME_SQL)
+                    elif column == "product_name":
+                        selects.append("TRIM(COALESCE(product_name, '')) || TRIM(COALESCE(spec, ''))")
+                    else:
+                        selects.append(f'"{column}"')
+                conn.execute(new_ddl)
+                conn.execute(
+                    f"INSERT INTO {new_table} ({', '.join(kept)}) SELECT {', '.join(selects)} FROM {table}"
+                )
+                conn.execute(f"DROP TABLE {table}")
+                conn.execute(f"ALTER TABLE {new_table} RENAME TO {table}")
+            for name, sql in index_sql:
+                if name == "idx_products_business_identity":
+                    continue  # 旧定义含 spec，下面用新定义重建
+                conn.execute(sql)
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_products_business_identity ON products(TRIM(name))"
+            )
+            for table, seq in sequences.items():
+                conn.execute("UPDATE sqlite_sequence SET seq=MAX(seq,?) WHERE name=?", (seq, table))
+            violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+            if violations:
+                raise RuntimeError(
+                    f"商品身份合并迁移后外键校验失败，已回滚: {[tuple(row) for row in violations[:3]]}"
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.execute("PRAGMA legacy_alter_table=OFF")
+            conn.execute("PRAGMA foreign_keys=ON")
     finally:
         conn.close()
 
@@ -609,7 +806,6 @@ CREATE TABLE IF NOT EXISTS schema_version (
 CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    spec TEXT DEFAULT '',
     unit TEXT NOT NULL,
     default_price_cents INTEGER NOT NULL CHECK(default_price_cents >= 0),
     notes TEXT DEFAULT '',
@@ -684,7 +880,6 @@ CREATE TABLE IF NOT EXISTS purchase_order_items (
     purchase_order_id INTEGER NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
     product_id INTEGER NOT NULL REFERENCES products(id),
     product_name TEXT NOT NULL,
-    spec TEXT NOT NULL DEFAULT '',
     unit TEXT NOT NULL,
     quantity_3dp INTEGER NOT NULL CHECK(quantity_3dp > 0),
     unit_cost_cents INTEGER NOT NULL CHECK(unit_cost_cents >= 0),
@@ -736,7 +931,6 @@ CREATE TABLE IF NOT EXISTS purchase_return_items (
     source_item_id INTEGER REFERENCES purchase_order_items(id),
     product_id INTEGER NOT NULL REFERENCES products(id),
     product_name TEXT NOT NULL,
-    spec TEXT NOT NULL DEFAULT '',
     unit TEXT NOT NULL,
     quantity_3dp INTEGER NOT NULL CHECK(quantity_3dp > 0),
     unit_price_cents INTEGER NOT NULL CHECK(unit_price_cents >= 0),
@@ -759,6 +953,7 @@ CREATE TABLE IF NOT EXISTS customers (
     opening_balance_cents INTEGER NOT NULL DEFAULT 0,
     is_active INTEGER NOT NULL DEFAULT 1,
     origin TEXT,
+    pinyin_initials TEXT DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TEXT,
@@ -797,7 +992,6 @@ CREATE TABLE IF NOT EXISTS order_items (
     order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
     product_id INTEGER REFERENCES products(id),
     product_name TEXT NOT NULL,
-    spec TEXT DEFAULT '',
     unit TEXT NOT NULL,
     quantity TEXT NOT NULL,
     unit_price_cents INTEGER NOT NULL CHECK(unit_price_cents >= 0),

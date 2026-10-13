@@ -70,10 +70,13 @@ def stock_products():
     ]
     products = []
     for index, (name, qty, cost, safety, enabled, status) in enumerate(cases):
-        pid = create_product(name, "C4-B", "米" if index == 2 else "个", 1000, safety_stock=safety)
+        # 决策变更（v14）：商品身份 = 单一名称，原「型号」C4-B 直接并进名称，
+        # 期望取行也按合并后的完整名称。
+        merged_name = name + "C4-B"
+        pid = create_product(merged_name, "米" if index == 2 else "个", 1000, safety_stock=safety)
         if qty is not None:
             initialize_product(pid, qty, cost, date.today().isoformat(), "虚构测试期初", f"c4-b-{index}", confirm_zero=qty == "0")
-        products.append({"id": pid, "name": name, "enabled": enabled, "status": status})
+        products.append({"id": pid, "name": merged_name, "enabled": enabled, "status": status})
     return app.test_client(), products
 
 
@@ -155,7 +158,9 @@ def test_unknown_quantity_template_projection_never_fabricates_quantity_or_avera
 
     client, products = stock_products
     with get_db() as conn:
-        rows, suggestions, _truncated, _todo = _product_list_context(conn)
+        # 决策变更（v14）：商品侧「待补全（型号为空）」口径随 spec 列删除，
+        # _product_list_context 不再返回 todo_count（由 4 值收窄为 3 值）。
+        rows, suggestions, _truncated = _product_list_context(conn)
         state = dict(conn.execute("SELECT * FROM product_inventory_state WHERE product_id=?", (products[3]["id"],)).fetchone())
     product = next(row for row in rows if row["id"] == products[3]["id"])
     # Current schema forbids NULL quantity: test the pure/template defensive
@@ -186,7 +191,7 @@ def test_readonly_context_survives_search_export_and_real_error_renderers(stock_
         (client.get("/products/", query_string={"q": "C4虚构"}), 200),
         (client.post("/products/import", data={}), 400),
         (client.post("/products/create", data={"name": "", "unit": "个", "default_price": "1", "safety_stock": "0"}), 400),
-        (client.post(f'/products/{products[3]["id"]}/edit', data={"name": products[3]["name"], "spec": "C4-B", "unit": "箱", "default_price": "10", "safety_stock": "2"}), 400),
+        (client.post(f'/products/{products[3]["id"]}/edit', data={"name": products[3]["name"], "unit": "箱", "default_price": "10", "safety_stock": "2"}), 400),
         (client.post(f'/products/{products[1]["id"]}/inventory/revise', data={"quantity": "1", "unit_cost": "1", "reason": "", "expected_version": "1"}), 400),
         (client.post(f'/products/{products[0]["id"]}/inventory/initialize', data={"quantity": "0", "unit_cost": "", "business_date": date.today().isoformat()}), 400),
         (client.post(f'/products/{products[3]["id"]}/image', data={}), 400),
@@ -212,7 +217,9 @@ def test_successful_import_uses_same_two_axis_read_projection(stock_products):
     import re
 
     client, products = stock_products
-    preview = client.post("/products/import", data={"file": (io.BytesIO("商品名称,型号,价格\nC4虚构导入新品,X,1.00\n".encode("utf-8-sig")), "synthetic.csv"), "same_name": "skip"}, content_type="multipart/form-data")
+    # 决策变更（v14）：导入表头不再识别「型号」列（整表头精确匹配会挡下），
+    # 商品名即单一身份。
+    preview = client.post("/products/import", data={"file": (io.BytesIO("商品名称,价格\nC4虚构导入新品,1.00\n".encode("utf-8-sig")), "synthetic.csv"), "same_name": "skip"}, content_type="multipart/form-data")
     assert preview.status_code == 200
     # Batch B：导入改为两段式，先预检再确认。
     pj = html_module.unescape(re.search(r'name="preview_json" value="([^"]*)"', preview.get_data(as_text=True)).group(1))
@@ -230,11 +237,11 @@ def test_successful_import_uses_same_two_axis_read_projection(stock_products):
 def test_workbench_counts_whole_enabled_alert_scope_not_limited_rank(stock_products):
     client, products = stock_products
     for index in range(11):
-        pid = create_product(f"C4虚构额外提醒{index:02}", "W", "个", 100, safety_stock="1")
+        pid = create_product((f"C4虚构额外提醒{index:02}") + ("W"), "个", 100, safety_stock="1")
         initialize_product(pid, "1", "0", date.today().isoformat(), "虚构", f"c4-b-alert-{index}")
-    deleted = create_product("C4虚构已删除提醒", "W", "个", 100)
+    deleted = create_product("C4虚构已删除提醒W", "个", 100)
     initialize_product(deleted, "0", "", date.today().isoformat(), "虚构", "c4-b-alert-deleted", confirm_zero=True)
-    disabled = create_product("C4虚构未启用提醒", "W", "个", 100)
+    disabled = create_product("C4虚构未启用提醒W", "个", 100)
     with get_db() as conn:
         conn.execute("UPDATE products SET deleted_at=CURRENT_TIMESTAMP WHERE id=?", (deleted,))
         conn.execute("INSERT INTO product_inventory_state(product_id, enabled, quantity_3dp) VALUES (?, 0, 0)", (disabled,))

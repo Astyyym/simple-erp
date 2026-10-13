@@ -29,7 +29,8 @@ def _preview_json(resp):
 
 def test_product_import_with_initial_stock_initializes_inventory():
     init_db()
-    csv = "商品名称,型号,单位,默认价,期初数量,期初成本（元）,备注\n带期初商品,4kg,个,120,10,8.5,\n".encode("utf-8-sig")
+    # 决策变更（v14）：表头不再含「型号」列，身份只有名称（型号直接写进名称）。
+    csv = "商品名称,单位,默认价,期初数量,期初成本（元）,备注\n带期初商品,个,120,10,8.5,\n".encode("utf-8-sig")
     client = create_app().test_client()
     preview = _upload(client, "/products/import", "p.csv", csv)
     assert preview.status_code == 200
@@ -51,7 +52,8 @@ def test_product_import_with_initial_stock_initializes_inventory():
 
 def test_product_import_quantity_without_cost_is_error_not_silent():
     init_db()
-    csv = "商品名称,型号,单位,默认价,期初数量,期初成本（元）,备注\n缺成本商品,,个,10,5,,\n".encode("utf-8-sig")
+    # 决策变更（v14）：表头不再含「型号」列。
+    csv = "商品名称,单位,默认价,期初数量,期初成本（元）,备注\n缺成本商品,个,10,5,,\n".encode("utf-8-sig")
     client = create_app().test_client()
     resp = _upload(client, "/products/import", "p.csv", csv)
     html = resp.get_data(as_text=True)
@@ -64,7 +66,8 @@ def test_product_import_quantity_without_cost_is_error_not_silent():
 
 def test_product_import_repeated_confirm_does_not_double_initialize():
     init_db()
-    csv = "商品名称,型号,单位,默认价,期初数量,期初成本（元）,备注\n幂等期初商品,,个,10,3,2,\n".encode("utf-8-sig")
+    # 决策变更（v14）：表头不再含「型号」列。
+    csv = "商品名称,单位,默认价,期初数量,期初成本（元）,备注\n幂等期初商品,个,10,3,2,\n".encode("utf-8-sig")
     client = create_app().test_client()
     preview = _upload(client, "/products/import", "p.csv", csv)
     pj = _preview_json(preview)
@@ -80,7 +83,8 @@ def test_product_import_repeated_confirm_does_not_double_initialize():
 
 def test_product_import_totals_shown_for_reconciliation():
     init_db()
-    csv = "商品名称,型号,单位,默认价,期初数量,期初成本（元）,备注\n合计商品甲,,个,10,2,5,\n合计商品乙,,个,20,3,4,\n".encode("utf-8-sig")
+    # 决策变更（v14）：表头不再含「型号」列。
+    csv = "商品名称,单位,默认价,期初数量,期初成本（元）,备注\n合计商品甲,个,10,2,5,\n合计商品乙,个,20,3,4,\n".encode("utf-8-sig")
     client = create_app().test_client()
     resp = _upload(client, "/products/import", "p.csv", csv)
     html = resp.get_data(as_text=True)

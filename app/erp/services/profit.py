@@ -66,7 +66,7 @@ def summarize_profit(
             f"""
             SELECT o.id AS order_id, o.order_no, o.order_date, o.order_type,
                    o.customer_id, c.name AS customer_name,
-                   oi.id AS item_id, oi.product_id, oi.product_name, oi.spec,
+                   oi.id AS item_id, oi.product_id, oi.product_name,
                    oi.unit, oi.quantity, oi.subtotal_cents,
                    oi.unit_cost_micro, oi.cost_total_micro
             FROM orders o

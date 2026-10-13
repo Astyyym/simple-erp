@@ -57,7 +57,6 @@ def settings_print_preview_context() -> tuple[dict, list[dict], dict]:
     items = [
         {
             "product_name": "示例闸阀",
-            "spec": "DN50",
             "unit": "只",
             "quantity": "2",
             "unit_price_cents": 5000,
@@ -65,7 +64,6 @@ def settings_print_preview_context() -> tuple[dict, list[dict], dict]:
         },
         {
             "product_name": "示例蝶阀",
-            "spec": "DN80",
             "unit": "只",
             "quantity": "1",
             "unit_price_cents": 5000,
@@ -169,7 +167,6 @@ def generate_order_pdf(order_id: int) -> Path:
     public_items = [
         {
             "product_name": item["product_name"],
-            "spec": item["spec"] or "",
             "unit": item["unit"],
             "quantity": item["quantity"],
             "unit_price_cents": int(item["unit_price_cents"]),
@@ -282,7 +279,7 @@ def _load_account_summary_section(conn, customer_id: int, start_date: str, end_d
     rows = conn.execute(
         f"""
         SELECT o.order_no, o.order_date, o.order_type, o.total_amount_cents AS order_total_cents,
-               oi.product_name, oi.spec, oi.unit,
+               oi.product_name, oi.unit,
                oi.quantity, oi.unit_price_cents, oi.subtotal_cents
         FROM orders o
         JOIN order_items oi ON oi.order_id=o.id
@@ -347,8 +344,8 @@ def resolve_summary_customer_ids(customer_q: str, start_date: str, end_date: str
             if exact is not None:
                 return [int(exact["id"])]
             fuzzy = conn.execute(
-                "SELECT id, name FROM customers WHERE deleted_at IS NULL AND name LIKE ? ORDER BY name",
-                (f"%{customer_q}%",),
+                "SELECT id, name FROM customers WHERE deleted_at IS NULL AND (name LIKE ? OR pinyin_initials LIKE ?) ORDER BY name",
+                (f"%{customer_q}%", f"%{customer_q}%"),
             ).fetchall()
             if len(fuzzy) == 1:
                 return [int(fuzzy[0]["id"])]
@@ -402,7 +399,7 @@ def _account_ledger_print_context(ledger: dict) -> dict:
                 params.append(ledger["period"][key])
         with get_db() as conn:
             rows = conn.execute(
-                f"""SELECT oi.order_id, oi.product_name, oi.spec, oi.unit, oi.quantity,
+                f"""SELECT oi.order_id, oi.product_name, oi.unit, oi.quantity,
                            oi.unit_price_cents, oi.subtotal_cents
                     FROM orders o JOIN order_items oi ON oi.order_id=o.id
                     WHERE {' AND '.join(conditions)} ORDER BY o.id, oi.id""", params,
@@ -410,7 +407,7 @@ def _account_ledger_print_context(ledger: dict) -> dict:
         for row in rows:
             if row["order_id"] in order_ids:
                 details[row["order_id"]].append({
-                    "product_name": row["product_name"], "spec": row["spec"] or "",
+                    "product_name": row["product_name"],
                     "unit": row["unit"], "quantity": row["quantity"],
                     "unit_price_cents": int(row["unit_price_cents"]),
                     "subtotal_cents": int(row["subtotal_cents"]),

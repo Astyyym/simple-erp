@@ -19,6 +19,7 @@ from erp.utils.exporting import (
 from erp.utils.errors import error_response, not_found
 from erp.utils.importing import ImportFileError, ImportResult, excel_template, normalized_name, read_upload_detailed
 from erp.utils.money import yuan_to_cents, cents_to_yuan
+from erp.utils.pinyin import pinyin_initials as build_pinyin_initials
 from erp.utils.backup import list_backups
 
 customers_bp = Blueprint("customers", __name__, url_prefix="/customers")
@@ -62,10 +63,10 @@ def _customer_list_context(conn, q: str = "", quality: str = ""):
     )
     if q:
         customers = conn.execute(
-            "SELECT * FROM customers WHERE deleted_at IS NULL AND (name LIKE ? OR phone LIKE ? OR address LIKE ?)"
+            "SELECT * FROM customers WHERE deleted_at IS NULL AND (name LIKE ? OR pinyin_initials LIKE ? OR phone LIKE ? OR address LIKE ?)"
             + todo_sql
             + " ORDER BY name COLLATE NOCASE ASC, id ASC LIMIT 200",
-            (f"%{q}%", f"%{q}%", f"%{q}%"),
+            (f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%"),
         ).fetchall()
     else:
         customers = conn.execute(
@@ -76,8 +77,8 @@ def _customer_list_context(conn, q: str = "", quality: str = ""):
     # E4：到达上限即提示「已截断，可用搜索缩小范围」。
     truncated = len(customers) >= 200
     suggestions = conn.execute(
-        "SELECT DISTINCT name FROM customers WHERE deleted_at IS NULL AND name LIKE ? ORDER BY name LIMIT 20",
-        (f"%{q}%" if q else "%",),
+        "SELECT DISTINCT name FROM customers WHERE deleted_at IS NULL AND (name LIKE ? OR pinyin_initials LIKE ?) ORDER BY name LIMIT 20",
+        (f"%{q}%" if q else "%", f"%{q}%" if q else "%"),
     ).fetchall()
     todo_count = conn.execute(
         "SELECT COUNT(*) AS c FROM customers WHERE deleted_at IS NULL"
@@ -164,9 +165,9 @@ def import_customers_confirm():
                     result.skipped += 1
                     continue
                 conn.execute(
-                    "INSERT INTO customers(name, phone, address, opening_balance_cents, origin) VALUES (?, ?, ?, ?, 'import')",
+                    "INSERT INTO customers(name, phone, address, opening_balance_cents, pinyin_initials, origin) VALUES (?, ?, ?, ?, ?, 'import')",
                     (name, row.payload.get("phone", ""), row.payload.get("address", ""),
-                     int(row.payload.get("opening_balance_cents", 0))),
+                     int(row.payload.get("opening_balance_cents", 0)), build_pinyin_initials(name)),
                 )
                 existing_names.add(name)
                 result.added += 1
@@ -219,8 +220,8 @@ def customer_suggestions():
     q = request.args.get("q", "").strip()
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT DISTINCT name FROM customers WHERE deleted_at IS NULL AND name LIKE ? ORDER BY name LIMIT 20",
-            (f"%{q}%",),
+            "SELECT DISTINCT name FROM customers WHERE deleted_at IS NULL AND (name LIKE ? OR pinyin_initials LIKE ?) ORDER BY name LIMIT 20",
+            (f"%{q}%", f"%{q}%"),
         ).fetchall()
     return jsonify([row["name"] for row in rows])
 
@@ -252,7 +253,7 @@ def update_customer(customer_id: int):
         existing = conn.execute("SELECT 1 FROM customers WHERE id=? AND deleted_at IS NULL", (customer_id,)).fetchone()
         if existing is None:
             return not_found("客户不存在，可能已被删除或从未存在。", back_url=url_for("customers.list_customers"))
-        conn.execute("UPDATE customers SET name=?, phone=?, address=?, opening_balance_cents=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (request.form["name"], request.form.get("phone", ""), request.form.get("address", ""), opening_balance_cents, customer_id))
+        conn.execute("UPDATE customers SET name=?, phone=?, address=?, opening_balance_cents=?, pinyin_initials=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (request.form["name"], request.form.get("phone", ""), request.form.get("address", ""), opening_balance_cents, build_pinyin_initials(request.form["name"]), customer_id))
     return redirect(url_for("customers.list_customers"))
 
 @customers_bp.post("/bulk_delete")

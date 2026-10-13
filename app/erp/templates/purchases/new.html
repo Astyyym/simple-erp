@@ -9,7 +9,12 @@
   .order-table input { border: 0; width: 100%; min-height: 42px; padding: 8px 10px; background: transparent; color: var(--erp-ink); }
   .order-table input:focus { outline: 2px solid var(--erp-primary); outline-offset: -2px; background: var(--erp-surface); }
   .order-table td, .order-table th { vertical-align: middle; padding: 0; }
-  .order-table thead th { height: 42px; padding: 0 10px; background: var(--erp-glass-bg-strong); color: var(--erp-muted); font-size: 12px; font-weight: 650; }
+  /* 表头实色深底：浅色 #334155/#fff（对比度 10.35），深色 #2b3648/#e8eef9（10.46）。
+     实色 + 关掉 Bootstrap 的整格 inset 阴影 —— .table-light 通过 --bs-table-bg 给
+     th 铺一层 inset box-shadow，只改 background 会被它盖住（实测才看得出来）。 */
+  .order-table thead th { height: 42px; padding: 0 10px; background: #334155; color: #ffffff; box-shadow: none; font-size: 12px; font-weight: 650; }
+  html[data-ui-theme="dark"] .order-table thead th { background: #2b3648; color: #e8eef9; }
+  @media (prefers-color-scheme: dark){ html[data-ui-theme="system"] .order-table thead th { background: #2b3648; color: #e8eef9; } }
   .order-table tfoot th { background: var(--erp-glass-bg-strong); color: var(--erp-ink); }
   .suggest-wrap { position: relative; }
   .suggest-list { position: absolute; z-index: 20; left: 0; right: 0; top: 100%; background: var(--erp-surface); border: 1px solid var(--erp-border-strong); max-height: 220px; overflow-y: auto; border-radius: 0 0 7px 7px; box-shadow: 0 12px 28px rgba(16,24,40,.14); }
@@ -17,7 +22,11 @@
   .suggest-item:hover, .suggest-item[aria-selected="true"] { background: var(--erp-primary-soft); }
   .suggest-item:focus-visible { outline: 2px solid var(--erp-primary); outline-offset: -2px; }
   .readonly-total { background: var(--erp-glass-bg-strong); padding: 10px; min-height: 42px; font-variant-numeric: tabular-nums; color: var(--erp-ink); }
+  /* 换页提示行：不可编辑、不带 name（不参与提交）；位置由 refreshSlipNotices() 按 slip_size 重排。 */
+  .order-table tr.slip-notice td { background: var(--erp-surface-soft); color: var(--erp-muted); font-size: 12px; text-align: left; padding: 6px 10px; }
   .unit-display { display: flex; align-items: center; color: var(--erp-muted); }
+  .unit-cell { display: flex; gap: 4px; padding: 4px; }
+  .unit-cell select { width: 74px; }
   .price-cell { padding: 4px !important; }
   .price-cell input { border: 0; width: 100%; padding: 4px 6px; background: transparent; }
   .price-quick { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 6px 4px; }
@@ -33,8 +42,9 @@
   .row-tools{display:flex;gap:8px;align-items:center;padding:8px 0 2px 50px;min-width:max-content}
   .suggest-list[popover]{position:fixed;inset:auto;margin:0;padding:0;box-sizing:border-box;color:var(--erp-ink);height:auto;min-width:min(240px,calc(100vw - 24px));max-width:calc(100vw - 24px)}
 
+  /* 无 blur 回退只刷「仍是玻璃底」的 tfoot/只读合计；表头已改实色，故意不列进来。 */
   @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
-    .order-table thead th,.order-table tfoot th,.readonly-total{background:var(--erp-surface-soft)}
+    .order-table tfoot th,.readonly-total{background:var(--erp-surface-soft)}
   }
 </style>
 
@@ -86,8 +96,8 @@
       {% for row in form_rows %}
       <tr>
         <td class="text-center row-no">{{ loop.index }}</td>
-        <td class="product-picker"><div class="picker-row"><input type="hidden" name="product_id" class="product-id" value="{{ row.product_id or '' }}"><select class="form-select form-select-sm picker-name" aria-label="第 {{loop.index}} 行产品名称"></select><select class="form-select form-select-sm picker-spec" aria-label="第 {{loop.index}} 行型号"></select></div></td>
-        <td><div class="readonly-total unit-display">{{ row.unit or '—' }}</div></td>
+        <td class="product-picker"><div class="picker-row"><input type="hidden" name="product_id" class="product-id" value="{{ row.product_id or '' }}"><select class="form-select form-select-sm picker-name" aria-label="第 {{loop.index}} 行产品名称"></select></div></td>
+        <td><div class="unit-cell"><select class="form-select form-select-sm unit-select" aria-label="第 {{loop.index}} 行单位"><option value="">自定义</option>{% for u in (unit_options or ['个','套','件']) %}<option value="{{u}}" {% if row.unit == u %}selected{% endif %}>{{u}}</option>{% endfor %}</select><input name="unit" class="unit" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="自定义" value="{{ row.unit or '' }}"></div></td>
         <td><input name="quantity" class="quantity" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.000" value="{{ row.quantity or '' }}"></td>
         <td class="price-cell"><input name="unit_cost_yuan" class="unit-price" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.00" value="{{ row.unit_cost_yuan or '' }}"><div class="price-quick d-none"></div></td>
         <td><div class="readonly-total line-total">0.00</div></td>
@@ -176,7 +186,7 @@ function updateCost(tr) {
 }
 function recalc() {
   let total = 0;
-  document.querySelectorAll('#purchaseRows tr').forEach((tr, idx) => {
+  document.querySelectorAll('#purchaseRows tr:not(.slip-notice)').forEach((tr, idx) => {
     tr.querySelector('.row-no').textContent = idx + 1;
     const qty = Number(tr.querySelector('.quantity').value || 0);
     const price = Number(tr.querySelector('.unit-price').value || 0);
@@ -213,7 +223,8 @@ async function refineProductRow(tr, product) {
 function clearRow(button) {
   const tr = button.closest('tr');
   tr.querySelectorAll('input').forEach(input => { input.value = ''; });
-  tr.querySelector('.unit-display').textContent = '—';
+  const unitSelect = tr.querySelector('.unit-select');
+  if (unitSelect) unitSelect.value = '';
   tr.querySelector('.price-quick').innerHTML = '';
   tr.querySelector('.price-quick').classList.add('d-none');
   tr.querySelector('.line-total').textContent = '0.00';
@@ -230,7 +241,8 @@ function clearAllRows() {
   while (tbody.rows.length > 1) tbody.deleteRow(1);
   const firstRow = tbody.rows[0];
   firstRow.querySelectorAll('input').forEach(input => { input.value = ''; });
-  firstRow.querySelector('.unit-display').textContent = '—';
+  const firstUnitSelect = firstRow.querySelector('.unit-select');
+  if (firstUnitSelect) firstUnitSelect.value = '';
   firstRow.querySelector('.price-quick').innerHTML = '';
   firstRow.querySelector('.price-quick').classList.add('d-none');
   firstRow.querySelector('.line-total').textContent = '0.00';
@@ -244,44 +256,95 @@ function addRow() {
   const tbody = document.getElementById('purchaseRows');
   const tr = tbody.rows[0].cloneNode(true);
   tr.querySelectorAll('input').forEach(input => { input.value = ''; });
-  tr.querySelector('.unit-display').textContent = '—';
+  const clonedUnitSelect = tr.querySelector('.unit-select');
+  if (clonedUnitSelect) clonedUnitSelect.value = '';
   tr.querySelector('.price-quick').innerHTML = '';
   tr.querySelector('.price-quick').classList.add('d-none');
   tr.querySelector('.line-total').textContent = '0.00';
   tbody.appendChild(tr);
   bindRow(tr);
+  refreshSlipNotices();
   recalc();
   syncRowToolState();
+  // 返回新建行：调用方不能用 tbody.rows[最后一行]，换页提示行可能排在它之后。
+  return tr;
 }
-/* 删除最后一行；仅剩 1 行时按钮 disabled（保底永远留一行可录入）。 */
+/* 删除最后一行数据行；仅剩 1 行时按钮 disabled（保底永远留一行可录入）。 */
 function removeRow() {
   const tbody = document.getElementById('purchaseRows');
-  if (tbody.rows.length <= 1) { syncRowToolState(); return; }
-  tbody.deleteRow(tbody.rows.length - 1);
+  const rows = purchaseDataRows(tbody);
+  if (rows.length <= 1) { syncRowToolState(); return; }
+  rows[rows.length - 1].remove();
+  refreshSlipNotices();
   recalc();
   syncRowToolState();
 }
 function syncRowToolState() {
   const button = document.getElementById('removeRowButton');
   if (!button) return;
-  button.disabled = document.getElementById('purchaseRows').rows.length <= 1;
+  // 只数数据行：换页提示行不是可删的录入行。
+  button.disabled = purchaseDataRows(document.getElementById('purchaseRows')).length <= 1;
 }
+/* ---- 单联容量提示行：与打印单同源（config.SLIP_SIZE → jinja 全局 slip_size） start ---- */
+const slipSize = {{ slip_size }};
+function purchaseDataRows(tbody) {
+  return Array.from(tbody.querySelectorAll('tr:not(.slip-notice)'));
+}
+/* 每 slipSize 行数据后插一行不可编辑提示，位置按数据行重排。
+   提示行不带 name / 无输入控件，不参与表单提交；recalc 只遍历数据行，行号仍连续。 */
+function refreshSlipNotices() {
+  const tbody = document.getElementById('purchaseRows');
+  if (!tbody) return;
+  tbody.querySelectorAll('tr.slip-notice').forEach(row => row.remove());
+  if (!slipSize) return;
+  const rows = purchaseDataRows(tbody);
+  rows.forEach((row, index) => {
+    const position = index + 1;
+    if (position % slipSize !== 0 || position === rows.length) return;
+    const notice = document.createElement('tr');
+    notice.className = 'slip-notice';
+    const cell = document.createElement('td');
+    cell.className = 'text-muted';
+    cell.colSpan = 8;
+    cell.textContent = `本张已满 ${slipSize} 行；因行数限制，以下内容续打在第 ${position / slipSize + 1} 张`;
+    notice.appendChild(cell);
+    row.after(notice);
+  });
+}
+/* ---- 单联容量提示行 end ---- */
 function bindRow(tr) {
   tr.querySelectorAll('.quantity,.unit-price').forEach(input => input.addEventListener('input', recalc));
   const idField = tr.querySelector('.product-id');
-  const unitDisplay = tr.querySelector('.unit-display');
+  const unitInput = tr.querySelector('.unit');
+  const unitSelect = tr.querySelector('.unit-select');
   const quick = tr.querySelector('.price-quick');
+  // §4.3：单位可编辑（写本单明细，不回写档案）。下拉选择同步到输入框；用户手输即时追加候选。
+  if (unitSelect && unitInput) {
+    if (unitInput.value) { unitSelect.value = unitInput.value; ensureUnitOption(unitSelect, unitInput.value); }
+    unitSelect.addEventListener('change', () => {
+      if (unitSelect.value) { unitInput.value = unitSelect.value; }
+      recalc();
+    });
+    unitInput.addEventListener('input', () => {
+      unitSelect.value = unitInput.value;
+      ensureUnitOption(unitSelect, unitInput.value);
+      recalc();
+    });
+  }
   const picker = ErpProductPicker.mountRow(tr, catalog, product => {
     if (!product) {
       idField.value = '';
-      unitDisplay.textContent = '—';
       quick.innerHTML = '';
       quick.classList.add('d-none');
       recalc();
       return;
     }
     idField.value = product.id;
-    unitDisplay.textContent = product.unit || '—';
+    // 选中商品时把档案单位作为默认值填入（用户仍可改）
+    if (unitInput) {
+      unitInput.value = product.unit || '';
+      if (unitSelect) { unitSelect.value = product.unit || ''; ensureUnitOption(unitSelect, product.unit || ''); }
+    }
     quick.innerHTML = '';
     quick.classList.add('d-none');
     recalc();
@@ -293,6 +356,17 @@ function bindRow(tr) {
     const existing = catalogById.get(String(idField.value));
     if (existing) picker.set(existing);
   }
+}
+/* 本页新输入的单位即时追加到该行下拉，无需等保存（§4.4）。 */
+function ensureUnitOption(select, unit) {
+  const value = String(unit || '').trim();
+  if (!select || !value) return;
+  const exists = Array.from(select.options).some(option => option.value === value);
+  if (exists) return;
+  const option = document.createElement('option');
+  option.value = value;
+  option.textContent = value;
+  select.appendChild(option);
 }
 
 const customerInput = document.getElementById('customer_name');
@@ -317,12 +391,13 @@ ErpOrderEntry.bindAutocomplete(
   },
   () => { document.getElementById('customer_id').value = ''; },
 );
-document.querySelectorAll('#purchaseRows tr').forEach(bindRow);
+document.querySelectorAll('#purchaseRows tr:not(.slip-notice)').forEach(bindRow);
 document.addEventListener('click', event => {
   document.querySelectorAll('[role="combobox"]').forEach(input => {
     if (!input.closest('.suggest-wrap')?.contains(event.target)) input._closeSuggestions?.();
   });
 });
+refreshSlipNotices();
 recalc();
 syncRowToolState();
 

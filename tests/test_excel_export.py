@@ -33,15 +33,17 @@ def test_excel_export_endpoints_and_headers():
     suffix = uuid4().hex[:8]
     customer_name = f"导出客户{suffix}"
     product_name = f"导出商品{suffix}"
+    # 决策变更（v14）：商品身份 = 单一名称，型号直接写进名称（这里用 DN50 后缀表示）。
+    deleted_product_name = f"{product_name}DN50"
     create_customer(customer_name, phone="13800000000", address="杭州", opening_balance_cents=yuan_to_cents("12.50"))
-    create_product(product_name, "DN50", "个", yuan_to_cents("66.00"))
+    create_product(deleted_product_name, "个", yuan_to_cents("66.00"))
     customer_id = create_customer(f"单据客户{suffix}")
     create_order_from_typed_rows(
         customer_id,
         f"EXP-SALE-{suffix}",
         [
-            {"product_name": "阀门A", "spec": "DN65", "unit": "个", "unit_price_yuan": "100.00", "quantity": "2"},
-            {"product_name": "阀门B", "spec": "", "unit": "套", "unit_price_yuan": "50.50", "quantity": "1"},
+            {"product_name": "阀门ADN65", "unit": "个", "unit_price_yuan": "100.00", "quantity": "2"},
+            {"product_name": "阀门B", "unit": "套", "unit_price_yuan": "50.50", "quantity": "1"},
         ],
         status="saved",
         order_date="2026-07-10",
@@ -65,7 +67,7 @@ def test_excel_export_endpoints_and_headers():
         )
         conn.execute(
             "UPDATE products SET deleted_at=CURRENT_TIMESTAMP WHERE name=?",
-            (product_name,),
+            (deleted_product_name,),
         )
         alive_customer = f"在用客户{suffix}"
         conn.execute(
@@ -73,7 +75,7 @@ def test_excel_export_endpoints_and_headers():
             (alive_customer,),
         )
         conn.execute(
-            "INSERT INTO products(name, spec, unit, default_price_cents, notes, usage_count) VALUES (?, 'S1', '箱', 1234, '商品备注', 3)",
+            "INSERT INTO products(name, unit, default_price_cents, notes, usage_count) VALUES (?, '箱', 1234, '商品备注', 3)",
             (f"在用商品{suffix}",),
         )
 
@@ -103,15 +105,16 @@ def test_excel_export_endpoints_and_headers():
     assert list(product_rows[0]) == product_export_headers()
     product_names = {row[0] for row in product_rows[1:]}
     assert f"在用商品{suffix}" in product_names
-    assert product_name not in product_names
+    # 软删商品不得出现在导出中（v14 身份 = 名称，故按完整名称判定）。
+    assert deleted_product_name not in product_names
     product_row = next(row for row in product_rows[1:] if row[0] == f"在用商品{suffix}")
-    assert product_row[1] == "S1"
+    # 决策变更（v14）：导出不再有「型号」列，品牌紧随商品名称之后。
     # E-2：未填品牌 → 导出为空单元格（openpyxl 读回 None），不是字符串 "None"。
-    assert product_row[2] in (None, "")
-    assert product_row[3] == "箱"
-    assert str(product_row[4]) == "12.34"
-    assert product_row[5] == "商品备注"
-    assert int(product_row[6]) == 3
+    assert product_row[1] in (None, "")
+    assert product_row[2] == "箱"
+    assert str(product_row[3]) == "12.34"
+    assert product_row[4] == "商品备注"
+    assert int(product_row[5]) == 3
 
     sale_rows = _sheet_rows(
         client.get(
@@ -128,13 +131,14 @@ def test_excel_export_endpoints_and_headers():
     assert len(sale_rows) == 3  # header + 2 detail lines
     assert {row[0] for row in sale_rows[1:]} == {f"EXP-SALE-{suffix}"}
     assert all(row[3] == "销售单" for row in sale_rows[1:])
-    unit_prices = sorted(str(row[9]) for row in sale_rows[1:])
-    amounts = sorted(str(row[10]) for row in sale_rows[1:])
+    # 决策变更（v14）：明细导出不再有「型号」列，单价/金额/备注/合计各自左移一位。
+    unit_prices = sorted(str(row[8]) for row in sale_rows[1:])
+    amounts = sorted(str(row[9]) for row in sale_rows[1:])
     assert unit_prices == ["100.00", "50.50"]
     assert amounts == ["200.00", "50.50"]  # 2*100 and 1*50.50
-    totals = {str(row[12]) for row in sale_rows[1:]}
+    totals = {str(row[11]) for row in sale_rows[1:]}
     assert totals == {"250.50"}
-    assert sale_rows[1][11] == "销售备注" or sale_rows[2][11] == "销售备注"
+    assert sale_rows[1][10] == "销售备注" or sale_rows[2][10] == "销售备注"
 
     return_rows = _sheet_rows(
         client.get(
@@ -151,11 +155,12 @@ def test_excel_export_endpoints_and_headers():
     assert len(return_rows) == 2
     assert return_rows[1][0] == f"EXP-RET-{suffix}"
     assert return_rows[1][3] == "退货单"
+    # 决策变更（v14）：无「型号」列 → 单价/金额/备注/合计各左移一位。
+    assert str(return_rows[1][8]) == "20.00"
     assert str(return_rows[1][9]) == "20.00"
-    assert str(return_rows[1][10]) == "20.00"
     # Return order total is stored negative; export uses cents_to_yuan as-is.
-    assert str(return_rows[1][12]) == "-20.00"
-    assert return_rows[1][11] == "退货备注"
+    assert str(return_rows[1][11]) == "-20.00"
+    assert return_rows[1][10] == "退货备注"
 
 
 def test_excel_export_open_without_login(monkeypatch):

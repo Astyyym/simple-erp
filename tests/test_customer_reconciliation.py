@@ -17,13 +17,13 @@ from pdf_test_utils import assert_a4_portrait_pdf
 
 def _seed_reconciliation_data():
     init_db()
-    product = create_product("对账灭火器", "4kg", "个", 3000)
+    product = create_product("对账灭火器4kg", "个", 3000)
     initialize_product(product, "20", "10", "2026-10-01", "期初", "reconciliation-init")
     customer_id = create_customer("对账客户")
     sale_id = create_order_from_typed_rows(
         customer_id,
         "MD202610010201",
-        [{"product_id": product, "product_name": "对账灭火器", "spec": "4kg", "unit": "个", "unit_price_yuan": "20", "quantity": "2"}],
+        [{"product_id": product, "product_name": "对账灭火器4kg", "unit": "个", "unit_price_yuan": "20", "quantity": "2"}],
         status="saved",
         order_date="2026-10-01",
         notes="客户可见备注",
@@ -45,7 +45,7 @@ def _seed_reconciliation_data():
     other_order_id = create_order_from_typed_rows(
         other_customer,
         "MD202610020203",
-        [{"product_id": product, "product_name": "对账灭火器", "spec": "4kg", "unit": "个", "unit_price_yuan": "20", "quantity": "1"}],
+        [{"product_id": product, "product_name": "对账灭火器4kg", "unit": "个", "unit_price_yuan": "20", "quantity": "1"}],
         status="saved",
         order_date="2026-10-02",
     )
@@ -160,7 +160,7 @@ def test_reconciliation_order_detail_endpoint_is_limited_to_snapshot_scope():
     client = create_app().test_client()
     detail = client.get(f"/analytics/reconciliation/{snapshot_id}/order/{sale_id}")
     assert detail.status_code == 200
-    assert detail.get_json()["items"][0]["product_name"] == "对账灭火器"
+    assert detail.get_json()["items"][0]["product_name"] == "对账灭火器4kg"
     rejected = client.get(f"/analytics/reconciliation/{snapshot_id}/order/{other_order_id}")
     assert rejected.status_code == 404
 
@@ -173,7 +173,7 @@ def test_reconciliation_keeps_selection_across_result_pages():
         create_order_from_typed_rows(
             customer_id,
             f"MD20261002{index + 3000:04d}",
-            [{"product_id": product_id, "product_name": "对账灭火器", "spec": "4kg", "unit": "个", "unit_price_yuan": "1", "quantity": "0.1"}],
+            [{"product_id": product_id, "product_name": "对账灭火器4kg", "unit": "个", "unit_price_yuan": "1", "quantity": "0.1"}],
             status="saved",
             order_date="2026-10-02",
         )

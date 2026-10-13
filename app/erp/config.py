@@ -52,6 +52,11 @@ PRINT_INFO_REQUIRED_FIELDS = (
     ("print_order_address", "订货地址"),
 )
 
+# 单联容量（行）：四类开单共用 241mm 连续纸一联，每联 10 行（用户 2026-10-11 确认，不做配置项）。
+# 真源只有这一处：打印模板 orders/print_template.html 与三个录入页模板都读它，
+# 避免「打印 10 行 / 录入页写死另一个数」的漂移（见 create_app 的 jinja 全局注入）。
+SLIP_SIZE = 10
+
 UI_SCALE_CHOICES = ("100", "125", "150")
 UI_THEME_CHOICES = ("light", "dark", "system")
 UI_FONT_WEIGHT_CHOICES = ("standard", "medium", "strong")

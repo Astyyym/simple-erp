@@ -11,14 +11,23 @@
   .order-table input { border: 0; width: 100%; min-height: 42px; padding: 8px 10px; background: transparent; color: var(--erp-ink); }
   .order-table input:focus { outline: 2px solid var(--erp-primary); outline-offset: -2px; background: var(--erp-surface); }
   .order-table td, .order-table th { vertical-align: middle; padding: 0; }
-  .order-table thead th { height: 42px; padding: 0 10px; background: var(--erp-glass-bg-strong); color: var(--erp-muted); font-size: 12px; font-weight: 650; }
+  /* 表头实色深底：浅色 #334155/#fff（对比度 10.35），深色 #2b3648/#e8eef9（10.46）。
+     实色 + 关掉 Bootstrap 的整格 inset 阴影 —— .table-light 通过 --bs-table-bg 给
+     th 铺一层 inset box-shadow，只改 background 会被它盖住（实测才看得出来）。 */
+  .order-table thead th { height: 42px; padding: 0 10px; background: #334155; color: #ffffff; box-shadow: none; font-size: 12px; font-weight: 650; }
+  html[data-ui-theme="dark"] .order-table thead th { background: #2b3648; color: #e8eef9; }
+  @media (prefers-color-scheme: dark){ html[data-ui-theme="system"] .order-table thead th { background: #2b3648; color: #e8eef9; } }
   .order-table tfoot th { background: var(--erp-glass-bg-strong); color: var(--erp-ink); }
   .suggest-wrap { position: relative; }
+  /* Phase 3 S2：商品名框现在也包在 .suggest-wrap 里，需要在 picker-row 内继续占满剩余宽度。 */
+  .product-picker .picker-row .suggest-wrap { flex: 1 1 auto; min-width: 0; }
   .suggest-list { position: absolute; z-index: 20; left: 0; right: 0; top: 100%; background: var(--erp-surface); border: 1px solid var(--erp-border-strong); max-height: 220px; overflow-y: auto; border-radius: 0 0 7px 7px; box-shadow: 0 12px 28px rgba(16,24,40,.14); }
   .suggest-item { display: block; width: 100%; padding: 9px 11px; cursor: pointer; border: 0; border-bottom: 1px solid var(--erp-border); background: transparent; color: var(--erp-ink); text-align: left; font: inherit; }
   .suggest-item:hover, .suggest-item[aria-selected="true"] { background: var(--erp-primary-soft); }
   .suggest-item:focus-visible { outline: 2px solid var(--erp-primary); outline-offset: -2px; }
   .readonly-total { background: var(--erp-glass-bg-strong); padding: 10px; min-height: 42px; font-variant-numeric: tabular-nums; color: var(--erp-ink); }
+  /* 换页提示行：不可编辑、不带 name（不参与提交）；位置由 refreshSlipNotices() 按 slip_size 重排。 */
+  .order-table tr.slip-notice td { background: var(--erp-surface-soft); color: var(--erp-muted); font-size: 12px; text-align: left; padding: 6px 10px; }
   .unit-cell { display: flex; gap: 4px; padding: 4px; }
   .unit-cell select { width: 74px; }
   .price-cell { padding: 4px !important; }
@@ -37,8 +46,9 @@
   .row-tools{display:flex;gap:8px;align-items:center;padding:8px 0 2px 50px;min-width:max-content}
   .suggest-list[popover]{position:fixed;inset:auto;margin:0;padding:0;box-sizing:border-box;color:var(--erp-ink);height:auto;min-width:min(240px,calc(100vw - 24px));max-width:calc(100vw - 24px)}
 
+  /* 无 blur 回退只刷「仍是玻璃底」的 tfoot/只读合计；表头已改实色，故意不列进来。 */
   @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
-    .order-table thead th,.order-table tfoot th,.readonly-total{background:var(--erp-surface-soft)}
+    .order-table tfoot th,.readonly-total{background:var(--erp-surface-soft)}
   }
 </style>
 
@@ -68,7 +78,7 @@
       <span class="source-preview-meta" id="sourcePreviewMeta"></span>
     </div>
     <div class="table-responsive"><table class="table table-sm source-preview-table">
-      <thead><tr><th>商品</th><th>型号</th><th>单位</th><th class="numeric-cell">原数量</th><th class="numeric-cell">可退上限</th><th class="numeric-cell">单价</th><th class="numeric-cell">金额</th></tr></thead>
+      <thead><tr><th>商品</th><th>单位</th><th class="numeric-cell">原数量</th><th class="numeric-cell">可退上限</th><th class="numeric-cell">单价</th><th class="numeric-cell">金额</th></tr></thead>
       <tbody id="sourcePreviewRows"></tbody>
     </table></div>
     <div class="source-preview-actions">
@@ -109,7 +119,7 @@
   <section class="order-details-card" id="orderDetailsCard" aria-labelledby="orderDetailsTitle">
   <h3 class="section-title" id="orderDetailsTitle">{{ '退货信息' if is_return else '订单信息' }}</h3>
   <p class="text-muted small mb-2">
-    商品名称与型号可直接手输：命中已有商品会自动带出单位/单价；没有匹配则会新建商品档案，之后可到商品页补全（无成本 → 无毛利、库存与分析为空白；拿货单需先启用库存）。
+    商品名称可直接手输：命中已有商品会自动带出单位/单价；没有匹配则会新建商品档案（型号请直接写进名称，如 闸阀DN50）；无成本的商品没有毛利，拿货单需先启用库存。
   </p>
   <div class="order-table-scroll"><table class="table table-bordered order-table" id="orderTable">
     <thead class="table-light"><tr><th style="width:50px">序号</th><th style="min-width:340px">产品名称</th><th style="width:190px">单位</th><th style="width:120px">数量</th><th style="width:140px">单价(元)</th><th style="width:140px">金额</th><th style="min-width:140px">{{ '退货回冲成本' if is_return else ('销售时成本' if is_edit else '移动平均成本') }}(元)</th><th style="width:80px">操作</th></tr></thead>
@@ -118,8 +128,8 @@
       {% for item in rows %}
       <tr{% if item and item.unit_cost_micro is not none %} data-unit-cost="{{ micro_to_yuan(item.unit_cost_micro, precision=6) }}"{% endif %}>
         <td class="text-center row-no">{{loop.index}}</td>
-        <td class="product-picker"><div class="picker-row"><input type="hidden" name="product_id" class="product-id" value="{{item.product_id if item else ''}}"><input type="hidden" name="source_item_id" class="source-item-id" value="{{item.source_item_id if item else ''}}"><input type="hidden" name="product_name" class="product-name" value="{{item.product_name if item else ''}}"><input type="hidden" name="spec" class="product-spec" value="{{item.spec if item else ''}}"><input class="form-control form-control-sm picker-name-input" list="productNameOptions" autocomplete="off" aria-label="第 {{loop.index}} 行产品名称" placeholder="输入或选择商品名" value="{{item.product_name if item else ''}}"><input class="form-control form-control-sm picker-spec-input" list="productSpecOptions" autocomplete="off" aria-label="第 {{loop.index}} 行型号" placeholder="型号（可留空）" value="{{item.spec if item else ''}}"></div></td>
-        <td><div class="unit-cell"><select class="form-select form-select-sm unit-select"><option value="">自定义</option>{% for u in ['个','套','件'] %}<option value="{{u}}" {% if item and item.unit == u %}selected{% endif %}>{{u}}</option>{% endfor %}</select><input name="unit" class="unit" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="自定义" value="{{item.unit if item else ''}}"></div></td>
+        <td class="product-picker"><div class="picker-row"><input type="hidden" name="product_id" class="product-id" value="{{item.product_id if item else ''}}"><input type="hidden" name="source_item_id" class="source-item-id" value="{{item.source_item_id if item else ''}}"><input type="hidden" name="product_name" class="product-name" value="{{item.product_name if item else ''}}"><div class="suggest-wrap product-suggest-wrap"><input class="form-control form-control-sm picker-name-input" autocomplete="off" aria-label="第 {{loop.index}} 行产品名称" placeholder="输入或选择商品名" value="{{item.product_name if item else ''}}"><div class="suggest-list d-none product-suggestions" role="listbox" aria-label="商品建议"></div></div></div></td>
+        <td><div class="unit-cell"><select class="form-select form-select-sm unit-select"><option value="">自定义</option>{% for u in (unit_options or ['个','套','件']) %}<option value="{{u}}" {% if item and item.unit == u %}selected{% endif %}>{{u}}</option>{% endfor %}</select><input name="unit" class="unit" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="自定义" value="{{item.unit if item else ''}}"></div></td>
         <td><input name="quantity" class="quantity" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0" value="{{item.quantity if item else ''}}"></td>
         <td class="price-cell"><input name="unit_price" class="unit-price" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.00" value="{{cents_to_yuan(item.unit_price_cents) if item else ''}}"><label class="regular-price-option"><input type="checkbox" class="regular-price-check">常规价 <span class="regular-price-text"></span></label></td>
         <td><div class="readonly-total line-total">0.00</div></td>
@@ -194,25 +204,17 @@
 </div>
 
 <script type="application/json" id="productCatalog">{{ product_catalog|tojson }}</script>
-<datalist id="productNameOptions"></datalist>
-<datalist id="productSpecOptions"></datalist>
 <script src="{{ url_for('static', filename='order-product-picker.js') }}?v=2"></script>
+<script src="{{ url_for('static', filename='order-entry-common.js') }}?v=2"></script>
 <script>
-function money(n) { return (Math.round((Number(n) || 0) * 100) / 100).toFixed(2); }
-function costMoney(costText) {
-  // Format the six-decimal payload without binary-float rounding or changing it.
-  const negative = String(costText).startsWith('-');
-  const [whole, fraction = ''] = String(costText).replace(/^-/, '').split('.');
-  const micro = BigInt(whole) * 1000000n + BigInt((fraction + '000000').slice(0, 6));
-  const cents = (micro + 5000n) / 10000n;
-  return (negative && cents !== 0n ? '-' : '') + String(cents / 100n) + '.' + String(cents % 100n).padStart(2, '0');
-}
+// v14/Phase 3：联想与金额格式化统一来自 order-entry-common.js（原先本页内联一份副本）。
+const { money, costMoney, bindAutocomplete } = window.ErpOrderEntry;
 const orderSign = {{ -1 if is_return else 1 }};
 function recalc() {
   let total = 0;
   let knownCost = 0;
   let unknownCost = false;
-  document.querySelectorAll('#orderBody tr').forEach((tr, idx) => {
+  document.querySelectorAll('#orderBody tr:not(.slip-notice)').forEach((tr, idx) => {
     tr.querySelector('.row-no').textContent = idx + 1;
     const qty = Number(tr.querySelector('.quantity').value || 0);
     const price = Number(tr.querySelector('.unit-price').value || 0);
@@ -283,140 +285,56 @@ function addRow() {
   if (regularOption) regularOption.style.display = 'none';
   tbody.appendChild(tr);
   bindRow(tr);
+  refreshSlipNotices();
   recalc();
   syncRowToolState();
+  // 返回新建行：调用方不能用 tbody.rows[最后一行]，换页提示行可能排在它之后。
+  return tr;
 }
-/* 删除最后一行；仅剩 1 行时按钮 disabled（保底永远留一行可录入）。 */
+/* 删除最后一行数据行；仅剩 1 行时按钮 disabled（保底永远留一行可录入）。 */
 function removeRow() {
   const tbody = document.getElementById('orderBody');
-  if (tbody.rows.length <= 1) { syncRowToolState(); return; }
-  tbody.deleteRow(tbody.rows.length - 1);
+  const rows = orderDataRows(tbody);
+  if (rows.length <= 1) { syncRowToolState(); return; }
+  rows[rows.length - 1].remove();
+  refreshSlipNotices();
   recalc();
   syncRowToolState();
 }
 function syncRowToolState() {
   const button = document.getElementById('removeRowButton');
   if (!button) return;
-  button.disabled = document.getElementById('orderBody').rows.length <= 1;
+  // 只数数据行：换页提示行不是可删的录入行。
+  button.disabled = orderDataRows(document.getElementById('orderBody')).length <= 1;
 }
+/* ---- 单联容量提示行：与打印单同源（config.SLIP_SIZE → jinja 全局 slip_size） start ---- */
+const slipSize = {{ slip_size }};
+function orderDataRows(tbody) {
+  return Array.from(tbody.querySelectorAll('tr:not(.slip-notice)'));
+}
+/* 每 slipSize 行数据后插一行不可编辑提示，位置按数据行重排。
+   提示行不带 name / 无输入控件，不参与表单提交；recalc 只遍历数据行，行号仍连续。 */
+function refreshSlipNotices() {
+  const tbody = document.getElementById('orderBody');
+  if (!tbody) return;
+  tbody.querySelectorAll('tr.slip-notice').forEach(row => row.remove());
+  if (!slipSize) return;
+  const rows = orderDataRows(tbody);
+  rows.forEach((row, index) => {
+    const position = index + 1;
+    if (position % slipSize !== 0 || position === rows.length) return;
+    const notice = document.createElement('tr');
+    notice.className = 'slip-notice';
+    const cell = document.createElement('td');
+    cell.className = 'text-muted';
+    cell.colSpan = 8;
+    cell.textContent = `本张已满 ${slipSize} 行；因行数限制，以下内容续打在第 ${position / slipSize + 1} 张`;
+    notice.appendChild(cell);
+    row.after(notice);
+  });
+}
+/* ---- 单联容量提示行 end ---- */
 async function fetchJson(url) { const res = await fetch(url); return await res.json(); }
-function closeSuggestions(input, box) {
-  if (box.hasAttribute('popover') && box.matches(':popover-open')) box.hidePopover();
-  box.classList.add('d-none');
-  input.setAttribute('aria-expanded', 'false');
-  input.removeAttribute('aria-activedescendant');
-  box.querySelectorAll('[role="option"]').forEach(option => option.setAttribute('aria-selected', 'false'));
-}
-function showSuggestions(input, box, items, render, onPick) {
-  box.innerHTML = '';
-  if (!items.length) {
-    const empty = document.createElement('div');
-    empty.className = 'suggest-item text-muted';
-    empty.textContent = '无匹配项';
-    empty.setAttribute('role', 'option');
-    empty.setAttribute('aria-disabled', 'true');
-    box.appendChild(empty);
-  } else items.forEach((item, index) => {
-    const option = document.createElement('button');
-    option.type = 'button';
-    option.className = 'suggest-item';
-    option.id = `${box.id}_option_${index}`;
-    option.setAttribute('role', 'option');
-    option.setAttribute('aria-selected', 'false');
-    option.appendChild(render(item));
-    option.addEventListener('mousedown', event => event.preventDefault());
-    option.addEventListener('click', () => { onPick(item); closeSuggestions(input, box); });
-    box.appendChild(option);
-  });
-  box.classList.remove('d-none');
-  if (typeof box.showPopover === 'function') {
-    // Both customer and product lists must escape glass-card stacking and
-    // table clipping, while keeping their ARIA/keyboard relationship intact.
-    box.setAttribute('popover', 'manual');
-    const anchor = input.getBoundingClientRect();
-    const below = Math.max(0, window.innerHeight - anchor.bottom - 12);
-    const above = Math.max(0, anchor.top - 12);
-    const upwards = below < 120 && above > below;
-    box.style.width = `${anchor.width}px`;
-    box.style.left = `${anchor.left}px`;
-    box.style.maxHeight = `${Math.min(220, upwards ? above : below)}px`;
-    if (!box.matches(':popover-open')) box.showPopover();
-    box.style.left = `${Math.max(12, Math.min(anchor.left, window.innerWidth - box.offsetWidth - 12))}px`;
-    box.style.top = `${upwards ? anchor.top - box.offsetHeight - 4 : anchor.bottom + 4}px`;
-  }
-  input.setAttribute('aria-expanded', 'true');
-  input.removeAttribute('aria-activedescendant');
-}
-
-function bindAutocomplete(input, box, loadItems, renderOption, onPick, onInputChange = () => {}) {
-  let matches = [];
-  let activeIndex = -1;
-  let requestSequence = 0;
-  const isOpen = () => !box.classList.contains('d-none');
-  const close = () => {
-    requestSequence += 1;
-    closeSuggestions(input, box);
-    activeIndex = -1;
-  };
-  const setActive = index => {
-    const options = [...box.querySelectorAll('[role="option"]:not([aria-disabled="true"])')];
-    if (!options.length) return;
-    activeIndex = Math.max(0, Math.min(index, options.length - 1));
-    options.forEach((option, optionIndex) => option.setAttribute('aria-selected', String(optionIndex === activeIndex)));
-    input.setAttribute('aria-activedescendant', options[activeIndex].id);
-    options[activeIndex].scrollIntoView({block: 'nearest'});
-  };
-  const choose = item => { onPick(item); close(); };
-  const refresh = async (query = input.value.trim(), initialDirection = '') => {
-    const sequence = ++requestSequence;
-    try {
-      const result = await loadItems(query);
-      if (sequence !== requestSequence) return;
-      matches = Array.isArray(result) ? result : [];
-      showSuggestions(input, box, matches, renderOption, choose);
-      if (matches.length && initialDirection === 'down') setActive(0);
-      else if (matches.length && initialDirection === 'up') setActive(matches.length - 1);
-    } catch (_) {
-      if (sequence === requestSequence) { matches = []; close(); }
-    }
-  };
-
-  input.setAttribute('role', 'combobox');
-  input.setAttribute('aria-autocomplete', 'list');
-  input.setAttribute('aria-expanded', 'false');
-  input.setAttribute('aria-controls', box.id);
-  input.setAttribute('aria-haspopup', 'listbox');
-  input.addEventListener('input', () => {
-    onInputChange();
-    const query = input.value.trim();
-    if (!query) { requestSequence += 1; matches = []; close(); return; }
-    refresh(query);
-  });
-  input.addEventListener('focus', () => {
-    if (input.value.trim()) refresh(input.value.trim());
-  });
-  input.addEventListener('keydown', event => {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault();
-      if (!isOpen()) { refresh(input.value.trim(), event.key === 'ArrowDown' ? 'down' : 'up'); return; }
-      const nextIndex = event.key === 'ArrowDown'
-        ? (activeIndex < 0 ? 0 : activeIndex + 1)
-        : (activeIndex < 0 ? matches.length - 1 : activeIndex - 1);
-      setActive(nextIndex);
-      return;
-    }
-    if (event.key === 'Escape' && isOpen()) { event.preventDefault(); close(); return; }
-    if (event.key === 'Enter' && isOpen()) {
-      event.preventDefault();
-      if (activeIndex >= 0 && matches[activeIndex]) choose(matches[activeIndex]);
-    }
-  });
-  input.addEventListener('blur', () => window.setTimeout(() => {
-    if (document.activeElement !== input) close();
-  }, 120));
-  input._closeSuggestions = close;
-}
-
 const customerInput = document.getElementById('customer_name');
 const customerSuggestions = document.getElementById('customer_suggestions');
 bindAutocomplete(
@@ -438,23 +356,11 @@ bindAutocomplete(
     document.getElementById('orderDateInput').focus();
   },
   () => { document.getElementById('customer_id').value = ''; },
+  '无匹配项 · 保存时会新建该客户',
 );
 const productCatalog = JSON.parse(document.getElementById('productCatalog').textContent || '[]');
-// G 段二：把已有商品名/型号填进 datalist，手输时给建议（不强制选择）。
-function refreshProductDatalists() {
-  const nameList = document.getElementById('productNameOptions');
-  const specList = document.getElementById('productSpecOptions');
-  if (!nameList || !specList) return;
-  const names = new Set();
-  const specs = new Set();
-  productCatalog.forEach(p => { names.add(p.name); specs.add(p.spec || ''); });
-  nameList.replaceChildren();
-  Array.from(names).sort((a, b) => String(a).localeCompare(String(b), 'zh-Hans-CN'))
-    .forEach(n => { const o = document.createElement('option'); o.value = n; nameList.appendChild(o); });
-  specList.replaceChildren();
-  Array.from(specs).sort().forEach(s => { const o = document.createElement('option'); o.value = s; specList.appendChild(o); });
-}
-refreshProductDatalists();
+// v14/Phase 3 S2：商品名建议改用自有 popover（原生 datalist 在 WebView2 不渲染、也不支持拼音）。
+let productSuggestSeq = 0;
 function hideRegularPriceOption(regularOption, regularCheck, regularText) {
   if (!regularOption) return;
   regularText.textContent = '';
@@ -490,11 +396,26 @@ async function refineProductRow(tr, product) {
   }
   recalc();
 }
+function ensureUnitOption(select, unit) {
+  const value = String(unit || '').trim();
+  if (!select || !value) return;
+  const exists = Array.from(select.options).some(option => option.value === value);
+  if (exists) return;
+  const option = document.createElement('option');
+  option.value = value;
+  option.textContent = value;
+  select.appendChild(option);
+}
 function bindRow(tr) {
   tr.querySelectorAll('.quantity,.unit-price').forEach(input => input.addEventListener('input', recalc));
   const unitSelect = tr.querySelector('.unit-select');
   const unitInput = tr.querySelector('.unit');
   unitSelect.addEventListener('change', () => { if (unitSelect.value) unitInput.value = unitSelect.value; });
+  // §4.4：本页手输的新单位即时追加到该行下拉，无需等保存。
+  unitInput.addEventListener('input', () => {
+    ensureUnitOption(unitSelect, unitInput.value);
+    unitSelect.value = unitInput.value;
+  });
   const productIdField = tr.querySelector('.product-id');
   const productNameField = tr.querySelector('.product-name');
   const priceInput = tr.querySelector('.unit-price');
@@ -512,7 +433,8 @@ function bindRow(tr) {
       }
     });
   }
-  const picker = ErpProductPicker.mountHybrid(tr, productCatalog, product => {
+  // v14/Phase 3 S2：行状态更新抽成命名函数，供「手输精确命中」与「联想点选」共用。
+  function applyProductToRow(product) {
     if (!product) {
       // 未命中已有商品：保留纯文本，交给后端自动建档；单位/价格按当前输入保留。
       productIdField.value = '';
@@ -523,7 +445,6 @@ function bindRow(tr) {
     }
     productIdField.value = product.id;
     productNameField.value = product.name;
-    if (tr.querySelector('.product-spec')) tr.querySelector('.product-spec').value = product.spec || '';
     unitInput.value = product.unit || '';
     unitSelect.value = ['个','套','件'].includes(product.unit) ? product.unit : '';
     priceInput.value = (Number(product.default_price_cents || 0) / 100).toFixed(2);
@@ -532,15 +453,47 @@ function bindRow(tr) {
     recalc();
     refineProductRow(tr, product);
     tr.querySelector('.quantity').focus();
-  });
+  }
+  const picker = ErpProductPicker.mountHybrid(tr, productCatalog, product => applyProductToRow(product));
   tr.__picker = picker;
+  // 商品名自有联想（替换原先的原生 datalist）：服务端按名称/拼音匹配，点选即带入单位与单价。
+  const nameInput = tr.querySelector('.picker-name-input');
+  const suggestBox = tr.querySelector('.product-suggestions');
+  if (nameInput && suggestBox && !nameInput.dataset.suggestBound) {
+    nameInput.dataset.suggestBound = '1';
+    suggestBox.id = 'product_suggestions_' + (productSuggestSeq += 1);
+    ErpOrderEntry.bindAutocomplete(
+      nameInput,
+      suggestBox,
+      async query => {
+        const customerId = document.getElementById('customer_id').value || '0';
+        const list = await fetchJson('/orders/api/products?q=' + encodeURIComponent(query) + '&customer_id=' + encodeURIComponent(customerId));
+        return Array.isArray(list) ? list : [];
+      },
+      product => {
+        const fragment = document.createDocumentFragment();
+        const nameNode = document.createElement('strong');
+        nameNode.textContent = product.name;
+        const detailsNode = document.createElement('small');
+        detailsNode.textContent = [product.unit, product.unit_price ? '¥' + product.unit_price : ''].filter(Boolean).join(' · ');
+        fragment.append(nameNode, document.createTextNode(' '), detailsNode);
+        return fragment;
+      },
+      product => {
+        picker.set(product);
+        applyProductToRow(product);
+      },
+      () => {},
+      '无匹配项 · 保存时会新建该商品',
+    );
+  }
   // Re-edit: restore the picked name/model from the stored product id.
   if (productIdField.value) {
     const existing = productCatalog.find(p => String(p.id) === String(productIdField.value));
     if (existing) picker.set(existing);
   }
 }
-document.querySelectorAll('#orderBody tr').forEach(bindRow);
+document.querySelectorAll('#orderBody tr:not(.slip-notice)').forEach(bindRow);
 document.addEventListener('click', event => {
   document.querySelectorAll('[role="combobox"]').forEach(input => {
     if (!input.closest('.suggest-wrap')?.contains(event.target)) input._closeSuggestions?.();
@@ -574,7 +527,6 @@ if (returnSourceSelect) {
       const tr = document.createElement('tr');
       const cells = [
         item.product_name || '',
-        item.spec || '未填写型号',
         item.unit || '—',
         item.original_quantity || '0',
         item.available_quantity || '0',
@@ -583,7 +535,7 @@ if (returnSourceSelect) {
       ];
       cells.forEach((text, index) => {
         const td = document.createElement('td');
-        if (index >= 3) td.className = 'numeric-cell';
+        if (index >= 2) td.className = 'numeric-cell';
         td.textContent = text;
         tr.appendChild(td);
       });
@@ -609,7 +561,7 @@ if (returnSourceSelect) {
     if (!previewItems.length) return;
     const tbody = document.getElementById('orderBody');
     previewItems.forEach((item, index) => {
-      const tr = index === 0 ? tbody.rows[0] : (addRow(), tbody.rows[tbody.rows.length - 1]);
+      const tr = index === 0 ? tbody.rows[0] : addRow();
       if (!tr) return;
       tr.querySelector('.product-id').value = item.product_id || '';
       tr.querySelector('.product-name').value = item.product_name || '';
@@ -617,7 +569,8 @@ if (returnSourceSelect) {
       if (existing && tr.__picker) tr.__picker.set(existing);
       tr.querySelector('.unit').value = item.unit || '';
       const unitSelect = tr.querySelector('.unit-select');
-      unitSelect.value = ['个', '套', '件'].includes(item.unit) ? item.unit : '';
+      ensureUnitOption(unitSelect, item.unit || '');
+      unitSelect.value = item.unit || '';
       tr.querySelector('.quantity').value = item.available_quantity || '';
       tr.querySelector('.unit-price').value = item.unit_price || '';
       tr.dataset.sourceLimit = item.available_quantity || '';
@@ -627,17 +580,8 @@ if (returnSourceSelect) {
   });
 }
 {% endif %}
-function closeFloatingProductSuggestions(event) {
-  document.querySelectorAll('.suggest-list[popover]').forEach(box => {
-    // Scrolling within the menu keeps it open; moving the form/table closes it
-    // so the floating list cannot drift away from the original field.
-    if (box.matches(':popover-open') && !(event.type === 'scroll' && box.contains(event.target))) {
-      document.querySelector(`[aria-controls="${box.id}"]`)?._closeSuggestions?.();
-    }
-  });
-}
-document.addEventListener('scroll', closeFloatingProductSuggestions, true);
-window.addEventListener('resize', closeFloatingProductSuggestions);
+document.addEventListener('scroll', ErpOrderEntry.closeFloatingProductSuggestions, true);
+window.addEventListener('resize', ErpOrderEntry.closeFloatingProductSuggestions);
 {% if not is_edit %}
 const orderDateInput = document.getElementById('orderDateInput');
 const orderNoInput = document.getElementById('orderNoInput');
@@ -831,6 +775,7 @@ orderForm.addEventListener('submit', async event => {
   });
 })();
 {% endif %}
+refreshSlipNotices();
 recalc();
 syncRowToolState();
 </script>

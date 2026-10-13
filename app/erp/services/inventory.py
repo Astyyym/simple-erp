@@ -607,7 +607,13 @@ def create_purchase_order(
         if quantity_3dp <= 0:
             raise ValueError("数量必须大于0")
         unit_cost_cents = _price_cents(raw.get("unit_cost_yuan"))
-        prepared.append({"product_id": product_id, "quantity_3dp": quantity_3dp, "unit_cost_cents": unit_cost_cents})
+        prepared.append({
+            "product_id": product_id,
+            "quantity_3dp": quantity_3dp,
+            "unit_cost_cents": unit_cost_cents,
+            # §4.3：本单单位（只写明细，不回写 products.unit）；空则落库时回落档案单位
+            "unit": str(raw.get("unit") or "").strip(),
+        })
     payload = {
         "order_no": order_no,
         "customer_id": customer_id,
@@ -665,16 +671,17 @@ def create_purchase_order(
         )
         order_id = int(cur.lastrowid)
         for line_no, item in enumerate(checked, start=1):
-            product = conn.execute("SELECT name, spec, unit FROM products WHERE id=?", (item["product_id"],)).fetchone()
+            product = conn.execute("SELECT name, unit FROM products WHERE id=?", (item["product_id"],)).fetchone()
+            item_unit = str(item.get("unit") or "").strip() or str(product["unit"] or "")
             subtotal_cents = _subtotal_cents(item["quantity_3dp"], item["unit_cost_cents"])
             conn.execute(
                 """
                 INSERT INTO purchase_order_items(
-                    purchase_order_id, product_id, product_name, spec, unit,
+                    purchase_order_id, product_id, product_name, unit,
                     quantity_3dp, unit_cost_cents, subtotal_cents
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (order_id, item["product_id"], product["name"], product["spec"] or "", product["unit"], item["quantity_3dp"], item["unit_cost_cents"], subtotal_cents),
+                (order_id, item["product_id"], product["name"], item_unit, item["quantity_3dp"], item["unit_cost_cents"], subtotal_cents),
             )
             if status == "draft":
                 continue
@@ -710,6 +717,12 @@ def create_purchase_order(
 
 
 def _prepared_purchase_items(items: list[dict[str, Any]]) -> list[dict[str, int]]:
+    """校验并整备拿货明细；同时保留**本单单位**（原始提交值，可能为空）。
+
+    决策（2026-10-12 §4.3 / §六 #16）：拿货页单位可编辑，只作用于本单明细，
+    **不回写 `products.unit`**（拿货商品必然已启用库存，锁定规则不允许）。
+    提交空单位由写入点回落该商品的**档案单位**（见 `update_purchase_draft` 的 INSERT）。
+    """
     if not items:
         raise ValueError("拿货单至少需要一行商品")
     prepared = []
@@ -722,7 +735,12 @@ def _prepared_purchase_items(items: list[dict[str, Any]]) -> list[dict[str, int]
         if quantity_3dp <= 0:
             raise ValueError("数量必须大于0")
         unit_cost_cents = _price_cents(raw.get("unit_cost_yuan"))
-        prepared.append({"product_id": product_id, "quantity_3dp": quantity_3dp, "unit_cost_cents": unit_cost_cents})
+        prepared.append({
+            "product_id": product_id,
+            "quantity_3dp": quantity_3dp,
+            "unit_cost_cents": unit_cost_cents,
+            "unit": str(raw.get("unit") or "").strip(),
+        })
     return prepared
 
 
@@ -818,10 +836,11 @@ def update_purchase_draft(
         )
         conn.execute("DELETE FROM purchase_order_items WHERE purchase_order_id=?", (order_id,))
         for item in prepared:
-            product = conn.execute("SELECT name, spec, unit FROM products WHERE id=?", (item["product_id"],)).fetchone()
+            product = conn.execute("SELECT name, unit FROM products WHERE id=?", (item["product_id"],)).fetchone()
+            item_unit = str(item.get("unit") or "").strip() or str(product["unit"] or "")
             conn.execute(
-                "INSERT INTO purchase_order_items(purchase_order_id, product_id, product_name, spec, unit, quantity_3dp, unit_cost_cents, subtotal_cents) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (order_id, item["product_id"], product["name"], product["spec"] or "", product["unit"], item["quantity_3dp"], item["unit_cost_cents"], _subtotal_cents(item["quantity_3dp"], item["unit_cost_cents"])),
+                "INSERT INTO purchase_order_items(purchase_order_id, product_id, product_name, unit, quantity_3dp, unit_cost_cents, subtotal_cents) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (order_id, item["product_id"], product["name"], item_unit, item["quantity_3dp"], item["unit_cost_cents"], _subtotal_cents(item["quantity_3dp"], item["unit_cost_cents"])),
             )
         if status == "saved":
             _post_purchase_items(conn, order_id, business_date, prepared)

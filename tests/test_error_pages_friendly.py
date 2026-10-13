@@ -19,7 +19,7 @@ from erp.utils.errors import error_response
 
 
 def _product(spec="A", price=2000):
-    pid = create_product("错误页商品", spec, "个", price)
+    pid = create_product("错误页商品" + spec, "个", price)
     initialize_product(pid, "10", "10", "2026-10-01", "系统上线期初", f"err-page-{spec}", confirm_zero=False)
     return pid
 
@@ -108,7 +108,7 @@ def test_missing_product_edit_get_and_post_are_chinese_404():
     get_response = client.get("/products/999999/edit")
     assert get_response.status_code == 404 and _is_error_page(get_response)
     post_response = client.post("/products/999999/edit", data={
-        "name": "不存在商品", "spec": "", "unit": "个", "default_price": "10", "safety_stock": "0",
+        "name": "不存在商品", "unit": "个", "default_price": "10", "safety_stock": "0",
     })
     assert post_response.status_code == 404 and _is_error_page(post_response)
 
@@ -144,7 +144,7 @@ def test_invalid_product_price_is_friendly_400():
     init_db()
     client = create_app().test_client()
     response = client.post("/products/create", data={
-        "name": "坏价格商品", "spec": "", "unit": "个", "default_price": "abc", "safety_stock": "0",
+        "name": "坏价格商品", "unit": "个", "default_price": "abc", "safety_stock": "0",
     })
     assert response.status_code == 400
     assert "有效数字" in response.get_data(as_text=True)

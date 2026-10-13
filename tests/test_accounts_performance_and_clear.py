@@ -56,7 +56,9 @@ def test_order_entry_row_tools_live_below_the_table_and_keep_clear_all():
 
         assert "function removeRow()" in html, path
         assert "function syncRowToolState()" in html, path
-        assert f"document.getElementById('{tbody}').rows.length <= 1" in html, path
+        # 行为改变（2026-10-13 换页提示行）：判定改为「只数数据行」，
+        # 换页提示行混在 #orderBody 里不能算录入行，否则剩 1 行时删除按钮还是可点。
+        assert f"DataRows(document.getElementById('{tbody}')).length <= 1" in html, path
         assert "function clearAllRows()" in html, path
         assert "while (tbody.rows.length > 1)" in html, path
         # 右侧动作区只留保存按钮，不再重复行按钮

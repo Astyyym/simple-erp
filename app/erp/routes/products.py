@@ -20,6 +20,7 @@ from erp.utils.exporting import (
 from erp.config import data_root
 from erp.services.master_data_import import (
     PRODUCT_HEADERS,
+    PRODUCT_HEADERS_TEMPLATE,
     build_product_preview,
     product_totals,
     ImportPreview,
@@ -55,14 +56,14 @@ def _backup_hint() -> dict:
 
 @products_bp.get("/import/template")
 def download_import_template():
-    return excel_template(list(PRODUCT_HEADERS[2]), "商品导入模板.xlsx")
+    return excel_template(list(PRODUCT_HEADERS_TEMPLATE), "商品导入模板.xlsx")
 
 
 @products_bp.get("/export.xlsx")
 def export_products_excel():
     q = request.args.get("q", "").strip()
     with get_db() as conn:
-        products, _suggestions, _truncated, _todo = _product_list_context(conn, q)
+        products, _suggestions, _truncated = _product_list_context(conn, q)
     return workbook_download(
         product_export_headers(),
         product_export_rows(products),
@@ -71,22 +72,19 @@ def export_products_excel():
     )
 
 
-def _product_list_context(conn, q: str = "", quality: str = ""):
-    # G-0c：商品「待补全」只看型号为空（未启用库存不进待补全，那是该路径的正常状态）。
-    todo_sql = " AND TRIM(COALESCE(p.spec, ''))=''" if quality == "todo" else ""
+def _product_list_context(conn, q: str = ""):
+    # v14：商品身份只有名称，「待补全（型号为空）」筛选已随 spec 列一起删除
+    #（删列后该判定恒为真，留着只会让筛选永远全亮）。
     if q:
         products = conn.execute(
             """
             SELECT p.*, s.enabled AS inventory_enabled, s.quantity_3dp, s.cost_total_micro, s.avg_cost_micro
             FROM products AS p
             LEFT JOIN product_inventory_state AS s ON s.product_id=p.id
-            WHERE p.deleted_at IS NULL AND (p.name LIKE ? OR p.spec LIKE ? OR p.pinyin_initials LIKE ?)
-            """
-            + todo_sql
-            + """
+            WHERE p.deleted_at IS NULL AND (p.name LIKE ? OR p.pinyin_initials LIKE ?)
             ORDER BY p.usage_count DESC, p.id DESC
             """,
-            (f"%{q}%", f"%{q}%", f"%{q}%"),
+            (f"%{q}%", f"%{q}%"),
         ).fetchall()
         truncated = False
     else:
@@ -96,21 +94,15 @@ def _product_list_context(conn, q: str = "", quality: str = ""):
             FROM products AS p
             LEFT JOIN product_inventory_state AS s ON s.product_id=p.id
             WHERE p.deleted_at IS NULL
-            """
-            + todo_sql
-            + """
             ORDER BY p.name COLLATE NOCASE ASC, p.id ASC LIMIT 200
             """
         ).fetchall()
         # E4：到达上限即提示「已截断，可用搜索缩小范围」。
         truncated = len(products) >= 200
     suggestions = conn.execute(
-        "SELECT DISTINCT name FROM products WHERE deleted_at IS NULL AND name LIKE ? ORDER BY usage_count DESC, name LIMIT 20",
-        (f"%{q}%" if q else "%",),
+        "SELECT DISTINCT name FROM products WHERE deleted_at IS NULL AND (name LIKE ? OR pinyin_initials LIKE ?) ORDER BY usage_count DESC, name LIMIT 20",
+        (f"%{q}%" if q else "%", f"%{q}%" if q else "%"),
     ).fetchall()
-    todo_count = conn.execute(
-        "SELECT COUNT(*) AS c FROM products WHERE deleted_at IS NULL AND TRIM(COALESCE(spec, ''))=''"
-    ).fetchone()["c"]
     projected_products = []
     for row in products:
         product = dict(row)
@@ -120,7 +112,7 @@ def _product_list_context(conn, q: str = "", quality: str = ""):
             safety_stock_3dp=product["safety_stock_3dp"],
         ))
         projected_products.append(product)
-    return projected_products, suggestions, truncated, todo_count
+    return projected_products, suggestions, truncated
 
 
 @products_bp.post("/import")
@@ -131,14 +123,12 @@ def import_products():
     except (ImportFileError, AttributeError) as exc:
         message = str(exc) if str(exc) else "请选择要导入的文件"
         with get_db() as conn:
-            products, suggestions, truncated, todo_count = _product_list_context(conn)
+            products, suggestions, truncated = _product_list_context(conn)
         return render_template(
             "products/list.html",
             products=products,
             suggestions=suggestions,
             truncated=truncated,
-            todo_count=todo_count,
-            quality="",
             cents_to_yuan=cents_to_yuan,
         micro_to_yuan=micro_to_yuan,
             q="",
@@ -148,12 +138,12 @@ def import_products():
 
     with get_db() as conn:
         existing = {
-            (row["name"].strip(), (row["spec"] or "").strip())
-            for row in conn.execute("SELECT name, spec FROM products WHERE deleted_at IS NULL")
+            row["name"].strip()
+            for row in conn.execute("SELECT name FROM products WHERE deleted_at IS NULL")
         }
         soft_deleted = {
-            (row["name"].strip(), (row["spec"] or "").strip())
-            for row in conn.execute("SELECT name, spec FROM products WHERE deleted_at IS NOT NULL")
+            row["name"].strip()
+            for row in conn.execute("SELECT name FROM products WHERE deleted_at IS NOT NULL")
         }
     same_name = request.form.get("same_name", "skip")
     if same_name not in ("skip", "update"):
@@ -192,12 +182,12 @@ def import_products_confirm():
     init_errors: list[str] = []
     with get_db() as conn:
         existing = {
-            (row["name"].strip(), (row["spec"] or "").strip())
-            for row in conn.execute("SELECT name, spec FROM products WHERE deleted_at IS NULL")
+            row["name"].strip()
+            for row in conn.execute("SELECT name FROM products WHERE deleted_at IS NULL")
         }
         soft_deleted = {
-            (row["name"].strip(), (row["spec"] or "").strip())
-            for row in conn.execute("SELECT name, spec FROM products WHERE deleted_at IS NOT NULL")
+            row["name"].strip()
+            for row in conn.execute("SELECT name FROM products WHERE deleted_at IS NOT NULL")
         }
         # 记录需要做期初初始化的商品（B-6：独立事务，事务外调用）。
         pending_inits: list[tuple[int, dict]] = []
@@ -209,18 +199,17 @@ def import_products_confirm():
                 result.skipped += 1
                 continue
             name = normalized_name(row.payload.get("name"))
-            spec = normalized_name(row.payload.get("spec"))
-            identity = (name, spec)
+            identity = name
             if identity in soft_deleted:
-                result.add_error(f"第{row.line_number}行：该名称+型号已被回收站记录占用")
+                result.add_error(f"第{row.line_number}行：该名称已被回收站记录占用")
                 continue
             if row.action == "add":
                 if identity in existing:
                     result.skipped += 1
                     continue
                 cur = conn.execute(
-                    "INSERT INTO products(name, spec, brand, unit, default_price_cents, pinyin_initials, origin) VALUES (?, ?, ?, ?, ?, ?, 'import')",
-                    (name, spec, row.payload.get("brand") or None, row.payload.get("unit", "个"), int(row.payload.get("default_price_cents", 0)),
+                    "INSERT INTO products(name, brand, unit, default_price_cents, pinyin_initials, origin) VALUES (?, ?, ?, ?, ?, 'import')",
+                    (name, row.payload.get("brand") or None, row.payload.get("unit", "个"), int(row.payload.get("default_price_cents", 0)),
                      build_pinyin_initials(name)),
                 )
                 product_id = int(cur.lastrowid)
@@ -228,16 +217,16 @@ def import_products_confirm():
                 result.added += 1
             elif row.action == "update":
                 if identity not in existing:
-                    result.add_error(f"第{row.line_number}行：同名同型号商品已不存在，无法更新")
+                    result.add_error(f"第{row.line_number}行：同名商品已不存在，无法更新")
                     continue
                 conn.execute(
-                    "UPDATE products SET brand=?, unit=?, default_price_cents=?, pinyin_initials=?, updated_at=CURRENT_TIMESTAMP WHERE TRIM(name)=? AND TRIM(COALESCE(spec,''))=? AND deleted_at IS NULL",
+                    "UPDATE products SET brand=?, unit=?, default_price_cents=?, pinyin_initials=?, updated_at=CURRENT_TIMESTAMP WHERE TRIM(name)=? AND deleted_at IS NULL",
                     (row.payload.get("brand") or None, row.payload.get("unit", "个"), int(row.payload.get("default_price_cents", 0)),
-                     build_pinyin_initials(name), name, spec),
+                     build_pinyin_initials(name), name),
                 )
                 found = conn.execute(
-                    "SELECT id FROM products WHERE TRIM(name)=? AND TRIM(COALESCE(spec,''))=? AND deleted_at IS NULL",
-                    (name, spec),
+                    "SELECT id FROM products WHERE TRIM(name)=? AND deleted_at IS NULL",
+                    (name,),
                 ).fetchone()
                 product_id = int(found["id"])
                 result.added += 1
@@ -265,14 +254,12 @@ def import_products_confirm():
             init_errors.append(f"第{info['line']}行：商品已建档，但期初初始化失败（{exc}）")
 
     with get_db() as conn:
-        products, suggestions, truncated, todo_count = _product_list_context(conn)
+        products, suggestions, truncated = _product_list_context(conn)
     return render_template(
         "products/list.html",
         products=products,
         suggestions=suggestions,
         truncated=truncated,
-        todo_count=todo_count,
-        quality="",
         cents_to_yuan=cents_to_yuan,
         micro_to_yuan=micro_to_yuan,
         q="",
@@ -285,16 +272,13 @@ def import_products_confirm():
 @products_bp.get("/")
 def list_products():
     q = request.args.get("q", "").strip()
-    quality = request.args.get("quality", "").strip()
     with get_db() as conn:
-        rows, suggestions, truncated, todo_count = _product_list_context(conn, q, quality)
+        rows, suggestions, truncated = _product_list_context(conn, q)
     return render_template(
         "products/list.html",
         products=rows,
         suggestions=suggestions,
         truncated=truncated,
-        todo_count=todo_count,
-        quality=quality,
         cents_to_yuan=cents_to_yuan,
         micro_to_yuan=micro_to_yuan,
         q=q,
@@ -306,8 +290,8 @@ def product_suggestions():
     q = request.args.get("q", "").strip()
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT DISTINCT name FROM products WHERE deleted_at IS NULL AND name LIKE ? ORDER BY usage_count DESC, name LIMIT 20",
-            (f"%{q}%",),
+            "SELECT DISTINCT name FROM products WHERE deleted_at IS NULL AND (name LIKE ? OR pinyin_initials LIKE ?) ORDER BY usage_count DESC, name LIMIT 20",
+            (f"%{q}%", f"%{q}%"),
         ).fetchall()
     return jsonify([row["name"] for row in rows])
 
@@ -315,12 +299,12 @@ def product_suggestions():
 @products_bp.post("/create")
 def create_product_view():
     try:
-        create_product(request.form["name"], request.form.get("spec", ""), request.form["unit"], yuan_to_cents(request.form["default_price"]), (request.form.get("pinyin_initials", "") or build_pinyin_initials(request.form["name"])), safety_stock=request.form.get("safety_stock", "0"), brand=request.form.get("brand", ""))
+        create_product(request.form["name"], request.form["unit"], yuan_to_cents(request.form["default_price"]), (request.form.get("pinyin_initials", "") or build_pinyin_initials(request.form["name"])), safety_stock=request.form.get("safety_stock", "0"), brand=request.form.get("brand", ""))
     except (InvalidOperation, KeyError, TypeError, ValueError) as exc:
         message = str(exc) if isinstance(exc, ValueError) and str(exc) else "默认单价不是有效数字，请填写例如 12.00 的金额"
         with get_db() as conn:
-            products, suggestions, truncated, todo_count = _product_list_context(conn)
-        return render_template("products/list.html", products=products, suggestions=suggestions, truncated=truncated, todo_count=todo_count, quality="", cents_to_yuan=cents_to_yuan, micro_to_yuan=micro_to_yuan, q="", import_error=message, create_open=True, **_backup_hint()), 400
+            products, suggestions, truncated = _product_list_context(conn)
+        return render_template("products/list.html", products=products, suggestions=suggestions, truncated=truncated, cents_to_yuan=cents_to_yuan, micro_to_yuan=micro_to_yuan, q="", import_error=message, create_open=True, **_backup_hint()), 400
     return redirect(url_for("products.list_products"))
 
 @products_bp.get("/<int:product_id>/edit")
@@ -418,7 +402,7 @@ def product_image(product_id: int):
 def update_product(product_id: int):
     try:
         default_price_cents = yuan_to_cents(request.form["default_price"])
-        update_product_record(product_id, request.form["name"], request.form.get("spec", ""), request.form["unit"], default_price_cents, safety_stock=request.form.get("safety_stock", "0"), brand=request.form.get("brand", ""))
+        update_product_record(product_id, request.form["name"], request.form["unit"], default_price_cents, safety_stock=request.form.get("safety_stock", "0"), brand=request.form.get("brand", ""))
     except (InvalidOperation, KeyError, TypeError, ValueError) as exc:
         message = str(exc) if isinstance(exc, ValueError) and str(exc) else "默认单价不是有效数字，请填写例如 12.00 的金额"
         return _render_product_edit(product_id, error=message, status_code=400)

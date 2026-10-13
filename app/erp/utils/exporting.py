@@ -91,7 +91,7 @@ def customer_export_rows(customers: Iterable) -> list[list[object]]:
 
 
 def product_export_headers() -> list[str]:
-    return ["商品名称", "型号", "品牌", "单位", "默认价（元）", "备注", "使用次数", "创建时间", "更新时间"]
+    return ["商品名称", "品牌", "单位", "默认价（元）", "备注", "使用次数", "创建时间", "更新时间"]
 
 
 def product_export_rows(products: Iterable) -> list[list[object]]:
@@ -100,7 +100,6 @@ def product_export_rows(products: Iterable) -> list[list[object]]:
         rows.append(
             [
                 product["name"] or "",
-                product["spec"] or "",
                 (product["brand"] if "brand" in product.keys() else "") or "",
                 product["unit"] or "",
                 cents_to_yuan(int(product["default_price_cents"] or 0)),
@@ -121,7 +120,6 @@ def order_line_export_headers() -> list[str]:
         "单据类型",
         "状态",
         "品名",
-        "规格",
         "单位",
         "数量",
         "单价（元）",
@@ -145,7 +143,6 @@ def order_line_export_rows(lines: Iterable) -> list[list[object]]:
                 ORDER_TYPE_LABELS.get(order_type, order_type or ""),
                 ORDER_STATUS_LABELS.get(status, status or ""),
                 line["product_name"] or "",
-                line["spec"] or "",
                 line["unit"] or "",
                 line["quantity"] or "",
                 cents_to_yuan(int(line["unit_price_cents"] or 0)),

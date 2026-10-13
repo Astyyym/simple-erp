@@ -186,10 +186,10 @@
 
 单据管理（`orders/list.html`）与数据分析（`analytics/index.html`）共用 `base.html` 的 `.filter-card`，已从「一个 4 等分平铺网格」改为**三段式**。改动前的平铺网格不是缺陷，是当时的方案；但两页筛选已按下列约定收口，不要改回等价网格。
 
-- **第一段 `.filter-tier-query`（flex wrap）**：时间（模式按钮 + 对应日期输入合成**同一组合控件** `.filter-field-composite`）| 客户 / 商品 / 型号（`.filter-field-plain`）。切换模式只换组合控件下半截的日期输入，不再让「时间模式」和「日期面板」各占一个网格项。
+- **第一段 `.filter-tier-query`（flex wrap）**：时间（模式按钮 + 对应日期输入合成**同一组合控件** `.filter-field-composite`）| 客户 / 商品（`.filter-field-plain`）。切换模式只换组合控件下半截的日期输入，不再让「时间模式」和「日期面板」各占一个网格项。**v14**：型号筛选整体删除，筛选控件里不再有「商品 / 型号」的型号那一项。
 - **第二段 `.filter-tier-conditions`（虚线分隔）**：订单类型、单据状态多选。**不勾选 = 全部**，所以没有「全选」按钮（全选与不勾选结果相同，属冗余）；只保留「清空」。JS 不再有 `[data-type-all]` / `[data-status-all]` 处理器。
 - **第三段**：`.filter-chips`（已选条件，可单独 × 移除）+ `.filter-actions`（主操作在左、导出/重置贴右，`margin-left:auto` 保持不变）。
-- **chip 规则**（`app/erp/utils/filter_chips.py`）：时间范围**不生成** chip（它是常驻控件）；四类全勾 / 无选择都不生成 chip；商品 chip 移除时连同 `spec` 一起清（型号从属商品）；移除链接保留其余筛选与展示态、去掉 `page`。默认无筛选时不渲染 chip 行。
+- **chip 规则**（`app/erp/utils/filter_chips.py`）：时间范围**不生成** chip（它是常驻控件）；四类全勾 / 无选择都不生成 chip；商品 chip 只带商品名称（**v14**：`spec` 参数与「型号：…」chip 已随型号筛选整体删除）；移除链接保留其余筛选与展示态、去掉 `page`。默认无筛选时不渲染 chip 行。
 - **测试同步**：`test_order_list_filter_layout.py` / `test_ui_layout_reflow.py` / `test_analytics_v4_behavior.py` / `test_orders_type_filter.py` / `test_analytics_center.py` 中编码旧 4 列网格（`repeat(4,minmax(0,1fr))`、`grid-column:span 2`）与「全选」文案的断言必须随结构更新；`tests/test_filter_chips.py` 覆盖 chip 出现/移除/时间与全选不产生 chip。
 - **陷阱**：断言 `"全选" in html` 会在删掉按钮后命中 `base.html` 里描述该约定的**注释文本**而假通过。改筛选相关断言时不要只搜可见文案，要断言真实 class / `data-*` 属性。
 
@@ -266,6 +266,14 @@
 - **修法**：不可编辑时渲染 `<button type="button" disabled title="<原因>" aria-disabled="true">编辑</button>`，可编辑时才输出 `<a href>`；隐藏会让用户以为功能被删了，禁用态保留了「这里本来能改」并说明为什么不能。原因文案集中在 `_document_edit_block_reason()`，**紧挨着**判定函数 `_document_editable()` 放，两者不可能互相说反。
 - **必须同步三处**：服务端模板（列表 / 详情 / 当天历史面板）、当天历史面板的 **JS 重建分支**（API 载荷要带 `edit_block_reason`，只带 `editable` 会在刷新后退回旧样子）、以及 `:disabled` 样式。Bootstrap 默认的淡蓝禁用态看着还像能点，要显式写 `background/border-color/color/opacity:1/cursor:not-allowed`。
 - **测试要换断言方向**：原来断言「链接不存在」，改成断言「禁用按钮 + 原因存在，且每行仍恰好一个『编辑』」，同时**保留**「被拦的行不出现 `/edit` href」这条守卫，防止禁用态退化回可点链接。
+
+## 开单明细表表头改实色深底（2026-10-13 实测）
+
+- **只改 `background` 会被 Bootstrap 盖住，必须同时写 `box-shadow:none`。** Bootstrap 5.3 的 `.table-light` 给单元格铺 `inset 0 0 0 9999px var(--bs-table-bg)`（=`#f8f9fa`），整格重绘在 `background-color` 之上。实测：三个开单模板里的 `<thead class="table-light">` 只改背景色时表头真实底色仍是 `rgb(248,249,250)`、对比度 **1.05**；补 `box-shadow:none` 后才落到目标色。
+- **对比度要按合成后的真实底色算**：先看 `getComputedStyle(th).boxShadow` 里有没有 9999px 那层 inset 阴影，有就先取 `--bs-table-bg` 当底色，再拿文本色对底色求比值。
+- **深色覆盖靠文档顺序取胜**：开单页的 `html[data-ui-theme="dark"] .order-table thead th` 与 `base.html` 的 `.table-light` 深色规则**特异性相同 (0,2,2)**，页面 `<style>` 在 body、晚于 head 里的 `base.html` 样式，所以能压住 —— 别把页面样式挪进 head。
+- **同一份 `.order-table thead th` 在 `orders/new.html`、`purchases/new.html`、`purchases/return_new.html` 各有一份拷贝**（覆盖四类开单），改一处等于改三处。
+- `@supports not (backdrop-filter)` 的无 blur 回退里**不要**再列 `thead th`：表头已是实色，列进去会在回退路径把它刷回浅色。现有两色（浅 `#334155`/`#fff` = 10.35；深 `#2b3648`/`#e8eef9` = 10.46）在三条路径（正常 / 无 blur / 跟随系统）实测一致。
 
 ## 验证清单
 

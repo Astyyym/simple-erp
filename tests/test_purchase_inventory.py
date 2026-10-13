@@ -26,7 +26,7 @@ def _customer():
 
 def _product():
     init_db()
-    product_id = create_product("拿货测试商品", "P1", "个", 2000)
+    product_id = create_product("拿货测试商品P1", "个", 2000)
     initialize_product(product_id, "10", "10", "2026-10-01", "期初", "purchase-init-001")
     return product_id
 
@@ -95,7 +95,7 @@ def test_multi_line_purchase_accumulates_same_product_without_losing_first_line(
 
 def test_purchase_rejects_uninitialized_product_and_invalid_rows_without_partial_write():
     init_db()
-    product_id = create_product("未启用拿货商品", "P2", "个", 2000)
+    product_id = create_product("未启用拿货商品P2", "个", 2000)
     with pytest.raises(ValueError, match="尚未启用库存"):
         create_purchase_order(
             "NH202610010003", "2026-10-01", [{"product_id": product_id, "quantity": "1", "unit_cost_yuan": "14"}], request_key="purchase-003", customer_id=_customer()
@@ -114,7 +114,7 @@ def test_purchase_rejects_uninitialized_product_and_invalid_rows_without_partial
 
 def test_uninitialized_product_may_be_saved_as_draft_but_not_finalized():
     init_db()
-    product_id = create_product("未启用草稿商品", "P3", "个", 2000)
+    product_id = create_product("未启用草稿商品P3", "个", 2000)
     draft = create_purchase_order(
         "NH202610010012", "2026-10-01", [{"product_id": product_id, "quantity": "1", "unit_cost_yuan": "14"}], request_key="purchase-uninitialized-draft-001", status="draft", customer_id=_customer()
     )
@@ -127,7 +127,7 @@ def test_uninitialized_product_may_be_saved_as_draft_but_not_finalized():
 
 def test_purchase_form_lists_uninitialized_product_as_draft_only():
     init_db()
-    product_id = create_product("页面草稿商品", "P4", "个", 2000)
+    product_id = create_product("页面草稿商品P4", "个", 2000)
     page = create_app().test_client().get("/purchases/new").get_data(as_text=True)
     # 未启用库存的商品仍进入两级选择器目录，并标记为只能存草稿。
     match = re.search(r'<script type="application/json" id="productCatalog">(.*?)</script>', page, re.DOTALL)

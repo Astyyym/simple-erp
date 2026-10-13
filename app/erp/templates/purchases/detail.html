@@ -22,7 +22,7 @@
   {% endif %}
   <form method="post" action="/purchases/{{ order.id }}/delete" onsubmit="return confirm('移入回收站？正式单据会先按原库存流水自动冲回。')"><button class="btn btn-outline-danger">移入回收站</button></form>
 </div>
-<section class="order-details-card"><h3 class="section-title">入库明细</h3><div class="table-responsive"><table class="table table-striped align-middle mb-0"><thead><tr><th>商品</th><th>型号</th><th>单位</th><th>数量</th><th>拿货单价</th><th>金额</th></tr></thead><tbody>
-{% for item in items %}<tr><td>{{ item.product_name }}</td><td>{{ item.spec or '未填写型号' }}</td><td>{{ item.unit }}</td><td>{{ format_quantity_3dp(item.quantity_3dp,item.unit) }}</td><td>¥{{ '%.2f'|format(item.unit_cost_cents / 100) }}</td><td>¥{{ '%.2f'|format(item.subtotal_cents / 100) }}</td></tr>{% endfor %}
+<section class="order-details-card"><h3 class="section-title">入库明细</h3><div class="table-responsive"><table class="table table-striped align-middle mb-0"><thead><tr><th>商品</th><th>单位</th><th>数量</th><th>拿货单价</th><th>金额</th></tr></thead><tbody>
+{% for item in items %}<tr><td>{{ item.product_name }}</td><td>{{ item.unit }}</td><td>{{ format_quantity_3dp(item.quantity_3dp,item.unit) }}</td><td>¥{{ '%.2f'|format(item.unit_cost_cents / 100) }}</td><td>¥{{ '%.2f'|format(item.subtotal_cents / 100) }}</td></tr>{% endfor %}
 </tbody></table></div></section>
 {% endblock %}

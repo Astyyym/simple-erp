@@ -16,6 +16,8 @@ from erp.utils.errors import error_response, not_found
 from erp.utils.audit import log_action
 from erp.utils.filter_chips import order_filter_chips
 from erp.utils.money import cents_to_yuan, line_subtotal_cents, micro_to_yuan, yuan_to_cents
+from erp.utils.pinyin import pinyin_initials as build_pinyin_initials
+from erp.services.units import unit_options
 from erp.utils.pdf import (
     ensure_order_printable,
     generate_order_pdf,
@@ -226,8 +228,8 @@ def _resolve_customer_scope(conn, customer_q: str):
         return "customer", exact, None, [exact["name"]]
 
     fuzzy = conn.execute(
-        "SELECT id, name FROM customers WHERE deleted_at IS NULL AND name LIKE ? ORDER BY name LIMIT 20",
-        (f"%{customer_q}%",),
+        "SELECT id, name FROM customers WHERE deleted_at IS NULL AND (name LIKE ? OR pinyin_initials LIKE ?) ORDER BY name LIMIT 20",
+        (f"%{customer_q}%", f"%{customer_q}%"),
     ).fetchall()
     names = [row["name"] for row in fuzzy]
     if len(fuzzy) == 1:
@@ -451,10 +453,8 @@ def list_orders():
             }
             for row in documents
         ]
-        customer_suggestions = conn.execute(
-            "SELECT DISTINCT name FROM customers WHERE deleted_at IS NULL AND name LIKE ? ORDER BY name LIMIT 20",
-            (f"%{customer_q}%" if customer_q else "%",),
-        ).fetchall()
+        # Phase 3 S6：单据管理页客户联想已改由 /orders/api/customers 前端驱动，
+        # 原先服务端渲染的 customer_suggestions 已无消费方（本页模板不再读它）。
 
     # E2 前置修复（复核 #17）：to_dict(flat=True) 对多值参数只保留第一个，
     # 导致多选 order_type/status 翻页时丢参数。改用多值字典逐个传给 url_for。
@@ -512,7 +512,6 @@ def list_orders():
         filter_end_year=end_year,
         filter_end_month=end_month,
         matched_customer_names=matched_names,
-        customer_suggestions=customer_suggestions,
         dashboard_notice=dashboard_notice,
         unique_customer=unique_customer,
         summary_hint=summary_hint,
@@ -647,7 +646,7 @@ def _order_export_filter_context(fixed_order_type: str):
             f"""
             SELECT o.order_no, o.order_date, o.order_type, o.status, o.notes, o.total_amount_cents,
                    c.name AS customer_name,
-                   oi.product_name, oi.spec, oi.unit, oi.quantity, oi.unit_price_cents, oi.subtotal_cents
+                   oi.product_name, oi.unit, oi.quantity, oi.unit_price_cents, oi.subtotal_cents
             FROM orders o
             JOIN customers c ON c.id = o.customer_id
             JOIN order_items oi ON oi.order_id = o.id
@@ -786,7 +785,6 @@ def api_return_source(source_order_id: int):
             "source_item_id": int(item["id"]),
             "product_id": item["product_id"],
             "product_name": item["product_name"],
-            "spec": item["spec"] or "",
             "unit": item["unit"],
             "original_quantity": format(original_quantity, "f"),
             "returned_quantity": format(returned_quantity, "f"),
@@ -806,13 +804,13 @@ def _new_order_form(order_type: str):
         order_no = next_order_no(conn, today)
         today_history = _today_history(conn, today)
         return_sources = _return_source_orders(conn) if order_type == "return" else []
-    return render_template("orders/new.html", customers=customers, products=products, product_catalog=_product_catalog(products), today=today, order_no=order_no, request_key=uuid.uuid4().hex, order_type=order_type, today_history=today_history, return_sources=return_sources, cents_to_yuan=cents_to_yuan)
+    return render_template("orders/new.html", customers=customers, products=products, product_catalog=_product_catalog(products), today=today, order_no=order_no, request_key=uuid.uuid4().hex, order_type=order_type, today_history=today_history, return_sources=return_sources, cents_to_yuan=cents_to_yuan, unit_options=unit_options())
 
 
 def _product_catalog(products) -> list[dict]:
-    """Compact product list for the shared two-level picker (名称 → 型号)."""
+    """Compact product list for the entry-page picker (商品名称即身份)."""
     return [
-        {"id": int(p["id"]), "name": p["name"], "spec": p["spec"] or "",
+        {"id": int(p["id"]), "name": p["name"],
          "unit": p["unit"], "default_price_cents": int(p["default_price_cents"] or 0)}
         for p in products
     ]
@@ -854,8 +852,8 @@ def _resolve_customer_id(*, order_no: str = "") -> int:
                 )
             return customer_id
         cur = conn.execute(
-            "INSERT INTO customers(name, origin) VALUES (?, 'order')",
-            (customer_name,),
+            "INSERT INTO customers(name, pinyin_initials, origin) VALUES (?, ?, 'order')",
+            (customer_name, build_pinyin_initials(customer_name)),
         )
         new_id = int(cur.lastrowid)
         # G-0b：自动建档必须留痕，摘要写明来源单据号。
@@ -872,18 +870,14 @@ def _resolve_customer_id(*, order_no: str = "") -> int:
 def _typed_rows_from_form() -> list[dict]:
     product_ids = request.form.getlist("product_id")
     product_names = request.form.getlist("product_name")
-    specs = request.form.getlist("spec")
     units = request.form.getlist("unit")
     unit_prices = request.form.getlist("unit_price")
     quantities = request.form.getlist("quantity")
     if len(product_ids) < len(product_names):
         product_ids.extend([""] * (len(product_names) - len(product_ids)))
-    # G-3：明细行现在也提交 `spec`；旧调用方（无 spec 字段）补空串保持兼容。
-    if len(specs) < len(product_names):
-        specs.extend([""] * (len(product_names) - len(specs)))
     return [
-        {"product_id": product_id, "product_name": name, "spec": spec, "unit": unit, "unit_price_yuan": price, "quantity": qty}
-        for product_id, name, spec, unit, price, qty in zip(product_ids, product_names, specs, units, unit_prices, quantities)
+        {"product_id": product_id, "product_name": name, "unit": unit, "unit_price_yuan": price, "quantity": qty}
+        for product_id, name, unit, price, qty in zip(product_ids, product_names, units, unit_prices, quantities)
         if name.strip() and qty.strip()
     ]
 
@@ -945,9 +939,11 @@ def _create_order_view(order_type: str):
     if source_order_id_text:
         source_item_ids = request.form.getlist("source_item_id")
         quantities = request.form.getlist("quantity")
+        units = request.form.getlist("unit")
         rows = [
-            {"source_item_id": source_item_id, "quantity": quantity}
-            for source_item_id, quantity in zip(source_item_ids, quantities)
+            {"source_item_id": source_item_id, "quantity": quantity,
+             "unit": units[index] if index < len(units) else ""}
+            for index, (source_item_id, quantity) in enumerate(zip(source_item_ids, quantities))
             if str(source_item_id).strip() and str(quantity).strip()
         ]
         try:
@@ -1098,7 +1094,6 @@ def _backfill_form_rows(items) -> list[dict]:
         rows.append({
             "id": int(item["id"]),
             "product_name": item["product_name"],
-            "spec": item["spec"] or "",
             "unit": item["unit"],
             "quantity": item["quantity"],
             "subtotal_cents": int(item["subtotal_cents"]),
@@ -1240,7 +1235,7 @@ def edit_order(order_id: int):
         if order["source_order_id"] is not None and order["status"] != "draft":
             return error_response("正式退货单经济字段已锁定，请在详情页修改备注。", title="无法重编辑",
                                   back_url=url_for("orders.view_order", order_id=order_id))
-    return render_template("orders/new.html", order=order, items=items, products=products, product_catalog=_product_catalog(products), today=date.today().isoformat(), order_type=order["order_type"] if "order_type" in order.keys() else "sale", cents_to_yuan=cents_to_yuan, micro_to_yuan=micro_to_yuan)
+    return render_template("orders/new.html", order=order, items=items, products=products, product_catalog=_product_catalog(products), today=date.today().isoformat(), order_type=order["order_type"] if "order_type" in order.keys() else "sale", cents_to_yuan=cents_to_yuan, micro_to_yuan=micro_to_yuan, unit_options=unit_options())
 
 
 @orders_bp.post("/<int:order_id>/edit")
@@ -1271,9 +1266,11 @@ def update_order_view(order_id: int):
                                   back_url=url_for("orders.view_order", order_id=order_id))
         source_item_ids = request.form.getlist("source_item_id")
         quantities = request.form.getlist("quantity")
+        units = request.form.getlist("unit")
         rows = [
-            {"source_item_id": source_item_id, "quantity": quantity}
-            for source_item_id, quantity in zip(source_item_ids, quantities)
+            {"source_item_id": source_item_id, "quantity": quantity,
+             "unit": units[index] if index < len(units) else ""}
+            for index, (source_item_id, quantity) in enumerate(zip(source_item_ids, quantities))
             if str(source_item_id).strip() and str(quantity).strip()
         ]
         if not rows:
@@ -1329,8 +1326,8 @@ def api_customers():
     q = request.args.get("q", "").strip()
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT id, name, phone, address FROM customers WHERE deleted_at IS NULL AND name LIKE ? ORDER BY name LIMIT 20",
-            (f"%{q}%",),
+            "SELECT id, name, phone, address FROM customers WHERE deleted_at IS NULL AND (name LIKE ? OR pinyin_initials LIKE ?) ORDER BY name LIMIT 20",
+            (f"%{q}%", f"%{q}%"),
         ).fetchall()
     return jsonify([dict(row) for row in rows])
 
@@ -1342,7 +1339,7 @@ def api_products():
     with get_db() as conn:
         rows = conn.execute(
             """
-            SELECT p.id, p.name, p.spec, p.unit,
+            SELECT p.id, p.name, p.unit,
                    COALESCE(cp.price_cents, p.default_price_cents) AS effective_price_cents,
                    p.default_price_cents,
                    cp.price_cents AS customer_price_cents,
@@ -1350,14 +1347,14 @@ def api_products():
             FROM products p
             LEFT JOIN customer_prices cp ON cp.product_id=p.id AND cp.customer_id=?
             LEFT JOIN product_inventory_state s ON s.product_id=p.id
-            WHERE p.deleted_at IS NULL AND (p.name LIKE ? OR p.spec LIKE ? OR p.pinyin_initials LIKE ?)
+            WHERE p.deleted_at IS NULL AND (p.name LIKE ? OR p.pinyin_initials LIKE ?)
             ORDER BY CASE WHEN cp.price_cents IS NULL THEN 1 ELSE 0 END, p.usage_count DESC, p.name
             LIMIT 20
             """,
-            (customer_id, f"%{q}%", f"%{q}%", f"%{q}%"),
+            (customer_id, f"%{q}%", f"%{q}%"),
         ).fetchall()
     return jsonify([
-        {"id": row["id"], "name": row["name"], "spec": row["spec"], "unit": row["unit"], "unit_price": cents_to_yuan(row["effective_price_cents"]), "regular_price": cents_to_yuan(row["default_price_cents"]), "customer_price": cents_to_yuan(row["customer_price_cents"]) if row["customer_price_cents"] is not None else None, "is_customer_price": row["customer_price_cents"] is not None, "cost_available": bool(row["enabled"] and row["avg_cost_micro"] is not None and row["quantity_3dp"]), "unit_cost": micro_to_yuan(row["avg_cost_micro"], precision=6) if row["enabled"] and row["avg_cost_micro"] is not None and row["quantity_3dp"] else None}
+        {"id": row["id"], "name": row["name"], "unit": row["unit"], "unit_price": cents_to_yuan(row["effective_price_cents"]), "regular_price": cents_to_yuan(row["default_price_cents"]), "customer_price": cents_to_yuan(row["customer_price_cents"]) if row["customer_price_cents"] is not None else None, "is_customer_price": row["customer_price_cents"] is not None, "cost_available": bool(row["enabled"] and row["avg_cost_micro"] is not None and row["quantity_3dp"]), "unit_cost": micro_to_yuan(row["avg_cost_micro"], precision=6) if row["enabled"] and row["avg_cost_micro"] is not None and row["quantity_3dp"] else None}
         for row in rows
     ])
 

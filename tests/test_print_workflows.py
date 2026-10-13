@@ -6,6 +6,7 @@ from uuid import uuid4
 from pdf_test_utils import assert_a4_portrait_pdf, assert_continuous_paper_pdf
 
 from erp import create_app
+from erp.config import SLIP_SIZE
 from erp.db import get_db, init_db
 from erp.services.accounting import create_customer, create_order_from_typed_rows
 from erp.utils.pdf import _account_summary_table_rows, generate_account_summary_pdf
@@ -28,9 +29,9 @@ def test_account_summary_pdf_uses_filtered_order_items_without_grouping():
 
 def test_account_summary_rows_merge_same_date_and_order_no_and_show_order_total_once():
     rows = [
-        {"order_date": "2026-07-10", "order_no": "SUM-001", "order_type": "sale", "product_name": "A", "spec": "", "unit": "个", "quantity": "1", "unit_price_cents": 1000, "subtotal_cents": 1000, "order_total_cents": 1000},
-        {"order_date": "2026-07-10", "order_no": "SUM-002", "order_type": "return", "product_name": "B", "spec": "", "unit": "个", "quantity": "1", "unit_price_cents": 2000, "subtotal_cents": 2000, "order_total_cents": -5000},
-        {"order_date": "2026-07-10", "order_no": "SUM-002", "order_type": "return", "product_name": "C", "spec": "", "unit": "个", "quantity": "1", "unit_price_cents": 3000, "subtotal_cents": 3000, "order_total_cents": -5000},
+        {"order_date": "2026-07-10", "order_no": "SUM-001", "order_type": "sale", "product_name": "A", "unit": "个", "quantity": "1", "unit_price_cents": 1000, "subtotal_cents": 1000, "order_total_cents": 1000},
+        {"order_date": "2026-07-10", "order_no": "SUM-002", "order_type": "return", "product_name": "B", "unit": "个", "quantity": "1", "unit_price_cents": 2000, "subtotal_cents": 2000, "order_total_cents": -5000},
+        {"order_date": "2026-07-10", "order_no": "SUM-002", "order_type": "return", "product_name": "C", "unit": "个", "quantity": "1", "unit_price_cents": 3000, "subtotal_cents": 3000, "order_total_cents": -5000},
     ]
 
     prepared = _account_summary_table_rows(rows)
@@ -150,12 +151,14 @@ def test_order_print_font_sizes_are_legible_and_ranked():
     template_dir = project / "app/erp/templates/orders"
     env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(template_dir)))
     env.globals["cents_to_yuan"] = lambda c: f"{c / 100:.2f}"
+    # create_app 把 config.SLIP_SIZE 注入 jinja 全局；裸环境这里照做，保持同一真源。
+    env.globals["slip_size"] = SLIP_SIZE
     config = _merge_defaults({"shop_name": "字号检查店"})
     order = {
         "order_no": "MD202610110001", "order_date": "2026-10-11", "order_type": "sale",
         "customer_name": "字号客户", "notes": "", "total_amount_cents": 25000, "status": "saved",
     }
-    items = [{"product_name": "软密封闸阀", "spec": "DN100", "unit": "只", "quantity": "2",
+    items = [{"product_name": "软密封闸阀DN100", "unit": "只", "quantity": "2",
               "unit_price_cents": 12500, "subtotal_cents": 25000}]
     html = env.get_template("print_template.html").render(
         order=order, items=items, config=config, document_title="销售清单",
@@ -193,15 +196,15 @@ def test_order_print_font_sizes_are_legible_and_ranked():
     assert font_px("字号检查店") == 24
     assert font_px("销售清单") == 16
     assert font_px("合计") == 15
-    assert font_px("名称规格") == 14
+    assert font_px("商品名称") == 14
     assert font_px("软密封闸阀") == 14
     assert font_px("订货电话") == 13
     assert font_px("备注") == 12
-    assert font_px("字号检查店") > font_px("销售清单") > font_px("合计") >= font_px("名称规格")
+    assert font_px("字号检查店") > font_px("销售清单") > font_px("合计") >= font_px("商品名称")
 
     # 正文实测字框高应达到秒账实拍水平（约 4.89mm），不再是最初的 3.84mm。
     assert box_height_mm("软密封闸阀") >= 4.7
-    assert box_height_mm("名称规格") >= 4.7
+    assert box_height_mm("商品名称") >= 4.7
 
 
 def test_order_print_slip_capacity_is_ten_rows_with_per_slip_totals_and_carry_notice():
@@ -222,6 +225,8 @@ def test_order_print_slip_capacity_is_ten_rows_with_per_slip_totals_and_carry_no
     template_dir = project / "app/erp/templates/orders"
     env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(template_dir)))
     env.globals["cents_to_yuan"] = lambda c: f"{c / 100:.2f}"
+    # create_app 把 config.SLIP_SIZE 注入 jinja 全局；裸环境这里照做，保持同一真源。
+    env.globals["slip_size"] = SLIP_SIZE
     config = _merge_defaults({"shop_name": "分联检查店"})
 
     def render_pages(row_count):
@@ -230,7 +235,7 @@ def test_order_print_slip_capacity_is_ten_rows_with_per_slip_totals_and_carry_no
             "customer_name": "分联客户", "notes": "", "total_amount_cents": row_count * 10000,
             "status": "saved",
         }
-        items = [{"product_name": f"分联闸阀{index:03d}", "spec": "DN100", "unit": "只", "quantity": "2",
+        items = [{"product_name": (f"分联闸阀{index:03d}") + ("DN100"), "unit": "只", "quantity": "2",
                   "unit_price_cents": 5000, "subtotal_cents": 10000} for index in range(1, row_count + 1)]
         html = env.get_template("print_template.html").render(
             order=order, items=items, config=config, document_title="销售清单",
@@ -293,10 +298,11 @@ def test_order_print_slip_notice_names_the_next_slip_number():
     project = _Path(__file__).resolve().parents[1]
     env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(project / "app/erp/templates/orders")))
     env.globals["cents_to_yuan"] = lambda c: f"{c / 100:.2f}"
+    env.globals["slip_size"] = SLIP_SIZE
     config = _merge_defaults({})
     order = {"order_no": "MD202610110001", "order_date": "2026-10-11", "order_type": "sale",
              "customer_name": "分联客户", "notes": "", "total_amount_cents": 210000, "status": "saved"}
-    items = [{"product_name": f"闸阀{index:03d}", "spec": "", "unit": "只", "quantity": "1",
+    items = [{"product_name": f"闸阀{index:03d}", "unit": "只", "quantity": "1",
               "unit_price_cents": 10000, "subtotal_cents": 10000} for index in range(1, 22)]
     html = env.get_template("print_template.html").render(
         order=order, items=items, config=config, document_title="销售清单",

@@ -12,7 +12,7 @@ from erp.services.accounting import create_customer, create_order_from_typed_row
 
 
 def _seed(spec="D", price=3000, when="2026-10-07"):
-    pid = create_product("对账入口商品", spec, "个", price)
+    pid = create_product("对账入口商品" + spec, "个", price)
     cid = create_customer("对账入口客户", opening_balance_cents=0)
     create_order_from_typed_rows(
         cid, "MD202610070901",

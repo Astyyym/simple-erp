@@ -186,10 +186,10 @@
         {% if document_direction %}<div class="legal-note">交易方向：{{document_direction}} · 业务金额按本单正金额展示</div>{% endif %}
       </div>
 
-      {# 单联容量写死 10 行（用户 2026-10-11 确认，不做配置项）。
-         每 10 行自成一张纸：块内明细 + 本张合计（末块换成本单合计）+ 非末块追加续打提示，
+      {# 单联容量来自 config.SLIP_SIZE（create_app 注入的 jinja 全局 slip_size），
+         打印 4 个渲染点与三个录入页模板同源，模板内不再写死数字。
+         每 slip_size 行自成一张纸：块内明细 + 本张合计（末块换成本单合计）+ 非末块追加续打提示，
          末块之后才跟页脚（订货电话/签字/备注），保证页脚永远只落在最后一联。 #}
-      {% set slip_size = 10 %}
       {% set slips = (items | batch(slip_size) | list) or [[]] %}
       {% for chunk in slips %}
       {% set slip_base = loop.index0 * slip_size %}
@@ -205,14 +205,14 @@
         </colgroup>
         <thead>
         <tr>
-          <th>序号</th><th>名称规格</th><th>单位</th><th>数量</th><th>单价</th><th>小计</th>
+          <th>序号</th><th>商品名称</th><th>单位</th><th>数量</th><th>单价</th><th>小计</th>
         </tr>
         </thead>
         <tbody>
         {% for item in chunk %}
         <tr>
           <td>{{loop.index + slip_base}}</td>
-          <td class="name-cell">{{item.product_name}}{% if item.spec %} {{item.spec}}{% endif %}</td>
+          <td class="name-cell">{{item.product_name}}</td>
           <td>{{item.unit}}</td>
           <td>{{item.quantity}}</td>
           <td>{{cents_to_yuan(item.unit_price_cents)}}</td>

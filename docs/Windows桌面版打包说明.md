@@ -54,7 +54,7 @@ winget install --id JRSoftware.InnoSetup
 打包Windows桌面版.bat
 ```
 
-当前 PyInstaller one-folder 产物目录（本轮为 `dist\local-v3.9.1\简单ERP\`）：
+当前 PyInstaller one-folder 产物目录（本轮为 `dist\local-v3.10.0\简单ERP\`）：
 
 ```text
 dist\local-vX.Y.Z\简单ERP\
@@ -73,6 +73,8 @@ dist\simple-erp-windows-vX.Y.Z.zip
 仅本地存在 ZIP/EXE 不能证明其已上传 GitHub Releases；推送源码、构建包和发布 Release 是不同状态。
 
 本轮 `v2.0.0` 为独立新目录 `dist\local-v2.0.0\简单ERP\` 和 `dist\simple-erp-windows-v2.0.0.zip`。由当时Windows源码fresh构建，未覆盖上述常规目录或旧包。ZIP完整解压后使用；根配置与冻结内置配置都来自 `packaging/default_config.json`，不是本机config。Windows产品版本保留精确 `v2.0.0`，数字文件版本为 `2.0.0.0`。
+
+当前 `v3.10.0` 在 v3.9.1 之上交付**单位落库语义统一 + 单位记忆 + 联想下拉去 datalist**（本版为行为变化，故抬 minor）：修掉「选中已有商品时提交的单位被静默丢弃」、拿货/退拿货页单位改可编辑（只写本单明细不回写档案）、退货/退拿货来源带入默认沿用源单单位且允许修改、四页单位下拉改用候选池（零迁移）、三张列表页与开单页的联想全部换成应用自有浮层（原生 `datalist` 在 WebView2 不绘制）、新增客户侧拼音字段。产物为 `dist\local-v3.10.0\简单ERP\`、`dist\simple-erp-setup-v3.10.0.exe` 和 `dist\simple-erp-windows-v3.10.0.zip`。Windows 产品版本 `v3.10.0`，数字文件版本 `3.10.0.0`。
 
 当前 `v3.9.1` 在 v3.9.0 之上修复**桌面壳端口写死 5000**：端口原先在 `desktop_app.py` 的 `APP_URL`/`_run_server`/`_port_is_open` 三处硬编码，既不读 `config.json` 的 `port` 也不读 `ERP_PORT`——无法在别的端口跑隔离实例。现按 `ERP_PORT` > `config.json` 的 `port` > 5000 解析（与源码入口 `app/app.py` 同口径）；**host 仍固定 `127.0.0.1`**（产品永久免登录，配置写 `0.0.0.0` 也不放行）。产物为 `dist\local-v3.9.1\简单ERP\`、`dist\simple-erp-setup-v3.9.1.exe` 和 `dist\simple-erp-windows-v3.9.1.zip`。Windows 产品版本 `v3.9.1`，数字文件版本 `3.9.1.0`。
 

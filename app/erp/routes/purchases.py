@@ -11,6 +11,8 @@ from erp.utils.audit import log_action
 from erp.utils.errors import error_response, not_found, RecordNotFound
 from erp.utils.money import cents_to_yuan, micro_to_yuan
 from erp.utils.order_numbering import next_nh_order_no, peek_nh_order_no
+from erp.utils.pinyin import pinyin_initials as build_pinyin_initials
+from erp.services.units import unit_options
 from erp.services.inventory import (
     create_purchase_order,
     finalize_purchase_order,
@@ -50,22 +52,22 @@ def next_return_no(conn, business_date: str) -> str:
 def _products():
     with get_db() as conn:
         return conn.execute(
-            """SELECT p.id, p.name, p.spec, p.unit
+            """SELECT p.id, p.name, p.unit
                       , COALESCE(s.enabled, 0) AS inventory_enabled
                       , s.avg_cost_micro, s.quantity_3dp
                FROM products AS p LEFT JOIN product_inventory_state AS s ON s.product_id=p.id
-               WHERE p.deleted_at IS NULL ORDER BY p.name COLLATE NOCASE, p.spec, p.id"""
+               WHERE p.deleted_at IS NULL ORDER BY p.name COLLATE NOCASE, p.id"""
         ).fetchall()
 
 
 def _purchase_catalog(products) -> list[dict]:
-    """Compact product list for the shared two-level picker, plus current moving-average cost."""
+    """Compact product list for the entry-page picker, plus current moving-average cost."""
     catalog = []
     for p in products:
         enabled = bool(p["inventory_enabled"])
         cost_available = bool(enabled and p["avg_cost_micro"] is not None and p["quantity_3dp"])
         catalog.append({
-            "id": int(p["id"]), "name": p["name"], "spec": p["spec"] or "", "unit": p["unit"],
+            "id": int(p["id"]), "name": p["name"], "unit": p["unit"],
             "inventory_enabled": enabled,
             "cost_available": cost_available,
             "unit_cost": micro_to_yuan(p["avg_cost_micro"], precision=6) if cost_available else None,
@@ -108,7 +110,10 @@ def _resolve_purchase_customer_id() -> int:
                     conn=conn,
                 )
             return customer_id
-        cur = conn.execute("INSERT INTO customers(name, origin) VALUES (?, 'order')", (name,))
+        cur = conn.execute(
+            "INSERT INTO customers(name, pinyin_initials, origin) VALUES (?, ?, 'order')",
+            (name, build_pinyin_initials(name)),
+        )
         new_id = int(cur.lastrowid)
         log_action("auto_create_customer", "customer", new_id, f"拿货自动建档对象：{name}", conn=conn)
         return new_id
@@ -179,6 +184,7 @@ def _purchase_form(*, order=None, error="", form_rows=None, request_key=""):
         selected_customer_id=selected_id, selected_customer_name=selected_name,
         today=today, order=order, error=error, form_rows=form_rows or [{}],
         request_key=request_key, order_no=order_no, today_history=today_history,
+        unit_options=unit_options(),
     )
 
 
@@ -187,6 +193,7 @@ def create_purchase():
     product_ids = request.form.getlist("product_id")
     quantities = request.form.getlist("quantity")
     costs = request.form.getlist("unit_cost_yuan")
+    units = request.form.getlist("unit")
 
     business_date = (request.form.get("business_date") or "").strip()
     request_key = (request.form.get("request_key") or "").strip() or secrets.token_urlsafe(24)
@@ -194,8 +201,8 @@ def create_purchase():
     if status not in {"draft", "saved"}:
         status = "saved"
     form_rows = [
-        {"product_id": product_ids[i] if i < len(product_ids) else "", "quantity": quantities[i] if i < len(quantities) else "", "unit_cost_yuan": costs[i] if i < len(costs) else ""}
-        for i in range(max(len(product_ids), len(quantities), len(costs), 1))
+        {"product_id": product_ids[i] if i < len(product_ids) else "", "quantity": quantities[i] if i < len(quantities) else "", "unit_cost_yuan": costs[i] if i < len(costs) else "", "unit": units[i] if i < len(units) else ""}
+        for i in range(max(len(product_ids), len(quantities), len(costs), len(units), 1))
     ]
     rows = [row for row in form_rows if any(str(value).strip() for value in row.values())]
     try:
@@ -279,9 +286,10 @@ def update_purchase(purchase_id: int):
     product_ids = request.form.getlist("product_id")
     quantities = request.form.getlist("quantity")
     costs = request.form.getlist("unit_cost_yuan")
+    units = request.form.getlist("unit")
     rows = [
-        {"product_id": product_ids[i] if i < len(product_ids) else "", "quantity": quantities[i] if i < len(quantities) else "", "unit_cost_yuan": costs[i] if i < len(costs) else ""}
-        for i in range(max(len(product_ids), len(quantities), len(costs), 1))
+        {"product_id": product_ids[i] if i < len(product_ids) else "", "quantity": quantities[i] if i < len(quantities) else "", "unit_cost_yuan": costs[i] if i < len(costs) else "", "unit": units[i] if i < len(units) else ""}
+        for i in range(max(len(product_ids), len(quantities), len(costs), len(units), 1))
     ]
     try:
         customer_id = _resolve_purchase_customer_id()
@@ -401,6 +409,7 @@ def _return_form(order=None, error='', form_rows=None, request_key=''):
                            form_rows=form_rows or [{}],today=today,
                            order_no=order_no,today_history=today_history,
                            purchase_sources=purchase_sources,
+                           unit_options=unit_options(),
                            request_key=request_key or secrets.token_urlsafe(24))
 
 
@@ -413,11 +422,13 @@ def _typed_return_rows():
     ids = request.form.getlist('product_id')
     quantities = request.form.getlist('quantity')
     prices = request.form.getlist('unit_price_yuan')
+    units = request.form.getlist('unit')
     return [
         {'product_id': ids[i] if i < len(ids) else '',
          'quantity': quantities[i] if i < len(quantities) else '',
-         'unit_price_yuan': prices[i] if i < len(prices) else ''}
-        for i in range(max(len(ids), len(quantities), len(prices), 1))
+         'unit_price_yuan': prices[i] if i < len(prices) else '',
+         'unit': units[i] if i < len(units) else ''}
+        for i in range(max(len(ids), len(quantities), len(prices), len(units), 1))
     ]
 
 
@@ -588,7 +599,7 @@ def api_purchase_source(purchase_id: int):
         if order is None:
             return jsonify({'error': '原拿货单不存在或未正式保存'}), 404
         items = conn.execute(
-            """SELECT product_id, product_name, COALESCE(spec,'') AS spec, unit,
+            """SELECT product_id, product_name, unit,
                       quantity_3dp, unit_cost_cents
                  FROM purchase_order_items WHERE purchase_order_id=? ORDER BY id""",
             (purchase_id,),
@@ -599,7 +610,6 @@ def api_purchase_source(purchase_id: int):
             {
                 'product_id': row['product_id'],
                 'product_name': row['product_name'],
-                'spec': row['spec'],
                 'unit': row['unit'],
                 'quantity': f"{row['quantity_3dp'] / 1000:g}",
                 'unit_price': f"{row['unit_cost_cents'] / 100:.2f}",
@@ -614,8 +624,8 @@ def api_objects():
     q = (request.args.get('q') or '').strip()
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT id, name, phone FROM customers WHERE deleted_at IS NULL AND name LIKE ? ORDER BY name LIMIT 20",
-            (f'%{q}%',),
+            "SELECT id, name, phone FROM customers WHERE deleted_at IS NULL AND (name LIKE ? OR pinyin_initials LIKE ?) ORDER BY name LIMIT 20",
+            (f'%{q}%', f'%{q}%'),
         ).fetchall()
     return jsonify([dict(row) for row in rows])
 

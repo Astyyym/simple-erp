@@ -8,7 +8,7 @@ from erp.services.inventory import initialize_product, create_purchase_order, vo
 def seed(quantity='3', price='10'):
     init_db()
     cid = create_customer('退拿货虚构往来')
-    pid = create_product('退拿货虚构商品', 'S', '米', 2000)
+    pid = create_product('退拿货虚构商品' 'S', '米', 2000)
     initialize_product(pid, '0', '0', '2026-10-02', '虚构', 'c2-init', confirm_zero=True)
     source = create_purchase_order('NH202610020001', '2026-10-02', [{'product_id': pid, 'quantity': quantity, 'unit_cost_yuan': price}], customer_id=cid, request_key='c2-source')
     with get_db() as conn:
@@ -31,7 +31,7 @@ def test_purchase_can_void_after_later_economic_event_was_voided(later):
         second = create_purchase_order('NH202610020002', '2026-10-02', [{'product_id': pid, 'quantity': '1', 'unit_cost_yuan': '20'}], customer_id=cid, request_key='c2-second')
         void_purchase_order(second['order_id'], '更正后单')
     else:
-        sale = create_order_from_typed_rows(cid, 'MD202610020001', [{'product_id': pid, 'product_name': '退拿货虚构商品', 'spec': 'S', 'unit': '米', 'quantity': '1', 'unit_price_yuan': '20'}], status='saved', order_date='2026-10-02', request_key='c2-sale')
+        sale = create_order_from_typed_rows(cid, 'MD202610020001', [{'product_id': pid, 'product_name': '退拿货虚构商品' 'S', 'unit': '米', 'quantity': '1', 'unit_price_yuan': '20'}], status='saved', order_date='2026-10-02', request_key='c2-sale')
         void_order(sale, '更正后单')
     void_purchase_order(source, '更正前单')
     assert stock(pid) == (0, 0)
@@ -106,7 +106,7 @@ def test_seven_day_cleanup_removes_expired_recycled_sale():
     from erp.db import purge_expired_recycle_bin
     from erp.services.accounting import delete_order
     cid, pid, source, iid = seed()
-    sale = create_order_from_typed_rows(cid, 'MD202610020001', [{'product_id':pid,'product_name':'退拿货虚构商品','spec':'S','unit':'米','quantity':'1','unit_price_yuan':'20'}], status='saved', order_date='2026-10-02', request_key='purge-sale')
+    sale = create_order_from_typed_rows(cid, 'MD202610020001', [{'product_id':pid,'product_name':'退拿货虚构商品' 'S','unit':'米','quantity':'1','unit_price_yuan':'20'}], status='saved', order_date='2026-10-02', request_key='purge-sale')
     void_order(sale, '更正')
     delete_order(sale)
     with get_db() as conn:
@@ -125,7 +125,7 @@ def test_seven_day_cleanup_keeps_sale_still_referenced_by_live_return():
     from erp.db import purge_expired_recycle_bin
     from erp.services.accounting import create_return_order_from_source, delete_order
     cid, pid, source, iid = seed()
-    sale = create_order_from_typed_rows(cid, 'MD202610020002', [{'product_id':pid,'product_name':'退拿货虚构商品','spec':'S','unit':'米','quantity':'1','unit_price_yuan':'20'}], status='saved', order_date='2026-10-02', request_key='purge-sale-ref')
+    sale = create_order_from_typed_rows(cid, 'MD202610020002', [{'product_id':pid,'product_name':'退拿货虚构商品' 'S','unit':'米','quantity':'1','unit_price_yuan':'20'}], status='saved', order_date='2026-10-02', request_key='purge-sale-ref')
     with get_db() as conn:
         sale_item = conn.execute('SELECT id FROM order_items WHERE order_id=?', (sale,)).fetchone()[0]
     # 活退货单指向这张销售单
@@ -282,7 +282,7 @@ def test_two_real_threads_serialize_keys_numbers_quota_and_stock(mode):
     from erp.services import purchase_returns as service
     cid,pid,source,iid=seed()
     if mode == 'stock':
-        create_order_from_typed_rows(cid,'MD202610020001',[{'product_id':pid,'product_name':'退拿货虚构商品','spec':'S','unit':'米','quantity':'2','unit_price_yuan':'20'}],status='saved',order_date='2026-10-02',request_key='race-sale')
+        create_order_from_typed_rows(cid,'MD202610020001',[{'product_id':pid,'product_name':'退拿货虚构商品' 'S','unit':'米','quantity':'2','unit_price_yuan':'20'}],status='saved',order_date='2026-10-02',request_key='race-sale')
     barrier=Barrier(2)
     def work(n):
         barrier.wait()
@@ -307,10 +307,10 @@ def test_two_real_threads_serialize_keys_numbers_quota_and_stock(mode):
 def test_multi_line_shortage_rolls_back_earlier_line_and_number():
     from erp.services import purchase_returns as service
     cid,pid,source,iid=seed()
-    second=create_product('缺货行虚构商品','Z','个',100)
+    second=create_product('缺货行虚构商品' 'Z','个',100)
     initialize_product(second,'0','0','2026-10-02','虚构','second-init',confirm_zero=True)
     source2=create_purchase_order('NH202610020002','2026-10-02',[{'product_id':pid,'quantity':'1','unit_cost_yuan':'0'},{'product_id':second,'quantity':'1','unit_cost_yuan':'0'}],customer_id=cid,request_key='multi-source')['order_id']
-    sale=create_order_from_typed_rows(cid,'MD202610020001',[{'product_id':second,'product_name':'缺货行虚构商品','spec':'Z','unit':'个','quantity':'1','unit_price_yuan':'1'}],status='saved',order_date='2026-10-02',request_key='deplete')
+    sale=create_order_from_typed_rows(cid,'MD202610020001',[{'product_id':second,'product_name':'缺货行虚构商品' 'Z','unit':'个','quantity':'1','unit_price_yuan':'1'}],status='saved',order_date='2026-10-02',request_key='deplete')
     with get_db() as conn:
         ids=[r[0] for r in conn.execute('SELECT id FROM purchase_order_items WHERE purchase_order_id=? ORDER BY id',(source2,))]
     before=stock(pid)
@@ -332,7 +332,7 @@ def test_product_purge_with_unposted_purchase_reference_is_friendly_and_preserve
     from erp import create_app
     from erp.db import purge_expired_recycle_bin
     init_db()
-    cid=create_customer('草稿保护虚构对象');pid=create_product('草稿引用商品','','个',0)
+    cid=create_customer('草稿保护虚构对象');pid=create_product('草稿引用商品','个',0)
     create_purchase_order('NH202610020001','2026-10-02',[{'product_id':pid,'quantity':'1','unit_cost_yuan':'0'}],customer_id=cid,request_key='unposted-source',status='draft')
     client=create_app().test_client()
     with get_db() as conn:
@@ -362,8 +362,8 @@ def test_schema10_return_migration_rolls_back_all_new_tables_then_retries(tmp_pa
     assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0]==10
     with conn: db.apply_schema(conn)
     with conn: db.apply_schema(conn)
-    assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0]==13
-    assert conn.execute('SELECT COUNT(*) FROM schema_version WHERE version=13').fetchone()[0]==1
+    assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0]==14
+    assert conn.execute('SELECT COUNT(*) FROM schema_version WHERE version=14').fetchone()[0]==1
     assert conn.execute('PRAGMA foreign_key_check').fetchall()==[]
     conn.close()
 
@@ -429,7 +429,7 @@ def test_hidden_source_entities_remain_returnable_without_changing_old_financial
     from erp.services import purchase_returns as service
     from erp.services.accounting import customer_balance_cents,add_payment,add_adjustment
     cid,pid,source,iid=seed()
-    sale=create_order_from_typed_rows(cid,'MD202610020001',[{'product_id':pid,'product_name':'退拿货虚构商品','spec':'S','unit':'米','quantity':'1','unit_price_yuan':'20'}],status='saved',order_date='2026-10-02',request_key='history-sale')
+    sale=create_order_from_typed_rows(cid,'MD202610020001',[{'product_id':pid,'product_name':'退拿货虚构商品' 'S','unit':'米','quantity':'1','unit_price_yuan':'20'}],status='saved',order_date='2026-10-02',request_key='history-sale')
     add_payment(cid,100,'2026-10-02');add_adjustment(cid,200,'虚构调整')
     with get_db() as conn:
         conn.execute("UPDATE customers SET is_active=0,deleted_at=CURRENT_TIMESTAMP")
@@ -616,6 +616,9 @@ def test_purchase_return_decoupling_migration_relaxes_source_columns():
         .replace('source_item_id INTEGER REFERENCES purchase_order_items(id),','source_item_id INTEGER NOT NULL REFERENCES purchase_order_items(id),'))
     conn=sqlite3.connect(path)
     conn.executescript(old_schema)
+    # 决策变更（v14）：SCHEMA_SQL 已是 v14 形态（无 spec 列），但解耦迁移的整表重建
+    # 按 v13 老库原样搬 `spec` 列；这里补回该列以忠实模拟 v13 库（真实老库本就有）。
+    conn.execute("ALTER TABLE purchase_return_items ADD COLUMN spec TEXT NOT NULL DEFAULT ''")
     conn.execute("INSERT INTO customers(id,name) VALUES (1,'迁移对象')")
     conn.execute("INSERT INTO products(id,name,unit,default_price_cents) VALUES (1,'迁移商品','个',0)")
     conn.execute("INSERT INTO purchase_orders(id,order_no,business_date,status,request_key,payload_hash,customer_id) VALUES (1,'NH202610010001','2026-10-01','saved','k1','h',1)")

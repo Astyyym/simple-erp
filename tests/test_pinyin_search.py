@@ -30,7 +30,7 @@ def test_create_product_writes_pinyin_initials():
     init_db()
     from erp.utils.pinyin import pinyin_initials as build
 
-    product_id = create_product("灭火器", "MFZ", "个", 5000, build("灭火器"))
+    product_id = create_product("灭火器MFZ", "个", 5000, build("灭火器"))
     assert _initials_of(product_id) == "mhq"
 
 
@@ -38,9 +38,9 @@ def test_update_product_refreshes_pinyin_initials_on_rename():
     init_db()
     from erp.utils.pinyin import pinyin_initials as build
 
-    product_id = create_product("应急灯", "", "个", 3000, build("应急灯"))
+    product_id = create_product("应急灯", "个", 3000, build("应急灯"))
     assert _initials_of(product_id) == "yjd"
-    update_product_record(product_id, "安全帽", "", "个", 3000)
+    update_product_record(product_id, "安全帽", "个", 3000)
     assert _initials_of(product_id) == "aqm"
 
 
@@ -48,7 +48,7 @@ def test_search_matches_pinyin_initials():
     init_db()
     from erp.utils.pinyin import pinyin_initials as build
 
-    create_product("水带", "65mm", "米", 800, build("水带"))
+    create_product("水带65mm", "米", 800, build("水带"))
     client = create_app().test_client()
     html = client.get("/products/?q=sd").get_data(as_text=True)
     assert "水带" in html

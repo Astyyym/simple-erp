@@ -24,14 +24,16 @@ CUSTOMER_HEADERS = (
     ["客户名称", "电话", "地址", "期初余额", "备注"],
 )
 PRODUCT_HEADERS = (
-    ["商品名称", "型号", "价格"],
     ["商品名称", "价格"],
-    ["商品名称", "型号", "品牌", "单位", "默认价", "期初数量", "期初成本（元）", "备注"],
-    ["商品名称", "型号", "品牌", "单位", "默认价", "期初数量", "期初成本", "备注"],
     # E-2 之前的表头仍可导入（无品牌列 → 品牌留空）。
-    ["商品名称", "型号", "单位", "默认价", "期初数量", "期初成本（元）", "备注"],
-    ["商品名称", "型号", "单位", "默认价", "期初数量", "期初成本", "备注"],
+    ["商品名称", "单位", "默认价", "期初数量", "期初成本（元）", "备注"],
+    ["商品名称", "单位", "默认价", "期初数量", "期初成本", "备注"],
+    ["商品名称", "品牌", "单位", "默认价", "期初数量", "期初成本（元）", "备注"],
+    ["商品名称", "品牌", "单位", "默认价", "期初数量", "期初成本", "备注"],
 )
+# 导入模板下载专用（routes/products.py 用它生成样表）。
+# **不要**再用 `PRODUCT_HEADERS[2]` 这类魔法索引 —— v14 删掉含「型号」的候选后索引会移位。
+PRODUCT_HEADERS_TEMPLATE = ["商品名称", "品牌", "单位", "默认价", "期初数量", "期初成本（元）", "备注"]
 
 
 @dataclass
@@ -178,31 +180,33 @@ def build_customer_preview(headers, rows, existing_names: set[str], soft_deleted
     return preview
 
 
-def build_product_preview(headers, rows, existing_identities: set[tuple[str, str]], soft_deleted_identities: set[tuple[str, str]], *, same_name: str = "skip") -> ImportPreview:
-    """按**列名**映射，兼容「商品名称,价格」/「商品名称,型号,价格」/新旧宽表头（含可选品牌列）。"""
+def build_product_preview(headers, rows, existing_identities: set[str], soft_deleted_identities: set[str], *, same_name: str = "skip") -> ImportPreview:
+    """按**列名**映射，兼容「商品名称,价格」与新宽表头（含可选品牌列）。
+
+    v14 起商品身份只有名称：**不再识别「型号」列**，含该列的旧文件由
+    `utils/importing.py` 的整表头精确匹配挡下并报「表头错误」，不是静默丢数据。
+    """
     preview = ImportPreview(kind="products")
     idx_name = _header_index(headers, "商品名称")
-    idx_spec = _header_index(headers, "型号")
     idx_brand = _header_index(headers, "品牌")
     idx_unit = _header_index(headers, "单位")
     idx_price = _header_index(headers, "价格", "默认价")
     idx_qty = _header_index(headers, "期初数量")
     idx_cost = _header_index(headers, "期初成本（元）", "期初成本")
-    seen: set[tuple[str, str]] = set()
+    seen: set[str] = set()
     for line_number, row in rows:
         name = normalized_name(_cell(row, idx_name))
         if not name:
             preview.rows.append(PreviewRow(line_number, "error", "", "商品名称不能为空"))
             continue
-        spec = normalized_name(_cell(row, idx_spec))
         # E-2：品牌可空；空单元格与「没这一列」都落成空串（写入时统一转 NULL）。
         brand = normalized_name(_cell(row, idx_brand))
         unit = normalized_name(_cell(row, idx_unit)) or "个"
         price_value = _cell(row, idx_price)
         qty_text = _quantity_text(_cell(row, idx_qty))
         cost_value = _cell(row, idx_cost)
-        identity = (name, spec)
-        label = f"{name} {spec}".strip()
+        identity = name
+        label = name
         if identity in seen:
             preview.rows.append(PreviewRow(line_number, "skip", label, "文件内重复"))
             continue
@@ -226,16 +230,16 @@ def build_product_preview(headers, rows, existing_identities: set[tuple[str, str
             # 有数量必须有成本（缺成本不静默）。
             preview.rows.append(PreviewRow(line_number, "error", label, "填了期初数量就必须填期初成本（元）"))
             continue
-        payload = {"name": name, "spec": spec, "brand": brand, "unit": unit, "default_price_cents": price_cents,
+        payload = {"name": name, "brand": brand, "unit": unit, "default_price_cents": price_cents,
                    "quantity": qty_text, "cost_cents": cost_cents}
         if identity in soft_deleted_identities:
-            preview.rows.append(PreviewRow(line_number, "error", label, "该名称+型号已被回收站记录占用，请先到回收站恢复或清理"))
+            preview.rows.append(PreviewRow(line_number, "error", label, "该名称已被回收站记录占用，请先到回收站恢复或清理"))
             continue
         if identity in existing_identities:
             if same_name == "update":
                 preview.rows.append(PreviewRow(line_number, "update", label, "已存在，将更新单位/默认价", payload))
             else:
-                preview.rows.append(PreviewRow(line_number, "skip", label, "同名同型号已存在"))
+                preview.rows.append(PreviewRow(line_number, "skip", label, "同名已存在"))
             continue
         preview.rows.append(PreviewRow(line_number, "add", label, "", payload))
     return preview
