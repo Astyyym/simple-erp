@@ -83,3 +83,14 @@ Smoke from **ASCII temp copy**, not live `dist/`.
 - Count business documents explicitly across sales/returns, purchases and purchase returns; customer/product rows, line items, inventory initializations and reconciliation snapshots are supporting data, not extra documents. Seed through real services and retain the category manifest and conservation checks.
 - Before archiving a demo DB, close the owned EXE, run WAL checkpoint, explicitly close the SQLite connection, and verify sidecars are absent. `with sqlite3.connect(...)` commits/rolls back but does not close that connection; do not blindly delete a potentially live WAL.
 - Strip only owned demo logs/PDF caches/absolute location memory, preserve the seeded database, and verify the exact archive by extraction and real EXE restart at the new path. Packaged path isolation must survive inherited wrong ERP environment values.
+
+## Agent shell invocation: MSYS bash → `cmd` / Windows tools (2026-10-13)
+
+Windows-only pitfalls that make a build *look* like it succeeded while nothing ran:
+
+- **`cmd //c "x.bat"` is not `cmd /c`.** Under this host's MSYS bash the doubled slash is not collapsed, so `cmd` starts an **interactive** shell, immediately hits EOF, prints the banner + prompt, and exits `0`. It looks successful and does nothing. Use `cmd /c ...`.
+- **Chinese BAT filenames don't survive bash → cmd.** bash hands `cmd` UTF-8 bytes while `cmd` resolves against the ANSI codepage, so `打包Windows安装包.bat` is "not found". Launch it from native Windows Python instead, which passes a wide-char command line:
+  `subprocess.Popen(["cmd", "/c", "打包Windows安装包.bat"], cwd=ROOT, stdin=subprocess.DEVNULL)` — `DEVNULL` also feeds the BAT's trailing `pause` so the agent never blocks.
+- **Windows tool output is GBK, not UTF-8.** `subprocess.run(..., text=True)` on `tasklist` / `netstat` / `powershell` raises `UnicodeDecodeError` (and the traceback can abort a probe *before* its cleanup step, leaving the EXE running). Capture bytes and `decode("gbk", errors="replace")`. If a probe can fail mid-way, put the kill/cleanup in `finally`.
+- **Don't detect a login gate with `"password" in body`.** The order-entry pages deliberately set `autocomplete="new-password"` to suppress browser autofill, so that substring is always present. Match on the real login markers (e.g. `退出登录`) or inspect the template.
+- **`node --test tests/frontend/` fails on Node 26** (`pass 0 / fail 1`, the directory is treated as one test file). Always pass the glob: `node --test tests/frontend/*.test.mjs`.

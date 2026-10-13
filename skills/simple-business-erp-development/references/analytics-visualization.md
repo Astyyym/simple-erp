@@ -50,5 +50,5 @@
 ## 验证方式
 
 - 定向：`pytest tests/test_analytics_center.py tests/test_analytics_v4_behavior.py tests/test_quantity_display.py`
-- 前端：`node --test tests/frontend/`（`analytics_controls.test.mjs` 会断言展示键白名单，新增 URL 参数必须同步 `VIEW_KEYS`）
+- 前端：`node --test tests/frontend/*.test.mjs`（**必须给 glob**：Node 26 下 `node --test tests/frontend/` 会把目录当单个测试文件，报 `pass 0 / fail 1`；`analytics_controls.test.mjs` 会断言展示键白名单，新增 URL 参数必须同步 `VIEW_KEYS`）
 - 真实页面：用隔离数据根启动预览，用 CDP 读几何而不是看截图——重点核对**日期落位列**、**堆叠条宽度和是否为 100%**、**各宽度横向溢出为 0**。
