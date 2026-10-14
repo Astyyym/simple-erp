@@ -11,7 +11,7 @@
 - **账款流水可展开单据明细**：流水行新增「展开 / 收起」，行下插入该单商品明细（新增 `/accounts/api/ledger_items`），`grid-template-rows` 过渡约 250ms，展开时**不回顶、不闪烁**（实测被点行 `top` 恒 573.48、滚动恒 0）。
 - **商品 / 客户编辑页「主次与分组」重构**：商品页实测内容高 1457px（首屏 810px），「保存」按钮落在首屏之外；只读库存卡压在可编辑内容之上；`col-6` / `col-8` 三种右边缘；库存期初 368px 常驻展开。改为**主栏 + 320px 侧栏**（用户确认的编辑页范式）：商品页 1457 → **1013px**（「保存」首屏可见；图片进侧栏、只读块回主栏铺 5 列、期初默认展开）、客户页 579 → **709px**；「待补全」从 57px 横幅改为页头 chip + 字段 ⚠（判定口径仍走 `master_data_quality`，新增 `product_missing_keys` / `product_missing_summary` 两个同源派生函数）；右边缘 3 种收敛为 2 种。
 - **本轮验收**：全量 pytest **1006 passed / 16 skipped / 0 failed**；定向 93 passed；前端 Node **101 passed**；隔离实例真实浏览器（headless Chrome + CDP 原生鼠标事件）实测——换单后行数归零、再带入只 1 行，`xiao'fang` 命中，chip 三态坐标逐像素不变（商品 / 客户均 `1140/1196/1308,403`），流水展开几何与动画达标；导入全流程走完（上传 → 预检 → 确认 → 列表）「待补全」计数与徽标一致。**未验**：WebView2 桌面壳内重跑（本轮在 headless Chrome 验）、目标打印机实打（本版不涉及打印）。
-- 产物：`dist\local-v3.12.0\简单ERP\`（**自带 200 条演示数据，打开即用**）、`dist\simple-erp-setup-v3.12.0.exe`、`dist\simple-erp-windows-v3.12.0.zip`（安装包与 ZIP **不含**演示数据；per-user 安装不变）。
+- 产物：`dist\local-v3.12.0\简单ERP\`（**自带 200 条演示数据，打开即用**）、`dist\simple-erp-setup-v3.12.0.exe`、`dist\simple-erp-windows-v3.12.0.zip`（安装包与 ZIP **不含**演示数据；per-user 安装不变）。已发版：提交 `b5df1ee` 推送 `main`、tag `v3.12.0`、[GitHub Release](https://github.com/Astyyym/simple-erp/releases/tag/v3.12.0) 双资产（`state=uploaded`，下载回本地 SHA256 与构建产物一致）；旧 v3.11.2 产物已清理。
 
 ## v3.11.2 - 带入一次性、关联单据改选与拼音全拼（2026-10-14，本地打包供验收；未打 tag、未建 Release）
 
