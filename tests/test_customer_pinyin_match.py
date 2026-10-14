@@ -1,8 +1,11 @@
-"""Phase 3 S4：客户匹配点加拼音（8 处）与「三处纯筛选条件保持不动」。
+"""Phase 3 S4：客户匹配点加拼音（8 处）；2026-10-14 起筛选条件也按拼音匹配。
 
 计划 §13.2 S4：`customers.py:65/:79/:222`、`orders.py:229/:455/:1332`、`purchases.py:617`、
-`pdf.py:350` 全部要能按拼音首字母命中；`orders.py:350/:361/:639` 三处**仅作筛选条件**，
-保持现状（用户是在筛选框输完整名称，不是联想选词）。
+`pdf.py:350` 全部要能按拼音首字母命中。
+
+**决策变更（2026-10-14 用户答复「连筛选框也一起按全拼匹配」）**：原先「三处纯筛选条件
+（`orders.py` 的 `order_side_conditions` / `purchase_side_conditions` 与导出明细）保持按名称匹配」，
+现改为同样走 `name_match_clause()`（名称 + 首字母 + 全拼）。
 
 本文件按「真实入口 → 真的能搜到」逐个断言，不只看 SQL 文本。
 """
@@ -98,15 +101,40 @@ def test_summary_pdf_customer_scope_matches_pinyin():
     assert resolve_summary_customer_ids("czk", "", "") == [int(expected)]
 
 
-def test_filter_only_conditions_stay_name_based():
-    """三处纯筛选条件（orders.py:350/:361/:639）保持现状，不被误扩大为拼音查询。
+def test_filter_conditions_match_pinyin_too():
+    """决策变更（2026-10-14 用户答复）：「连筛选框也一起按全拼匹配」。
 
-    `_resolve_customer_scope` 命中拼音后走 customer_id 作用域，这三处只是
-    「未能唯一解析客户」时的回落条件 —— 保持按名称匹配，避免改变筛选语义。
+    原先这三处是「纯筛选条件、保持按名称匹配」（用户在筛选框输完整名称）；
+    用户明确要求筛选框也按拼音匹配后，改走 `name_match_clause()`（名称 + 首字母 + 全拼）。
+    这里按真实入口断言：单据管理筛选框输首字母与完整拼音都能筛出该客户的单据。
     """
+    _seed_customers()
+    from erp.services.accounting import create_order_from_typed_rows, create_product
+
+    customer_id = get_db_customer_id("消防器材张老板")
+    product_id = create_product("筛选拼音商品", "个", 1000)
+    create_order_from_typed_rows(
+        customer_id,
+        "MD202610140009",
+        [{"product_id": product_id, "product_name": "筛选拼音商品", "unit": "个",
+          "quantity": "1", "unit_price_yuan": "10"}],
+        status="saved",
+        order_date="2026-10-14",
+    )
+    client = create_app().test_client()
+    for query in ("xfqcz", "xiaofangqicai"):
+        html = client.get(f"/orders/?customer={query}").get_data(as_text=True)
+        assert "MD202610140009" in html, query
+
     from pathlib import Path
 
     source = (Path(__file__).resolve().parents[1] / "app" / "erp" / "routes" / "orders.py").read_text(encoding="utf-8")
-    assert 'conditions.append("c.name LIKE ?")' in source
-    assert 'conditions.append("customer_name LIKE ?")' in source
-    assert "c.pinyin_initials" not in source.split("def order_side_conditions")[1].split("def purchase_side_conditions")[0]
+    order_side = source.split("def order_side_conditions")[1].split("def purchase_side_conditions")[0]
+    purchase_side = source.split("def purchase_side_conditions")[1].split("order_where, order_params")[0]
+    assert "name_match_clause" in order_side, "销售/退货侧筛选条件没接拼音"
+    assert "name_match_clause" in purchase_side, "拿货/退拿货侧筛选条件没接拼音"
+
+
+def get_db_customer_id(name: str) -> int:
+    with get_db() as conn:
+        return int(conn.execute("SELECT id FROM customers WHERE name=?", (name,)).fetchone()["id"])

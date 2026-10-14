@@ -15,6 +15,11 @@ import json
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 
+from erp.services.master_data_quality import (
+    ORIGIN_IMPORT,
+    customer_missing_fields,
+    product_missing_fields,
+)
 from erp.utils.importing import MAX_DISPLAYED_ERRORS, normalized_name, price_to_cents
 
 # ---- 表头登记（B-3：新旧同时兼容） ----
@@ -35,6 +40,26 @@ PRODUCT_HEADERS = (
 # **不要**再用 `PRODUCT_HEADERS[2]` 这类魔法索引 —— v14 删掉含「型号」的候选后索引会移位。
 PRODUCT_HEADERS_TEMPLATE = ["商品名称", "品牌", "单位", "默认价", "期初数量", "期初成本（元）", "备注"]
 
+# 模板里第二个 sheet「填写说明」的内容（第一行必须是表头，说明只能另开 sheet）。
+PRODUCT_TEMPLATE_NOTES = [
+    "填写说明（第一行表头请勿修改：改标题会导致整表报「表头错误」）",
+    "必填：商品名称。单位留空按「个」。",
+    "品牌、默认价可以留空：留空的行照样导入，但会在商品列表里标记为「待补全」，"
+    "之后在档案里补上就会自动移出该筛选。",
+    "默认价留空按 0 元计：开单按 0 计价会算错钱，请尽早补价。",
+    "期初数量与期初成本（元）要成对填：填了数量就必须填成本。",
+    "型号请直接写进商品名称（例如「闸阀DN50」），不要再加「型号」列。",
+    "同名处理在预检页选择：「跳过」（默认，不覆盖已有）或「更新」。",
+]
+CUSTOMER_TEMPLATE_NOTES = [
+    "填写说明（第一行表头请勿修改：改标题会导致整表报「表头错误」）",
+    "必填：客户名称。",
+    "电话、地址可以留空：留空的行照样导入，但会在客户列表里标记为「待补全」，"
+    "补上电话或地址后自动移出该筛选。",
+    "期初余额（元）填未结欠款：正数 = 客户欠我。",
+    "同名处理在预检页选择：「跳过」（默认，不覆盖已有）或「更新」。",
+]
+
 
 @dataclass
 class PreviewRow:
@@ -43,6 +68,31 @@ class PreviewRow:
     identity: str
     reason: str = ""
     payload: dict = field(default_factory=dict)
+    # 该行导入后会不会进「待补全」，以及缺什么（口径与列表徽标同源，见 master_data_quality）。
+    completion: str = ""
+
+
+def completion_note(kind: str, payload: dict) -> str:
+    """这一行落库后会不会进「待补全」，缺什么；空串 = 不缺。
+
+    **只用于新增行**：新增行的来源一定是 `import`，判定是确定的；更新行的目标档案
+    来源未知（可能是手工建档，那就不该标），所以不在这里下结论。
+    """
+    if kind == "products":
+        missing = product_missing_fields({
+            "origin": ORIGIN_IMPORT,
+            "brand": payload.get("brand"),
+            "default_price_cents": payload.get("default_price_cents"),
+        })
+    else:
+        missing = customer_missing_fields({
+            "origin": ORIGIN_IMPORT,
+            "phone": payload.get("phone"),
+            "address": payload.get("address"),
+        })
+    if not missing:
+        return ""
+    return "缺" + "、".join(missing) + "，导入后会标记为「待补全」"
 
 
 @dataclass
@@ -69,6 +119,11 @@ class ImportPreview:
         return sum(1 for r in self.rows if r.action == "error")
 
     @property
+    def pending_completion(self) -> int:
+        """新增行里字段不完整、导入后会进「待补全」的条数。"""
+        return sum(1 for r in self.rows if r.action == "add" and r.completion)
+
+    @property
     def errors(self) -> list[str]:
         return [f"第{r.line_number}行：{r.reason}" for r in self.rows if r.action == "error"][:MAX_DISPLAYED_ERRORS]
 
@@ -79,7 +134,7 @@ class ImportPreview:
                 "batch_id": self.batch_id,
                 "rows": [
                     {"line_number": r.line_number, "action": r.action, "identity": r.identity,
-                     "reason": r.reason, "payload": r.payload}
+                     "reason": r.reason, "payload": r.payload, "completion": r.completion}
                     for r in self.rows
                 ],
                 "truncated_errors": self.truncated_errors,
@@ -101,6 +156,7 @@ class ImportPreview:
                     identity=str(raw.get("identity", "")),
                     reason=str(raw.get("reason", "")),
                     payload=raw.get("payload", {}) or {},
+                    completion=str(raw.get("completion", "")),
                 )
             )
         return preview
@@ -176,7 +232,8 @@ def build_customer_preview(headers, rows, existing_names: set[str], soft_deleted
             else:
                 preview.rows.append(PreviewRow(line_number, "skip", name, "同名已存在"))
             continue
-        preview.rows.append(PreviewRow(line_number, "add", name, "", payload))
+        preview.rows.append(PreviewRow(line_number, "add", name, "", payload,
+                                       completion=completion_note("customers", payload)))
     return preview
 
 
@@ -203,6 +260,7 @@ def build_product_preview(headers, rows, existing_identities: set[str], soft_del
         brand = normalized_name(_cell(row, idx_brand))
         unit = normalized_name(_cell(row, idx_unit)) or "个"
         price_value = _cell(row, idx_price)
+        price_text = "" if price_value is None else str(price_value).strip()
         qty_text = _quantity_text(_cell(row, idx_qty))
         cost_value = _cell(row, idx_cost)
         identity = name
@@ -212,7 +270,9 @@ def build_product_preview(headers, rows, existing_identities: set[str], soft_del
             continue
         seen.add(identity)
         try:
-            price_cents = price_to_cents(price_value)
+            # 默认价可留空（2026-10-14 第二轮用户决策）：落库 0 并随行标出「待补全」，
+            # 让门店之后在档案里补价，而不是把整行挡在导入之外。
+            price_cents = 0 if price_text == "" else price_to_cents(price_value)
         except ValueError as exc:
             preview.rows.append(PreviewRow(line_number, "error", label, str(exc)))
             continue
@@ -241,7 +301,8 @@ def build_product_preview(headers, rows, existing_identities: set[str], soft_del
             else:
                 preview.rows.append(PreviewRow(line_number, "skip", label, "同名已存在"))
             continue
-        preview.rows.append(PreviewRow(line_number, "add", label, "", payload))
+        preview.rows.append(PreviewRow(line_number, "add", label, "", payload,
+                                       completion=completion_note("products", payload)))
     return preview
 
 

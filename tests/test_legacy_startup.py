@@ -46,11 +46,11 @@ def legacy_snapshot(conn):
 
 
 def assert_legacy_rows_unchanged(conn, before):
-    # pinyin_initials 是纯派生字段：init_db 会按名称幂等回填空值（Batch E7），
-    # 因此与历史业务列分开比较——业务列必须逐字节不变，派生列（回填）另行断言。
+    # pinyin_initials / pinyin_full 是纯派生字段：init_db 会按名称幂等回填空值（Batch E7、
+    # 2026-10-14 全拼列），因此与历史业务列分开比较——业务列必须逐字节不变，派生列（回填）另行断言。
     # 决策变更（v14）：spec 已并入名称并删列；迁移完成后待比较列按合并结果取，
     # 迁移前（spec 仍在）按原样比较，两个调用点都能用。
-    derived_columns = {"products": {"pinyin_initials"}}
+    derived_columns = {"products": {"pinyin_initials", "pinyin_full"}}
     for table, rows in before.items():
         merged_name_column = MERGED_SPEC_NAME_COLUMNS.get(table)
         spec_merged = merged_name_column is not None and "spec" not in {col[1] for col in conn.execute(f"PRAGMA table_info({table})")}
@@ -94,6 +94,9 @@ def test_schema2_application_startup_preserves_legacy_business_rows():
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
         # E7：升级后派生字段 pinyin_initials 已按名称回填（旧值 '' 被补齐；纯派生、无业务影响）。
         assert conn.execute("SELECT COUNT(*) FROM products WHERE COALESCE(pinyin_initials,'') = ''").fetchone()[0] == 0
+        # 2026-10-14：全拼列同样在升级时补齐（旧库没有该列 → 幂等加列 + 只补空值回填）。
+        assert conn.execute("SELECT COUNT(*) FROM products WHERE COALESCE(pinyin_full,'') = ''").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM customers WHERE COALESCE(pinyin_full,'') = ''").fetchone()[0] == 0
 
 
 def test_schema2_failed_index_creation_rolls_back_and_can_retry():

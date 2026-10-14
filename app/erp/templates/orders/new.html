@@ -28,8 +28,15 @@
   .readonly-total { background: var(--erp-glass-bg-strong); padding: 10px; min-height: 42px; font-variant-numeric: tabular-nums; color: var(--erp-ink); }
   /* 换页提示行：不可编辑、不带 name（不参与提交）；位置由 refreshSlipNotices() 按 slip_size 重排。 */
   .order-table tr.slip-notice td { background: var(--erp-surface-soft); color: var(--erp-muted); font-size: 12px; text-align: left; padding: 6px 10px; }
-  .unit-cell { display: flex; gap: 4px; padding: 4px; }
-  .unit-cell select { width: 74px; }
+  /* P2（2026-10-13）：单位列改为单控件 = 输入框 + 候选浮层，不再有并排 select。 */
+  .unit-cell { padding: 4px; }
+  .unit-cell .unit { width: 100%; }
+  /* 单位候选项比商品/客户短得多，压一点行高：168px 内能显示 5 项。 */
+  .unit-suggestions .suggest-item { padding: 6px 9px; font-size: 13px; }
+  /* 通用候选框有 min-width:240px，套在 110px 的单位列上会横向压住数量/单价列。 */
+  .unit-cell .unit-suggestions[popover] { min-width: 0; max-width: 220px; }
+  /* 单位可自由输入：没有匹配项时不显示那条空的「无匹配项」占位。 */
+  .unit-suggestions .suggest-item[aria-disabled="true"] { display: none; }
   .price-cell { padding: 4px !important; }
   .price-cell input { border: 0; width: 100%; padding: 4px 6px; background: transparent; }
   .regular-price-option { display: none; margin: 3px 6px 4px; font-size: 12px; color: var(--erp-primary); cursor: pointer; user-select: none; }
@@ -45,6 +52,9 @@
   /* 行工具条：放在表格正下方、随表横向滚动；左留白对齐「产品名称」列起点（序号列 50px）。 */
   .row-tools{display:flex;gap:8px;align-items:center;padding:8px 0 2px 50px;min-width:max-content}
   .suggest-list[popover]{position:fixed;inset:auto;margin:0;padding:0;box-sizing:border-box;color:var(--erp-ink);height:auto;min-width:min(240px,calc(100vw - 24px));max-width:calc(100vw - 24px)}
+  /* 退货来源候选：每张单据固定一行（过长省略号），列表高度由 options.maxHeight 收紧，超出内部滚动。 */
+  #returnSourceSuggestions .suggest-item{display:flex;align-items:baseline;gap:8px;white-space:nowrap;overflow:hidden}
+  #returnSourceSuggestions .suggest-item small{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
 
   /* 无 blur 回退只刷「仍是玻璃底」的 tfoot/只读合计；表头已改实色，故意不列进来。 */
   @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
@@ -63,14 +73,17 @@
   <div class="order-meta">
   {% if is_return and not is_edit %}
   <div class="order-source-row">
-    <label class="form-label" for="returnSourceSelect">原销售单（可选）</label>
-    <select class="form-select" id="returnSourceSelect" autocomplete="off">
-      <option value="">不关联，直接手工录入</option>
-      {% for source in return_sources %}
-      <option value="{{source.id}}">{{source.order_no}} · {{source.customer_name}} · {{source.order_date}}</option>
-      {% endfor %}
-    </select>
-    <div class="form-text">选择后先在下方显示原单预览，再把商品行带入明细；仍可自由加行、改数量与单价，不影响计价规则。{% if return_sources|length >= 100 %}（下拉只列出最近 100 张销售单；找不到时可手工录入。）{% endif %}</div>
+    <label class="form-label" for="returnSourceInput">原销售单（可选）</label>
+    <div class="source-picker-row">
+      <div class="suggest-wrap">
+        <input type="hidden" name="source_order_id" id="sourceOrderId" value="">
+        <input class="form-control" id="returnSourceInput" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="returnSourceSuggestions" aria-haspopup="listbox" aria-label="原销售单，点击列出最近销售单，也可输入单号或客户名过滤" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="点击列出最近销售单；也可输入单号或客户名过滤">
+        <div class="suggest-list d-none" id="returnSourceSuggestions" role="listbox" aria-label="原销售单候选"></div>
+      </div>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="returnSourceClear">清除关联</button>
+    </div>
+    <div class="form-text">点击输入框列出最近销售单；选中后先在下方显示原单预览，再把商品行带入明细；改选只需再点一次输入框。带入后仍可自由加行、改数量与单价。保存时会在单据上留下原单关联（只做追溯，不改变计价规则）。</div>
+    <div class="form-text d-none" id="returnSourceMissingHint"></div>
   </div>
   <section class="source-preview d-none" id="sourcePreview" aria-live="polite" aria-labelledby="sourcePreviewTitle">
     <div class="source-preview-head">
@@ -122,14 +135,14 @@
     商品名称可直接手输：命中已有商品会自动带出单位/单价；没有匹配则会新建商品档案（型号请直接写进名称，如 闸阀DN50）；无成本的商品没有毛利，拿货单需先启用库存。
   </p>
   <div class="order-table-scroll"><table class="table table-bordered order-table" id="orderTable">
-    <thead class="table-light"><tr><th style="width:50px">序号</th><th style="min-width:340px">产品名称</th><th style="width:190px">单位</th><th style="width:120px">数量</th><th style="width:140px">单价(元)</th><th style="width:140px">金额</th><th style="min-width:140px">{{ '退货回冲成本' if is_return else ('销售时成本' if is_edit else '移动平均成本') }}(元)</th><th style="width:80px">操作</th></tr></thead>
+    <thead class="table-light"><tr><th style="width:50px">序号</th><th style="min-width:340px">产品名称</th><th style="width:110px">单位</th><th style="width:120px">数量</th><th style="width:140px">单价(元)</th><th style="width:140px">金额</th><th style="min-width:140px">{{ '退货回冲成本' if is_return else ('销售时成本' if is_edit else '移动平均成本') }}(元)</th><th style="width:80px">操作</th></tr></thead>
     <tbody id="orderBody">
       {% set rows = items if is_edit else [none] %}
       {% for item in rows %}
       <tr{% if item and item.unit_cost_micro is not none %} data-unit-cost="{{ micro_to_yuan(item.unit_cost_micro, precision=6) }}"{% endif %}>
         <td class="text-center row-no">{{loop.index}}</td>
         <td class="product-picker"><div class="picker-row"><input type="hidden" name="product_id" class="product-id" value="{{item.product_id if item else ''}}"><input type="hidden" name="source_item_id" class="source-item-id" value="{{item.source_item_id if item else ''}}"><input type="hidden" name="product_name" class="product-name" value="{{item.product_name if item else ''}}"><div class="suggest-wrap product-suggest-wrap"><input class="form-control form-control-sm picker-name-input" autocomplete="off" aria-label="第 {{loop.index}} 行产品名称" placeholder="输入或选择商品名" value="{{item.product_name if item else ''}}"><div class="suggest-list d-none product-suggestions" role="listbox" aria-label="商品建议"></div></div></div></td>
-        <td><div class="unit-cell"><select class="form-select form-select-sm unit-select"><option value="">自定义</option>{% for u in (unit_options or ['个','套','件']) %}<option value="{{u}}" {% if item and item.unit == u %}selected{% endif %}>{{u}}</option>{% endfor %}</select><input name="unit" class="unit" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="自定义" value="{{item.unit if item else ''}}"></div></td>
+        <td><div class="unit-cell suggest-wrap"><input name="unit" class="unit form-control form-control-sm" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="单位" aria-label="第 {{loop.index}} 行单位" aria-expanded="false" data-unit-options="{{ (unit_options or ['个','套','件'])|join('|') }}" value="{{item.unit if item else ''}}"><div class="suggest-list d-none unit-suggestions" role="listbox" aria-label="单位建议"></div></div></td>
         <td><input name="quantity" class="quantity" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0" value="{{item.quantity if item else ''}}"></td>
         <td class="price-cell"><input name="unit_price" class="unit-price" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.00" value="{{cents_to_yuan(item.unit_price_cents) if item else ''}}"><label class="regular-price-option"><input type="checkbox" class="regular-price-check">常规价 <span class="regular-price-text"></span></label></td>
         <td><div class="readonly-total line-total">0.00</div></td>
@@ -243,7 +256,6 @@ function clearRow(btn) {
   const tr = btn.closest('tr');
   tr.querySelectorAll('input').forEach(i => i.value = '');
   delete tr.dataset.unitCost;
-  tr.querySelector('.unit-select').value = '';
   if (tr.__picker) tr.__picker.reset();
   const regularOption = tr.querySelector('.regular-price-option');
   if (regularOption) regularOption.style.display = 'none';
@@ -254,6 +266,14 @@ function clearAllRows() {
   document.getElementById('customer_id').value = '';
   document.getElementById('customer_name').value = '';
   document.querySelector('textarea[name="notes"]').value = '';
+  // 退货来源一并清掉：留着原单关联却没有明细行，保存时会被后端以
+  // 「退货至少选择一行并填写数量」拒绝，属于死路状态。
+  const sourceHidden = document.getElementById('sourceOrderId');
+  const sourceInput = document.getElementById('returnSourceInput');
+  if (sourceHidden) sourceHidden.value = '';
+  if (sourceInput) sourceInput.value = '';
+  const sourcePreview = document.getElementById('sourcePreview');
+  if (sourcePreview) sourcePreview.classList.add('d-none');
   const tbody = document.getElementById('orderBody');
   while (tbody.rows.length > 1) tbody.deleteRow(1);
   const firstRow = tbody.rows[0];
@@ -263,7 +283,6 @@ function clearAllRows() {
     delete input.dataset.price;
     delete input.dataset.customerPrice;
   });
-  firstRow.querySelector('.unit-select').value = '';
   if (firstRow.__picker) firstRow.__picker.reset();
   delete firstRow.dataset.unitCost;
   firstRow.querySelector('.line-total').textContent = '0.00';
@@ -279,7 +298,6 @@ function addRow() {
   const tr = tbody.rows[0].cloneNode(true);
   tr.querySelectorAll('input').forEach(i => i.value = '');
   delete tr.dataset.unitCost;
-  tr.querySelector('.unit-select').value = '';
   tr.querySelector('.line-total').textContent = '0.00';
   const regularOption = tr.querySelector('.regular-price-option');
   if (regularOption) regularOption.style.display = 'none';
@@ -307,7 +325,7 @@ function syncRowToolState() {
   // 只数数据行：换页提示行不是可删的录入行。
   button.disabled = orderDataRows(document.getElementById('orderBody')).length <= 1;
 }
-/* ---- 单联容量提示行：与打印单同源（config.SLIP_SIZE → jinja 全局 slip_size） start ---- */
+/* ---- 单联容量提示行：与打印单同源（config.slip_size → 注入 slip_size） start ---- */
 const slipSize = {{ slip_size }};
 function orderDataRows(tbody) {
   return Array.from(tbody.querySelectorAll('tr:not(.slip-notice)'));
@@ -396,26 +414,11 @@ async function refineProductRow(tr, product) {
   }
   recalc();
 }
-function ensureUnitOption(select, unit) {
-  const value = String(unit || '').trim();
-  if (!select || !value) return;
-  const exists = Array.from(select.options).some(option => option.value === value);
-  if (exists) return;
-  const option = document.createElement('option');
-  option.value = value;
-  option.textContent = value;
-  select.appendChild(option);
-}
 function bindRow(tr) {
   tr.querySelectorAll('.quantity,.unit-price').forEach(input => input.addEventListener('input', recalc));
-  const unitSelect = tr.querySelector('.unit-select');
+  // P2：单位单控件 = 输入框 + 候选浮层（候选池来自服务端，本页手输的新单位跨行共享）。
   const unitInput = tr.querySelector('.unit');
-  unitSelect.addEventListener('change', () => { if (unitSelect.value) unitInput.value = unitSelect.value; });
-  // §4.4：本页手输的新单位即时追加到该行下拉，无需等保存。
-  unitInput.addEventListener('input', () => {
-    ensureUnitOption(unitSelect, unitInput.value);
-    unitSelect.value = unitInput.value;
-  });
+  ErpOrderEntry.bindUnitCell(unitInput, tr.querySelector('.unit-suggestions'));
   const productIdField = tr.querySelector('.product-id');
   const productNameField = tr.querySelector('.product-name');
   const priceInput = tr.querySelector('.unit-price');
@@ -445,8 +448,10 @@ function bindRow(tr) {
     }
     productIdField.value = product.id;
     productNameField.value = product.name;
-    unitInput.value = product.unit || '';
-    unitSelect.value = ['个','套','件'].includes(product.unit) ? product.unit : '';
+    // F1（2026-10-14）：原先这里还写 P2 已删除的「下拉 + 输入框」双控件残留变量（该变量已不存在），
+    // 抛 ReferenceError 会连带跳过「关闭候选浮层 / 写单价 / recalc / refineProductRow」，
+    // 用户看到的就是「点选后下拉不关、单位与单价不带入」。
+    if (unitInput) unitInput.value = product.unit || '';
     priceInput.value = (Number(product.default_price_cents || 0) / 100).toFixed(2);
     delete tr.dataset.unitCost;
     hideRegularPriceOption(regularOption, regularCheck, regularText);
@@ -459,9 +464,9 @@ function bindRow(tr) {
   // 商品名自有联想（替换原先的原生 datalist）：服务端按名称/拼音匹配，点选即带入单位与单价。
   const nameInput = tr.querySelector('.picker-name-input');
   const suggestBox = tr.querySelector('.product-suggestions');
-  if (nameInput && suggestBox && !nameInput.dataset.suggestBound) {
-    nameInput.dataset.suggestBound = '1';
-    suggestBox.id = 'product_suggestions_' + (productSuggestSeq += 1);
+  // P3：判重交给 bindAutocomplete 内部的 WeakSet —— 克隆行会连 dataset 一起复制，
+  // 用 dataset 标记会让新增行的商品联想绑不上、并串用上一行的浮层。
+  if (nameInput && suggestBox) {
     ErpOrderEntry.bindAutocomplete(
       nameInput,
       suggestBox,
@@ -501,21 +506,123 @@ document.addEventListener('click', event => {
 });
 
 {% if is_return and not is_edit %}
-// A 方案：选原销售单只做关联追溯——先在下方显示原单预览，再按按钮带入商品行，仍可自由改。
-const returnSourceSelect = document.getElementById('returnSourceSelect');
-if (returnSourceSelect) {
+// 退货来源：点击输入框列出最近销售单（单号 · 客户名 · 日期），输入按单号/客户名过滤。
+// 选中后写 hidden `source_order_id`（保存时在单据上留下原单关联），预览可把商品行带入明细；
+// 带入时必须同时写行上的 `source_item_id`，否则后端 `create_return_order_from_source` 会以
+// 「退货必须选择原销售明细」拒单——这正是此前只做预览、不落库时漏掉的一环。
+const returnSourceInput = document.getElementById('returnSourceInput');
+const returnSourceHidden = document.getElementById('sourceOrderId');
+if (returnSourceInput && returnSourceHidden) {
   const preview = document.getElementById('sourcePreview');
   const previewRows = document.getElementById('sourcePreviewRows');
   const previewMeta = document.getElementById('sourcePreviewMeta');
   const previewApply = document.getElementById('sourcePreviewApply');
   const previewHint = document.getElementById('sourcePreviewHint');
+  const missingHint = document.getElementById('returnSourceMissingHint');
   let previewItems = [];
+  // F6：带入是一次性的。记下「已带入的是哪张单」——只有换成别的原单才重新放开按钮。
+  let appliedSourceId = '';
+  const previewApplyState = ErpOrderEntry.createPreviewApply({
+    tbody: document.getElementById('orderBody'),
+    addRow: () => addRow(),
+    // 第 0 行只有完全空（无商品、无数量、无单价）时才复用；换页提示行不是数据行。
+    isRowEmpty: tr => {
+      const idField = tr.querySelector('.product-id');
+      if (!idField) return false;
+      return !idField.value.trim()
+        && !String(tr.querySelector('.quantity')?.value || '').trim()
+        && !String(tr.querySelector('.unit-price')?.value || '').trim();
+    },
+    // F7：带入后的原始值指纹，用来区分「还是带入的那几行」与「用户改过的行」。
+    signatureOf: tr => [
+      tr.querySelector('.product-id')?.value || '',
+      tr.querySelector('.unit')?.value || '',
+      tr.querySelector('.quantity')?.value || '',
+      tr.querySelector('.unit-price')?.value || '',
+    ].join('|'),
+    fillRow: (tr, item) => {
+      tr.querySelector('.product-id').value = item.product_id || '';
+      tr.querySelector('.product-name').value = item.product_name || '';
+      // 行级来源明细：关联退货必须带 source_item_id，否则后端拒单（可退额度也靠它算）。
+      const sourceItemField = tr.querySelector('.source-item-id');
+      if (sourceItemField) sourceItemField.value = item.source_item_id || '';
+      const existing = productCatalog.find(p => String(p.id) === String(item.product_id));
+      if (existing && tr.__picker) tr.__picker.set(existing);
+      tr.querySelector('.unit').value = item.unit || '';
+      tr.querySelector('.quantity').value = item.available_quantity || '';
+      tr.querySelector('.unit-price').value = item.unit_price || '';
+      tr.dataset.sourceLimit = item.available_quantity || '';
+    },
+  });
+  const syncPreviewApply = () => {
+    const done = previewApplyState.applied();
+    previewApply.disabled = done;
+    previewApply.textContent = done ? '已带入商品行' : '按预览带入商品行';
+  };
+
+  /* F7（2026-10-14 用户实测）：带入是「可替换」的，不是只追加。
+     换原单时上一张原单带入的行必须一起撤掉，否则明细表叠着两张单的行，
+     再点带入又追加一套（用户看到的「增量插入」）。手输行一行不动。 */
+  const dropPreviewRows = () => {
+    const tbody = document.getElementById('orderBody');
+    // addRow() 是「克隆 tbody.rows[0]」实现的：把数据行全删光就没有模板行了，
+    // 所以当这次要撤掉的行覆盖了全部数据行时，**先**补一个空行再撤。
+    if (previewApplyState.rows().length >= orderDataRows(tbody).length) addRow();
+    const removed = previewApplyState.clear();
+    refreshSlipNotices();
+    recalc();
+    syncRowToolState();
+    return removed.length;
+  };
+
+  /* 选中「另一张」原单前的收尾。返回 false 表示用户取消 —— 调用方必须放弃这次换单，
+     不能让「框里是新单号、隐藏域/明细还是旧单」这种半截状态留下来。 */
+  const releasePreviousPreview = (order) => {
+    if (String(order.id || '') === String(appliedSourceId)) return true; // 重选同一张：不动
+    const rows = previewApplyState.rows();
+    if (!rows.length) return true;
+    const modified = previewApplyState.modifiedRows().length;
+    // B 方案：只有带入的行被手工改过时才问一次；没改过就静默替换。
+    if (modified && !confirm(`上一张原单带入的 ${rows.length} 行里有 ${modified} 行已被手工修改。\n`
+      + '换原单会移除这些行（手输的行会保留）。确定继续吗？')) {
+      return false;
+    }
+    const removed = dropPreviewRows();
+    document.getElementById('profitPreview').textContent =
+      `已移除上一张原单带入的 ${removed} 行；重新带入后仍可自由加行与修改，不影响计价规则。`;
+    return true;
+  };
 
   const hidePreview = () => {
     preview.classList.add('d-none');
     previewRows.replaceChildren();
     previewMeta.textContent = '';
     previewItems = [];
+    previewApplyState.reset();
+    appliedSourceId = '';
+    syncPreviewApply();
+  };
+
+  /* F5：来源输入框一旦被改动（还没从候选里选），关联、预览与行上来源明细必须立刻解除——
+     否则会出现「框里是新单号、隐藏域和预览还是旧单」，保存时把旧单号当来源提交。 */
+  const clearSourceAssociation = (message, { clearInput = true } = {}) => {
+    if (clearInput) returnSourceInput.value = '';
+    returnSourceHidden.value = '';
+    hidePreview();
+    counterpartyNote = '';
+    document.querySelectorAll('#orderBody .source-item-id').forEach(field => { field.value = ''; });
+    document.querySelectorAll('#orderBody tr').forEach(tr => { delete tr.dataset.sourceLimit; });
+    document.getElementById('profitPreview').textContent = message;
+  };
+
+  // 关联退货要求与原单同一客户（后端 `_prepare_return_items` 硬校验），所以选中原单时就把往来对象对齐到原单：
+  // 共用 ErpOrderEntry.syncCounterparty（退拿货页同款）——空则带出、不同则改为原单对象并说明原因，
+  // 不再「已填就只警告不覆盖」（那样用户会带着一个注定被拒的对象去保存）。
+  let counterpartyNote = '';
+  const syncCustomerFromSource = (source) => {
+    counterpartyNote = ErpOrderEntry.syncCounterparty(
+      source, document.getElementById('customer_name'), document.getElementById('customer_id'));
+    return counterpartyNote;
   };
 
   const renderPreview = (payload) => {
@@ -543,41 +650,88 @@ if (returnSourceSelect) {
     });
     const total = items.reduce((sum, item) => sum + (Number(item.original_quantity) || 0) * (Number(item.unit_price) || 0), 0);
     previewMeta.textContent = `${source.order_no || ''} · ${source.order_date || ''} · 合计 ¥${money(total)} · ${items.length} 行`;
-    previewHint.textContent = '带入的是可退上限，仍可自由加行、改数量与单价，不影响计价规则。';
+    const customerNote = syncCustomerFromSource(source);
+    // 只有换成别的原单才重新放开「带入」；重复选中同一张不放开（否则又能插一遍重复行）。
+    if (String(source.id || '') !== String(appliedSourceId)) previewApplyState.reset();
+    syncPreviewApply();
+    previewHint.textContent = (customerNote ? customerNote + ' ' : '') + (previewApplyState.applied()
+      ? '已按预览带入原销售单商品行与可退上限（只带入一次）；仍可自由加行与修改，不影响计价规则。如需重新带入，请改选原单或点「清除关联」后重选。'
+      : '带入的是可退上限，仍可自由加行、改数量与单价，不影响计价规则。');
     preview.classList.remove('d-none');
   };
 
-  returnSourceSelect.addEventListener('change', async () => {
-    const sourceId = returnSourceSelect.value;
-    if (!sourceId) { hidePreview(); return; }
+  const loadPreview = async (sourceId) => {
     let payload;
     try { payload = await fetchJson('/orders/api/return_sources/' + encodeURIComponent(sourceId)); }
     catch (_) { hidePreview(); return; }
     if (!payload || !Array.isArray(payload.items)) { hidePreview(); return; }
     renderPreview(payload);
-  });
+  };
+
+  ErpOrderEntry.bindAutocomplete(
+    returnSourceInput,
+    document.getElementById('returnSourceSuggestions'),
+    async query => {
+      let payload;
+      try { payload = await fetchJson('/orders/api/return_sources?q=' + encodeURIComponent(query)); }
+      catch (_) { return []; }
+      const skipped = Number(payload && payload.missing_cost_count) || 0;
+      if (missingHint) {
+        missingHint.classList.toggle('d-none', !skipped);
+        missingHint.textContent = skipped
+          ? `另有 ${skipped} 张销售单没有成本快照，补录历史成本后才能关联退货。`
+          : '';
+      }
+      return Array.isArray(payload && payload.orders) ? payload.orders : [];
+    },
+    order => {
+      const fragment = document.createDocumentFragment();
+      const nameNode = document.createElement('strong');
+      nameNode.textContent = order.order_no;
+      const detailsNode = document.createElement('small');
+      detailsNode.textContent = [order.customer_name, order.order_date, '¥' + order.amount_display]
+        .filter(Boolean).join(' · ');
+      fragment.append(nameNode, document.createTextNode(' '), detailsNode);
+      return fragment;
+    },
+    order => {
+      // F7：先撤上一张原单带入的行（有手工改动时先确认）；用户取消就放弃这次换单，
+      // 输入框回到点击前的原文，避免「框里是新单号、隐藏域还是旧单」。
+      const typedText = returnSourceInput.value;
+      if (!releasePreviousPreview(order)) { returnSourceInput.value = typedText; return; }
+      returnSourceHidden.value = order.id;
+      returnSourceInput.value = order.order_no;
+      loadPreview(order.id);
+    },
+    () => {
+      if (returnSourceHidden.value) {
+        clearSourceAssociation('原销售单已改动，已解除关联；重新选中后才会带入商品行。', { clearInput: false });
+      }
+    },
+    '没有匹配的销售单（只列有成本快照的正式销售单）',
+    { listOnEmpty: true, openOnClick: true, maxHeight: 210 },
+  );
+
+  // 显式解除关联：清输入框、隐藏域、预览，以及行上残留的来源明细
+  // （否则会留下「没有原单却带 source_item_id / 可退上限」的脏状态）。
+  const returnSourceClear = document.getElementById('returnSourceClear');
+  if (returnSourceClear) {
+    returnSourceClear.addEventListener('click', () => {
+      clearSourceAssociation('已解除原单关联；明细行保留，可继续自由修改。');
+      returnSourceInput.focus();
+    });
+  }
 
   previewApply.addEventListener('click', () => {
-    if (!previewItems.length) return;
-    const tbody = document.getElementById('orderBody');
-    previewItems.forEach((item, index) => {
-      const tr = index === 0 ? tbody.rows[0] : addRow();
-      if (!tr) return;
-      tr.querySelector('.product-id').value = item.product_id || '';
-      tr.querySelector('.product-name').value = item.product_name || '';
-      const existing = productCatalog.find(p => String(p.id) === String(item.product_id));
-      if (existing && tr.__picker) tr.__picker.set(existing);
-      tr.querySelector('.unit').value = item.unit || '';
-      const unitSelect = tr.querySelector('.unit-select');
-      ensureUnitOption(unitSelect, item.unit || '');
-      unitSelect.value = item.unit || '';
-      tr.querySelector('.quantity').value = item.available_quantity || '';
-      tr.querySelector('.unit-price').value = item.unit_price || '';
-      tr.dataset.sourceLimit = item.available_quantity || '';
-      recalc();
-    });
+    if (!previewApplyState.apply(previewItems)) return;
+    appliedSourceId = returnSourceHidden.value;
+    recalc();
+    syncPreviewApply();
+    previewHint.textContent = (counterpartyNote ? counterpartyNote + ' ' : '')
+      + '已按预览带入原销售单商品行与可退上限（只带入一次）；仍可自由加行与修改，不影响计价规则。如需重新带入，请改选原单或点「清除关联」后重选。';
     document.getElementById('profitPreview').textContent = '已按预览带入原销售单商品行与可退上限；仍可自由加行与修改，不影响计价规则。';
   });
+  syncPreviewApply();
 }
 {% endif %}
 document.addEventListener('scroll', ErpOrderEntry.closeFloatingProductSuggestions, true);

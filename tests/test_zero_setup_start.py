@@ -111,21 +111,42 @@ def test_import_writes_import_origin():
     assert _row("customers", "导入客户甲")["origin"] == ORIGIN_IMPORT
 
 
-def test_product_side_pending_completion_is_gone_with_the_spec_column():
-    """决策变更（v14）：商品侧「待补全（型号为空）」随 spec 列删除 → 判定函数不再存在。
+def test_product_side_pending_completion_uses_the_new_brand_criterion():
+    """决策变更（v14 → 2026-10-14）：旧口径「型号为空」随 spec 列删除，商品侧按新口径恢复。
 
-    不保留「型号为空」口径：删列后该条件对所有商品恒为真，留着只会让筛选永远全亮。
-    客户侧「待补全（开单攒出且无联系方式）」不受影响，见下一条用例。
+    现行口径（2026-10-14 第二轮）：来源 = 开单自动建档或批量导入，缺品牌或缺默认价都算。
+    本用例钉住其中的**来源边界**：手工建档即使没品牌也不算（缺什么是用户自己的选择）。
+    客户侧「待补全（来源 order/import 且无联系方式）」同理，见下一条用例。
     """
     import erp.services.master_data_quality as quality
 
-    assert not hasattr(quality, "product_needs_completion")
+    assert hasattr(quality, "product_needs_completion")
     init_db()
     # 未启用库存仍是零建档路径的正常状态：不建任何库存状态行。
     create_product("无型号商品", "个", 1000)
     create_product("有型号商品4kg", "个", 1000)
     with get_db() as conn:
         assert conn.execute("SELECT COUNT(*) AS c FROM product_inventory_state").fetchone()["c"] == 0
+    # 手工建档（即使没有品牌）不算待补全。
+    assert quality.product_needs_completion(_row("products", "无型号商品")) is False
+
+    # 开单攒出来的（零建档路径）无品牌商品才算待补全；补上品牌即移出。
+    client = _client()
+    client.post(
+        "/orders/create",
+        data={
+            "customer_name": "待补全口径客户",
+            "product_name": "开单攒出无品牌商品",
+            "unit": "个",
+            "unit_price": "10",
+            "quantity": "1",
+            "status": "saved",
+        },
+    )
+    assert quality.product_needs_completion(_row("products", "开单攒出无品牌商品")) is True
+    with get_db() as conn:
+        conn.execute("UPDATE products SET brand='金枪' WHERE name='开单攒出无品牌商品'")
+    assert quality.product_needs_completion(_row("products", "开单攒出无品牌商品")) is False
 
 
 def test_customer_pending_completion_requires_order_origin_and_no_contact():
@@ -181,8 +202,9 @@ def test_product_list_shows_origin_label_and_has_no_todo_filter():
     page = client.get("/products/?quality=todo").get_data(as_text=True)
     assert "空型号商品" in page
     assert "开单攒出" in page  # 来源标记
-    # 商品侧「待补全」筛选随 spec 列删除 → 商品列表不再有档案筛选区。
+    # 「待补全」筛选在批量动作条里（.list-batch-bar），不再有独立的 .list-facet 行。
     assert 'class="list-facet"' not in page
+    assert 'class="list-batch-bar"' in page
 
 
 def test_g9_product_in_recycle_bin_is_reused_and_restored():

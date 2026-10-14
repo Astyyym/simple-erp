@@ -10,6 +10,7 @@
   "print_offset_x_mm": 0,
   "print_offset_y_mm": 0,
   "print_scale": 1.0,
+  "slip_size": 10,
   "printer_paper_width_mm": 210,
   "printer_paper_height_mm": 297,
   "order_pdf_page_width_mm": 215.9,

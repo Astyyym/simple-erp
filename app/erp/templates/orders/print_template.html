@@ -3,6 +3,10 @@
 <head>
   <meta charset="utf-8">
   <style>
+    {# 单联容量与行内边距：由 config 下发（context processor / purchase_pdf 显式传值）。
+       这里给默认值只是兜底裸环境渲染，正常路径永远拿到注入值。 #}
+    {% set slip_size = slip_size|default(10) %}
+    {% set slip_padding_mm = slip_row_padding_mm|default(0.9) %}
     /*
       四类开单（销售/退货/拿货/退拿货）共用 241mm 连续纸一联。
       逻辑页沿用秒账实测几何：215.9×139.7mm（8.5×5.5 英寸）；实体纸 241×140mm
@@ -96,8 +100,11 @@
     table.items td, table.items th {
       border: 1px solid #333;
       /* 2026-10-11：单联容量 8 → 10 行，只压内边距、不动字号层级。
-         1.6mm 吃满版心时 10 行装不下；0.9mm 实测行高 6.51mm，10 行仍留余量。 */
-      padding: 0.9mm 1.2mm;
+         2026-10-14（P6）：容量改为可配置 6/8/10/12，内边距随档位下发
+         （config.SLIP_ROW_PADDING_MM）：≤10 行沿用 0.9mm（实测行高 6.51mm）；
+         12 行收成 0.4mm，否则明细会连合计行与续打提示一起挤出单联。
+         字号层级不变（14px 有独立字框契约测试）。 */
+      padding: {{slip_padding_mm}}mm 1.2mm;
       text-align: center;
       word-break: break-all;
       line-height: 1.2;
@@ -186,8 +193,10 @@
         {% if document_direction %}<div class="legal-note">交易方向：{{document_direction}} · 业务金额按本单正金额展示</div>{% endif %}
       </div>
 
-      {# 单联容量来自 config.SLIP_SIZE（create_app 注入的 jinja 全局 slip_size），
-         打印 4 个渲染点与三个录入页模板同源，模板内不再写死数字。
+      {# 单联容量来自 config.slip_size（P6 起可在设置页选 6/8/10/12，默认 10）。
+         打印 4 个渲染点与三个录入页模板同源，模板内不再写死数字：
+         context processor 覆盖三个走 render_template 的渲染点，
+         utils/purchase_pdf.py 直渲模板、显式传值。
          每 slip_size 行自成一张纸：块内明细 + 本张合计（末块换成本单合计）+ 非末块追加续打提示，
          末块之后才跟页脚（订货电话/签字/备注），保证页脚永远只落在最后一联。 #}
       {% set slips = (items | batch(slip_size) | list) or [[]] %}

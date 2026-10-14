@@ -1,4 +1,4 @@
-"""商品管理 / 客户管理顶部筛选与新增区的排版契约（2026-10-09 重排）。
+"""商品管理 / 客户管理顶部筛选与新增区的排版契约（2026-10-09 重排，2026-10-14 两轮收敛）。
 
 背景：两页顶部原本把「导入 / 查找 / 档案筛选 / 新增」堆成四条整宽玻璃条，
 `form.row` 的等分 `col` 把控件按格子分而不是按语义分，1280 窗口下：
@@ -6,8 +6,9 @@
 - 查找行/新增行各占 78px 高却只装 40px 控件，行内空、行间只剩 8px；
 - 1100 窗口下「默认单价(元)」占位文字需要 79px、可用只有 71px，文字被裁。
 
-现在两页共用 base.html 的 `.list-*` 类：导入独立成卡片，查找/筛选/新增
-合成一张 `.list-tools`，字段用等宽网格（给舒适下限，宁可整齐换行也不挤成一排）。
+现在两页共用 base.html 的 `.list-*` 类，且**两页结构完全一致**（2026-10-14 第二轮）：
+① 导入卡片（下载模板 / 导出 / 批量导入 / 新增，新增在「批量导入」右侧）
+② 查找行 ③ 批量动作条（删除选中 + 档案筛选 chip 靠右）④ 常驻图例行。
 这些断言锁的是**结构钩子**（class / 元素），不是可见文案，避免注释或提示
 文字里出现同名短语就假通过。
 """
@@ -38,8 +39,12 @@ def _preview_json(html: str) -> str:
 def test_master_data_pages_share_one_tool_card_and_import_card():
     """两页都用同一套 .list-tools / .list-import-card 结构，不再各写一份 row/col。
 
-    决策变更（v14）：商品身份 = 单一名称，商品侧「待补全（型号为空）」筛选随 spec 列删除，
-    `.list-facet` 只剩客户页保留。
+    决策变更（v14）：商品身份 = 单一名称，商品侧「待补全（型号为空）」筛选随 spec 列删除。
+    决策变更（2026-10-14 第一轮）：商品侧按新口径（开单自动建档 + 品牌为空）恢复
+    「全部 / 待补全 / 按拼音排序」，但按用户要求放在**批量动作条**（.list-batch-bar）
+    而不是搜索行下面的 .list-facet。
+    决策变更（2026-10-14 第二轮）：用户指出两页不一致 → 客户页也搬进批量动作条，
+    `.list-facet` 整类删除，两页结构必须一致。
     """
     for path in PAGES:
         html = _html(path)
@@ -57,9 +62,28 @@ def test_master_data_pages_share_one_tool_card_and_import_card():
         # 旧结构必须彻底消失：等分 col 会让控件按格子分而不是按语义分。
         assert 'class="row g-2 mb-3"' not in html, f"{path} 仍在用 row/col 平铺"
         assert '<button class="btn btn-primary col-2">' not in html, path
-    # 客户页仍保留档案筛选 chip 行；商品页已删除（v14）。
-    assert 'class="list-facet"' in _html("/customers/")
-    assert 'class="list-facet"' not in _html("/products/"), "商品侧待补全筛选应已删除"
+        # 两页同构：档案筛选都在批量动作条里，旧的 .list-facet 行彻底删除。
+        assert 'class="list-batch-bar"' in html, path
+        assert 'class="list-view-options"' in html, path
+        assert 'class="list-facet"' not in html, f"{path} 不应再有独立的 .list-facet 行"
+
+
+def test_create_panel_sits_right_of_the_import_panel_in_the_import_row():
+    """「新增商品 / 新增客户」必须紧跟在「批量导入」右侧，两页一致。
+
+    用户 2026-10-14 第二轮明确要求；此前两页都把新增放在查找行下面单独一行，
+    批量导入卡片里只有「下载模板 / 导出 / 批量导入」三个。
+    """
+    for path, label in zip(PAGES, ("新增商品", "新增客户")):
+        html = _html(path)
+        row = html.split('class="list-import-row"', 1)[1].split('<div class="list-tools"', 1)[0]
+        assert "批量导入" in row, path
+        assert f">{label}</summary>" in row, f"{path} 的{label}不在导入行里"
+        assert 'class="list-create-panel"' in row, path
+        assert row.index("批量导入") < row.index(f">{label}</summary>"), f"{path} 的{label}应在「批量导入」右侧"
+        # 查找行里不许再留一份新增面板（否则会出现两个同名切换标题）。
+        tools = html.split('<div class="list-tools"', 1)[1].split('<div class="list-batch-bar"', 1)[0]
+        assert 'class="list-create-panel"' not in tools, f"{path} 的查找行里仍留着新增面板"
 
 
 def test_shared_layout_classes_are_defined_once_in_base():
@@ -69,13 +93,20 @@ def test_shared_layout_classes_are_defined_once_in_base():
         ".list-tools,.list-import-card{",
         ".list-search{display:flex;flex-wrap:wrap",
         ".list-search .form-control{flex:1 1 260px",
-        ".list-facet{display:flex;flex-wrap:wrap",
+        ".list-batch-bar{display:flex;flex-wrap:wrap",
+        ".list-view-options{display:flex;flex-wrap:wrap",
+        ".list-legend{",
         ".list-create{display:flex;flex-wrap:wrap",
         ".list-create-fields{",
         "grid-template-columns:repeat(auto-fit,minmax(180px,1fr))",
         ".list-import-form{display:flex;flex-wrap:wrap",
     ):
         assert rule in html, rule
+    # 已废弃的 .list-facet 行不许回流（两页筛选统一在批量动作条里）。
+    assert ".list-facet{" not in html
+    # 滚动条槽必须常驻：否则行数一跨过视口高度，竖向滚动条出现/消失会让
+    # .page-body 宽度差 15px，右对齐的 chip 与表格跟着横移（用户实测报的位移）。
+    assert "scrollbar-gutter:stable" in html
     # 字段网格必须有舒适下限，否则 6 个字段会被压到 116px 挤成一排。
     assert "minmax(112px" not in html
     # 顶部工具区的类只在 base.html 定义，两个页面模板里不得再自带覆盖。
@@ -106,32 +137,47 @@ def test_search_row_keeps_input_and_both_buttons_in_one_flex_row():
         assert f'href="{action}"' in search, path
 
 
-def test_customer_facet_row_keeps_cap_and_chips_together():
-    """档案筛选只剩客户页；标签 + 全部/待补全 chip 同属一行，仍沿用 btn-sm 语义。
+def test_view_options_row_keeps_cap_and_chips_together_on_both_pages():
+    """两页的档案筛选都是「标签 + 三个 chip」，同属批量动作条右侧，沿用 btn-sm 语义。
 
-    决策变更（v14）：商品侧「待补全（型号为空）」口径已删除，故本用例只针对客户页。
+    决策变更（2026-10-14 第二轮）：客户页补上「按拼音排序」→ 两页 chip 数一致（3 个）。
     """
-    facet = _html("/customers/").split('class="list-facet"', 1)[1].split("</div>", 1)[0]
-    assert 'class="list-facet-cap"' in facet
-    assert "档案筛选" in facet
-    assert "全部" in facet and "待补全" in facet
-    assert facet.count("btn-sm") == 2
+    for path in PAGES:
+        bar = _html(path).split('class="list-view-options"', 1)[1].split("</div>", 1)[0]
+        assert 'class="list-view-cap"' in bar, path
+        assert "档案筛选" in bar, path
+        for label in ("全部", "待补全", "按拼音排序"):
+            assert label in bar, f"{path} 缺少 {label}"
+        assert bar.count("btn-sm") == 3, path
 
 
-def test_customer_facet_hint_uses_shared_hint_class_when_todo_filter_active():
-    """客户待补全筛选生效时，说明文字走 .list-facet-hint，不再用 Bootstrap text-muted small。
+def _legend(html: str) -> str:
+    match = re.search(r'<p class="list-legend">(.*?)</p>', html, re.S)
+    assert match, "两页都应有常驻图例 .list-legend"
+    return match.group(1)
 
-    决策变更（v14）：商品侧「待补全（型号为空）」筛选已删除，只对客户页断言。
+
+def test_legend_is_permanent_so_switching_filters_moves_nothing():
+    """说明文字改成常驻图例：两种筛选态文案完全相同，chip 行里不再有条件渲染的文字。
+
+    这是「点『待补全』后 UI 位置有差别」的修复（用户 2026-10-14 第二轮截图）：
+    此前 hint 只在 quality=todo 时插进右对齐的 chip 组，把整组往左顶走。
     """
-    facet = _html("/customers/?quality=todo").split('class="list-facet"', 1)[1].split("</div>", 1)[0]
-    assert 'class="list-facet-hint"' in facet
-    assert "电话与地址都为空" in facet
-    # 旧写法（档案筛选行里用 text-muted small）应已移除。
-    assert 'class="text-muted small"' not in facet
-    # /products/?quality=todo 不再是筛选：商品页没有 facet 说明文字。
-    products_html = _html("/products/?quality=todo")
-    assert 'class="list-facet"' not in products_html
-    assert "型号为空" not in products_html
+    for path, missing_field in zip(PAGES, ("品牌", "电话与地址")):
+        plain = _html(path)
+        todo = _html(f"{path}?quality=todo")
+        assert _legend(plain) == _legend(todo), f"{path} 图例文案必须与筛选状态无关"
+        assert missing_field in _legend(plain), f"{path} 图例要说清缺哪个字段"
+        # chip 行里不许再出现条件渲染的说明文字（旧写法全删）。
+        assert 'class="list-facet-hint"' not in todo, path
+        assert 'class="list-view-hint"' not in todo, path
+        # 图例必须落在动作条**之外**（动作条整块会被就地替换，图例跟着换会白抖一次）。
+        bar_id = "productsViewBar" if path.startswith("/products") else "customersViewBar"
+        assert todo.index(f'id="{bar_id}"') < todo.index('class="list-legend"'), path
+        before_legend = todo.split('<p class="list-legend"', 1)[0].rstrip()
+        assert before_legend.endswith("</div>\n</div>"), f"{path} 图例应在动作条（chip 组 + 动作条）闭合之后"
+    # 商品页的旧口径（型号为空）不许回流。
+    assert "型号为空" not in _html("/products/?quality=todo")
 
 
 def test_create_forms_keep_their_fields_and_action_endpoints():

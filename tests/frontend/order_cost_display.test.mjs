@@ -12,7 +12,7 @@ const end = pageSource.indexOf('function clearAllRows()', start);
 const code = 'const orderSign = 1;\n' + helpers + '\n' + pageSource.slice(start, end);
 
 function page(cost) {
-  const inputs = {'.quantity': {value: '2'}, '.unit-price': {value: '25'}, '.product-id': {value: '1'}, '.unit-select': {value: '个'}};
+  const inputs = {'.quantity': {value: '2'}, '.unit-price': {value: '25'}, '.product-id': {value: '1'}, '.unit': {value: '个'}};
   const outputs = {'.row-no': {}, '.line-total': {}, '.unit-cost-display': {}, '.regular-price-option': {style: {}}};
   const row = {
     dataset: cost === undefined ? {} : {unitCost: cost},

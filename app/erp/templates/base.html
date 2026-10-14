@@ -30,6 +30,8 @@
       --erp-ink:#172033;--erp-muted:#667085;--erp-border:#dfe3ea;--erp-border-strong:#c8ced8;
       --erp-bg:#f3f5f8;--erp-surface:#fff;--erp-surface-soft:#f8fafc;
       --erp-sidebar:#012121;--erp-sidebar-hover:#0a3535;--erp-success:#17803d;--erp-danger:#c73535;
+      /* 待补全提示（页头 chip / 字段 ⚠）：浅色用琥珀，深色单独给一组，避免暗底上糊成一片。 */
+      --erp-warn:#b45309;--erp-warn-bg:#fffbeb;--erp-warn-border:#fcd34d;
       --erp-heat-0:#f1f5f9;--erp-heat-1:#dcfce7;--erp-heat-2:#86efac;--erp-heat-3:#15803d;--erp-heat-4:#166534;
       --erp-heat-ink-0:#172033;--erp-heat-ink-1:#172033;--erp-heat-ink-2:#172033;--erp-heat-ink-3:#fff;--erp-heat-ink-4:#fff;
       --erp-radius:8px;--erp-shadow:0 1px 2px rgba(16,24,40,.04),0 8px 24px rgba(16,24,40,.05);
@@ -55,6 +57,7 @@
       --erp-ink:#e8eef9;--erp-muted:#9aa8c0;--erp-border:#2b3648;--erp-border-strong:#3d4b63;
       --erp-bg:#0f141d;--erp-surface:#171e2b;--erp-surface-soft:#1c2535;
       --erp-sidebar:#012121;--erp-sidebar-hover:#0a3535;--erp-success:#34d399;--erp-danger:#f87171;
+      --erp-warn:#fbbf24;--erp-warn-bg:#3a2f14;--erp-warn-border:#6b5217;
       --erp-heat-0:#253145;--erp-heat-1:#14532d;--erp-heat-2:#166534;--erp-heat-3:#15803d;--erp-heat-4:#22c55e;
       --erp-heat-ink-0:#e8eef9;--erp-heat-ink-1:#fff;--erp-heat-ink-2:#fff;--erp-heat-ink-3:#fff;--erp-heat-ink-4:#052e16;
       --erp-shadow:0 1px 2px rgba(0,0,0,.35),0 8px 24px rgba(0,0,0,.25);
@@ -74,6 +77,7 @@
         --erp-ink:#e8eef9;--erp-muted:#9aa8c0;--erp-border:#2b3648;--erp-border-strong:#3d4b63;
         --erp-bg:#0f141d;--erp-surface:#171e2b;--erp-surface-soft:#1c2535;
         --erp-sidebar:#012121;--erp-sidebar-hover:#0a3535;--erp-success:#34d399;--erp-danger:#f87171;
+        --erp-warn:#fbbf24;--erp-warn-bg:#3a2f14;--erp-warn-border:#6b5217;
         --erp-heat-0:#253145;--erp-heat-1:#14532d;--erp-heat-2:#166534;--erp-heat-3:#15803d;--erp-heat-4:#22c55e;
         --erp-heat-ink-0:#e8eef9;--erp-heat-ink-1:#fff;--erp-heat-ink-2:#fff;--erp-heat-ink-3:#fff;--erp-heat-ink-4:#052e16;
         --erp-shadow:0 1px 2px rgba(0,0,0,.35),0 8px 24px rgba(0,0,0,.25);
@@ -179,6 +183,11 @@
     }
     .page-body{
       flex:1 1 auto;min-height:0;overflow:auto;
+      /* 常驻滚动条槽：列表页行数一跨过视口高度，竖向滚动条出现/消失会让
+         .page-body 的可用宽度瞬间差 15px，右对齐的「档案筛选」chip 与表格
+         跟着横移 —— 用户 2026-10-14 报的就是「点待补全后 UI 位置有差别」。
+         预留槽位后两种筛选态宽度完全一致（1280 视口实测 chip 坐标逐像素相同）。 */
+      scrollbar-gutter:stable;
       padding:26px 30px 48px;
     }
     .page-topbar .company{font-size:calc(13px * var(--erp-scale));color:var(--erp-muted)}
@@ -349,11 +358,12 @@
     }
     /*
       基础资料列表页（商品管理 / 客户管理）顶部工具区：两页共用同一套类，只写一次。
-      三块职责固定，块与块之间用一条素线分隔，不再各自摊成一条整宽玻璃条：
-        ① .list-search  查找（输入框 flex 撑开 + 两个固定宽按钮，同一行）
-        ② .list-facet   档案筛选（标签 + 全部/待补全 chip，紧随查找行）
-        ③ .list-create  新增（字段 flex 换行，按钮固定宽，不与字段抢空间）
-      批量导入独立成 .list-import-card：迁移期一次性动作，不挤日常控件。
+      两页结构必须一致（2026-10-14 第二轮，用户要求「两页同步修改」）：
+        ① .list-import-card：下载模板 / 导出 / 批量导入 / 新增（新增紧跟「批量导入」右侧，同为展开面板）
+        ② .list-tools > .list-search：查找（输入框 flex 撑开 + 两个固定宽按钮，同一行）
+        ③ .list-batch-bar：批量动作条，删除选中在左、档案筛选（全部 / 待补全 / 按拼音排序）靠右
+        ④ .list-legend：筛选口径图例，常驻一行且文案不随筛选变 —— 点「待补全」时
+           chip 与表格位置必须零位移（此前说明文字挂在 chip 行内，会把整组往左顶走）
       全部使用 flex + min-width:0，窄窗口按行换行，不靠等分 col 把控件压到裁字。
     */
     .list-tools,.list-import-card{
@@ -376,9 +386,17 @@
     .suggest-item:hover,.suggest-item[aria-selected="true"]{background:var(--erp-primary-soft)}
     .suggest-item:focus-visible{outline:2px solid var(--erp-primary);outline-offset:-2px}
     .suggest-list[popover]{position:fixed;inset:auto;margin:0;padding:0;box-sizing:border-box;color:var(--erp-ink);height:auto;min-width:min(240px,calc(100vw - 24px));max-width:calc(100vw - 24px)}
-    .list-facet{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
-    .list-facet .list-facet-cap{color:var(--erp-muted);font-size:12.5px;font-weight:600}
-    .list-facet .list-facet-hint{color:var(--erp-muted);font-size:12.5px}
+    .list-legend{margin:0 0 12px;color:var(--erp-muted);font-size:12.5px;line-height:1.6}
+    /*
+      批量动作条（表格上方）：删除选中在左，视图选项（档案筛选 / 排序）靠右。
+      视图选项与 .list-legend 同源样式，但位置不同 —— 三个按钮放在「删除选中」右侧那块原本空着的区域。
+    */
+    .list-batch-bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 12px}
+    .list-batch-bar .btn{min-height:34px}
+    .list-view-options{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto}
+    .list-view-options .list-view-cap{color:var(--erp-muted);font-size:12.5px;font-weight:600}
+    .list-view-sep{width:1px;height:20px;background:var(--erp-border)}
+    @media(max-width:760px){ .list-view-options{margin-left:0} }
     .list-create{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:14px 0 0;padding-top:14px;border-top:1px solid var(--erp-border)}
     /* 字段用等宽网格均分；给字段一个舒适下限，宁可整齐换行也不把 6 个框压到 116px 挤成一排 */
     .list-create-fields{flex:1 1 420px;min-width:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 12px}
@@ -409,6 +427,8 @@
     .list-create-panel[open]>.list-create-toggle{margin-bottom:14px}
     /* 面板内表单不再重复分隔线：切换标题已经把两块分开。 */
     .list-create-panel .list-create{margin:0;padding-top:0;border-top:0}
+    /* 新增面板也在 .list-import-row 里（「批量导入」右侧），展开时同样占满整行。 */
+    .list-create-panel[open]{flex:1 1 100%}
     /* 批量导入展开时占满整行，文件框/下拉/按钮和说明才排得开 */
     .list-import-panel[open]{flex:1 1 100%}
     .list-import-panel .list-import-form{margin-top:0}
@@ -420,6 +440,62 @@
     .list-import-form .form-select{flex:0 0 150px}
     .list-import-form .btn{flex:0 0 auto}
     .list-import-hint{margin:10px 0 0;color:var(--erp-muted);font-size:12.5px;line-height:1.6}
+    /*
+      档案编辑页（商品 / 客户）共用骨架 —— 2026-10-14「主次与分组」重构。
+      三条规则：
+        ① 主栏 + 320px 侧栏：页面高度取两栏较高者，只读信息不再把主流程往下顶。
+        ② 字段流仍是一列 —— 多列表单会让人 Z 字扫视、漏填字段；组内只让「短且语义成对」
+           的字段同行，长文本字段（名称/地址）独占整行。
+        ③ 低频重块（库存期初）用原生 <details> 收起，摘要行写清状态与去处。
+      窄容器回落 2 列用**容器查询按主栏实际宽度**判定，不按视口 —— 视口宽但主栏窄时
+      4 列会把输入框压到 130px。圆角/玻璃/间距沿用现有 token，不引新颜色。
+    */
+    .detail-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;align-items:start}
+    .detail-col{display:grid;gap:18px;min-width:0;container-type:inline-size}
+    .detail-stack{display:grid;gap:18px;min-width:0}
+    @media(max-width:1100px){.detail-grid{grid-template-columns:minmax(0,1fr)}}
+    .card-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:14px}
+    .card-cap{font-size:12px;color:var(--erp-muted)}
+    .field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 16px}
+    .field-grid .field-full{grid-column:1 / -1}
+    @container (min-width:880px){ .field-grid{grid-template-columns:repeat(4,minmax(0,1fr))} }
+    .field-hint{margin-top:6px;font-size:12px;color:var(--erp-muted);line-height:1.55}
+    .card-foot{display:flex;align-items:center;gap:12px;margin-top:18px;padding-top:16px;border-top:1px solid var(--erp-border)}
+    .card-foot .btn-primary{margin-left:auto;min-width:112px}
+    .img-row{display:flex;flex-wrap:wrap;align-items:center;gap:14px}
+    .img-row .form-control{flex:1 1 220px;min-width:0}
+    /* 商品图片搬进 320px 侧栏后改为竖排：缩略图占满栏宽，文件框与按钮各占一行。 */
+    .img-stack{display:grid;gap:10px}
+    .img-stack .img-thumb{width:100%;height:160px}
+    .img-stack .btn{width:100%}
+    .img-thumb{border:1px dashed var(--erp-border-strong);border-radius:6px;display:grid;place-items:center;background:var(--erp-surface-soft);color:var(--erp-muted);font-size:12px;flex:0 0 auto;overflow:hidden}
+    .img-thumb img{max-width:100%;max-height:100%;object-fit:contain}
+    /*
+      「待补全」的两种提示，替代原来的 57px 整条横幅：
+      · .completion-chip —— 页头一枚 chip，说明缺什么、补完会自动退出筛选；
+      · .field-flag     —— 落到**具体字段**上的 ⚠，用户不用回读横幅就知道改哪一格。
+      判定口径不变（services/master_data_quality.py）。⚠ 带文字，不靠颜色作单一信号。
+    */
+    .completion-chip{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;padding:3px 10px;border-radius:999px;
+      border:1px solid var(--erp-warn-border);background:var(--erp-warn-bg);color:var(--erp-warn);
+      font-size:calc(12.5px * var(--erp-scale));font-weight:600;white-space:nowrap}
+    .field-flag{display:inline-flex;align-items:center;margin-left:6px;padding:1px 7px;border-radius:999px;
+      border:1px solid var(--erp-warn-border);background:var(--erp-warn-bg);color:var(--erp-warn);
+      font-size:11.5px;font-weight:700;white-space:nowrap}
+    .field-warn>.form-control{border-color:var(--erp-warn-border)}
+    /* 只读派生数据：宽栏（主栏 ~947px）按 auto-fit 铺成一行，5 项正好 5 列；
+       窄栏自动回落 3 / 2 列。标签小字在上、值在下，值用等宽数字防跳动。 */
+    .readonly-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px 16px;margin:0}
+    .readonly-grid dt{font-size:12.5px;font-weight:400;color:var(--erp-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .readonly-grid dd{margin:4px 0 0;font-size:calc(15px * var(--erp-scale));font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    /* 低频重块的折叠：原生 details/summary，不引 JS，键盘可用。 */
+    details.fold{border-top:1px solid var(--erp-border);margin-top:14px;padding-top:12px}
+    details.fold>summary{list-style:none;display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;min-height:34px;font-size:calc(14px * var(--erp-scale));font-weight:600}
+    details.fold>summary::-webkit-details-marker{display:none}
+    details.fold>summary::before{content:"";width:0;height:0;border-left:5px solid currentColor;border-top:4px solid transparent;border-bottom:4px solid transparent;transition:transform .15s ease}
+    details.fold[open]>summary::before{transform:rotate(90deg)}
+    details.fold>summary .fold-state{margin-left:auto;font-size:12.5px;font-weight:400;color:var(--erp-muted)}
+    details.fold .fold-body{margin-top:12px}
     /* shared order-entry surfaces: sales / return / purchase / purchase-return */
     .order-heading{display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;align-items:flex-end;margin-bottom:20px}
     .order-heading h2{margin:0 0 4px}.order-heading p{margin:0;color:var(--erp-muted);font-size:13px}
@@ -441,10 +517,18 @@
     .product-picker{padding:4px}
     .product-picker .picker-row{display:flex;flex-direction:row;align-items:center;gap:6px;min-width:330px}
     .product-picker .picker-name{flex:1 1 auto;min-width:0}
+    /* P3（2026-10-13）：拿货/退拿货的商品列也改成手输 + 联想，与销售/退货同一形态。 */
+    .product-picker .picker-name-input{flex:1 1 auto;min-width:0}
+    .product-picker .picker-row .suggest-wrap{flex:1 1 auto;min-width:0}
+    .product-picker .picker-missing{font-size:12px;color:#c0392b;padding:2px 0 0}
     .product-picker select{min-height:34px;font-size:13px}
     /* 原单关联：置顶一行 + 同层级的原单预览（不浮在明细卡之上） */
     .order-source-row{display:flex;flex-direction:column;gap:6px;padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--erp-border)}
     .order-source-row .form-label{margin-bottom:0}
+    /* F3（2026-10-14）：关联输入框与「清除关联」按钮同一行；输入框吃掉剩余宽度。 */
+    .source-picker-row{display:flex;gap:8px;align-items:center}
+    .source-picker-row .suggest-wrap{flex:1 1 auto;min-width:0}
+    .source-picker-row .btn{flex:0 0 auto;white-space:nowrap}
     .source-preview{background:var(--erp-glass-bg);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);padding:16px;margin:0 0 18px;box-shadow:var(--erp-glass-shadow);
       -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25)}
     .source-preview.d-none{display:none}
@@ -465,8 +549,13 @@
       backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);
     }
     .alert{border-radius:7px;border-width:1px}.table-danger.return-order-row>*{background:#fff1f1!important;color:#a52a2a}.table-danger.return-order-row:hover>*{background:#ffe7e7!important}
-    html[data-ui-theme="dark"] .table-danger.return-order-row>*{background:rgba(248,113,113,.12)!important;color:#fecaca}
-    @media (prefers-color-scheme: dark){html[data-ui-theme="system"] .table-danger.return-order-row>*{background:rgba(248,113,113,.12)!important;color:#fecaca}}
+    /* F2（2026-10-14）：深色下必须连 Bootstrap 的「条纹覆盖层」一起置空。
+       `.table-danger` 是浅色模式写死的变体（`--bs-table-striped-bg: #eccccf`），而 Bootstrap 用
+       `box-shadow: inset 0 0 0 9999px var(--bs-table-bg-type, …)` 把那层色**盖在 background 之上**；
+       只覆盖 background/color 会被整片盖掉 → 浅粉底 + 浅粉字。hover 同理，否则悬停又变浅底浅字。 */
+    html[data-ui-theme="dark"] .table-danger.return-order-row>*{background:rgba(248,113,113,.12)!important;color:#fecaca;--bs-table-bg-type:transparent!important;--bs-table-accent-bg:transparent!important}
+    html[data-ui-theme="dark"] .table-danger.return-order-row:hover>*{background:rgba(248,113,113,.22)!important}
+    @media (prefers-color-scheme: dark){html[data-ui-theme="system"] .table-danger.return-order-row>*{background:rgba(248,113,113,.12)!important;color:#fecaca;--bs-table-bg-type:transparent!important;--bs-table-accent-bg:transparent!important}html[data-ui-theme="system"] .table-danger.return-order-row:hover>*{background:rgba(248,113,113,.22)!important}}
     /* native controls (date/select/scrollbar) follow the dark theme */
     html[data-ui-theme="dark"]{color-scheme:dark}
     @media (prefers-color-scheme: dark){html[data-ui-theme="system"]{color-scheme:dark}}

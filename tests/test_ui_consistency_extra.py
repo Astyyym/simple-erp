@@ -129,22 +129,56 @@ def test_truncation_hints_render_on_product_and_customer_lists():
     assert "缩小范围" in html and "不要据此认为数据丢失" in html
 
 
-def test_return_source_dropdown_shows_truncation_hint_at_limit():
-    """退货来源下拉达到 100 张销售单上限时的提示守卫必须存在。
+def test_return_source_candidates_are_capped_and_missing_cost_is_explained():
+    """退货来源改为检索式候选后的实现契约（2026-10-13）。
 
-    提示文案在 `{% if return_sources|length >= 100 %}` 分支内，空库时不会渲染，
-    因此这里核对模板源里的守卫条件（实现契约），而不是渲染后的 HTML。
+    旧契约是"服务端渲染全量下拉 + 达到 100 张时提示"，现在是：候选按需走
+    `/orders/api/return_sources`（上限 `RETURN_SOURCE_LIMIT`），被成本门槛挡掉的张数
+    用页面上的 `#returnSourceMissingHint` 说明，而不是把选不了的单塞进候选。
     """
     from pathlib import Path
 
+    from erp.routes.orders import RETURN_SOURCE_LIMIT
+
+    assert RETURN_SOURCE_LIMIT == 30
     tpl = (Path(__file__).resolve().parents[1] / "app" / "erp" / "templates" / "orders" / "new.html").read_text(encoding="utf-8")
-    assert "return_sources|length >= 100" in tpl
-    assert "最近 100 张销售单" in tpl
+    assert "return_sources|length" not in tpl
+    assert "{% for source in return_sources %}" not in tpl
+    assert "returnSourceMissingHint" in tpl
+    assert "/orders/api/return_sources?q=" in tpl
 
 
-def test_purchase_source_dropdown_shows_truncation_hint_at_limit():
+def test_purchase_source_picker_is_searchable_with_a_shared_limit():
+    """F4（2026-10-14）：退拿货来源从「服务端渲染最近 200 张的原生下拉」改为检索式候选，
+    与退货单同口径（上限 `PURCHASE_SOURCE_LIMIT`，点开列最近 N 张，更多靠输入过滤）。"""
     from pathlib import Path
 
+    from erp.routes.purchases import PURCHASE_SOURCE_LIMIT
+
+    assert PURCHASE_SOURCE_LIMIT == 30
     tpl = (Path(__file__).resolve().parents[1] / "app" / "erp" / "templates" / "purchases" / "return_new.html").read_text(encoding="utf-8")
-    assert "purchase_sources|length >= 200" in tpl
-    assert "最近 200 张拿货单" in tpl
+    assert "purchase_sources|length" not in tpl
+    assert "{% for source in purchase_sources %}" not in tpl
+    assert "/purchases/api/purchase_sources?q=" in tpl
+    assert "purchaseSourceClear" in tpl
+
+
+def test_dark_theme_return_rows_neutralise_the_bootstrap_stripe_overlay():
+    """F2（2026-10-14）：深色下退货单行曾被 Bootstrap 的条纹 inset 阴影盖成浅粉底 + 浅粉字。
+
+    `.table-danger` 的 `--bs-table-striped-bg` 是浅色模式写死的 `#eccccf`，而 Bootstrap 用
+    `box-shadow: inset 0 0 0 9999px var(--bs-table-bg-type, …)` 把它盖在 background 之上；
+    只覆盖 background/color 不够，必须把这两个变量一起置空（深色与跟随系统各一条）。
+    实测修复前 `getComputedStyle(td).boxShadow` 为 `rgb(236, 204, 207) … inset`，修复后为透明。
+    """
+    from pathlib import Path
+
+    base = (Path(__file__).resolve().parents[1] / "app" / "erp" / "templates" / "base.html").read_text(encoding="utf-8")
+    lines = base.splitlines()
+    overlay_rules = [line for line in lines if "--bs-table-bg-type:transparent" in line]
+    assert len(overlay_rules) == 2, "深色与跟随系统各需要一条覆盖"
+    assert all("table-danger" in line and "return-order-row" in line for line in overlay_rules)
+    hover_rules = [line for line in lines if "table-danger.return-order-row:hover>*" in line]
+    assert len(hover_rules) == 3, "浅色 1 条 + 深色/跟随系统各 1 条，否则悬停又变浅底浅字"
+    assert sum('html[data-ui-theme="dark"]' in line for line in hover_rules) == 1
+    assert sum('html[data-ui-theme="system"]' in line for line in hover_rules) == 1

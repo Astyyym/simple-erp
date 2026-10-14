@@ -24,7 +24,7 @@
     box.querySelectorAll('[role="option"]').forEach(option => option.setAttribute('aria-selected', 'false'));
   }
 
-  function showSuggestions(input, box, items, render, onPick, emptyText = '无匹配项') {
+  function showSuggestions(input, box, items, render, onPick, emptyText = '无匹配项', listMaxHeight = 220) {
     box.innerHTML = '';
     if (!items.length) {
       const empty = document.createElement('div');
@@ -54,7 +54,7 @@
       const upwards = below < 120 && above > below;
       box.style.width = `${anchor.width}px`;
       box.style.left = `${anchor.left}px`;
-      box.style.maxHeight = `${Math.min(220, upwards ? above : below)}px`;
+      box.style.maxHeight = `${Math.min(listMaxHeight, upwards ? above : below)}px`;
       if (!box.matches(':popover-open')) box.showPopover();
       box.style.left = `${Math.max(12, Math.min(anchor.left, window.innerWidth - box.offsetWidth - 12))}px`;
       box.style.top = `${upwards ? anchor.top - box.offsetHeight - 4 : anchor.bottom + 4}px`;
@@ -65,10 +65,30 @@
 
   // Generic combobox: loadItems(query) -> array; renderOption(item) -> node; onPick(item).
   // emptyText: 无匹配时的文案（零建档路径的页面应给出「保存时会新建」而不是断言性的「无匹配项」）。
-  function bindAutocomplete(input, box, loadItems, renderOption, onPick, onInputChange = () => {}, emptyText = '无匹配项') {
+  // options.listOnEmpty: 空值时也拉候选（默认关闭）——供「点击输入框就列出最近单据」的字段使用；
+  //   关闭时保持原行为：空值立即关闭候选，避免给客户/商品这类高频字段无谓地多打一次请求。
+  // options.maxHeight: 候选列表最大高度（px，默认 220）——候选很多时由调用方收紧，内部仍可滚动。
+  // options.openOnClick: 已选中后再点输入框也重新列候选（默认关闭）。
+  //   必要性（F3，2026-10-14）：候选按钮的 mousedown 被 preventDefault，点选后**焦点仍留在输入框**，
+  //   于是「再点一次输入框」不会产生 focus 事件 → 候选再也打不开，用户以为「选完就锁死了」。
+  //   且此时输入框里是已选项的标签，按它过滤只会剩它自己，所以命中「刚选过的那一项」时按空查询列全部候选。
+  function bindAutocomplete(input, box, loadItems, renderOption, onPick, onInputChange = () => {}, emptyText = '无匹配项', options = {}) {
+    // P3：判重用元素上的 JS 属性（cloneNode 只复制 attributes，不复制 JS 属性），
+    // 这样克隆出来的新行能重新绑定，同一元素重复调用仍直接跳过。
+    if (input.__erpAutocompleteBound) return;
+    input.__erpAutocompleteBound = true;
+    // 克隆行会带出上一行的浮层 id 与展开态：id 冲突就换新的，并收起。
+    const idOwner = typeof document.getElementById === 'function' ? document.getElementById(box.id) : box;
+    if (!box.id || idOwner !== box) box.id = `suggestBox${Math.random().toString(36).slice(2, 8)}`;
+    if (box.hasAttribute && box.hasAttribute('popover') && box.matches && box.matches(':popover-open')) box.hidePopover();
+    box.classList.add('d-none');
+    const listOnEmpty = options.listOnEmpty === true;
+    const listMaxHeight = Number(options.maxHeight) > 0 ? Number(options.maxHeight) : 220;
     let matches = [];
     let activeIndex = -1;
     let requestSequence = 0;
+    // 刚选过的那一项在输入框里的标签：再点输入框时按空查询列全部候选（见 options.openOnClick）。
+    let pickedLabel = '';
     // 中文输入法组合期间的 value 是拼音串，此时查询与渲染都会误导用户（看到假的「无匹配项」）。
     let composing = false;
     const isOpen = () => !box.classList.contains('d-none');
@@ -85,14 +105,24 @@
       input.setAttribute('aria-activedescendant', options[activeIndex].id);
       options[activeIndex].scrollIntoView({ block: 'nearest' });
     };
-    const choose = item => { onPick(item); close(); };
+    const choose = item => { onPick(item); pickedLabel = input.value.trim(); close(); };
+    // F5（2026-10-14）：打开候选只有「按当前值过滤」一条规则时，选完之后输入框里就是
+    // 已选那张单的标签 → 再点只会列出它自己。真人点击是 mousedown→focus→mouseup→click，
+    // focus 通常先到，于是**第一次点击**看到的就是「只有已选那一张」，而接口慢时又正常
+    // （表现为时好时坏）。现在 focus 与 click 共用这一条：刚选过的那一项按空查询列全部候选。
+    // 只对 options.openOnClick 的字段生效——客户/商品这类高频字段保持原行为（不多打请求）。
+    const queryOnOpen = () => {
+      const current = input.value.trim();
+      if (options.openOnClick === true && current && current === pickedLabel) return '';
+      return current;
+    };
     const refresh = async (query = input.value.trim(), initialDirection = '') => {
       const sequence = ++requestSequence;
       try {
         const result = await loadItems(query);
         if (sequence !== requestSequence) return;
         matches = Array.isArray(result) ? result : [];
-        showSuggestions(input, box, matches, renderOption, choose, emptyText);
+        showSuggestions(input, box, matches, renderOption, choose, emptyText, listMaxHeight);
         if (matches.length && initialDirection === 'down') setActive(0);
         else if (matches.length && initialDirection === 'up') setActive(matches.length - 1);
       } catch (_) {
@@ -110,7 +140,10 @@
       if (composing || event.isComposing) return;
       onInputChange();
       const query = input.value.trim();
-      if (!query) { requestSequence += 1; matches = []; close(); return; }
+      if (!query) {
+        if (listOnEmpty) { refresh(''); return; }
+        requestSequence += 1; matches = []; close(); return;
+      }
       refresh(query);
     });
     input.addEventListener('compositionstart', () => { composing = true; });
@@ -118,12 +151,22 @@
       composing = false;
       onInputChange();
       const query = input.value.trim();
-      if (!query) { requestSequence += 1; matches = []; close(); return; }
+      if (!query) {
+        if (listOnEmpty) { refresh(''); return; }
+        requestSequence += 1; matches = []; close(); return;
+      }
       refresh(query);
     });
     input.addEventListener('focus', () => {
-      if (input.value.trim()) refresh(input.value.trim());
+      if (input.value.trim() || listOnEmpty) refresh(queryOnOpen());
     });
+    // F3：已选中后再点输入框也要能重新列候选（点选后焦点没离开输入框，focus 不会再次触发）。
+    if (options.openOnClick === true) {
+      input.addEventListener('click', () => {
+        if (isOpen()) return;
+        refresh(queryOnOpen());
+      });
+    }
     input.addEventListener('keydown', event => {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault();
@@ -172,10 +215,127 @@
     });
   }
 
+  /* 单位单元格（P2，2026-10-13）：单控件 = 输入框 + 候选浮层，四页统一。
+     候选池 = 模板服务端渲染的 data-unit-options（库内单位 ∪ 默认三项）
+             + 本页手输过的新单位（unitExtras，跨行共享，不必等保存）。
+     单位本来就允许自由输入，所以没有匹配项时不展示「无匹配项」断言。 */
+  const unitExtras = new Set();
+  let unitBoxSeq = 0;
+
+  /* 克隆行只复制 attributes，不复制 JS 属性 —— 判重就用元素上的 JS 属性：
+     克隆出来的新行没有这个标记，会重新绑定；同一元素重复调用则直接跳过。 */
+  function bindUnitCell(input, box) {
+    if (!input || !box || input.__erpUnitCellBound) return;
+    input.__erpUnitCellBound = true;
+    // 克隆行会带出上一行的 id / 展开态：id 冲突就换新的，并收起浮层。
+    if (!box.id || document.getElementById(box.id) !== box) box.id = `unitSuggestions${(unitBoxSeq += 1)}`;
+    if (box.hasAttribute('popover') && box.matches(':popover-open')) box.hidePopover();
+    box.classList.add('d-none');
+    input.setAttribute('aria-controls', box.id);
+    const base = String(input.dataset.unitOptions || '').split('|').map(part => part.trim()).filter(Boolean);
+    bindAutocomplete(
+      input,
+      box,
+      query => {
+        const pool = [];
+        const seen = new Set();
+        base.concat(Array.from(unitExtras)).forEach(unit => {
+          if (unit && !seen.has(unit)) { seen.add(unit); pool.push(unit); }
+        });
+        const needle = String(query || '').trim();
+        return needle ? pool.filter(unit => unit.indexOf(needle) >= 0) : pool;
+      },
+      unit => {
+        const node = document.createElement('span');
+        node.textContent = unit;
+        return node;
+      },
+      unit => { input.value = unit; },
+      () => { const value = input.value.trim(); if (value) unitExtras.add(value); },
+      '',
+      { listOnEmpty: true, maxHeight: 200 },
+    );
+  }
+
+  /* 关联原单后对齐「往来对象 / 客户名称」（退货单、退拿货单共用一份）。
+     关联都要求与原单同一对象（后端会硬校验），所以这里**以原单为准**：
+     空则带出；已填且不同则改成原单对象并说明原因 —— 之前「已填就只警告不覆盖」会让用户
+     带着一个注定被拒的对象去保存（F4，2026-10-14 用户实测反馈）。 */
+  function syncCounterparty(source, nameInput, idInput) {
+    if (!source || !nameInput) return '';
+    const name = String(source.customer_name || '').trim();
+    if (!name) return '';
+    const id = source.customer_id === undefined || source.customer_id === null ? '' : String(source.customer_id);
+    const current = String(nameInput.value || '').trim();
+    if (current === name && (!idInput || String(idInput.value || '') === id)) return '';
+    nameInput.value = name;
+    if (idInput) idInput.value = id;
+    return current && current !== name
+      ? `已按原单把往来对象改为「${name}」（关联要求与原单同一对象）。`
+      : `已带出原单往来对象：${name}。`;
+  }
+
+  /* 预览带入（F6，2026-10-14）：同一份预览只允许带入一次。
+
+     原实现每次点击都「写 tbody.rows[0] + 追加 N-1 行」，点两次就插两套重复行
+     （数量、金额、成本全翻倍）；而且无条件复用第 0 行会静默覆盖用户已手输的那一行。
+
+     现在：第 0 行**只有是空行时才复用**，否则一律新增行；`apply()` 带入一次后
+     拒绝再次带入（`applied()` 为真），调用方据此把按钮置灰；
+     改选原单 / 清除关联时调用 `reset()` 重新放开（只换单才放开，重选同一张不放开）。
+
+     F7（2026-10-14 用户实测）：带入还必须是**可替换**的，不能只追加。
+     换原单时上一张原单带入的行必须一起撤掉，否则明细表会把两张单的行叠在一起
+     —— 用户看到的就是「换了个原单，下面的行没消失，再点带入又多一套」。
+     所以这里记下自己插过哪些行（`rows()`）：
+       - `modifiedRows()`：这些行里已被手工改动过的（调用方据此决定要不要先确认，B 方案）；
+       - `clear()`：撤掉这些行并放开按钮，返回被撤掉的行；**手输行一行不动**。
+     `reset()` 只放开按钮、保留记录（用户拒绝移除时可以「保留旧行、再带入新单」）。 */
+  function createPreviewApply({ tbody, addRow, isRowEmpty, fillRow, signatureOf }) {
+    let applied = false;
+    let inserted = [];
+    const signature = tr => (typeof signatureOf === 'function' ? String(signatureOf(tr)) : '');
+    const pickRow = index => {
+      if (index === 0) {
+        const first = tbody.rows[0];
+        if (first && isRowEmpty(first)) return first;
+      }
+      return addRow();
+    };
+    return {
+      applied: () => applied,
+      rows: () => inserted.map(entry => entry.tr),
+      modifiedRows: () => inserted.filter(entry => signature(entry.tr) !== entry.signature).map(entry => entry.tr),
+      reset() { applied = false; },
+      clear() {
+        const removed = inserted.map(entry => entry.tr);
+        removed.forEach(tr => tr.remove());
+        inserted = [];
+        applied = false;
+        return removed;
+      },
+      apply(items) {
+        if (applied || !items || !items.length) return false;
+        items.forEach((item, index) => {
+          const tr = pickRow(index);
+          if (!tr) return;
+          fillRow(tr, item);
+          // 记下带入后的原始值：`modifiedRows()` 靠它区分「还是带入的那几行」与「用户改过的行」。
+          inserted.push({ tr, signature: signature(tr) });
+        });
+        applied = true;
+        return true;
+      },
+    };
+  }
+
   window.ErpOrderEntry = {
     money: money,
     costMoney: costMoney,
     bindAutocomplete: bindAutocomplete,
+    bindUnitCell: bindUnitCell,
+    syncCounterparty: syncCounterparty,
     closeFloatingProductSuggestions: closeFloatingProductSuggestions,
+    createPreviewApply: createPreviewApply,
   };
 })();

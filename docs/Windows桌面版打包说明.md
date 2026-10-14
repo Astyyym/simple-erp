@@ -2,14 +2,15 @@
 
 目标：生成用户可直接双击运行的 Windows 桌面版，不要求日常使用者打开终端、安装 Python 或连接互联网。
 
-当前有两种分发形态：
+当前有三种交付形态（一条命令 `打包Windows安装包.bat` 出齐）：
 
-| 形态 | 产物 | 适用 |
-|---|---|---|
-| **安装包**（推荐给门店） | `dist\simple-erp-setup-vX.Y.Z.exe` | 双击安装到 `%LOCALAPPDATA%\Programs\简单ERP`，开始菜单/桌面图标，可正常卸载；per-user，不需要管理员 |
-| 绿色包（免安装） | `dist\local-vX.Y.Z\简单ERP\` + `dist\simple-erp-windows-vX.Y.Z.zip` | 解压即用，适合 U 盘/临时电脑 |
+| 形态 | 产物 | 适用 | 演示数据 |
+|---|---|---|---|
+| **安装包**（推荐给门店） | `dist\simple-erp-setup-vX.Y.Z.exe` | 双击安装到 `%LOCALAPPDATA%\Programs\简单ERP`，开始菜单/桌面图标，可正常卸载；per-user，不需要管理员 | 无 |
+| 交付 ZIP | `dist\simple-erp-windows-vX.Y.Z.zip` | 发给别人，解压即用 | 无 |
+| 绿色包（免安装） | `dist\local-vX.Y.Z\简单ERP\` | 本机/U 盘直接跑，**自带 200 条演示数据**（包内 `demo_data\`），打开即可预览 | **200 条** |
 
-两种形态共用同一份 PyInstaller one-folder 产物；安装包只是在其之上加了一层安装器。
+**安装包与 ZIP 是同一份 PyInstaller one-folder 产物**（正常入口 `简单ERP.spec`，从 `build\clean-vX.Y.Z` 构建），安装包只是在其之上加了一层安装器。**绿色包是另一份构建**（演示入口 `简单ERP-demo.spec` → `packaging/demo_entry.py`，把数据根强制指向包内 `demo_data\`，与「文档\简单ERP数据」物理隔离），最后由 `packaging/seed_demo_data.py` 写入 200 条演示数据。两者不得混用：安装包与 ZIP 里不得出现 `demo_data`（`packaging/make_release_zip.py` 会在写盘前拒绝）。
 
 ## 1. Windows 打包环境
 
@@ -26,13 +27,15 @@ py -3.11 -m venv .venv-win
 
 ## 2. 打包
 
-### 2.1 安装包（推荐）
+### 2.1 一次出齐三种产物（发版用）
 
 ```bat
 打包Windows安装包.bat
 ```
 
-该脚本会先构建 one-folder 程序目录到 `dist\local-v<版本>\简单ERP\`，再调用 Inno Setup 编译器生成 `dist\simple-erp-setup-<版本>.exe`。
+脚本按固定顺序走五步：① 正常入口 one-folder → `build\clean-<版本>\简单ERP`；② Inno Setup（显式 `/DSourceDir=<干净产物>`）→ `dist\simple-erp-setup-<版本>.exe`；③ `packaging\make_release_zip.py` → `dist\simple-erp-windows-<版本>.zip`；④ 演示入口 one-folder → `dist\local-<版本>\简单ERP`；⑤ `packaging\seed_demo_data.py --documents 200` 写入演示数据。
+
+顺序是硬约束：写演示数据必须是最后一步（ZIP 早于它生成，两道闸都防「安装包混进演示数据」）。每轮打包前脚本会先删掉上一轮的 `build\clean-*` 与 `dist\local-*`——残留的 `demo_data` 会让 seed 以「目标库已存在」拒绝执行。
 
 需要 Inno Setup 6（只在本机构建时需要，不进交付包）：
 
@@ -48,20 +51,20 @@ winget install --id JRSoftware.InnoSetup
 - **版本单一真源**：ISPP 从仓库根 `VERSION` 读，脚本内不写死版本号。
 - 简体中文安装界面需要 `packaging\installer\ChineseSimplified.isl`（Inno 发行包不带中文语言文件）。
 
-### 2.2 绿色包（免安装）
+### 2.2 绿色包（免安装、自带 200 条演示数据）
 
-```bat
-打包Windows桌面版.bat
-```
-
-当前 PyInstaller one-folder 产物目录（本轮为 `dist\local-v3.10.0\简单ERP\`）：
+绿色包由上面的发版脚本第 ④⑤ 步生成（`dist\local-vX.Y.Z\简单ERP\`）。旧脚本 `打包Windows桌面版.bat` 只出普通绿色目录（不含演示数据、不发版用）。
 
 ```text
 dist\local-vX.Y.Z\简单ERP\
   简单ERP.exe
   config.json
+  demo_data\            ← 200 条演示数据（仅绿色版有）
+    data\erp.db
   _internal\
 ```
+
+绿色包验收要点：包内 `demo_data\data\erp.db` 存在、四类单据**全表**计数 = 200（`orders` + `purchase_orders` + `purchase_return_orders`，只数 `orders` 会得到 125 而误判）、`PRAGMA integrity_check` = ok、包根配置是演示店铺名；真实启动后 `/health` 的 `data_root` 指向包内 `demo_data`。安装包与 ZIP 里 `*.db` / `demo_data` 必须为 **0 个**，且 ZIP 内 EXE 与干净产物 EXE 同哈希；两份 EXE 哈希必须不同（证明入口确实分开）。
 
 打包脚本也可能生成版本化 ZIP。实际文件名及版本以本次打包脚本输出为准，常见示例：
 
@@ -73,6 +76,8 @@ dist\simple-erp-windows-vX.Y.Z.zip
 仅本地存在 ZIP/EXE 不能证明其已上传 GitHub Releases；推送源码、构建包和发布 Release 是不同状态。
 
 本轮 `v2.0.0` 为独立新目录 `dist\local-v2.0.0\简单ERP\` 和 `dist\simple-erp-windows-v2.0.0.zip`。由当时Windows源码fresh构建，未覆盖上述常规目录或旧包。ZIP完整解压后使用；根配置与冻结内置配置都来自 `packaging/default_config.json`，不是本机config。Windows产品版本保留精确 `v2.0.0`，数字文件版本为 `2.0.0.0`。
+
+当前 `v3.12.0` 在 v3.11.2 之上交付**关联带入可替换、检索串归一、档案筛选与流水展开、编辑页主次重构**：换掉关联原单时只撤系统带入的行（用户手输行不动）、输入法隔音符号 / 空格 / 全角检索串先归一、商品管理恢复「全部 / 待补全 / 按拼音排序」、导入字段不完整不再拦行改标「待补全」、账款流水可展开单据明细、商品 / 客户编辑页改为主栏 + 320px 侧栏。产物为 `dist\local-v3.12.0\简单ERP\`（**自带 200 条演示数据**）、`dist\simple-erp-setup-v3.12.0.exe`、`dist\simple-erp-windows-v3.12.0.zip`（后两者不含演示数据）。Windows 产品版本 `v3.12.0`，数字文件版本 `3.12.0.0`。v3.11.2 修掉「按预览带入商品行点几次插几次」并把拼音扩到整串全拼；v3.11.1 修掉点选商品后下拉不关 / 单位与单价不带入，并加入每联打印行数 6/8/10/12 可配置。
 
 当前 `v3.10.0` 在 v3.9.1 之上交付**单位落库语义统一 + 单位记忆 + 联想下拉去 datalist**（本版为行为变化，故抬 minor）：修掉「选中已有商品时提交的单位被静默丢弃」、拿货/退拿货页单位改可编辑（只写本单明细不回写档案）、退货/退拿货来源带入默认沿用源单单位且允许修改、四页单位下拉改用候选池（零迁移）、三张列表页与开单页的联想全部换成应用自有浮层（原生 `datalist` 在 WebView2 不绘制）、新增客户侧拼音字段。产物为 `dist\local-v3.10.0\简单ERP\`、`dist\simple-erp-setup-v3.10.0.exe` 和 `dist\simple-erp-windows-v3.10.0.zip`。Windows 产品版本 `v3.10.0`，数字文件版本 `3.10.0.0`。
 

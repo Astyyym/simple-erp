@@ -45,6 +45,8 @@ class ImportResult:
     skipped: int = 0
     errors: list[str] = field(default_factory=list)
     error_count: int = 0
+    # 本次实际新增、且字段不完整 → 列表里已标记「待补全」的条数（与徽标同源口径）。
+    pending_completion: int = 0
 
     def add_error(self, message: str) -> None:
         self.error_count += 1
@@ -52,7 +54,12 @@ class ImportResult:
             self.errors.append(message)
 
 
-def excel_template(headers: list[str], filename: str):
+def excel_template(headers: list[str], filename: str, notes: list[str] | None = None):
+    """生成导入模板。
+
+    第一行**必须是表头**（`read_upload_detailed` 按整表头精确匹配，多一行说明会被当成
+    数据行或直接报「表头错误」），所以填写说明只能另开一个 sheet。
+    """
     workbook = _workbook()()
     sheet = workbook.active
     sheet.title = "导入模板"
@@ -61,6 +68,11 @@ def excel_template(headers: list[str], filename: str):
         font = copy(cell.font)
         font.bold = True
         cell.font = font
+    if notes:
+        info = workbook.create_sheet("填写说明")
+        for line in notes:
+            info.append([line])
+        info.column_dimensions["A"].width = 96
     output = io.BytesIO()
     workbook.save(output)
     output.seek(0)

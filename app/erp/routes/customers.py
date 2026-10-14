@@ -6,10 +6,12 @@ from erp.db import get_db
 from erp.services.accounting import create_customer
 from erp.services.master_data_import import (
     CUSTOMER_HEADERS,
+    CUSTOMER_TEMPLATE_NOTES,
     build_customer_preview,
     customer_totals,
     ImportPreview,
 )
+from erp.services.master_data_quality import COMPLETION_ORIGINS_SQL
 from erp.utils.exporting import (
     customer_export_headers,
     customer_export_rows,
@@ -19,7 +21,7 @@ from erp.utils.exporting import (
 from erp.utils.errors import error_response, not_found
 from erp.utils.importing import ImportFileError, ImportResult, excel_template, normalized_name, read_upload_detailed
 from erp.utils.money import yuan_to_cents, cents_to_yuan
-from erp.utils.pinyin import pinyin_initials as build_pinyin_initials
+from erp.utils.pinyin import name_like_pattern, name_match_clause, name_match_params, pinyin_fields as build_pinyin_fields
 from erp.utils.backup import list_backups
 
 customers_bp = Blueprint("customers", __name__, url_prefix="/customers")
@@ -39,7 +41,7 @@ def _requested_opening_balance_cents() -> int:
 
 @customers_bp.get("/import/template")
 def download_import_template():
-    return excel_template(list(CUSTOMER_HEADERS[1]), "客户导入模板.xlsx")
+    return excel_template(list(CUSTOMER_HEADERS[1]), "客户导入模板.xlsx", CUSTOMER_TEMPLATE_NOTES)
 
 
 @customers_bp.get("/export.xlsx")
@@ -55,34 +57,47 @@ def export_customers_excel():
     )
 
 
-def _customer_list_context(conn, q: str = "", quality: str = ""):
+def _customer_list_context(conn, q: str = "", quality: str = "", sort: str = ""):
+    # 待补全口径（2026-10-14 第二轮）：来源 = 开单攒出 + 批量导入，且电话与地址都为空。
+    # 必须与 services/master_data_quality 同源，别在这里另写一套条件。
     todo_sql = (
-        " AND origin='order' AND TRIM(COALESCE(phone, ''))='' AND TRIM(COALESCE(address, ''))=''"
+        f" AND origin IN {COMPLETION_ORIGINS_SQL}"
+        " AND TRIM(COALESCE(phone, ''))='' AND TRIM(COALESCE(address, ''))=''"
         if quality == "todo"
         else ""
     )
+    # 按拼音排序（2026-10-14 第二轮：与商品页同步）：pinyin_full 是「无分隔符小写全拼」，
+    # 空值排最后再回落名称。默认仍按名称（NOCASE）——中文按码位排不是拼音序，
+    # 这正是这个开关存在的理由。排序值由路由白名单校验后再传进来。
+    order_by = (
+        "ORDER BY (CASE WHEN COALESCE(pinyin_full, '') = '' THEN 1 ELSE 0 END), "
+        "pinyin_full COLLATE NOCASE ASC, name COLLATE NOCASE ASC, id ASC"
+        if sort == "pinyin"
+        else "ORDER BY name COLLATE NOCASE ASC, id ASC"
+    )
     if q:
         customers = conn.execute(
-            "SELECT * FROM customers WHERE deleted_at IS NULL AND (name LIKE ? OR pinyin_initials LIKE ? OR phone LIKE ? OR address LIKE ?)"
+            f"SELECT * FROM customers WHERE deleted_at IS NULL AND ({name_match_clause()} OR phone LIKE ? OR address LIKE ?)"
             + todo_sql
-            + " ORDER BY name COLLATE NOCASE ASC, id ASC LIMIT 200",
-            (f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%"),
+            + f" {order_by} LIMIT 200",
+            (*name_match_params(q), name_like_pattern(q), name_like_pattern(q)),
         ).fetchall()
     else:
         customers = conn.execute(
             "SELECT * FROM customers WHERE deleted_at IS NULL"
             + todo_sql
-            + " ORDER BY name COLLATE NOCASE ASC, id ASC LIMIT 200"
+            + f" {order_by} LIMIT 200"
         ).fetchall()
     # E4：到达上限即提示「已截断，可用搜索缩小范围」。
     truncated = len(customers) >= 200
     suggestions = conn.execute(
-        "SELECT DISTINCT name FROM customers WHERE deleted_at IS NULL AND (name LIKE ? OR pinyin_initials LIKE ?) ORDER BY name LIMIT 20",
-        (f"%{q}%" if q else "%", f"%{q}%" if q else "%"),
+        f"SELECT DISTINCT name FROM customers WHERE deleted_at IS NULL AND {name_match_clause()} ORDER BY name LIMIT 20",
+        (*name_match_params(q),),
     ).fetchall()
     todo_count = conn.execute(
         "SELECT COUNT(*) AS c FROM customers WHERE deleted_at IS NULL"
-        " AND origin='order' AND TRIM(COALESCE(phone, ''))='' AND TRIM(COALESCE(address, ''))=''"
+        f" AND origin IN {COMPLETION_ORIGINS_SQL}"
+        " AND TRIM(COALESCE(phone, ''))='' AND TRIM(COALESCE(address, ''))=''"
     ).fetchone()["c"]
     return customers, suggestions, truncated, todo_count
 
@@ -103,6 +118,7 @@ def import_customers():
             truncated=truncated,
             todo_count=todo_count,
             quality="",
+            sort="",
             cents_to_yuan=cents_to_yuan,
             q="",
             import_error=message,
@@ -164,13 +180,17 @@ def import_customers_confirm():
                 if name in existing_names:
                     result.skipped += 1
                     continue
+                initials, full = build_pinyin_fields(name)
                 conn.execute(
-                    "INSERT INTO customers(name, phone, address, opening_balance_cents, pinyin_initials, origin) VALUES (?, ?, ?, ?, ?, 'import')",
+                    "INSERT INTO customers(name, phone, address, opening_balance_cents, pinyin_initials, pinyin_full, origin) VALUES (?, ?, ?, ?, ?, ?, 'import')",
                     (name, row.payload.get("phone", ""), row.payload.get("address", ""),
-                     int(row.payload.get("opening_balance_cents", 0)), build_pinyin_initials(name)),
+                     int(row.payload.get("opening_balance_cents", 0)), initials, full),
                 )
                 existing_names.add(name)
                 result.added += 1
+                if row.completion:
+                    # 字段不完整的新增行：列表里已经带上「待补全」徽标，摘要里如实报数。
+                    result.pending_completion += 1
             elif row.action == "update":
                 if name not in existing_names:
                     result.add_error(f"第{row.line_number}行：同名客户已不存在，无法更新")
@@ -190,6 +210,7 @@ def import_customers_confirm():
         truncated=truncated,
         todo_count=todo_count,
         quality="",
+        sort="",
         cents_to_yuan=cents_to_yuan,
         q="",
         import_result=result,
@@ -200,9 +221,15 @@ def import_customers_confirm():
 @customers_bp.get("/")
 def list_customers():
     q = request.args.get("q", "").strip()
+    # 档案筛选与排序都只接受白名单取值（不把任意串带进查询）。
     quality = request.args.get("quality", "").strip()
+    if quality not in ("", "todo"):
+        quality = ""
+    sort = request.args.get("sort", "").strip()
+    if sort not in ("", "pinyin"):
+        sort = ""
     with get_db() as conn:
-        customers, suggestions, truncated, todo_count = _customer_list_context(conn, q, quality)
+        customers, suggestions, truncated, todo_count = _customer_list_context(conn, q, quality, sort)
     return render_template(
         "customers/list.html",
         customers=customers,
@@ -210,6 +237,7 @@ def list_customers():
         truncated=truncated,
         todo_count=todo_count,
         quality=quality,
+        sort=sort,
         cents_to_yuan=cents_to_yuan,
         q=q,
         **_backup_hint(),
@@ -220,8 +248,8 @@ def customer_suggestions():
     q = request.args.get("q", "").strip()
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT DISTINCT name FROM customers WHERE deleted_at IS NULL AND (name LIKE ? OR pinyin_initials LIKE ?) ORDER BY name LIMIT 20",
-            (f"%{q}%", f"%{q}%"),
+            f"SELECT DISTINCT name FROM customers WHERE deleted_at IS NULL AND {name_match_clause()} ORDER BY name LIMIT 20",
+            (*name_match_params(q),),
         ).fetchall()
     return jsonify([row["name"] for row in rows])
 
@@ -253,7 +281,8 @@ def update_customer(customer_id: int):
         existing = conn.execute("SELECT 1 FROM customers WHERE id=? AND deleted_at IS NULL", (customer_id,)).fetchone()
         if existing is None:
             return not_found("客户不存在，可能已被删除或从未存在。", back_url=url_for("customers.list_customers"))
-        conn.execute("UPDATE customers SET name=?, phone=?, address=?, opening_balance_cents=?, pinyin_initials=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (request.form["name"], request.form.get("phone", ""), request.form.get("address", ""), opening_balance_cents, build_pinyin_initials(request.form["name"]), customer_id))
+        initials, full = build_pinyin_fields(request.form["name"])
+        conn.execute("UPDATE customers SET name=?, phone=?, address=?, opening_balance_cents=?, pinyin_initials=?, pinyin_full=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (request.form["name"], request.form.get("phone", ""), request.form.get("address", ""), opening_balance_cents, initials, full, customer_id))
     return redirect(url_for("customers.list_customers"))
 
 @customers_bp.post("/bulk_delete")

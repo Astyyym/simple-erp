@@ -49,7 +49,13 @@ class ProductHTML(HTMLParser):
 
     def product_rows(self):
         header = next(row for row in self.rows if "名称" in row)
-        return {row[1]: dict(zip(header, row)) for row in self.rows[1:] if len(row) == len(header)}
+        # 名称单元格里可能带「待补全」徽标（装饰，不属于名字）——去掉再当键；
+        # 否则「开单攒出 / 批量导入」的档案会取不到行（2026-10-14 第二轮起导入也会带徽标）。
+        return {
+            row[1].replace("待补全", "").strip(): dict(zip(header, row))
+            for row in self.rows[1:]
+            if len(row) == len(header)
+        }
 
 
 def business_snapshot():
@@ -158,9 +164,10 @@ def test_unknown_quantity_template_projection_never_fabricates_quantity_or_avera
 
     client, products = stock_products
     with get_db() as conn:
-        # 决策变更（v14）：商品侧「待补全（型号为空）」口径随 spec 列删除，
-        # _product_list_context 不再返回 todo_count（由 4 值收窄为 3 值）。
-        rows, suggestions, _truncated = _product_list_context(conn)
+        # 决策变更（v14 → 2026-10-14）：商品侧「待补全」口径先随 spec 列删除，
+        # 后按新口径（开单自动建档 + 品牌为空）恢复，`_product_list_context`
+        # 重新返回第 4 个值 todo_count。
+        rows, suggestions, _truncated, _todo_count = _product_list_context(conn)
         state = dict(conn.execute("SELECT * FROM product_inventory_state WHERE product_id=?", (products[3]["id"],)).fetchone())
     product = next(row for row in rows if row["id"] == products[3]["id"])
     # Current schema forbids NULL quantity: test the pure/template defensive

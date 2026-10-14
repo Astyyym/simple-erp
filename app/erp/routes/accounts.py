@@ -1,6 +1,6 @@
 from decimal import InvalidOperation
 
-from flask import Blueprint, render_template, request, redirect, url_for, send_file
+from flask import Blueprint, render_template, request, redirect, url_for, send_file, jsonify
 import sqlite3
 
 from erp.db import get_db
@@ -8,6 +8,7 @@ from erp.services.accounting import (
     add_payment,
     add_adjustment,
     get_customer_account_ledger,
+    get_ledger_document_items,
     void_payment as void_payment_record,
     void_adjustment as void_adjustment_record,
 )
@@ -171,6 +172,24 @@ def void_payment(payment_id: int):
     except ValueError as error:
         return error_response(str(error), title="收款记录未能作废", back_url=url_for("accounts.accounts"))
     return _redirect_to_ledger()
+
+
+@accounts_bp.get("/api/ledger_items")
+def api_ledger_items():
+    """流水行就地展开用：某条单据的商品明细（收款/调整没有明细 → 400）。
+
+    只在用户点「展开」时按需取，不塞进列表页 HTML：流水可能有几百行，
+    明细全量渲染会白白放大页面。
+    """
+    source = request.args.get("source", "").strip()
+    document_id = request.args.get("id", type=int)
+    if not document_id:
+        return jsonify({"error": "缺少单据 ID"}), 400
+    try:
+        payload = get_ledger_document_items(source, document_id)
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
+    return jsonify(payload)
 
 
 @accounts_bp.post("/adjustment/<int:adjustment_id>/void")

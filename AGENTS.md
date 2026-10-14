@@ -8,7 +8,7 @@
 
 - 正式目录（唯一真源）：本地 Windows 项目根目录
 - GitHub：`Astyyym/simple-erp`，默认分支 `main`
-- 当前源码版本以根目录 `VERSION` 为准；当前工作区 `VERSION` 为 `v3.10.0`
+- 当前源码版本以根目录 `VERSION` 为准；当前工作区 `VERSION` 为 `v3.12.0`
 - 当前需求权威文档：`docs/需求/消防器材店ERP系统-需求文档.md`
 
 ## 怎么跑
@@ -26,11 +26,12 @@
 
 | 形态 | 产物 | 用途 |
 |---|---|---|
-| 绿色版目录 | `dist\local-vX.Y.Z\简单ERP\` | 本机/U 盘直接跑 |
+| 绿色版目录 | `dist\local-vX.Y.Z\简单ERP\` | 本机/U 盘直接跑；**自带 200 条演示数据**（打开即用） |
 | **安装包** | `dist\simple-erp-setup-vX.Y.Z.exe` | 门店用户安装（开始菜单/卸载项） |
 | 交付 ZIP | `dist\simple-erp-windows-vX.Y.Z.zip` | 发给别人（解压即用） |
 
-- 三者是**同一份程序**，只差投递方式；安装包是 Inno Setup 包在 one-folder 产物之上。
+- 安装包与 ZIP 是**同一份程序**（正常入口 `简单ERP.spec`，从 `build\clean-vX.Y.Z` 构建），只差投递方式；安装包是 Inno Setup 包在 one-folder 产物之上。
+- **绿色版是另一份构建**（用户 2026-10-14 决策）：用 `简单ERP-demo.spec`，入口 `packaging/demo_entry.py` 把数据根强制指向包内 `demo_data\`，并在打包最后一步由 `packaging/seed_demo_data.py` 写入 200 条演示数据。**安装包与 ZIP 不得含演示数据**（`make_release_zip.py` 会在写盘前拒绝 `demo_data`）。构建顺序固定为：干净产物 → 安装包 → ZIP → 绿色版 → 写演示数据。
 - 安装包**必须 per-user**（`{localappdata}\Programs\简单ERP`），不得改成 Program Files：程序把可写 `config.json` 写在 EXE 旁，装进受保护目录会让保存设置失败。契约见 `tests/test_installer_packaging.py`。
 - 只保留当前版本的产物；新版本打包成功后删除旧的 `local-v*` 目录与旧 ZIP，避免用户点错同名 `简单ERP.exe`。
 
@@ -53,7 +54,7 @@
 
 - 单号：`MD` + 8 位日期 + 4 位流水；销售与退货共用当天流水；新建日期可改，重编辑保号保日期。
 - 拿货/退拿货共用 `NH` + 8 位日期 + 4 位流水（同一日号池）；取号需让过历史 `TN` 退拿货流水，旧单号不重写。取号实现集中在 `app/erp/utils/order_numbering.py`。
-- 四类开单（销售/退货/拿货/退拿货）PDF 为 **241mm 连续纸一联**（逻辑页 215.9×139.7mm、页内左右各 7.3mm 版心，单联 10 行）；客户货款汇总、账款流水、往来对账单 PDF 为 **A4 竖版（210×297mm）**。两套纸型不得混用。
+- 四类开单（销售/退货/拿货/退拿货）PDF 为 **241mm 连续纸一联**（逻辑页 215.9×139.7mm、页内左右各 7.3mm 版心，单联**默认 10 行**，设置页可选 6/8/10/12）；客户货款汇总、账款流水、往来对账单 PDF 为 **A4 竖版（210×297mm）**。两套纸型不得混用。
 - 打印相关改动必须说明 PDF 预览、页面尺寸和设置页偏移的验证方式；自动测试不代替目标打印机实打。
 
 ## 交付习惯

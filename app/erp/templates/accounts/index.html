@@ -30,6 +30,20 @@
   html[data-ui-theme="dark"] .type-sale{color:#93c5fd;background:rgba(59,130,246,.16)}html[data-ui-theme="dark"] .type-return{color:#fca5a5;background:rgba(248,113,113,.14)}html[data-ui-theme="dark"] .type-payment{color:#6ee7b7;background:rgba(52,211,153,.14)}html[data-ui-theme="dark"] .type-adjustment{color:#fcd34d;background:rgba(245,158,11,.16)}html[data-ui-theme="dark"] .type-purchase{color:#67e8f9;background:rgba(34,211,238,.14)}html[data-ui-theme="dark"] .type-purchase_return{color:#c4b5fd;background:rgba(167,139,250,.16)}
   @media (prefers-color-scheme: dark){html[data-ui-theme="system"] .type-sale{color:#93c5fd;background:rgba(59,130,246,.16)}html[data-ui-theme="system"] .type-return{color:#fca5a5;background:rgba(248,113,113,.14)}html[data-ui-theme="system"] .type-payment{color:#6ee7b7;background:rgba(52,211,153,.14)}html[data-ui-theme="system"] .type-adjustment{color:#fcd34d;background:rgba(245,158,11,.16)}html[data-ui-theme="system"] .type-purchase{color:#67e8f9;background:rgba(34,211,238,.14)}html[data-ui-theme="system"] .type-purchase_return{color:#c4b5fd;background:rgba(167,139,250,.16)}}
   .status-active { color:var(--erp-success); }.status-void { color:var(--erp-muted); }.row-void td { color:var(--erp-muted);background:rgba(127,127,127,.045); }.empty-ledger { padding:24px;text-align:center;color:var(--erp-muted); }
+  /* 流水行就地展开商品明细（2026-10-14 用户要求）：
+     展开内容插在**被点的那一行下面**，所以那一行的位置和内容原地不动；
+     动画只做高度过渡（grid-template-rows 0fr→1fr），不整页刷新、不回顶、不闪烁。 */
+  .ledger-detail > td { padding:0;border-top:0;background:var(--erp-glass-bg-strong); }
+  .ledger-detail-inner { display:grid;grid-template-rows:0fr;transition:grid-template-rows .24s ease, opacity .24s ease;opacity:0; }
+  .ledger-detail.is-open .ledger-detail-inner { grid-template-rows:1fr;opacity:1; }
+  .ledger-detail-body { overflow:hidden;min-height:0;padding:0 14px; }
+  .ledger-detail.is-open .ledger-detail-body { padding:10px 14px 12px; }
+  .ledger-detail-table { margin:0;min-width:520px; }
+  .ledger-detail-table th,.ledger-detail-table td { font-size:12px;padding:5px 8px; }
+  .ledger-detail-table td.numeric-cell { text-align:right;font-variant-numeric:tabular-nums; }
+  .ledger-detail-caption { color:var(--erp-muted);font-size:11px;margin-bottom:6px; }
+  .ledger-detail-error { color:var(--erp-danger);font-size:12px; }
+  @media (prefers-reduced-motion: reduce) { .ledger-detail-inner { transition:none; } }
   .entry-grid { margin-top:18px; }.entry-card h4 { margin:0 0 10px;font-size:14px; }.entry-form { display:grid;grid-template-columns:minmax(120px,.7fr) minmax(150px,1fr) auto;align-items:end;gap:9px; }.entry-form .form-control { min-height:37px; }.entry-note { margin-bottom:0; }
   .void-dialog { width:min(420px,calc(100vw - 28px));padding:0;color:var(--erp-ink);background:var(--erp-surface);border:1px solid var(--erp-border);border-radius:9px;box-shadow:0 24px 64px rgba(0,0,0,.25); }.void-dialog::backdrop { background:rgba(15,23,42,.42);backdrop-filter:blur(2px); }.void-body { padding:20px; }.void-body h3 { margin:0 0 5px;font-size:17px; }.void-body p { color:var(--erp-muted);font-size:12px; }.dialog-actions { display:flex;justify-content:flex-end;gap:8px;margin-top:14px; }
   @media(max-width:1050px) { .account-filter { grid-template-columns:repeat(4,minmax(115px,1fr)); }.customer-field { grid-column:span 2; } }
@@ -91,7 +105,7 @@
         <td class="amount {% if entry.amount_cents > 0 %}positive{% elif entry.amount_cents < 0 %}negative{% else %}zero{% endif %}">{% if entry.type == 'payment' %}{{ money(entry.amount_cents) }}{% else %}{{ signed_money(entry.amount_cents) }}{% endif %}</td>
         <td class="amount {% if entry.balance_delta_cents > 0 %}positive{% elif entry.balance_delta_cents < 0 %}negative{% else %}zero{% endif %}">{{ signed_money(entry.balance_delta_cents) }}</td>
         <td><span class="badge-ledger status-{{ 'void' if entry.status == 'void' else 'active' }}">{{ '已作废' if entry.status == 'void' else '生效' }}</span></td>
-        <td>{% if entry.status == 'active' and entry.source == 'payment' %}<button class="btn btn-sm btn-outline-danger" type="button" data-void-url="{{ url_for('accounts.void_payment', payment_id=entry.source_id) }}" data-void-title="作废这条收款记录？">作废</button>{% elif entry.status == 'active' and entry.source == 'adjustment' %}<button class="btn btn-sm btn-outline-danger" type="button" data-void-url="{{ url_for('accounts.void_adjustment', adjustment_id=entry.source_id) }}" data-void-title="作废这条调整记录？">作废</button>{% else %}—{% endif %}</td>
+        <td>{% if entry.source in ('order', 'purchase', 'purchase_return') %}<button class="btn btn-sm btn-outline-secondary ledger-toggle" type="button" aria-expanded="false" data-ledger-toggle="{{ url_for('accounts.api_ledger_items', source=entry.source, id=entry.source_id) }}">展开</button>{% elif entry.status == 'active' and entry.source == 'payment' %}<button class="btn btn-sm btn-outline-danger" type="button" data-void-url="{{ url_for('accounts.void_payment', payment_id=entry.source_id) }}" data-void-title="作废这条收款记录？">作废</button>{% elif entry.status == 'active' and entry.source == 'adjustment' %}<button class="btn btn-sm btn-outline-danger" type="button" data-void-url="{{ url_for('accounts.void_adjustment', adjustment_id=entry.source_id) }}" data-void-title="作废这条调整记录？">作废</button>{% else %}—{% endif %}</td>
       </tr>{% else %}<tr><td colspan="8" class="empty-ledger">所选日期范围内没有流水记录。</td></tr>{% endfor %}
     </tbody>
   </table></div>
@@ -137,6 +151,123 @@
     reason.focus();
   });
   document.getElementById('cancelVoid').addEventListener('click', () => dialog.close());
+})();
+
+/* 流水行就地展开商品明细（2026-10-14 用户要求）：
+   点「展开」→ 在**被点的那一行下面**插入明细行 → 高度过渡展开。
+   不整页刷新、不跳回页顶：内容插在被点行下方，被点行原地不动。
+   明细按需拉取并缓存（流水可能有几百行，不能全量塞进页面）。 */
+(() => {
+  const tbody = document.getElementById('ledgerRows');
+  if (!tbody) return;
+  const cache = new Map();
+  const COLUMNS = ['商品', '单位', '数量', '单价', '金额'];
+  // 金额符号放在 ¥ 前面（与流水行的 −¥ / +¥ 一致，避免出现「¥-5158.65」）。
+  const money = value => {
+    const text = String(value == null || value === '' ? '0.00' : value);
+    return text.startsWith('-') ? `-¥${text.slice(1)}` : `¥${text}`;
+  };
+
+  const buildDetailRow = (payload) => {
+    const detail = document.createElement('tr');
+    detail.className = 'ledger-detail';
+    const cell = document.createElement('td');
+    cell.colSpan = 8;
+    const inner = document.createElement('div');
+    inner.className = 'ledger-detail-inner';
+    const body = document.createElement('div');
+    body.className = 'ledger-detail-body';
+    const items = Array.isArray(payload && payload.items) ? payload.items : [];
+    if (!items.length) {
+      const empty = document.createElement('div');
+      empty.className = 'ledger-detail-caption';
+      empty.textContent = '该单据没有商品明细。';
+      body.appendChild(empty);
+    } else {
+      const caption = document.createElement('div');
+      caption.className = 'ledger-detail-caption';
+      caption.textContent = `本单商品明细 · 共 ${items.length} 行`;
+      const table = document.createElement('table');
+      table.className = 'table table-sm ledger-detail-table';
+      const head = document.createElement('thead');
+      const headRow = document.createElement('tr');
+      COLUMNS.forEach(text => {
+        const th = document.createElement('th');
+        th.textContent = text;
+        headRow.appendChild(th);
+      });
+      head.appendChild(headRow);
+      const rows = document.createElement('tbody');
+      items.forEach(item => {
+        const tr = document.createElement('tr');
+        [item.product_name || '', item.unit || '', item.quantity || '',
+          money(item.unit_price), money(item.amount)].forEach((text, index) => {
+          const td = document.createElement('td');
+          if (index >= 2) td.className = 'numeric-cell';
+          td.textContent = text;
+          tr.appendChild(td);
+        });
+        rows.appendChild(tr);
+      });
+      table.append(head, rows);
+      body.append(caption, table);
+    }
+    inner.appendChild(body);
+    cell.appendChild(inner);
+    detail.appendChild(cell);
+    return detail;
+  };
+
+  const collapse = detail => {
+    const button = detail.previousElementSibling
+      && detail.previousElementSibling.querySelector('[data-ledger-toggle]');
+    detail.classList.remove('is-open');
+    if (button) {
+      button.textContent = '展开';
+      button.setAttribute('aria-expanded', 'false');
+    }
+    const remove = () => detail.remove();
+    const inner = detail.querySelector('.ledger-detail-inner');
+    if (inner) inner.addEventListener('transitionend', remove, { once: true });
+    // 过渡被跳过（reduced motion / 动画未触发）时兜底，避免留一个空行。
+    window.setTimeout(remove, 400);
+  };
+
+  tbody.addEventListener('click', async event => {
+    const button = event.target.closest('[data-ledger-toggle]');
+    if (!button || !tbody.contains(button)) return;
+    const row = button.closest('tr');
+    const next = row.nextElementSibling;
+    if (next && next.classList.contains('ledger-detail')) { collapse(next); return; }
+
+    const url = button.dataset.ledgerToggle;
+    let payload = cache.get(url);
+    if (!payload) {
+      button.disabled = true;
+      try {
+        const response = await fetch(url, { headers: { 'X-Requested-With': 'fetch' } });
+        const data = await response.json();
+        if (!response.ok) throw new Error((data && data.error) || '明细加载失败');
+        payload = data;
+        cache.set(url, payload);
+      } catch (error) {
+        payload = { items: [], error: String((error && error.message) || error) };
+      }
+      button.disabled = false;
+    }
+    const detail = buildDetailRow(payload);
+    if (payload.error) {
+      const warn = document.createElement('div');
+      warn.className = 'ledger-detail-error';
+      warn.textContent = `明细加载失败：${payload.error}`;
+      detail.querySelector('.ledger-detail-body').appendChild(warn);
+    }
+    row.after(detail);
+    // 先插入闭合态、下一帧再展开：同一帧里没有过渡起点，动画不会跑。
+    window.requestAnimationFrame(() => detail.classList.add('is-open'));
+    button.textContent = '收起';
+    button.setAttribute('aria-expanded', 'true');
+  });
 })();
 </script>
 {% else %}

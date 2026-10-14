@@ -48,7 +48,7 @@ def test_product_pages_display_current_inventory_cost_amount_and_safety_stock():
         assert re.search(r'<(?:td|dd)\b[^>]*>170\.00</(?:td|dd)>', html)
     assert '<td class="numeric-cell">15</td>' in list_html
     assert '<td class="numeric-cell">3</td>' in list_html
-    assert '<dd class="fs-5 text-nowrap">15</dd>' in edit_html
+    assert '<dd class="readonly-value">15</dd>' in edit_html
     assert 'name="safety_stock" value="3"' in edit_html
     assert "单位已锁定" in edit_html or "单位" in edit_html
 

@@ -1,19 +1,64 @@
 {% extends "base.html" %}
 {% block content %}
+{#
+  2026-10-14「主次与分组」重构（见 开发短计划/2026-10-14_档案编辑页主次与分组重构_执行计划.md）：
+    · 客户只有 4 个字段、页面上没有任何可读的派生数据 → 不硬塞侧栏，改成「一卡一组」：
+      卡片标题即分组名（基本信息 / 账款），**只保留这一级标题** —— 早先的「卡片 h3 + 段标题」
+      两级写法会白吃 ~42px，页面反而比原来更长。
+    · 卡片铺满内容区宽度（原来 col-6 只占 48%，右侧 720px 全空）。
+    · 客户名称独占整行（长文本）；电话/地址是一对**短且语义成对**的字段 → 同行。
+    · 「待补全」从 57px 横幅降级为页头 chip + 电话/地址上的 ⚠。
+    · 表单只有一条，所以「保存」放在最后一张卡片的底部（表单末尾），不搬到页头。
+#}
+{% set needs_completion = customer_needs_completion(customer) %}
 <header class="page-header">
   <h2>编辑客户</h2>
+  {% if needs_completion %}
+  <span class="completion-chip" title="补全后会自动退出「待补全」筛选">待补全 · 缺联系方式</span>
+  {% endif %}
   <div class="page-actions"><a class="btn btn-secondary page-return" href="/customers/">返回</a></div>
 </header>
-{% if customer_needs_completion(customer) %}
-<div class="alert alert-warning" role="alert">
-  <strong>这份档案待补全：</strong>{{ customer_completion_hint(customer) }}。补全后会自动退出「待补全」筛选。
-</div>
-{% endif %}
-<form method="post" class="col-6">
-  <label class="form-label">客户名称</label><input class="form-control mb-3" name="name" value="{{customer.name}}" required>
-  <label class="form-label">电话</label><input class="form-control mb-3" name="phone" value="{{customer.phone}}">
-  <label class="form-label">地址</label><input class="form-control mb-3" name="address" value="{{customer.address}}">
-  <label class="form-label">期初余额(元)</label><input class="form-control mb-3" name="opening_balance" value="{{cents_to_yuan(customer.opening_balance_cents)}}">
-  <button class="btn btn-primary">保存</button>
+<form method="post">
+  <div class="detail-stack">
+    <section class="card">
+      <div class="card-body">
+        <div class="card-head">
+          <h3>基本信息</h3>
+          <span class="card-cap">{% if needs_completion %}带 ⚠ 的是待补全字段{% else %}电话或地址留一个即可{% endif %}</span>
+        </div>
+        <div class="field-grid">
+          <div class="field-full">
+            <label class="form-label" for="customerName">客户名称</label>
+            <input class="form-control" id="customerName" name="name" value="{{customer.name}}" required>
+          </div>
+          <div{% if needs_completion %} class="field-warn"{% endif %}>
+            <label class="form-label" for="customerPhone">电话{% if needs_completion %}<span class="field-flag">⚠ 待补</span>{% endif %}</label>
+            <input class="form-control" id="customerPhone" name="phone" value="{{customer.phone}}">
+          </div>
+          <div{% if needs_completion %} class="field-warn"{% endif %}>
+            <label class="form-label" for="customerAddress">地址{% if needs_completion %}<span class="field-flag">⚠ 待补</span>{% endif %}</label>
+            <input class="form-control" id="customerAddress" name="address" value="{{customer.address}}">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-body">
+        <div class="card-head"><h3>账款</h3><span class="card-cap">影响对账口径</span></div>
+        <div class="field-grid">
+          <div>
+            <label class="form-label" for="customerOpening">期初余额(元)</label>
+            <input class="form-control" id="customerOpening" name="opening_balance" value="{{cents_to_yuan(customer.opening_balance_cents)}}">
+            <p class="field-hint">迁移时把旧软件的未结欠款落在这里；之后的变动由单据与收款产生。</p>
+          </div>
+        </div>
+        <div class="card-foot">
+          {% if needs_completion %}<span class="text-muted small">补上电话或地址后，这份档案会自动退出「待补全」。</span>{% endif %}
+          <button class="btn btn-primary">保存</button>
+        </div>
+      </div>
+    </section>
+  </div>
 </form>
 {% endblock %}

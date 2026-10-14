@@ -73,9 +73,13 @@
   // 销售 / 退货：单框手输 + 名称建议；命中已有商品则绑定 id，未命中留纯文本交给
   // 后端按名称自动建档（零建档路径）。
   // row 需含：.picker-name-input .product-id .product-name
-  function mountHybrid(row, catalog, onPick) {
+  // options.requireExisting: true —— 拿货 / 退拿货：必须命中已建档商品，未命中不写 id
+  //   （由 onMissing 提示，后端也会拒单），不交给后端自动建档。
+  function mountHybrid(row, catalog, onPick, options) {
     var nameInput = row.querySelector('.picker-name-input');
     if (!nameInput) return null;
+    var requireExisting = !!(options && options.requireExisting);
+    var onMissing = (options && options.onMissing) || function () {};
     var productIdField = row.querySelector('.product-id');
     var productNameField = row.querySelector('.product-name');
 
@@ -101,8 +105,11 @@
     function refresh() {
       syncHidden();
       var match = findMatch(nameInput.value);
-      // 未命中：清空 id，交给后端按名称自动建档（零建档路径）。
+      var typed = norm(nameInput.value);
+      // 未命中：销售 / 退货交给后端按名称自动建档（零建档路径）；
+      // 拿货 / 退拿货（requireExisting）不写 id —— 由页面提示，后端也会拒单。
       productIdField.value = match ? match.id : '';
+      if (!match && requireExisting && typed) onMissing(typed);
       onPick(match);
     }
 

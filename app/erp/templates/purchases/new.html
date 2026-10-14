@@ -25,8 +25,15 @@
   /* 换页提示行：不可编辑、不带 name（不参与提交）；位置由 refreshSlipNotices() 按 slip_size 重排。 */
   .order-table tr.slip-notice td { background: var(--erp-surface-soft); color: var(--erp-muted); font-size: 12px; text-align: left; padding: 6px 10px; }
   .unit-display { display: flex; align-items: center; color: var(--erp-muted); }
-  .unit-cell { display: flex; gap: 4px; padding: 4px; }
-  .unit-cell select { width: 74px; }
+  /* P2（2026-10-13）：单位列改为单控件 = 输入框 + 候选浮层，不再有并排 select。 */
+  .unit-cell { padding: 4px; }
+  .unit-cell .unit { width: 100%; }
+  /* 单位候选项比商品/客户短得多，压一点行高：168px 内能显示 5 项。 */
+  .unit-suggestions .suggest-item { padding: 6px 9px; font-size: 13px; }
+  /* 通用候选框有 min-width:240px，套在 110px 的单位列上会横向压住数量/单价列。 */
+  .unit-cell .unit-suggestions[popover] { min-width: 0; max-width: 220px; }
+  /* 单位可自由输入：没有匹配项时不显示那条空的「无匹配项」占位。 */
+  .unit-suggestions .suggest-item[aria-disabled="true"] { display: none; }
   .price-cell { padding: 4px !important; }
   .price-cell input { border: 0; width: 100%; padding: 4px 6px; background: transparent; }
   .price-quick { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 6px 4px; }
@@ -91,13 +98,13 @@
     新商品需先到「商品管理」页启用库存后才能入库（拿货单）。
   </p>
   <div class="order-table-scroll"><table class="table table-bordered order-table" id="purchaseTable">
-    <thead class="table-light"><tr><th style="width:50px">序号</th><th style="min-width:340px">产品名称</th><th style="width:96px">单位</th><th style="width:120px">数量</th><th style="width:150px">单价(元)</th><th style="width:130px">金额</th><th style="min-width:150px">成本(元)</th><th style="width:80px">操作</th></tr></thead>
+    <thead class="table-light"><tr><th style="width:50px">序号</th><th style="min-width:340px">产品名称</th><th style="width:110px">单位</th><th style="width:120px">数量</th><th style="width:150px">单价(元)</th><th style="width:130px">金额</th><th style="min-width:150px">成本(元)</th><th style="width:80px">操作</th></tr></thead>
     <tbody id="purchaseRows">
       {% for row in form_rows %}
       <tr>
         <td class="text-center row-no">{{ loop.index }}</td>
-        <td class="product-picker"><div class="picker-row"><input type="hidden" name="product_id" class="product-id" value="{{ row.product_id or '' }}"><select class="form-select form-select-sm picker-name" aria-label="第 {{loop.index}} 行产品名称"></select></div></td>
-        <td><div class="unit-cell"><select class="form-select form-select-sm unit-select" aria-label="第 {{loop.index}} 行单位"><option value="">自定义</option>{% for u in (unit_options or ['个','套','件']) %}<option value="{{u}}" {% if row.unit == u %}selected{% endif %}>{{u}}</option>{% endfor %}</select><input name="unit" class="unit" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="自定义" value="{{ row.unit or '' }}"></div></td>
+        <td class="product-picker"><div class="picker-row"><input type="hidden" name="product_id" class="product-id" value="{{ row.product_id or '' }}"><input type="hidden" name="product_name" class="product-name" value="{{ row.product_name or '' }}"><div class="suggest-wrap product-suggest-wrap"><input class="form-control form-control-sm picker-name-input" autocomplete="off" aria-label="第 {{loop.index}} 行产品名称" placeholder="输入或选择商品名" value="{{ row.product_name or '' }}"><div class="suggest-list d-none product-suggestions" role="listbox" aria-label="商品建议"></div></div><div class="picker-missing d-none" role="status"></div></div></td>
+        <td><div class="unit-cell suggest-wrap"><input name="unit" class="unit form-control form-control-sm" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="单位" aria-label="第 {{loop.index}} 行单位" aria-expanded="false" data-unit-options="{{ (unit_options or ['个','套','件'])|join('|') }}" value="{{ row.unit or '' }}"><div class="suggest-list d-none unit-suggestions" role="listbox" aria-label="单位建议"></div></div></td>
         <td><input name="quantity" class="quantity" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.000" value="{{ row.quantity or '' }}"></td>
         <td class="price-cell"><input name="unit_cost_yuan" class="unit-price" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.00" value="{{ row.unit_cost_yuan or '' }}"><div class="price-quick d-none"></div></td>
         <td><div class="readonly-total line-total">0.00</div></td>
@@ -220,11 +227,15 @@ async function refineProductRow(tr, product) {
   });
   quick.classList.remove('d-none');
 }
+/* P3：未建档提示要随行收起（清空行 / 一键清空 / 新增行）。 */
+function clearMissingHint(tr) {
+  const hint = tr.querySelector('.picker-missing');
+  if (hint) { hint.textContent = ''; hint.classList.add('d-none'); }
+}
 function clearRow(button) {
   const tr = button.closest('tr');
   tr.querySelectorAll('input').forEach(input => { input.value = ''; });
-  const unitSelect = tr.querySelector('.unit-select');
-  if (unitSelect) unitSelect.value = '';
+  clearMissingHint(tr);
   tr.querySelector('.price-quick').innerHTML = '';
   tr.querySelector('.price-quick').classList.add('d-none');
   tr.querySelector('.line-total').textContent = '0.00';
@@ -241,8 +252,7 @@ function clearAllRows() {
   while (tbody.rows.length > 1) tbody.deleteRow(1);
   const firstRow = tbody.rows[0];
   firstRow.querySelectorAll('input').forEach(input => { input.value = ''; });
-  const firstUnitSelect = firstRow.querySelector('.unit-select');
-  if (firstUnitSelect) firstUnitSelect.value = '';
+  clearMissingHint(firstRow);
   firstRow.querySelector('.price-quick').innerHTML = '';
   firstRow.querySelector('.price-quick').classList.add('d-none');
   firstRow.querySelector('.line-total').textContent = '0.00';
@@ -256,12 +266,11 @@ function addRow() {
   const tbody = document.getElementById('purchaseRows');
   const tr = tbody.rows[0].cloneNode(true);
   tr.querySelectorAll('input').forEach(input => { input.value = ''; });
-  const clonedUnitSelect = tr.querySelector('.unit-select');
-  if (clonedUnitSelect) clonedUnitSelect.value = '';
   tr.querySelector('.price-quick').innerHTML = '';
   tr.querySelector('.price-quick').classList.add('d-none');
   tr.querySelector('.line-total').textContent = '0.00';
   tbody.appendChild(tr);
+  clearMissingHint(tr);
   bindRow(tr);
   refreshSlipNotices();
   recalc();
@@ -285,7 +294,7 @@ function syncRowToolState() {
   // 只数数据行：换页提示行不是可删的录入行。
   button.disabled = purchaseDataRows(document.getElementById('purchaseRows')).length <= 1;
 }
-/* ---- 单联容量提示行：与打印单同源（config.SLIP_SIZE → jinja 全局 slip_size） start ---- */
+/* ---- 单联容量提示行：与打印单同源（config.slip_size → 注入 slip_size） start ---- */
 const slipSize = {{ slip_size }};
 function purchaseDataRows(tbody) {
   return Array.from(tbody.querySelectorAll('tr:not(.slip-notice)'));
@@ -316,22 +325,12 @@ function bindRow(tr) {
   tr.querySelectorAll('.quantity,.unit-price').forEach(input => input.addEventListener('input', recalc));
   const idField = tr.querySelector('.product-id');
   const unitInput = tr.querySelector('.unit');
-  const unitSelect = tr.querySelector('.unit-select');
   const quick = tr.querySelector('.price-quick');
-  // §4.3：单位可编辑（写本单明细，不回写档案）。下拉选择同步到输入框；用户手输即时追加候选。
-  if (unitSelect && unitInput) {
-    if (unitInput.value) { unitSelect.value = unitInput.value; ensureUnitOption(unitSelect, unitInput.value); }
-    unitSelect.addEventListener('change', () => {
-      if (unitSelect.value) { unitInput.value = unitSelect.value; }
-      recalc();
-    });
-    unitInput.addEventListener('input', () => {
-      unitSelect.value = unitInput.value;
-      ensureUnitOption(unitSelect, unitInput.value);
-      recalc();
-    });
-  }
-  const picker = ErpProductPicker.mountRow(tr, catalog, product => {
+  // P2：单位单控件 = 输入框 + 候选浮层（候选池来自服务端，本页手输的新单位跨行共享）。
+  ErpOrderEntry.bindUnitCell(unitInput, tr.querySelector('.unit-suggestions'));
+  const missingHint = tr.querySelector('.picker-missing');
+  // 点选候选不会触发输入框的 input 事件（picker.set 只写值），所以命中/未命中都走这一个入口。
+  function applyProduct(product) {
     if (!product) {
       idField.value = '';
       quick.innerHTML = '';
@@ -341,32 +340,55 @@ function bindRow(tr) {
     }
     idField.value = product.id;
     // 选中商品时把档案单位作为默认值填入（用户仍可改）
-    if (unitInput) {
-      unitInput.value = product.unit || '';
-      if (unitSelect) { unitSelect.value = product.unit || ''; ensureUnitOption(unitSelect, product.unit || ''); }
-    }
+    if (unitInput) unitInput.value = product.unit || '';
     quick.innerHTML = '';
     quick.classList.add('d-none');
+    clearMissingHint(tr);
     recalc();
     refineProductRow(tr, product);
     tr.querySelector('.quantity').focus();
+  }
+  const picker = ErpProductPicker.mountHybrid(tr, catalog, applyProduct, {
+    // 拿货 / 退拿货必须命中已建档商品：未命中不写 product_id（后端也会拒单），并给出行内提示。
+    requireExisting: true,
+    onMissing: name => {
+      if (!missingHint) return;
+      missingHint.textContent = `「${name}」未建档：只能选已建档商品，请先到「商品管理」建档。`;
+      missingHint.classList.remove('d-none');
+    },
   });
   tr.__picker = picker;
+  // 商品联想（与销售 / 退货同形态）：服务端按名称/拼音匹配，只列已建档商品。
+  const nameInput = tr.querySelector('.picker-name-input');
+  const suggestBox = tr.querySelector('.product-suggestions');
+  if (nameInput && suggestBox) {
+    ErpOrderEntry.bindAutocomplete(
+      nameInput,
+      suggestBox,
+      async query => {
+        try {
+          const list = await fetchJson('/purchases/api/products?q=' + encodeURIComponent(query));
+          return Array.isArray(list) ? list : [];
+        } catch (_) { return []; }
+      },
+      product => {
+        const fragment = document.createDocumentFragment();
+        const nameNode = document.createElement('strong');
+        nameNode.textContent = product.name;
+        const detailsNode = document.createElement('small');
+        detailsNode.textContent = [product.unit, product.inventory_enabled === false ? '未启用库存，仅可保存草稿' : ''].filter(Boolean).join(' · ');
+        fragment.append(nameNode, document.createTextNode(' '), detailsNode);
+        return fragment;
+      },
+      product => { picker.set(product); applyProduct(product); },
+      () => {},
+      '没有匹配的商品 · 只能选已建档商品',
+    );
+  }
   if (idField.value) {
     const existing = catalogById.get(String(idField.value));
     if (existing) picker.set(existing);
   }
-}
-/* 本页新输入的单位即时追加到该行下拉，无需等保存（§4.4）。 */
-function ensureUnitOption(select, unit) {
-  const value = String(unit || '').trim();
-  if (!select || !value) return;
-  const exists = Array.from(select.options).some(option => option.value === value);
-  if (exists) return;
-  const option = document.createElement('option');
-  option.value = value;
-  option.textContent = value;
-  select.appendChild(option);
 }
 
 const customerInput = document.getElementById('customer_name');

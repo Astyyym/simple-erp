@@ -6,7 +6,17 @@ from urllib.parse import urlsplit
 from flask import Flask, jsonify, render_template, request
 
 from .auth import ensure_auth_defaults, current_username, is_desktop_shell
-from .config import SLIP_SIZE, ensure_data_location_initialized, load_config, bundled_root, runtime_root, missing_print_info_fields
+from .config import (
+    SLIP_SIZE,
+    SLIP_SIZE_CHOICES,
+    ensure_data_location_initialized,
+    load_config,
+    bundled_root,
+    missing_print_info_fields,
+    runtime_root,
+    slip_row_padding_mm,
+    slip_size_from_config,
+)
 from .db import get_db, init_db, integrity_check
 from .utils.money import cents_to_yuan, micro_to_yuan
 from .utils.quantity import format_quantity, format_quantity_3dp
@@ -14,6 +24,10 @@ from .services.master_data_quality import (
     customer_completion_hint,
     customer_needs_completion,
     origin_label,
+    product_completion_hint,
+    product_missing_keys,
+    product_missing_summary,
+    product_needs_completion,
 )
 from .utils.errors import error_response, wants_json as _wants_json
 from .routes.accounts import accounts_bp
@@ -69,8 +83,12 @@ def create_app() -> Flask:
     setup_logging()
     app = Flask(__name__)
     # 单联容量真源注入 Jinja：打印（4 个渲染点都渲染 orders/print_template.html）与
-    # 三份录入页模板读同一个 config.SLIP_SIZE，任一渲染点都不用各自写死数字。
+    # 三份录入页模板读同一个值，任一渲染点都不用各自写死数字。
+    # P6（2026-10-14）起该值可在设置页选 6/8/10/12：这里注入的是**默认值**，
+    # 请求内由 context processor 按当前配置覆盖（模板上下文优先于 jinja 全局）；
+    # `utils/purchase_pdf.py` 绕过 context processor 直渲模板，由它显式传值。
     app.jinja_env.globals["slip_size"] = SLIP_SIZE
+    app.jinja_env.globals["slip_row_padding_mm"] = slip_row_padding_mm(SLIP_SIZE)
     cfg = ensure_auth_defaults(load_config())
     app.config["ERP_CONFIG"] = cfg
     app.config["ERP_VERSION"] = app_version()
@@ -82,9 +100,14 @@ def create_app() -> Flask:
     def inject_globals():
         cfg_now = load_config()
         app.config["ERP_CONFIG"] = cfg_now
+        slip_size_now = slip_size_from_config(cfg_now)
         return {
             "app_version": app.config["ERP_VERSION"],
             "erp_config": cfg_now,
+            # P6：单联打印行数按当前配置下发（打印模板与三份录入页同源）。
+            "slip_size": slip_size_now,
+            "slip_size_choices": SLIP_SIZE_CHOICES,
+            "slip_row_padding_mm": slip_row_padding_mm(slip_size_now),
             "shop_name": cfg_now.get("shop_name", ""),
             "ui_theme": cfg_now.get("ui_theme", "light"),
             "ui_scale": cfg_now.get("ui_scale", "100"),
@@ -97,10 +120,16 @@ def create_app() -> Flask:
             "format_quantity_3dp": format_quantity_3dp,
             "micro_to_yuan": micro_to_yuan,
             # G-0：档案来源标签与「待补全」判定，页面与筛选共用同一口径。
-            # v14：商品侧「待补全（型号为空）」已随 spec 列删除，只剩客户侧。
+            # v14：商品侧旧口径「型号为空」随 spec 列删除；2026-10-14 按新口径
+            # （开单自动建档 + 品牌为空）恢复商品侧待补全。
             "origin_label": origin_label,
             "customer_needs_completion": customer_needs_completion,
             "customer_completion_hint": customer_completion_hint,
+            "product_needs_completion": product_needs_completion,
+            "product_completion_hint": product_completion_hint,
+            # 编辑页按具体字段打 ⚠：只暴露「缺哪个键 / 缺哪些短名」，判定仍走上面同一口径。
+            "product_missing_keys": product_missing_keys,
+            "product_missing_summary": product_missing_summary,
             # E-5：打印用店铺信息缺哪些（页面提示与路由判定共用同一口径）。
             "print_info_missing": missing_print_info_fields(cfg_now),
             # 侧栏高亮：按路由 owner 判定，跨模块页面用来源参数覆盖（见 utils/nav.py）。

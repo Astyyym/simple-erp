@@ -92,6 +92,24 @@ def _prepare_typed(items):
     return prepared
 
 
+def _all_rows_bound(items) -> bool:
+    """明细行是否**全部**绑了原拿货行；只要有一行手输就返回 False（走手输路径）。"""
+    items = list(items or [])
+    return bool(items) and all(str(raw.get('source_item_id') or '').strip() for raw in items)
+
+
+def _assert_trace_source(conn, source_order_id, customer_id):
+    """原拿货单只作追溯：存在、已正式保存、属于同一往来对象即可，不约束明细行。"""
+    row = conn.execute(
+        "SELECT id, customer_id FROM purchase_orders WHERE id=? AND deleted_at IS NULL AND status='saved'",
+        (source_order_id,),
+    ).fetchone()
+    if row is None:
+        raise ValueError('原拿货单不存在或未正式保存')
+    if int(row['customer_id']) != int(customer_id):
+        raise ValueError('原拿货单必须属于同一往来对象')
+
+
 def _typed_total(rows):
     return sum(_subtotal_cents(row['quantity_3dp'], row['unit_price_cents']) for row in rows)
 
@@ -174,14 +192,17 @@ def create(*, customer_id, business_date, items, request_key, status='saved', no
     if status not in {'draft','saved'} or not request_key or not str(request_key).strip():
         raise ValueError('状态或幂等键无效')
     notes = (notes or '').strip()
-    decoupled = not (source_order_id and str(source_order_id).strip())
+    trace_source_id = _purchase_customer_id(source_order_id) if source_order_id and str(source_order_id).strip() else None
+    # 2026-10-13：原单关联只作**参考 / 追溯** —— 只要有一行是手输（没绑原拿货行），
+    # 整单就走手输路径（手输单价 + 当前移动平均成本），但单据上仍记住原单号。
+    decoupled = trace_source_id is None or not _all_rows_bound(items)
     if decoupled:
         prepared = _prepare_typed(items)
         if business_date > date.today().isoformat():
             raise ValueError('退拿货日期不能晚于今天')
-        digest = _payload_hash({'kind':'manual','customer_id':customer_id,'business_date':business_date,'items':prepared,'status':status,'notes':notes})
+        digest = _payload_hash({'kind':'manual','customer_id':customer_id,'business_date':business_date,'items':prepared,'status':status,'notes':notes,'source_order_id':trace_source_id})
     else:
-        source_order_id = _purchase_customer_id(source_order_id)
+        source_order_id = trace_source_id
         prepared = _prepare(items)
         digest = _payload_hash({'kind':'source','customer_id':customer_id,'source_order_id':source_order_id,'business_date':business_date,'items':prepared,'status':status,'notes':notes})
     with get_db() as conn:
@@ -196,6 +217,8 @@ def create(*, customer_id, business_date, items, request_key, status='saved', no
             if customer is None:
                 raise ValueError('往来对象不存在')
             customer_name = customer['name']
+            if trace_source_id is not None:
+                _assert_trace_source(conn, trace_source_id, customer_id)
             total_amount = _typed_total(prepared)
         else:
             source, rows = _allocations(conn,customer_id,source_order_id,business_date,prepared,draft=status=='draft')
@@ -203,7 +226,7 @@ def create(*, customer_id, business_date, items, request_key, status='saved', no
             total_amount = sum(r['subtotal_cents'] for r in rows)
         # 拿货/退拿货共用同一天 NH 流水（取号时会让过历史 TN 流水，旧单号不重写）。
         order_no = next_nh_order_no(conn, business_date)
-        cur = conn.execute('''INSERT INTO purchase_return_orders(customer_id,customer_name,source_order_id,order_no,business_date,total_amount_cents,status,notes,request_key,creation_payload_hash,posted_once) VALUES (?,?,?,?,?,?,?,?,?,?,?)''', (customer_id,customer_name,None if decoupled else source_order_id,order_no,business_date,total_amount,status,notes,request_key,digest,int(status=='saved')))
+        cur = conn.execute('''INSERT INTO purchase_return_orders(customer_id,customer_name,source_order_id,order_no,business_date,total_amount_cents,status,notes,request_key,creation_payload_hash,posted_once) VALUES (?,?,?,?,?,?,?,?,?,?,?)''', (customer_id,customer_name,trace_source_id,order_no,business_date,total_amount,status,notes,request_key,digest,int(status=='saved')))
         order_id = cur.lastrowid
         if decoupled:
             _write_typed_items(conn,order_id,prepared,business_date,post=status=='saved')

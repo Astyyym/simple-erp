@@ -126,14 +126,19 @@ def test_edit_page_roundtrips_name_into_picker_input():
     assert 'name="spec"' not in page
 
 
-def test_purchase_pages_show_zero_setup_hint_and_keep_selects():
-    """G-5：拿货/退拿货不做手输，只加提示；控件仍是「选择已建档商品」的下拉。"""
+def test_purchase_pages_show_zero_setup_hint_and_use_typeable_picker():
+    """G-5（2026-10-13 P3 修订，冲突以本次为准）：提示保留；控件与销售/退货同形态。
+
+    形态统一为「手输 + 联想」，但业务差异保留：**必须命中已建档商品**
+    （未命中不写 product_id、后端拒单，见 test_purchase_product_picker.py）。
+    """
     client = _client()
     for path, hint_id in (("/purchases/new", "purchaseZeroSetupHint"), ("/purchases/return/new", "purchaseReturnZeroSetupHint")):
         page = client.get(path).get_data(as_text=True)
         assert hint_id in page
         assert "启用库存后才能入库" in page
-        # 控件未改成手输。
-        assert 'picker-name-input' not in page
-        assert 'class="form-select form-select-sm picker-name"' in page
+        # 与销售 / 退货同形态：手输框 + 候选浮层，不再是原生下拉。
+        assert 'class="form-control form-control-sm picker-name-input"' in page
+        assert 'class="suggest-list d-none product-suggestions"' in page
+        assert 'class="form-select form-select-sm picker-name"' not in page
         assert "picker-spec" not in page

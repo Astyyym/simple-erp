@@ -110,12 +110,42 @@ def test_installer_build_script_reuses_the_one_folder_output():
 def test_build_script_always_produces_all_three_artifacts():
     """交付标准是三种形态齐备；脚本少做一个，下次发版就会缺资产。"""
     script = _build_script_text()
-    assert "[1/3]" in script and "[2/3]" in script and "[3/3]" in script
+    # 五步：干净产物 → 安装包 → ZIP → 绿色版（演示入口）→ 写入演示数据
+    for marker in ("[1/5]", "[2/5]", "[3/5]", "[4/5]", "[5/5]"):
+        assert marker in script, f"缺少步骤标记 {marker}"
     assert "simple-erp-setup-%APPVER%.exe" in script
     assert "simple-erp-windows-%APPVER%.zip" in script
     assert "make_release_zip.py" in script
     # 必须用 python -m PyInstaller：直接调 pyinstaller.exe 在 MSYS 下无输出
     assert "python.exe -m PyInstaller" in script
+
+
+def test_only_the_portable_build_ships_demo_data():
+    """用户 2026-10-14 决策：200 条演示数据只进绿色版；安装包与 ZIP 必须是干净程序。
+
+    守护的是**来源目录与构建顺序**，不是格式：
+    - 安装包与 ZIP 都从「正常入口」产物（build\\clean-<版本>\\简单ERP）构建；
+    - 绿色版用 简单ERP-demo.spec（入口 packaging\\demo_entry.py：数据根强制指向包内 demo_data）；
+    - 演示数据是最后一步才写进绿色版，ZIP 必须在那之前生成
+      （make_release_zip.py 本身也会拒绝 demo_data，见下一条测试）。
+    """
+    script = _build_script_text()
+    assert "简单ERP-demo.spec" in script
+    assert "packaging\\demo_entry.py" in script, "绿色版必须用演示入口（数据根指向包内 demo_data）"
+    assert "seed_demo_data.py" in script and "--documents 200" in script
+    assert "demo_data" in script
+    # 安装包与 ZIP 的来源目录是干净产物，不是绿色版目录
+    assert "/DSourceDir=%~dp0%CLEANAPP%" in script
+    assert '--source "%CLEANAPP%"' in script
+    # 顺序：安装包 → ZIP → 绿色版 → 演示数据
+    assert script.index("[2/5]") < script.index("[3/5]") < script.index("[4/5]") < script.index("[5/5]")
+    assert script.index("seed_demo_data.py") > script.index("[4/5]")
+    assert script.index("make_release_zip.py") < script.index("[4/5]"), \
+        "ZIP 必须在写入演示数据之前生成，否则会把演示数据打进交付包"
+    # 第二次打包必须能跑通：上一轮产物目录要先删掉，否则 seed 会以「目标库已存在」拒绝执行
+    assert 'rmdir /s /q "%CLEANDIR%"' in script
+    assert 'rmdir /s /q "%GREENDIR%"' in script
+    assert script.index('rmdir /s /q "%GREENDIR%"') < script.index("[4/5]")
 
 
 def test_release_zip_helper_rejects_business_data(tmp_path):

@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>简单ERP · 档案编辑页「主次与分组」对比原型</title>
+<style>
+/* ------------------------------------------------------------------
+   原型说明
+   · 单文件、不依赖外部资源，双击即可打开。
+   · 配色/控件/圆角/阴影全部照抄 app/erp/templates/base.html 的现有 token，
+     保证「现状」和「建议」看起来是同一个产品，而不是灰色示意框。
+   · 「现状」一栏逐行复刻 products/edit.html 与 customers/edit.html 的真实
+     结构（含 col-6 / col-8 / 黄色横幅 / 常驻展开的期初表单）。
+   · 两栏用同一份业务内容，差别只在排布，不是删字段。
+   · 不含真实数据、不提交、不落库；只用于判断版式与信息层级。
+   ------------------------------------------------------------------ */
+:root{
+  --erp-primary:#2563eb;--erp-primary-hover:#1d4ed8;--erp-primary-soft:#eff6ff;
+  --erp-ink:#172033;--erp-muted:#667085;--erp-border:#dfe3ea;--erp-border-strong:#c8ced8;
+  --erp-bg:#f3f5f8;--erp-surface:#fff;--erp-surface-soft:#f8fafc;
+  --erp-sidebar:#f1f3f6;--erp-sidebar-ink:#475467;--erp-sidebar-muted:#778397;
+  --erp-sidebar-active:#e4ecfb;--erp-sidebar-active-ink:#1e4fae;--erp-sidebar-border:rgba(23,32,51,.10);
+  --erp-success:#17803d;--erp-warn:#b45309;--erp-warn-bg:#fffbeb;--erp-warn-border:#fcd34d;
+  --erp-danger:#c73535;
+  --erp-radius:8px;
+  --erp-glass-bg:rgba(255,255,255,.58);--erp-glass-bg-strong:rgba(255,255,255,.78);
+  --erp-glass-border:rgba(255,255,255,.55);
+  --erp-glass-shadow:0 1px 2px rgba(16,24,40,.05),0 14px 36px rgba(16,24,40,.10);
+  --erp-content-wash:linear-gradient(165deg,#d9e6f7 0%,#eef2f8 38%,#e4ebf5 100%);
+  --erp-scale:1.25;              /* 与 config.json 的 ui_scale=125 一致 */
+  --stage-w:1180px;              /* 原型舞台宽度；真机是 1706 CSS px */
+  --firstfold:812px;             /* 首屏底：视口 898 − 内容外边距 28 − 顶栏 58 */
+}
+*{box-sizing:border-box}
+body{
+  margin:0;background:#eef1f6;color:var(--erp-ink);
+  font-family:"Microsoft YaHei UI","Segoe UI",system-ui,-apple-system,sans-serif;
+  font-size:15px;line-height:1.5;padding:18px 18px 40px;
+}
+/* ---------- 原型自己的控制条（不属于被测 UI） ---------- */
+.proto-bar{
+  max-width:var(--stage-w);margin:0 auto 14px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;
+  padding:12px 14px;border:1px solid #d7dce5;border-radius:10px;background:#fff;
+  box-shadow:0 1px 2px rgba(16,24,40,.05);
+}
+.proto-bar .grp{display:flex;align-items:center;gap:8px}
+.proto-bar .cap{font-size:12.5px;font-weight:700;color:var(--erp-muted);letter-spacing:.02em}
+.seg{display:inline-flex;border:1px solid #d7dce5;border-radius:7px;overflow:hidden;background:#f7f9fc}
+.seg button{border:0;background:transparent;color:var(--erp-ink);font:inherit;font-size:13px;font-weight:600;
+  padding:6px 13px;cursor:pointer;border-right:1px solid #e3e7ee}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--erp-primary);color:#fff}
+.proto-bar .note{margin-left:auto;font-size:12px;color:var(--erp-muted)}
+/* ---------- 舞台 ---------- */
+.stage{max-width:var(--stage-w);margin:0 auto;position:relative}
+.shell{
+  position:relative;display:flex;overflow:hidden;border-radius:26px;background:var(--erp-surface);
+  border:1px solid rgba(255,255,255,.88);box-shadow:var(--erp-glass-shadow);
+  background-image:var(--erp-content-wash);
+}
+.sidebar{flex:0 0 200px;width:200px;background:var(--erp-sidebar);border-right:1px solid var(--erp-sidebar-border);
+  padding:0 12px 18px;color:var(--erp-sidebar-ink);font-size:13px}
+.brand{min-height:70px;display:flex;align-items:center;gap:11px;padding:10px;border-bottom:1px solid var(--erp-sidebar-border);margin-bottom:12px}
+.brand-mark{width:34px;height:34px;border-radius:7px;background:var(--erp-primary);color:#fff;display:grid;place-items:center;flex:0 0 auto;font-weight:700}
+.brand-title{font-size:15px;font-weight:650}
+.nav-section,.sidebar a{display:flex;align-items:center;min-height:34px;padding:6px 12px;border-radius:7px;color:var(--erp-sidebar-ink);text-decoration:none;font-weight:600}
+.nav-sub{min-height:28px;padding:4px 12px 4px 22px;font-size:12.5px;color:var(--erp-sidebar-muted);font-weight:500}
+.sidebar a.active{background:var(--erp-sidebar-active);color:var(--erp-sidebar-active-ink)}
+.nav-label{padding:8px 12px;font-size:12.5px;font-weight:700;color:var(--erp-sidebar-muted);letter-spacing:.04em}
+.nav-divider{height:2px;background:var(--erp-sidebar-border);margin:16px 0 12px}
+.shell-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
+.topbar{display:flex;align-items:center;justify-content:space-between;min-height:58px;padding:0 30px;flex:0 0 auto;
+  background:var(--erp-glass-bg);border-bottom:1px solid var(--erp-glass-border);
+  -webkit-backdrop-filter:blur(16px) saturate(1.3);backdrop-filter:blur(16px) saturate(1.3)}
+.topbar .company,.topbar .clock{font-size:13px;color:var(--erp-muted)}
+.topbar .clock{font-variant-numeric:tabular-nums}
+.topbar .status{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--erp-success)}
+.topbar .status:before{content:"";width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.18)}
+.page-body{position:relative;padding:26px 30px 48px;flex:1 1 auto}
+/* ---------- 产品自身样式（照抄 base.html 对应规则） ---------- */
+h2{font-size:calc(23px * var(--erp-scale));margin:0;font-weight:650;letter-spacing:-.02em}
+h3{font-size:calc(18px * var(--erp-scale));margin:0;font-weight:650;letter-spacing:-.02em}
+.page-header{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;margin-bottom:20px}
+.page-header>h2{flex:0 0 auto}
+.page-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:38px;border-radius:6px;font-size:14px;
+  font-weight:600;padding:7px 14px;border:1px solid transparent;cursor:pointer;font-family:inherit}
+.btn-primary{background:var(--erp-primary);border-color:var(--erp-primary);color:#fff}
+.btn-primary:hover{background:var(--erp-primary-hover)}
+.btn-outline-secondary{color:var(--erp-muted);border-color:var(--erp-border-strong);background:var(--erp-glass-bg-strong)}
+.form-label{display:block;font-size:13px;font-weight:600;color:var(--erp-muted);margin-bottom:6px}
+.form-control,.form-select{width:100%;min-height:40px;border:1px solid var(--erp-border-strong);border-radius:6px;
+  background:var(--erp-surface);color:var(--erp-ink);font-size:14px;padding:8px 11px;font-family:inherit}
+.card{border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);box-shadow:var(--erp-glass-shadow);
+  background:var(--erp-glass-bg);
+  -webkit-backdrop-filter:blur(16px) saturate(1.25);backdrop-filter:blur(16px) saturate(1.25)}
+.card-body{padding:18px}
+.alert{border-radius:7px;border:1px solid;padding:12px 14px;font-size:14px;margin-bottom:16px}
+.alert-warning{background:var(--erp-warn-bg);border-color:var(--erp-warn-border);color:#7c4a03}
+.text-muted{color:var(--erp-muted)}
+.small{font-size:12.5px}
+/* ---------- 「现状」复刻 ---------- */
+.cur-header{display:flex;align-items:center;margin-bottom:20px}
+.cur-header h2{flex:1 1 240px}
+.cur-header .page-actions .btn{min-width:112px}
+.cur-form{width:50%}
+.cur-form .form-control{margin-bottom:16px}
+.cur-section-8{width:66.67%}
+.cur-hr{border:0;border-top:1px solid var(--erp-border);margin:24px 0}
+.cur-dl{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:14px 0 0}
+.cur-dl dt{font-size:12.5px;color:var(--erp-muted);font-weight:400}
+.cur-dl dd{margin:2px 0 0;font-size:16px}
+.cur-grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.cur-mb3{margin-bottom:16px}
+/* ---------- 「建议」新骨架 ---------- */
+.detail-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;align-items:start}
+.detail-col{display:grid;gap:18px;min-width:0;container-type:inline-size}
+.stack{display:grid;gap:18px;min-width:0}
+.card-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:14px}
+.card-head .cap{font-size:12px;color:var(--erp-muted)}
+.sec+.sec{margin-top:18px}
+.sec-head{font-size:13.5px;font-weight:700;color:var(--erp-ink);margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--erp-border)}
+/* 一列字段流：默认 2 列，主栏够宽才 4 列 —— 用容器查询按「主栏实际宽度」决定，
+   不按视口，免得原型舞台比真机窄时把布局判错。 */
+.field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 16px}
+.field-grid .span-all{grid-column:1 / -1}
+@container (min-width:880px){ .field-grid{grid-template-columns:repeat(4,minmax(0,1fr))} }
+.field-hint{margin-top:6px;font-size:12px;color:var(--erp-muted);line-height:1.55}
+details.fold .field-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.card-foot{display:flex;align-items:center;gap:12px;margin-top:18px;padding-top:16px;border-top:1px solid var(--erp-border)}
+.card-foot .btn-primary{margin-left:auto;min-width:112px}
+.field-warn .form-control{border-color:var(--erp-warn-border);background:#fffdf5}
+.field-flag{display:inline-flex;align-items:center;margin-left:6px;padding:1px 7px;border-radius:999px;
+  border:1px solid var(--erp-warn-border);background:var(--erp-warn-bg);color:var(--erp-warn);font-size:11.5px;font-weight:700}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:12.5px;font-weight:600;
+  border:1px solid var(--erp-warn-border);background:var(--erp-warn-bg);color:var(--erp-warn);white-space:nowrap}
+.readonly-list{margin:0}
+.readonly-list .row{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px dashed var(--erp-border)}
+.readonly-list .row:last-child{border-bottom:0}
+.readonly-list .k{font-size:12.5px;color:var(--erp-muted)}
+.readonly-list .v{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+details.fold{border-top:1px solid var(--erp-border);margin-top:14px;padding-top:12px}
+details.fold>summary{list-style:none;display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;min-height:34px;font-size:14px;font-weight:600}
+details.fold>summary::-webkit-details-marker{display:none}
+details.fold>summary::before{content:"";width:0;height:0;border-left:5px solid currentColor;
+  border-top:4px solid transparent;border-bottom:4px solid transparent;transition:transform .15s ease}
+details.fold[open]>summary::before{transform:rotate(90deg)}
+details.fold .fold-body{margin-top:12px}
+.thumb{width:96px;height:72px;border:1px dashed var(--erp-border-strong);border-radius:6px;display:grid;place-items:center;
+  color:var(--erp-muted);font-size:12px;background:var(--erp-surface-soft);flex:0 0 auto}
+.img-row{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.img-row .form-control{flex:1 1 220px;min-width:0}
+/* ---------- 首屏线 ---------- */
+.foldline{position:absolute;left:0;right:0;top:calc(var(--firstfold) + 58px);pointer-events:none;z-index:5}
+.foldline .line{border-top:2px dashed var(--erp-danger);opacity:.8}
+.foldline .tag{position:absolute;right:8px;top:-11px;background:var(--erp-danger);color:#fff;font-size:11.5px;font-weight:700;
+  padding:2px 8px;border-radius:999px;white-space:nowrap}
+.foldline .below{position:absolute;right:8px;top:6px;font-size:11.5px;font-weight:700;color:var(--erp-danger)}
+.verdict{max-width:var(--stage-w);margin:14px auto 0;padding:12px 14px;border-radius:10px;background:#fff;
+  border:1px solid #d7dce5;font-size:13px;line-height:1.7;box-shadow:0 1px 2px rgba(16,24,40,.05)}
+.verdict b{font-variant-numeric:tabular-nums}
+.verdict .bad{color:var(--erp-danger);font-weight:700}
+.verdict .good{color:var(--erp-success);font-weight:700}
+.defects{margin:8px 0 0;padding-left:20px;color:#475467}
+.defects li{margin:3px 0}
+[hidden]{display:none !important}
+</style>
+</head>
+<body>
+
+<div class="proto-bar">
+  <div class="grp">
+    <span class="cap">页面</span>
+    <span class="seg" id="segPage">
+      <button type="button" data-page="product" aria-pressed="true">编辑商品</button>
+      <button type="button" data-page="customer" aria-pressed="false">编辑客户</button>
+    </span>
+  </div>
+  <div class="grp">
+    <span class="cap">布局</span>
+    <span class="seg" id="segLayout">
+      <button type="button" data-layout="now" aria-pressed="true">现状</button>
+      <button type="button" data-layout="next" aria-pressed="false">建议</button>
+    </span>
+  </div>
+  <div class="note">红色虚线＝首屏底（视口 898px）。虚线以下的内容，打开页面时看不见，要滚动。</div>
+</div>
+
+<div class="stage">
+  <div class="shell">
+    <nav class="sidebar">
+      <div class="brand"><div class="brand-mark">E</div><div><div class="brand-title">简单ERP</div></div></div>
+      <a class="nav-section" href="#">工作台</a>
+      <a class="nav-section" href="#">开单</a>
+      <a class="nav-sub" href="#">销售单</a>
+      <a class="nav-sub" href="#">退货单</a>
+      <a class="nav-section" href="#">单据管理</a>
+      <a class="nav-section" href="#">账款管理</a>
+      <a class="nav-section" href="#">数据分析</a>
+      <div class="nav-divider"></div>
+      <div class="nav-label">基础资料</div>
+      <a id="navProduct" class="active" href="#">商品管理</a>
+      <a id="navCustomer" href="#">客户管理</a>
+      <div class="nav-divider"></div>
+      <a class="nav-section" href="#">系统设置</a>
+    </nav>
+    <div class="shell-main">
+      <div class="topbar">
+        <div class="company">简单ERP</div>
+        <div class="clock">2026-10-14 16:37:18</div>
+        <div class="status">本地数据已连接</div>
+      </div>
+      <div class="page-body" id="pageBody"></div>
+    </div>
+  </div>
+  <div class="foldline" id="foldline">
+    <div class="line"></div><span class="tag">首屏底</span><span class="below" id="belowTag"></span>
+  </div>
+</div>
+
+<div class="verdict" id="verdict"></div>
+
+<script>
+const NAV = {
+  product:  { back: '返回商品管理', title: '编辑商品',
+              name: '开单摸出商品A', unit: '个', price: '10.00', safety: '0' },
+  customer: { back: '返回', title: '编辑客户',
+              name: '开单惯出客户A', balance: '0.00' }
+};
+const BANNER = (hint) =>
+  `<div class="alert alert-warning" role="alert"><strong>这份档案待补全：</strong>${hint}。补全后会自动退出「待补全」筛选。</div>`;
+
+/* ================= 现状：逐行照抄现有模板 ================= */
+function renderNow(kind){
+  const d = NAV[kind];
+  if (kind === 'customer'){
+    return `
+    <header class="cur-header">
+      <h2>${d.title}</h2>
+      <div class="page-actions"><button class="btn btn-outline-secondary">${d.back}</button></div>
+    </header>
+    ${BANNER('缺联系方式（电话或地址，便于后续对账联系）')}
+    <form class="cur-form">
+      <label class="form-label">客户名称</label><input class="form-control" value="${d.name}">
+      <label class="form-label">电话</label><input class="form-control" value="">
+      <label class="form-label">地址</label><input class="form-control" value="">
+      <label class="form-label">期初余额(元)</label><input class="form-control" value="${d.balance}">
+      <button type="button" class="btn btn-primary">保存</button>
+    </form>`;
+  }
+  return `
+  <div class="cur-header">
+    <h2>${d.title}</h2>
+    <div class="page-actions"><button class="btn btn-outline-secondary">${d.back}</button></div>
+  </div>
+  ${BANNER('缺品牌（用于区分同名同规格商品）')}
+  <section class="card cur-mb3">
+    <div class="card-body">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px">
+        <h3>当前库存与成本</h3><span class="text-muted small">由库存流水计算，只读</span>
+      </div>
+      <dl class="cur-dl">
+        <div><dt>当前库存（${d.unit}）</dt><dd>—</dd></div>
+        <div><dt>移动平均成本（元/${d.unit}）</dt><dd>—</dd></div>
+        <div><dt>库存金额（元）</dt><dd>—</dd></div>
+        <div><dt>启用状态</dt><dd>未启用</dd></div>
+        <div><dt>库存状况</dt><dd>未启用</dd></div>
+      </dl>
+    </div>
+  </section>
+  <form class="cur-form">
+    <label class="form-label">商品名称</label><input class="form-control" value="${d.name}">
+    <label class="form-label">品牌</label><input class="form-control" placeholder="可留空">
+    <label class="form-label">单位</label><input class="form-control" value="${d.unit}">
+    <label class="form-label">默认单价(元)</label><input class="form-control" value="${d.price}">
+    <label class="form-label">安全库存</label><input class="form-control" value="${d.safety}">
+    <button type="button" class="btn btn-primary">保存</button>
+  </form>
+  <section class="cur-section-8" style="margin-top:24px">
+    <h3>商品图片</h3>
+    <p class="text-muted">尚未上传图片</p>
+    <div class="img-row"><input class="form-control" type="file"><button class="btn btn-outline-secondary">上传/替换图片</button></div>
+    <p class="text-muted small" style="margin-top:8px">仅支持 JPEG/PNG，单文件不超过 5MB。</p>
+  </section>
+  <hr class="cur-hr">
+  <section class="cur-section-8">
+    <h3>库存期初</h3>
+    <p class="text-muted small">本系统<strong>一个商品只有一个单位</strong>，不支持箱/个换算——迁移时请先选定一个基准单位再填期初（C-4）。
+      期初日期决定「可补录单据的最早业务日期」，补录的单据<strong>不得早于期初日期</strong>（C-3）。</p>
+    <p class="text-muted">状态：未启用。未启用商品不计入库存告急和库存金额。</p>
+    <div class="cur-grid4">
+      <div><label class="form-label">期初数量</label><input class="form-control"></div>
+      <div><label class="form-label">单位成本(元)</label><input class="form-control" placeholder="与下方总金额二选一"></div>
+      <div><label class="form-label">库存总金额(元)</label><input class="form-control" placeholder="填了则按数量反推单位成本"></div>
+      <div><label class="form-label">期初日期</label><input class="form-control" type="date"></div>
+      <div><label class="form-label">成本来源</label><select class="form-select"><option>已知成本（有进货单/发票）</option></select></div>
+      <div><label class="form-label">来源备注</label><input class="form-control" value="系统上线期初"></div>
+    </div>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:14px;font-size:14px">
+      <input type="checkbox"> 确认零期初（数量为 0 时勾选，成本来源将记为「明确零成本」）
+    </label>
+    <button type="button" class="btn btn-outline-secondary" style="margin-top:14px">启用期初库存</button>
+  </section>`;
+}
+
+/* ================= 建议：分组卡片 + 一列字段流 + 低频折叠 ================= */
+function renderNext(kind){
+  const d = NAV[kind];
+  const chip = kind === 'customer' ? '待补全 · 缺联系方式' : '待补全 · 缺品牌';
+  const head = `
+    <header class="page-header">
+      <h2>${d.title}</h2>
+      <span class="chip">${chip}</span>
+      <div class="page-actions"><button class="btn btn-outline-secondary">${d.back}</button></div>
+    </header>`;
+  if (kind === 'customer'){
+    /* 客户只有 4 个字段、且页面上没有任何可读的派生数据 → 不硬塞侧栏，
+       改成「一卡两段」：卡片铺满内容区宽度，把原来浪费掉的右侧空间用起来。 */
+    return head + `
+    <div class="stack">
+      <section class="card">
+        <div class="card-body">
+          <div class="card-head"><h3>客户档案</h3><span class="cap">带 ⚠ 的是待补全字段</span></div>
+          <div class="sec">
+            <p class="sec-head">基本信息</p>
+            <div class="field-grid">
+              <div class="span-all"><label class="form-label">客户名称</label><input class="form-control" value="${d.name}"></div>
+              <div class="field-warn"><label class="form-label">电话<span class="field-flag">⚠ 待补</span></label><input class="form-control" placeholder="电话或地址填一个即可"></div>
+              <div class="field-warn"><label class="form-label">地址<span class="field-flag">⚠ 待补</span></label><input class="form-control" placeholder="电话或地址填一个即可"></div>
+            </div>
+          </div>
+          <div class="sec">
+            <p class="sec-head">账款</p>
+            <div class="field-grid">
+              <div><label class="form-label">期初余额(元)</label><input class="form-control" value="${d.balance}">
+                <div class="field-hint">迁移时把旧软件的未结欠款落在这里；之后的变动由单据与收款产生。</div>
+              </div>
+            </div>
+          </div>
+          <div class="card-foot">
+            <span class="text-muted small">补上电话或地址后，这份档案会自动退出「待补全」。</span>
+            <button type="button" class="btn btn-primary">保存</button>
+          </div>
+        </div>
+      </section>
+    </div>`;
+  }
+  return head + `
+  <div class="detail-grid">
+    <div class="detail-col">
+      <section class="card">
+        <div class="card-body">
+          <div class="card-head"><h3>基本信息</h3><span class="cap">带 ⚠ 的是待补全字段</span></div>
+          <div class="field-grid">
+            <div class="span-all"><label class="form-label">商品名称</label><input class="form-control" value="${d.name}"></div>
+            <div class="field-warn"><label class="form-label">品牌<span class="field-flag">⚠ 待补</span></label>
+              <input class="form-control" placeholder="用于区分同名同规格商品"></div>
+            <div><label class="form-label">单位</label><input class="form-control" value="${d.unit}"></div>
+            <div><label class="form-label">默认单价(元)</label><input class="form-control" value="${d.price}"></div>
+            <div><label class="form-label">安全库存</label><input class="form-control" value="${d.safety}"></div>
+          </div>
+          <div class="card-foot">
+            <span class="text-muted small">补上品牌后自动退出「待补全」筛选。</span>
+            <button type="button" class="btn btn-primary">保存</button>
+          </div>
+        </div>
+      </section>
+      <section class="card">
+        <div class="card-body">
+          <div class="card-head"><h3>商品图片</h3><span class="cap">仅 JPEG/PNG，≤5MB</span></div>
+          <div class="img-row">
+            <div class="thumb">无图片</div>
+            <input class="form-control" type="file">
+            <button type="button" class="btn btn-outline-secondary">上传/替换图片</button>
+          </div>
+        </div>
+      </section>
+    </div>
+    <div class="detail-col">
+      <section class="card">
+        <div class="card-body">
+          <div class="card-head"><h3>当前库存与成本</h3><span class="cap">只读</span></div>
+          <div class="readonly-list">
+            <div class="row"><span class="k">当前库存（${d.unit}）</span><span class="v">—</span></div>
+            <div class="row"><span class="k">移动平均成本（元/${d.unit}）</span><span class="v">—</span></div>
+            <div class="row"><span class="k">库存金额（元）</span><span class="v">—</span></div>
+            <div class="row"><span class="k">启用状态</span><span class="v">未启用</span></div>
+            <div class="row"><span class="k">库存状况</span><span class="v">未启用</span></div>
+          </div>
+          <details class="fold">
+            <summary>库存期初<span class="text-muted small" style="font-weight:400">未启用 · 点此设置</span></summary>
+            <div class="fold-body">
+              <div class="field-grid">
+                <div><label class="form-label">期初数量</label><input class="form-control"></div>
+                <div><label class="form-label">期初日期</label><input class="form-control" type="date"></div>
+                <div><label class="form-label">单位成本(元)</label><input class="form-control"></div>
+                <div><label class="form-label">库存总金额(元)</label><input class="form-control"></div>
+                <div><label class="form-label">成本来源</label><select class="form-select"><option>已知成本（有进货单/发票）</option></select></div>
+                <div><label class="form-label">来源备注</label><input class="form-control" value="系统上线期初"></div>
+              </div>
+              <label style="display:flex;gap:8px;align-items:center;margin-top:12px;font-size:13.5px">
+                <input type="checkbox"> 确认零期初
+              </label>
+              <p class="field-hint" style="margin-top:10px">期初日期决定可补录单据的最早业务日期；一个商品只有一个单位，不支持箱/个换算。</p>
+              <button type="button" class="btn btn-outline-secondary" style="margin-top:12px">启用期初库存</button>
+            </div>
+          </details>
+        </div>
+      </section>
+    </div>
+  </div>`;
+}
+
+/* 数值来自真机实测（/products/15/edit、/customers/4/edit，1706×898，ui_scale=125%）。
+   原型舞台宽度不同，页面高度会有出入，但「是否越过首屏线」的结论一致。 */
+const VERDICT = {
+  product: {
+    now:  `<b>真机实测：</b>内容高 <b>1457px</b>，首屏可视 <b>810px</b> → 要滚动 <b class="bad">647px</b>；「保存」按钮 top=858px，
+          <span class="bad">打开页面完全看不见主操作</span>。
+          <ul class="defects">
+            <li>只读的「当前库存与成本」卡占掉首屏最贵的 193px，而唯一要你做的事（补品牌）在它下面第 396px 处。</li>
+            <li>可编辑字段半宽（661px）单列堆叠 456px；图片 881px、期初 881px、卡片 1321px —— 三种右边缘。</li>
+            <li>库存期初 368px 常驻展开：6 个输入框 + 成本来源 + 备注 + 勾选，门店一年用一次。</li>
+          </ul>`,
+    next: `<b>建议版：</b>可编辑字段与主操作全部落在首屏内，<b class="good">不需要滚动</b>；只读信息移到右栏不再抢位置；库存期初收成一行摘要。
+          <ul class="defects">
+            <li>左栏＝一列<b>分组</b>卡片（基本信息 → 商品图片），右栏＝只读数据 ＋ 低频设置；页面高度取两栏较高者，不再相加。</li>
+            <li>组内只让短且相关的字段同行（品牌 / 单位 / 默认单价 / 安全库存），商品名称独占整行。</li>
+            <li>「待补全」从 57px 横幅降级为页头 chip ＋ 字段上的 ⚠ 标记，提示落到要改的那一格。</li>
+            <li>三种右边缘收敛成一条：卡片同宽，图片与期初不再各占 col-8。</li>
+          </ul>`
+  },
+  customer: {
+    now:  `<b>真机实测：</b>真实内容高 <b>579px</b>（区块 40＋57＋372，加内边距），<b>本来就不用滚动</b> ——
+          这一页的问题不是「长」，是<b>空</b>：表单只占内容区宽度的 <b class="bad">48%</b>（661 / 1381），右侧 720px 全空。
+          <ul class="defects">
+            <li>每个字段固定吃掉 ~83px（标签 20 ＋ 间距 6 ＋ 输入框 40 ＋ 下边距 16），信息密度只有三分之一。</li>
+            <li>「期初余额」是账款口径（影响对账），和联系方式混在一条竖列里，没有分组。</li>
+            <li>57px 的黄色横幅只重复一句「缺联系方式」，没有落到电话/地址这两个格子上。</li>
+          </ul>`,
+    next: `<b>建议版：</b>宽度利用率从 40% 提到 <b class="good">100%</b>，两个语义分组分开，提示落到字段上。
+          <ul class="defects">
+            <li><b>高度基本持平，不承诺变短</b>：省下的是横幅 57px ＋ 电话/地址合行 ~80px，
+                花掉的是分组小标题和卡片内边距 ~130px。要的是清楚，不是更短。</li>
+            <li>客户只有 4 个字段、页面上没有任何可读的派生数据 → 不给它硬塞侧栏，改用「一卡两段」：小标题分组，卡片铺满内容区。</li>
+            <li>名称独占一行（长文本），电话/地址是一对短且相关的字段 → 同行。</li>
+            <li>期初余额单独成段，附一句口径说明，不再和联系方式混排。</li>
+          </ul>`
+  }
+};
+
+let state = { page: 'product', layout: 'now' };
+
+function render(){
+  document.getElementById('pageBody').innerHTML =
+    (state.layout === 'now' ? renderNow : renderNext)(state.page);
+  document.getElementById('verdict').innerHTML = VERDICT[state.page][state.layout];
+  document.getElementById('navProduct').classList.toggle('active', state.page === 'product');
+  document.getElementById('navCustomer').classList.toggle('active', state.page === 'customer');
+  // 同步读一次几何（读 getBoundingClientRect 会强制布局，不依赖 rAF ——
+  // 页面在后台/不可见时 rAF 不会触发，探针就会拿不到值）。
+  const applyFold = () => {
+    const line = document.getElementById('foldline');
+    const total = document.querySelector('.shell').getBoundingClientRect().height;
+    const fold = 58 + 812;
+    const below = Math.max(0, Math.round(total - fold));
+    document.getElementById('belowTag').textContent = below > 0 ? `下方还有 ${below}px` : '全部在首屏内';
+    const color = below > 0 ? 'var(--erp-danger)' : 'var(--erp-success)';
+    line.querySelector('.line').style.borderTopColor = color;
+    document.getElementById('belowTag').style.color = color;
+    line.querySelector('.tag').style.background = color;
+    window.__protoH = {
+      shellH: Math.round(total), below: below,
+      bodyH: Math.round(document.querySelector('.page-body').getBoundingClientRect().height)
+    };
+  };
+  applyFold();
+  requestAnimationFrame(applyFold);
+}
+document.getElementById('segPage').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  state.page = b.dataset.page;
+  [...e.currentTarget.children].forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  render();
+});
+document.getElementById('segLayout').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  state.layout = b.dataset.layout;
+  [...e.currentTarget.children].forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  render();
+});
+render();
+</script>
+</body>
+</html>

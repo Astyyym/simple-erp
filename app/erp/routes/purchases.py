@@ -11,7 +11,7 @@ from erp.utils.audit import log_action
 from erp.utils.errors import error_response, not_found, RecordNotFound
 from erp.utils.money import cents_to_yuan, micro_to_yuan
 from erp.utils.order_numbering import next_nh_order_no, peek_nh_order_no
-from erp.utils.pinyin import pinyin_initials as build_pinyin_initials
+from erp.utils.pinyin import name_like_pattern, name_match_clause, name_match_params, pinyin_fields as build_pinyin_fields
 from erp.services.units import unit_options
 from erp.services.inventory import (
     create_purchase_order,
@@ -21,6 +21,10 @@ from erp.services.inventory import (
 )
 
 purchases_bp = Blueprint("purchases", __name__, url_prefix="/purchases")
+
+# 退拿货页「原拿货单」候选上限（与退货单的 `RETURN_SOURCE_LIMIT=30` 同口径）：
+# 点击即列最近 N 张，更多靠输入单号 / 往来对象检索，避免把 200 条塞进下拉。
+PURCHASE_SOURCE_LIMIT = 30
 
 
 def _has_purchase_postings(conn, purchase_id: int) -> bool:
@@ -110,9 +114,10 @@ def _resolve_purchase_customer_id() -> int:
                     conn=conn,
                 )
             return customer_id
+        customer_initials, customer_full = build_pinyin_fields(name)
         cur = conn.execute(
-            "INSERT INTO customers(name, pinyin_initials, origin) VALUES (?, ?, 'order')",
-            (name, build_pinyin_initials(name)),
+            "INSERT INTO customers(name, pinyin_initials, pinyin_full, origin) VALUES (?, ?, ?, 'order')",
+            (name, customer_initials, customer_full),
         )
         new_id = int(cur.lastrowid)
         log_action("auto_create_customer", "customer", new_id, f"拿货自动建档对象：{name}", conn=conn)
@@ -206,6 +211,7 @@ def create_purchase():
     ]
     rows = [row for row in form_rows if any(str(value).strip() for value in row.values())]
     try:
+        _reject_unknown_products(rows)
         with get_db() as conn:
             existing = conn.execute("SELECT order_no FROM purchase_orders WHERE request_key=?", (request_key,)).fetchone()
             order_no = existing["order_no"] if existing is not None else next_purchase_no(conn, business_date)
@@ -397,18 +403,11 @@ def _return_form(order=None, error='', form_rows=None, request_key=''):
             except ValueError:
                 order_no = ''
         today_history = _purchase_today_history(conn, today)
-        purchase_sources = conn.execute(
-            """SELECT id, order_no, customer_name, business_date
-                 FROM purchase_orders
-                WHERE deleted_at IS NULL AND status='saved'
-                ORDER BY business_date DESC, id DESC LIMIT 200"""
-        ).fetchall() if order is None else []
     return render_template('purchases/return_new.html',order=order,error=error,
                            selected_customer_id=selected_id,selected_customer_name=selected_name,
                            product_catalog=catalog,products=products,
                            form_rows=form_rows or [{}],today=today,
                            order_no=order_no,today_history=today_history,
-                           purchase_sources=purchase_sources,
                            unit_options=unit_options(),
                            request_key=request_key or secrets.token_urlsafe(24))
 
@@ -438,8 +437,10 @@ def create_return():
     form_rows = _typed_return_rows()
     rows = [row for row in form_rows if any(str(value).strip() for value in row.values())]
     try:
+        _reject_unknown_products(rows)
+        # 原拿货单只作**参考 / 追溯**（2026-10-13）：落库记住原单号，不约束明细行。
         customer_id = _resolve_purchase_customer_id()
-        result = service.create(customer_id=customer_id,business_date=request.form.get('business_date',''),items=rows,request_key=request.form.get('request_key',''),status=request.form.get('status','saved'),notes=request.form.get('notes',''))
+        result = service.create(customer_id=customer_id,business_date=request.form.get('business_date',''),items=rows,request_key=request.form.get('request_key',''),status=request.form.get('status','saved'),notes=request.form.get('notes',''),source_order_id=request.form.get('source_order_id',''))
     except (ValueError,sqlite3.OperationalError) as exc:
         message = str(exc) if isinstance(exc,ValueError) else '数据库忙，请稍后重试'
         if request.headers.get("X-Requested-With") == "fetch":
@@ -575,15 +576,56 @@ def return_action(return_id, action):
     return redirect(url_for('purchases.return_detail',return_id=return_id))
 
 
-@purchases_bp.get('/api/purchase_sources')
-def api_purchase_sources():
-    """Saved inbound orders for the 退拿货 source picker (A: linkage only)."""
+def _reject_unknown_products(rows):
+    """P3：拿货 / 退拿货必须命中已建档商品。
+
+    手输未命中时 product_id 是空串，落到 create_purchase_order 里会被 int('') 抛成
+    技术性异常；这里提前给出能照做的中文提示。
+    """
+    for index, row in enumerate(rows, start=1):
+        if not str(row.get("product_id") or "").strip():
+            raise ValueError(f"第 {index} 行没有匹配到已建档商品：只能选已建档商品，请先到「商品管理」建档")
+
+
+@purchases_bp.get('/api/products')
+def api_products():
+    """开单页商品联想（P3）：只返回已建档商品，按名称 / 拼音匹配。"""
+    q = (request.args.get('q') or '').strip()
     with get_db() as conn:
         rows = conn.execute(
-            """SELECT id, order_no, customer_name, business_date
-                 FROM purchase_orders
-                WHERE deleted_at IS NULL AND status='saved'
-                ORDER BY business_date DESC, id DESC LIMIT 200"""
+            f"""SELECT p.id, p.name, p.unit
+                      , COALESCE(s.enabled, 0) AS inventory_enabled
+                      , s.avg_cost_micro, s.quantity_3dp
+               FROM products AS p LEFT JOIN product_inventory_state AS s ON s.product_id=p.id
+               WHERE p.deleted_at IS NULL AND {name_match_clause('p.')}
+               ORDER BY p.usage_count DESC, p.name COLLATE NOCASE, p.id
+               LIMIT 20""",
+            (*name_match_params(q),),
+        ).fetchall()
+    return jsonify(_purchase_catalog(rows))
+
+
+@purchases_bp.get('/api/purchase_sources')
+def api_purchase_sources():
+    """退拿货页的原拿货单候选：点击列出最近单据，输入按单号 / 往来对象（含拼音首字母）过滤。
+
+    F4（2026-10-14）：原先是「服务端渲染最近 200 张的全量下拉」，退拿货页改成与退货单
+    同款的可检索输入框后，这里按需取数并带出 `customer_id`，供页面把往来对象对齐到原单。
+    """
+    q = (request.args.get('q') or '').strip()
+    where = "p.deleted_at IS NULL AND p.status='saved'"
+    params: list = []
+    if q:
+        where += f" AND (p.order_no LIKE ? OR {name_match_clause('c.')})"
+        params.append(name_like_pattern(q))
+        params.extend(name_match_params(q))
+    with get_db() as conn:
+        rows = conn.execute(
+            f"""SELECT p.id, p.order_no, p.customer_id, p.customer_name, p.business_date
+                  FROM purchase_orders AS p LEFT JOIN customers AS c ON c.id=p.customer_id
+                 WHERE {where}
+                 ORDER BY p.business_date DESC, p.id DESC LIMIT ?""",
+            (*params, PURCHASE_SOURCE_LIMIT),
         ).fetchall()
     return jsonify([dict(row) for row in rows])
 
@@ -624,8 +666,8 @@ def api_objects():
     q = (request.args.get('q') or '').strip()
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT id, name, phone FROM customers WHERE deleted_at IS NULL AND (name LIKE ? OR pinyin_initials LIKE ?) ORDER BY name LIMIT 20",
-            (f'%{q}%', f'%{q}%'),
+            f"SELECT id, name, phone FROM customers WHERE deleted_at IS NULL AND {name_match_clause()} ORDER BY name LIMIT 20",
+            (*name_match_params(q),),
         ).fetchall()
     return jsonify([dict(row) for row in rows])
 

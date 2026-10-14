@@ -64,8 +64,11 @@ def init_db() -> None:
         ensure_product_brand_field(conn)
         ensure_initialization_cost_source(conn)
         ensure_customer_pinyin_field(conn)
+        ensure_pinyin_full_fields(conn)
         backfill_product_pinyin_initials(conn)
         backfill_customer_pinyin_initials(conn)
+        backfill_product_pinyin_full(conn)
+        backfill_customer_pinyin_full(conn)
         purge_expired_recycle_bin(conn)
         row = conn.execute("PRAGMA integrity_check").fetchone()
         if row[0] != "ok":
@@ -221,6 +224,44 @@ def backfill_customer_pinyin_initials(conn: sqlite3.Connection) -> None:
         initials = pinyin_initials(row["name"])
         if initials:
             conn.execute("UPDATE customers SET pinyin_initials=? WHERE id=?", (initials, row["id"]))
+
+
+def ensure_pinyin_full_fields(conn: sqlite3.Connection) -> None:
+    """全拼派生列（商品 + 客户），2026-10-14 加。
+
+    首字母只能命中「xf」这类缩写，门店手输完整拼音（xiaofang / shuiqiang）匹配不到；
+    `pinyin_full` 与 `pinyin_initials` 并存，两者都不参与业务唯一键。
+    **幂等加列，不推进 schema 版本**（与既有 `ensure_*` 一致）。
+    """
+    for table in ("products", "customers"):
+        if "pinyin_full" not in _columns(conn, table):
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN pinyin_full TEXT DEFAULT ''")
+
+
+def backfill_product_pinyin_full(conn: sqlite3.Connection) -> None:
+    """商品全拼回填（幂等，只补空值，不覆盖已有值）。"""
+    from erp.utils.pinyin import pinyin_full
+
+    empty_rows = conn.execute(
+        "SELECT id, name FROM products WHERE COALESCE(pinyin_full, '') = ''"
+    ).fetchall()
+    for row in empty_rows:
+        full = pinyin_full(row["name"])
+        if full:
+            conn.execute("UPDATE products SET pinyin_full=? WHERE id=?", (full, row["id"]))
+
+
+def backfill_customer_pinyin_full(conn: sqlite3.Connection) -> None:
+    """客户全拼回填（幂等，只补空值，不覆盖已有值）。"""
+    from erp.utils.pinyin import pinyin_full
+
+    empty_rows = conn.execute(
+        "SELECT id, name FROM customers WHERE COALESCE(pinyin_full, '') = ''"
+    ).fetchall()
+    for row in empty_rows:
+        full = pinyin_full(row["name"])
+        if full:
+            conn.execute("UPDATE customers SET pinyin_full=? WHERE id=?", (full, row["id"]))
 
 
 def ensure_product_identity_constraint(conn: sqlite3.Connection) -> None:
@@ -812,6 +853,7 @@ CREATE TABLE IF NOT EXISTS products (
     is_active INTEGER NOT NULL DEFAULT 1,
     usage_count INTEGER NOT NULL DEFAULT 0,
     pinyin_initials TEXT DEFAULT '',
+    pinyin_full TEXT DEFAULT '',
     origin TEXT,
     brand TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -954,6 +996,7 @@ CREATE TABLE IF NOT EXISTS customers (
     is_active INTEGER NOT NULL DEFAULT 1,
     origin TEXT,
     pinyin_initials TEXT DEFAULT '',
+    pinyin_full TEXT DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TEXT,

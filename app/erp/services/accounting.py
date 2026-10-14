@@ -9,8 +9,9 @@ from typing import Iterable
 
 from erp.db import get_db
 from erp.utils.audit import log_action
-from erp.utils.money import line_subtotal_cents, yuan_to_cents
-from erp.utils.pinyin import pinyin_initials as build_pinyin_initials
+from erp.utils.money import cents_to_yuan, line_subtotal_cents, yuan_to_cents
+from erp.utils.pinyin import pinyin_fields as build_pinyin_fields
+from erp.utils.quantity import format_quantity_3dp
 from erp.services.inventory import post_return_order, post_sale_order, post_typed_return_order
 
 
@@ -73,6 +74,7 @@ def _typed_order_payload(
     order_date: str,
     notes: str,
     order_type: str,
+    source_order_id: int | None = None,
 ) -> dict:
     canonical_rows = []
     for row in rows:
@@ -89,6 +91,8 @@ def _typed_order_payload(
             "unit_price_cents": unit_price_cents,
         })
     return {
+        # 退货单可带「原销售单」作为**参考/追溯**（不约束明细行），所以必须进幂等摘要。
+        "source_order_id": int(source_order_id) if source_order_id else None,
         "customer_id": int(customer_id),
         "order_date": order_date,
         "status": status,
@@ -109,10 +113,11 @@ def _average_cost_micro_for_accounting(quantity_3dp: int, cost_total_micro: int)
 
 
 def create_customer(name: str, phone: str = "", address: str = "", opening_balance_cents: int = 0) -> int:
+    initials, full = build_pinyin_fields(name)
     with get_db() as conn:
         cur = conn.execute(
-            "INSERT INTO customers(name, phone, address, opening_balance_cents, pinyin_initials, origin) VALUES (?, ?, ?, ?, ?, 'manual')",
-            (name, phone, address, opening_balance_cents, build_pinyin_initials(name)),
+            "INSERT INTO customers(name, phone, address, opening_balance_cents, pinyin_initials, pinyin_full, origin) VALUES (?, ?, ?, ?, ?, ?, 'manual')",
+            (name, phone, address, opening_balance_cents, initials, full),
         )
         customer_id = cur.lastrowid
     log_action("create_customer", "customer", customer_id, f"新增客户: {name}")
@@ -148,14 +153,18 @@ def normalize_product_brand(brand) -> str | None:
     return text or None
 
 
-def create_product(name: str, unit: str, default_price_cents: int, pinyin_initials: str = "", *, safety_stock=None, brand=None) -> int:
+def create_product(name: str, unit: str, default_price_cents: int, pinyin_initials: str = "", *, pinyin_full: str = "", safety_stock=None, brand=None) -> int:
     name = normalize_product_name(name)
     safety_stock_3dp = _validate_safety_stock(safety_stock)
+    # 两列都从名称派生：调用方只给一列时，另一列也补齐（否则该列搜索永远不命中）。
+    built_initials, built_full = build_pinyin_fields(name)
+    pinyin_initials = pinyin_initials or built_initials
+    pinyin_full = pinyin_full or built_full
     with get_db() as conn:
         try:
             cur = conn.execute(
-                "INSERT INTO products(name, unit, default_price_cents, pinyin_initials, safety_stock_3dp, origin, brand) VALUES (?, ?, ?, ?, ?, 'manual', ?)",
-                (name, unit, default_price_cents, pinyin_initials, safety_stock_3dp, normalize_product_brand(brand)),
+                "INSERT INTO products(name, unit, default_price_cents, pinyin_initials, pinyin_full, safety_stock_3dp, origin, brand) VALUES (?, ?, ?, ?, ?, ?, 'manual', ?)",
+                (name, unit, default_price_cents, pinyin_initials, pinyin_full, safety_stock_3dp, normalize_product_brand(brand)),
             )
         except sqlite3.IntegrityError as exc:
             if "idx_products_business_identity" in str(exc) or "UNIQUE constraint failed: index" in str(exc):
@@ -183,24 +192,25 @@ def update_product_record(product_id: int, name: str, unit: str, default_price_c
         if inventory_state is not None and inventory_state["enabled"] and unit.strip() != current["unit"]:
             raise ValueError("单位已锁定")
         try:
+            initials, full = build_pinyin_fields(name)
             if brand is _BRAND_UNSET:
                 # 调用方没提供品牌 → 保持原值（旧调用点/局部更新不误清品牌）。
                 cursor = conn.execute(
                     """
                     UPDATE products
-                    SET name=?, unit=?, default_price_cents=?, safety_stock_3dp=?, pinyin_initials=?, updated_at=CURRENT_TIMESTAMP
+                    SET name=?, unit=?, default_price_cents=?, safety_stock_3dp=?, pinyin_initials=?, pinyin_full=?, updated_at=CURRENT_TIMESTAMP
                     WHERE id=? AND deleted_at IS NULL
                     """,
-                    (name, unit, default_price_cents, safety_stock_3dp, build_pinyin_initials(name), product_id),
+                    (name, unit, default_price_cents, safety_stock_3dp, initials, full, product_id),
                 )
             else:
                 cursor = conn.execute(
                     """
                     UPDATE products
-                    SET name=?, unit=?, default_price_cents=?, safety_stock_3dp=?, pinyin_initials=?, brand=?, updated_at=CURRENT_TIMESTAMP
+                    SET name=?, unit=?, default_price_cents=?, safety_stock_3dp=?, pinyin_initials=?, pinyin_full=?, brand=?, updated_at=CURRENT_TIMESTAMP
                     WHERE id=? AND deleted_at IS NULL
                     """,
-                    (name, unit, default_price_cents, safety_stock_3dp, build_pinyin_initials(name), normalize_product_brand(brand), product_id),
+                    (name, unit, default_price_cents, safety_stock_3dp, initials, full, normalize_product_brand(brand), product_id),
                 )
         except sqlite3.IntegrityError as exc:
             if "idx_products_business_identity" in str(exc) or "UNIQUE constraint failed: index" in str(exc):
@@ -270,9 +280,10 @@ def _upsert_product_and_customer_price(conn, customer_id: int, product_name: str
     product_name = normalize_product_name(product_name)
     product = conn.execute("SELECT * FROM products WHERE TRIM(name)=? ORDER BY id LIMIT 1", (product_name,)).fetchone()
     if product is None:
+        initials, full = build_pinyin_fields(product_name)
         cur_product = conn.execute(
-            "INSERT INTO products(name, unit, default_price_cents, pinyin_initials, usage_count, origin) VALUES (?, ?, ?, ?, 1, 'order')",
-            (product_name, unit, unit_price_cents, build_pinyin_initials(product_name)),
+            "INSERT INTO products(name, unit, default_price_cents, pinyin_initials, pinyin_full, usage_count, origin) VALUES (?, ?, ?, ?, ?, 1, 'order')",
+            (product_name, unit, unit_price_cents, initials, full),
         )
         new_id = int(cur_product.lastrowid)
         # G-0b：自动建档必须留痕，否则事后无法追溯是谁/哪张单建出来的。
@@ -365,6 +376,7 @@ def create_order_from_typed_rows(
     notes: str = "",
     order_type: str = "sale",
     request_key: str | None = None,
+    source_order_id: int | None = None,
 ) -> int:
     """Create an order from Excel-like typed rows.
 
@@ -372,6 +384,9 @@ def create_order_from_typed_rows(
     Unknown products are saved into products as the operator's product dictionary.
     Existing products with the same name are updated with the latest typed unit/price,
     while each order item keeps its own historical snapshot.
+
+    `source_order_id`（2026-10-13）：退货单可带一个**只作参考 / 追溯**的原销售单 ——
+    明细行不必逐行关联（允许手输），此时不走来源分摊路径，但单据上仍记住原单号。
     """
     if status not in {"draft", "saved"}:
         raise ValueError("新建订单只能是 draft 或 saved")
@@ -380,8 +395,23 @@ def create_order_from_typed_rows(
     sign = -1 if order_type == "return" else 1
     order_date = order_date or date.today().isoformat()
     rows = list(rows)
+    if source_order_id and order_type != "return":
+        source_order_id = None
+    if source_order_id:
+        with get_db() as conn:
+            source = conn.execute(
+                "SELECT id, order_date, customer_id FROM orders "
+                "WHERE id=? AND order_type='sale' AND status IN ('saved','printed') AND deleted_at IS NULL",
+                (source_order_id,),
+            ).fetchone()
+        if source is None:
+            raise ValueError("退货来源必须是有效销售单")
+        if int(source["customer_id"]) != int(customer_id):
+            raise ValueError("退货来源必须是同一客户的销售单")
+        if order_date < source["order_date"]:
+            raise ValueError("退货日期不能早于原销售日期")
     request_key = _submission_key(request_key, order_no)
-    payload = _typed_order_payload(customer_id, order_no, rows, status, order_date, notes or "", order_type)
+    payload = _typed_order_payload(customer_id, order_no, rows, status, order_date, notes or "", order_type, source_order_id)
     payload_hash = _payload_hash(payload)
     prepared = []
     total = 0
@@ -414,10 +444,10 @@ def create_order_from_typed_rows(
             """
             INSERT INTO orders(
                 order_no, customer_id, order_date, total_amount_cents, status, order_type,
-                notes, request_key, payload_hash
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                notes, request_key, payload_hash, source_order_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (order_no, customer_id, order_date, total, status, order_type, notes, request_key, payload_hash),
+            (order_no, customer_id, order_date, total, status, order_type, notes, request_key, payload_hash, source_order_id),
         )
         order_id = int(cur.lastrowid)
         if status == "saved" and order_type == "sale":
@@ -941,6 +971,64 @@ def void_adjustment(adjustment_id: int, reason: str) -> None:
             (reason, adjustment_id),
         )
         log_action("void_adjustment", "adjustment", adjustment_id, f"作废账务调整: {reason}", conn=conn)
+
+
+# 客户往来流水里「有商品明细」的三类单据（收款/调整没有明细）。
+LEDGER_ITEM_SOURCES = ("order", "purchase", "purchase_return")
+
+
+def get_ledger_document_items(source: str, document_id: int) -> dict:
+    """流水行展开用：某一条单据的**商品明细**（2026-10-14 用户要求）。
+
+    只回商品维度：名称 / 单位 / 数量 / 单价 / 金额 —— 单号、往来对象、日期在流水行上已经有了，
+    不重复。金额沿用流水行的符号口径（销售、退拿货正向；退货、拿货负向），
+    便于和上面那一行的「发生金额」对齐核对；作废单据的余额影响为 0，但明细仍按原方向显示。
+
+    收款 / 调整没有商品明细，直接抛 ValueError（路由转成 400，不是静默空列表）。
+    """
+    if source not in LEDGER_ITEM_SOURCES:
+        raise ValueError("该类型没有商品明细")
+    with get_db() as conn:
+        if source == "order":
+            order = conn.execute("SELECT order_type FROM orders WHERE id=?", (document_id,)).fetchone()
+            if order is None:
+                raise ValueError("单据不存在")
+            sign = -1 if order["order_type"] == "return" else 1
+            rows = conn.execute(
+                "SELECT product_name, unit, quantity AS quantity_text, NULL AS quantity_3dp,"
+                " unit_price_cents, subtotal_cents FROM order_items WHERE order_id=? ORDER BY id",
+                (document_id,),
+            ).fetchall()
+        elif source == "purchase":
+            # 拿货单的「单价」就是拿货单价（unit_cost_cents），与拿货单详情页同一口径。
+            sign = -1
+            rows = conn.execute(
+                "SELECT product_name, unit, NULL AS quantity_text, quantity_3dp,"
+                " unit_cost_cents AS unit_price_cents, subtotal_cents"
+                " FROM purchase_order_items WHERE purchase_order_id=? ORDER BY id",
+                (document_id,),
+            ).fetchall()
+        else:
+            sign = 1
+            rows = conn.execute(
+                "SELECT product_name, unit, NULL AS quantity_text, quantity_3dp,"
+                " unit_price_cents, subtotal_cents"
+                " FROM purchase_return_items WHERE purchase_return_id=? ORDER BY id",
+                (document_id,),
+            ).fetchall()
+    items = []
+    for row in rows:
+        quantity = row["quantity_text"]
+        if quantity is None:
+            quantity = format_quantity_3dp(row["quantity_3dp"], row["unit"])
+        items.append({
+            "product_name": row["product_name"],
+            "unit": row["unit"],
+            "quantity": quantity,
+            "unit_price": cents_to_yuan(row["unit_price_cents"]),
+            "amount": cents_to_yuan(sign * int(row["subtotal_cents"] or 0)),
+        })
+    return {"source": source, "id": int(document_id), "items": items}
 
 
 def customer_balance_cents(customer_id: int) -> int:

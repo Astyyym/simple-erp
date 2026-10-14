@@ -32,6 +32,14 @@
 </div>
 {% endif %}
 
+{% if preview.pending_completion %}
+<div class="alert alert-warning" role="alert">
+  <strong>有 {{ preview.pending_completion }} 条新增行字段不完整：</strong>
+  这些行**照样导入**（缺的字段留空即可，默认价留空按 0 元），但导入后会在列表里标记为「待补全」，
+  之后在档案里补上就会自动移出该筛选。下表「说明」列写明了每一行缺什么。
+</div>
+{% endif %}
+
 <form method="post" action="{{ action_url }}" class="d-flex flex-wrap gap-2 align-items-center mb-3">
   <input type="hidden" name="preview_json" value="{{ preview.to_json() }}">
   <label class="form-label mb-0">同名处理：</label>
@@ -64,7 +72,7 @@
         {% elif r.action == 'skip' %}<span class="badge text-bg-secondary">跳过</span>
         {% else %}<span class="badge text-bg-danger">错误</span>{% endif %}
       </td>
-      <td class="text-muted small">{{ r.reason }}</td>
+      <td class="text-muted small">{{ r.reason }}{% if r.completion %}{% if r.reason %}；{% endif %}{{ r.completion }}{% endif %}</td>
     </tr>
   {% endfor %}
   </tbody>

@@ -88,8 +88,15 @@ def test_product_import_preview_then_confirm_writes_rows():
 
     # 预检：未确认不得落库。
     assert preview.status_code == 200
-    assert "将新增：1" in html and "跳过：2" in html and "错误：3" in html
-    assert "第5行" in html and "价格不能为空" in html
+    assert "将新增：2" in html and "跳过：2" in html and "错误：2" in html
+    # 决策变更（2026-10-14 第二轮）：默认价留空不再拒绝该行 —— 照样导入、落库 0，
+    # 并在预检的该行「说明」里标明会进「待补全」。
+    assert "价格不能为空" not in html
+    table = html.split('<div class="table-responsive">', 1)[1]  # 只在这个区块里找，避免命中 preview_json 隐藏域
+    blank_row = [line for line in table.split("<tr>") if "空价商品" in line]
+    assert blank_row, "留空默认价的行应出现在预检表里（而不是错误清单）"
+    assert "缺默认价" in blank_row[0] or "默认价（用于开单计价）" in blank_row[0]
+    assert "导入后会标记为「待补全」" in blank_row[0]
     assert "第6行" in html and "价格不能为负数" in html
     assert "第7行" in html and "商品名称不能为空" in html
     with get_db() as conn:
@@ -98,13 +105,17 @@ def test_product_import_preview_then_confirm_writes_rows():
     # 确认后才落库。
     confirmed = _confirm(client, "/products/import/confirm", _preview_json(html))
     assert confirmed.status_code == 200
-    assert "新增：1" in confirmed.get_data(as_text=True)
+    assert "新增：2" in confirmed.get_data(as_text=True)
     with get_db() as conn:
         row = conn.execute("SELECT * FROM products WHERE name=?", (fresh,)).fetchone()
         old = conn.execute("SELECT * FROM products WHERE name=?", (existing,)).fetchone()
+        blank_price = conn.execute("SELECT * FROM products WHERE name='空价商品'").fetchone()
     assert row["unit"] == "个"
     assert row["default_price_cents"] == 1234
     assert old["default_price_cents"] == 999
+    # 留空的默认价按 0 落库，来源为「批量导入」→ 会被列表标成「待补全」。
+    assert blank_price["default_price_cents"] == 0
+    assert blank_price["origin"] == "import"
 
 
 def test_customer_import_preview_counts_soft_deleted_and_file_duplicates():
@@ -224,3 +235,98 @@ def test_product_import_rejects_spec_header_and_still_supports_two_column_header
     with get_db() as conn:
         old_row = conn.execute("SELECT unit, default_price_cents FROM products WHERE name=?", (old_name,)).fetchone()
     assert old_row["unit"] == "个" and old_row["default_price_cents"] == 888
+
+
+def test_incomplete_import_rows_import_anyway_and_get_flagged_todo():
+    """字段不完整的导入行：照样入库，但三处都提醒「待补全」（用户 2026-10-14 第二轮要求）。
+
+    三处 = 预检页提前提醒 + 导入结果摘要 + 列表徽标与「待补全」筛选。
+    口径见 `services/master_data_quality.py`：来源 order/import 且缺品牌或缺默认价。
+    """
+    init_db()
+    client = create_app().test_client()
+    no_brand = _name("导入缺品牌商品")
+    no_price = _name("导入缺价商品")
+    product_csv = (
+        "商品名称,品牌,单位,默认价,期初数量,期初成本（元）,备注\n"
+        f"{no_brand},,件,15,,,验证\n"
+        f"{no_price},金枪,件,,,,验证\n"
+    ).encode("utf-8-sig")
+    preview = _upload(client, "/products/import", "products.csv", product_csv)
+    preview_html = preview.get_data(as_text=True)
+    assert preview.status_code == 200
+    assert "将新增：2" in preview_html and "错误：0" in preview_html
+    # ① 预检页：条数 + 每一行缺什么。
+    assert "有 2 条新增行字段不完整" in preview_html
+    assert "缺品牌" in preview_html and "缺默认价" in preview_html
+    assert "导入后会标记为「待补全」" in preview_html
+
+    confirmed = _confirm(client, "/products/import/confirm", _preview_json(preview_html))
+    done_html = confirmed.get_data(as_text=True)
+    # ② 导入结果摘要。
+    assert "新增：2" in done_html
+    assert "其中 <strong>2</strong> 条字段不完整" in done_html
+
+    # ③ 列表徽标 + 筛选（口径与徽标同源）。
+    with get_db() as conn:
+        blank = conn.execute("SELECT * FROM products WHERE name=?", (no_price,)).fetchone()
+        assert blank["default_price_cents"] == 0, "默认价留空按 0 落库"
+        assert blank["origin"] == "import"
+        brand_row = conn.execute("SELECT * FROM products WHERE name=?", (no_brand,)).fetchone()
+        assert brand_row["origin"] == "import"
+    todo_html = client.get("/products/?quality=todo").get_data(as_text=True)
+    assert no_brand in todo_html and no_price in todo_html
+    body = client.get("/products/").get_data(as_text=True).split('id="productsResults"', 1)[1]
+    for name in (no_brand, no_price):
+        row = [line for line in body.split("<tr ") if name in line]
+        assert row and "待补全</span>" in row[0], f"{name} 应带待补全徽标"
+
+    # 补齐字段后自动移出（徽标、筛选、chip 计数三处同时生效）。
+    from erp.services.accounting import update_product_record
+
+    with get_db() as conn:
+        product_id = conn.execute("SELECT id FROM products WHERE name=?", (no_brand,)).fetchone()["id"]
+    update_product_record(product_id, no_brand, "件", 1500, brand="金枪")
+    assert no_brand not in client.get("/products/?quality=todo").get_data(as_text=True)
+
+
+def test_incomplete_customer_import_lands_in_todo():
+    init_db()
+    client = create_app().test_client()
+    name = _name("导入缺字段客户")
+    csv_data = f"客户名称,电话,地址,期初余额（元）,备注\n{name},,,0,验证\n".encode("utf-8-sig")
+    preview = _upload(client, "/customers/import", "customers.csv", csv_data)
+    preview_html = preview.get_data(as_text=True)
+    assert "有 1 条新增行字段不完整" in preview_html
+    assert "缺联系方式" in preview_html
+
+    confirmed = _confirm(client, "/customers/import/confirm", _preview_json(preview_html))
+    done_html = confirmed.get_data(as_text=True)
+    assert "新增：1" in done_html
+    assert "其中 <strong>1</strong> 条字段不完整" in done_html
+    assert name in client.get("/customers/?quality=todo").get_data(as_text=True)
+    body = client.get("/customers/").get_data(as_text=True).split('id="customersResults"', 1)[1]
+    row = [line for line in body.split("<tr>") if name in line]
+    assert row and "待补全</span>" in row[0]
+
+
+def test_templates_ship_a_fill_in_guide_sheet_and_keep_the_header_row_intact():
+    """模板第二个 sheet「填写说明」写明「留空 → 待补全」；第一行仍是纯表头。
+
+    第一行不能塞说明：`read_upload_detailed` 按整表头精确匹配，多一行会被当数据行或报「表头错误」。
+    """
+    init_db()
+    client = create_app().test_client()
+    cases = (
+        ("/products/import/template", ["商品名称", "品牌", "单位", "默认价", "期初数量", "期初成本（元）", "备注"]),
+        ("/customers/import/template", ["客户名称", "电话", "地址", "期初余额（元）", "备注"]),
+    )
+    for url, headers in cases:
+        response = client.get(url)
+        assert response.status_code == 200
+        workbook = load_workbook(io.BytesIO(response.data))
+        assert list(next(workbook.active.iter_rows(values_only=True))) == headers, url
+        assert "填写说明" in workbook.sheetnames, url
+        notes = "\n".join(str(cell[0].value or "") for cell in workbook["填写说明"].iter_rows(min_col=1, max_col=1))
+        assert "待补全" in notes, url
+        assert "留空" in notes, url

@@ -277,10 +277,10 @@ def test_return_browser_path_posts_decoupled_manual_return():
     new_page = client.get("/orders/return/new")
     html = new_page.get_data(as_text=True)
     assert new_page.status_code == 200
-    # 退货单保持手工开单；原销售单改为可选关联追溯（不强制、不改变计价）。
+    # 退货单保持手工开单；原销售单是可选的检索式关联（不强制、不改变计价）。
     assert "原销售单（可选）" in html
-    assert 'id="returnSourceSelect"' in html
-    assert "不关联，直接手工录入" in html
+    assert 'id="returnSourceInput"' in html
+    assert 'name="source_order_id"' in html
     with get_db() as conn:
         before = conn.execute(
             "SELECT quantity_3dp FROM product_inventory_state WHERE product_id=?", (product_id,)

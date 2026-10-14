@@ -47,11 +47,23 @@ def test_product_edit_has_prominent_computed_cost_and_top_return_without_editabl
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     parsed = RenderedHTML(html)
+    # 2026-10-14「主次与分组」重构 + 同日用户调整：只读摘要从「排在商品名称之前」改成
+    # 「主栏里独立一张卡」，并与「商品图片」对调（图片进 320px 侧栏）。
+    # 原断言（摘要源码位置早于 name="name"）表达的是「计算成本要显眼、且不可编辑」；
+    # 新布局用**结构**表达同一意图，所以断言改成：
+    #   ① 摘要在 .detail-grid 的第一列（主栏）里，位于侧栏列之前；
+    #   ② 摘要块内没有任何表单控件（「不可编辑」的机器可读表达）；
+    #   ③ 页头仍排在摘要之前。
+    grid_start = html.index('class="detail-grid"')
+    first_col = html.index('class="detail-col"')
+    second_col = html.index('class="detail-col"', first_col + 1)
     summary_start = html.index('aria-label="当前库存与计算成本"')
-    assert summary_start < html.index('name="name"')
+    assert grid_start < first_col < summary_start < second_col, "只读摘要必须在主栏（第一列）里，商品图片在侧栏"
     assert 'id="currentAverageCost"' in html
     assert "由库存流水计算，只读" in html
     assert html.index('class="page-header"') < summary_start
+    readonly_block = html[summary_start:html.index("</dl>", summary_start)]
+    assert "<input" not in readonly_block and "<select" not in readonly_block, "只读摘要里不能出现表单控件"
     returns = [link for link in parsed.links if link.get("href") == "/products/" and "btn" in link.get("class", "").split()]
     assert len(returns) == 1
     assert "page-return" in returns[0]["class"]

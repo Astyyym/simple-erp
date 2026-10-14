@@ -18,6 +18,7 @@
 | [sales-slip-paper-241x140.md](./sales-slip-paper-241x140.md) | 四类开单 241mm 连续纸版式：实体纸 241×140mm、逻辑页 215.9×139.7mm、左右 7.3mm 版心 |
 | [master-data-cleaning-before-import.md](./master-data-cleaning-before-import.md) | 在项目外安全清洗客户/商品资料的流程，不含真实客户清单 |
 | [product-identity-single-name.md](./product-identity-single-name.md) | **v14 商品身份 = 单一名称**：`spec` 四列已删、迁移三步（预检中止 → 自动备份 → 四表重建）、导入不再接受「型号」列、同类改动的测试适配经验 |
+| [name-search-and-pinyin-matching.md](./name-search-and-pinyin-matching.md) | 名称检索统一走 `utils/pinyin.py` 的三个 helper；**检索串必须先归一**（输入法隔音符号 `xiao'fang`、空格、全角）；只输分隔符不能退化成 `LIKE '%%'`；派生列写入/回填与已知边界 |
 | [erp-ui-redesign.md](./erp-ui-redesign.md) | UI 改版约束与视觉回归检查 |
 | [purchase-return-decoupling.md](./purchase-return-decoupling.md) | 四类开单解耦、商品选择器（v14 起单框：销售/退货手输、拿货/退拿货下拉）、手工退拿货与 schema13 迁移；NH 共用日流水取号 |
 | [analytics-visualization.md](./analytics-visualization.md) | 数据分析页月历热力图、条形排行、成本诊断三层图与顶部筛选口径 |
@@ -38,6 +39,7 @@
 | [lazy-import-module-seam.md](./lazy-import-module-seam.md) | 惰性导入重依赖时保留测试 seam 的写法（`None` 声明 vs `__getattr__`）与「单独跑」验收 |
 | [windows-chinese-path-exe-smoke.md](./windows-chinese-path-exe-smoke.md) | 中文路径下的 Windows 构建与隔离冒烟注意事项 |
 | [green-folder-upgrade-and-data.md](./green-folder-upgrade-and-data.md) | 当前数据根、旧绿色目录及安全升级 |
+| [portable-demo-package.md](./portable-demo-package.md) | 绿色版自带 200 条演示数据的五步打包流程、顺序硬约束、ZIP/安装包不得含演示数据、验收与两个坑（验收动作会弄脏包、`.bat` 行尾） |
 | [versioning-github-backup.md](./versioning-github-backup.md) | 版本、备份、推送、打包和 GitHub Release 的分离核验 |
 | [pywebview-save-print.md](./pywebview-save-print.md) | 桌面端异步保存后打开 PDF 的已落地模式 |
 

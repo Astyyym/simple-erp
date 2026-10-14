@@ -9,6 +9,7 @@ from jinja2 import Environment, select_autoescape
 from erp.config import load_config, project_path, runtime_root
 from erp.db import get_db
 from erp.services.accounting import get_customer_account_ledger
+from erp.utils.pinyin import name_match_clause, name_match_params
 from erp.services.reconciliation import get_reconciliation_print_context
 from erp.utils.errors import RecordNotFound
 from erp.utils.money import cents_to_yuan
@@ -344,8 +345,8 @@ def resolve_summary_customer_ids(customer_q: str, start_date: str, end_date: str
             if exact is not None:
                 return [int(exact["id"])]
             fuzzy = conn.execute(
-                "SELECT id, name FROM customers WHERE deleted_at IS NULL AND (name LIKE ? OR pinyin_initials LIKE ?) ORDER BY name",
-                (f"%{customer_q}%", f"%{customer_q}%"),
+                f"SELECT id, name FROM customers WHERE deleted_at IS NULL AND {name_match_clause()} ORDER BY name",
+                (*name_match_params(customer_q),),
             ).fetchall()
             if len(fuzzy) == 1:
                 return [int(fuzzy[0]["id"])]

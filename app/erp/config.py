@@ -8,6 +8,38 @@ from typing import Any
 
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
 
+# 单联容量（行）：四类开单共用 241mm 连续纸一联。默认 10 行；用户可在设置页选 6/8/10/12。
+# 2026-10-14（P6）起由常量改为**配置项**：此前注释写「不做配置项」，该决策已被本版推翻。
+# 真源只有这一处：打印模板 orders/print_template.html 与三个录入页模板都读它，
+# 避免「打印 10 行 / 录入页写死另一个数」的漂移（见 create_app 的 jinja 全局注入 + context processor）。
+SLIP_SIZE = 10
+SLIP_SIZE_CHOICES = (6, 8, 10, 12)
+# 每档的行高靠压单元格内边距换来（字号层级一字不动，字号有独立契约测试）。
+# ≤10 行沿用 0.9mm（2026-10-11 实打验证过，10 行余 6.0mm）；
+# 12 行必须收得更紧：0.9mm 时 12 行直接溢出成两联，0.4mm 实测余 7.0mm，
+# 且仍能容下「一行品名折行」（折一行 +4.44mm）——见 tests/test_slip_geometry_tiers.py。
+SLIP_ROW_PADDING_MM = {6: 0.9, 8: 0.9, 10: 0.9, 12: 0.4}
+
+
+def normalize_slip_size(value: Any) -> int:
+    """把任意来源的值收敛成合法档位；非法或越界一律回落默认 10（配置被手改坏也不能让打印变形）。"""
+    try:
+        size = int(str(value).strip())
+    except (TypeError, ValueError):
+        return SLIP_SIZE
+    return size if size in SLIP_SIZE_CHOICES else SLIP_SIZE
+
+
+def slip_size_from_config(cfg: dict[str, Any] | None) -> int:
+    """当前生效的单联行数：配置项 > 默认常量。"""
+    return normalize_slip_size((cfg or {}).get("slip_size", SLIP_SIZE))
+
+
+def slip_row_padding_mm(size: Any) -> float:
+    """该档位对应的明细单元格纵向内边距（mm）。"""
+    return SLIP_ROW_PADDING_MM.get(normalize_slip_size(size), SLIP_ROW_PADDING_MM[SLIP_SIZE])
+
+
 # UI / print defaults merged into config when keys are missing.
 CONFIG_DEFAULTS: dict[str, Any] = {
     "app_name": "简单ERP",
@@ -21,6 +53,8 @@ CONFIG_DEFAULTS: dict[str, Any] = {
     "print_offset_x_mm": 0,
     "print_offset_y_mm": 0,
     "print_scale": 1.0,
+    # 单联打印行数（6/8/10/12，默认 10）——四类开单连续纸一联的行数，见 SLIP_SIZE_CHOICES。
+    "slip_size": SLIP_SIZE,
     # 账款汇总表 PDF 默认使用标准 A4 竖版页面。
     "printer_paper_width_mm": 210,
     "printer_paper_height_mm": 297,
@@ -51,11 +85,6 @@ PRINT_INFO_REQUIRED_FIELDS = (
     ("print_order_phone", "订货电话"),
     ("print_order_address", "订货地址"),
 )
-
-# 单联容量（行）：四类开单共用 241mm 连续纸一联，每联 10 行（用户 2026-10-11 确认，不做配置项）。
-# 真源只有这一处：打印模板 orders/print_template.html 与三个录入页模板都读它，
-# 避免「打印 10 行 / 录入页写死另一个数」的漂移（见 create_app 的 jinja 全局注入）。
-SLIP_SIZE = 10
 
 UI_SCALE_CHOICES = ("100", "125", "150")
 UI_THEME_CHOICES = ("light", "dark", "system")

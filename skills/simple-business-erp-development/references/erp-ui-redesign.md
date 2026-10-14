@@ -193,17 +193,22 @@
 - **测试同步**：`test_order_list_filter_layout.py` / `test_ui_layout_reflow.py` / `test_analytics_v4_behavior.py` / `test_orders_type_filter.py` / `test_analytics_center.py` 中编码旧 4 列网格（`repeat(4,minmax(0,1fr))`、`grid-column:span 2`）与「全选」文案的断言必须随结构更新；`tests/test_filter_chips.py` 覆盖 chip 出现/移除/时间与全选不产生 chip。
 - **陷阱**：断言 `"全选" in html` 会在删掉按钮后命中 `base.html` 里描述该约定的**注释文本**而假通过。改筛选相关断言时不要只搜可见文案，要断言真实 class / `data-*` 属性。
 
-## 基础资料列表页顶部工具区（商品/客户，2026-10-09 重排）
+## 基础资料列表页顶部工具区（商品/客户，2026-10-09 重排；2026-10-14 两轮收敛）
 
 商品管理（`products/list.html`）与客户管理（`customers/list.html`）的顶部不再各写一份 `form.row` + 等分 `col`，改为共用 `base.html` 的 `.list-*` 类。旧的等分 `col` 按格子分宽而不是按语义分：1280 窗口下「默认单价(元)」占位需 79px、可用 71px 被裁；每行 78px 高只装 40px 控件，行内空、行间只剩 8px。
 
-- **结构**：`.list-import-card`（批量导入，独立卡片）+ `.list-tools`（`.list-search` 查找行 / `.list-facet` 档案筛选 / `.list-create` 新增），块间 `.list-tools>*+*{margin-top}` 用素线分隔。字段用 `.list-create-fields` 等宽网格 `repeat(auto-fit,minmax(180px,1fr))`——宁可整齐换行，也不把 6 个框压到 116px 挤成一排。
+- **两页结构必须一致（2026-10-14 第二轮用户要求「两页同步修改」）**：① `.list-import-card`（下载模板 / 导出 / 批量导入 / **新增**）② `.list-tools > .list-search`（查找行）③ `.list-batch-bar`（删除选中在左 + `.list-view-options` 档案筛选 chip 靠右）④ `.list-legend`（常驻图例行）。字段用 `.list-create-fields` 等宽网格 `repeat(auto-fit,minmax(180px,1fr))`——宁可整齐换行，也不把 6 个框压到 116px 挤成一排。
+- **「新增」放在「批量导入」右侧**：`.list-create-panel` 与 `.list-import-panel` 同在 `.list-import-row` 内，两者展开时都 `flex:1 1 100%` 占满整行。改这条位置要同时改两页，并更新 `test_create_panel_sits_right_of_the_import_panel_in_the_import_row`。注意：展开「批量导入」会把「新增」按钮挤到下一行（DOM 顺序决定），这是可接受的既有行为。
+- **档案筛选 chip 统一在批量动作条里**（`.list-batch-bar`，带 `id="productsViewBar"` / `id="customersViewBar"` + `data-refresh-fragment`），旧的 `.list-facet` 类已删除，不许回流。两页都有「全部 / 待补全（N） / 按拼音排序」。「待补全」口径唯一真源是 `services/master_data_quality.py`（来源 `order`+`import`，商品缺品牌或缺默认价、客户电话与地址都为空；详见 `references/customer-analytics-and-master-data-import.md`）。
+- **说明文字必须常驻，不能条件渲染在 chip 行内**（2026-10-14 第二轮修掉的真实缺陷）：原先 hint 只在 `quality=todo` 时插进 `.list-view-options`，而该组是 `margin-left:auto` 的右对齐 flex —— 一点「待补全」整组被顶到左边，按钮位置跳动。现在改 `.list-legend` 常驻一行、文案与筛选状态无关，且放在动作条**之外**（动作条会被就地替换）。回归断言：两种筛选态下 chip / 表格首行的 `getBoundingClientRect()` 必须完全相同。
+- **`.page-body` 必须 `scrollbar-gutter:stable`**（同一轮发现的第二处位移）：`.page-body` 是内层滚动容器，列表行数一跨过视口高度，竖向滚动条出现/消失就会让可用宽度差 **15px**，右对齐的 chip、图例宽度、表格一起横移。1440 视口下两种状态都无滚动条时**看不见这个缺陷**，必须在用户真实窗口宽度（本机 200% 缩放 ≈ **1280 CSS px**）下量。改这条布局后要同时核对 1280 与 1440 两个视口。
+- **按拼音排序**：`sort=pinyin` 走 `pinyin_full COLLATE NOCASE`（空值排最后再回落名称），商品与客户两条路由都要**白名单校验**取值；搜索表单要带 `quality`/`sort` 隐藏域，否则一搜索就丢筛选与排序。
 - **低频动作默认收起**：批量导入与单条新增都用原生 `<details>/<summary>`（不引 JS，键盘可操作）。切换标题在 `base.html` 统一（`.list-create-toggle` / `.list-import-toggle`，三角箭头靠 `::before` + `[open]` 旋转）。
 - **`<details>` 折叠陷阱（实测踩过）**：面板内 `form` 自带 `display:flex`（作者样式）会**盖掉浏览器 UA 对「闭合 details 内非 summary 子元素」的默认隐藏**，收起后表单仍可见。必须显式写 `.list-create-panel:not([open])>*:not(summary),.list-import-panel:not([open])>*:not(summary){display:none}`。只测 `details.open === false` 会漏掉这个缺陷，要测渲染高度/`display`。
 - **导出不能跟着导入一起收**：`下载Excel模板` / `导出Excel` 是迁移后高频动作，必须留在 `<details>` **之外**（与 `.list-import-links` 同层）；只有文件上传 + 同名策略 + 预检并导入收进面板。
 - **失败/成功要自动展开**：新增失败（路由传 `create_open=True`）和导入失败/完成（模板里 `import_error or import_result or import_init_errors` → `open`）都必须展开面板，否则用户看不到错误原因或结果摘要。路由侧只需在商品新增失败分支传 `create_open=True`；导入两个分支的变量本来就传了，模板内用 `{% set %}` 判定即可。
 - **提交按钮改名**：原提交按钮与切换标题同名（都叫「新增商品」），展开后出现两个同名按钮；提交按钮改叫「确认新增」。
-- **契约测试**：`tests/test_master_data_list_layout.py` 锁结构钩子（class/元素）而非可见文案；覆盖共用类、默认收起、`display:none` 规则存在、失败/完成自动展开、colgroup 列数、操作列宽度类。
+- **契约测试**：`tests/test_master_data_list_layout.py` 锁结构钩子（class/元素）而非可见文案；覆盖共用类、新增位置、默认收起、`display:none` 规则存在、失败/完成自动展开、colgroup 列数、操作列宽度类、图例常驻与动作条归属。`tests/test_product_list_view_options.py` / `tests/test_customer_list_view_options.py` 覆盖两页各自的 chip、口径、排序与就地刷新。
 
 ## 备份提示只保留一条，且必须随状态消失（2026-10-09）
 

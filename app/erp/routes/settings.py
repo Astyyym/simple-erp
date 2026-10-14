@@ -16,6 +16,7 @@ from erp.config import (
     load_config,
     location_file,
     migrate_data_root,
+    normalize_slip_size,
     save_config,
 )
 from erp.db import init_db
@@ -121,6 +122,9 @@ def save_settings():
             updates["print_offset_y_mm"] = _parse_print_mm(form.get("print_offset_y_mm"), "纵向偏移")
         if "print_scale" in form:
             updates["print_scale"] = _parse_print_scale(form.get("print_scale"))
+        # P6：每联打印行数（6/8/10/12）。非法或越界一律回落默认 10，不抛错、不写坏配置。
+        if "slip_size" in form:
+            updates["slip_size"] = normalize_slip_size(form.get("slip_size"))
         if not updates["shop_name"]:
             raise ValueError("公司名称不能为空")
         # app_name synced inside save_config

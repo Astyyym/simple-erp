@@ -135,18 +135,22 @@ def test_backfill_makes_profit_complete_and_deducts_backfilled_cost():
 
 
 def test_backfill_keeps_order_out_of_return_sources_until_cost_present():
-    """补录后该单出现在退货来源下拉（EXISTS 条件自动满足）。"""
-    from erp.routes.orders import _return_source_orders
+    """补录后该单出现在退货来源候选（EXISTS 条件自动满足）。
+
+    2026-10-13：候选取数从 `_return_source_orders` 收敛为 `_return_source_candidates`
+    （返回 `(候选, 缺成本张数)`，供检索式候选接口复用），断言口径不变。
+    """
+    from erp.routes.orders import _return_source_candidates
     from erp.services.cost_backfill import backfill_order_costs
 
     order_id, item_id, _, _ = _seed_sale_without_cost()
     with get_db() as conn:
-        assert [row["id"] for row in _return_source_orders(conn)] == []
+        assert [row["id"] for row in _return_source_candidates(conn)[0]] == []
 
     backfill_order_costs(order_id, [{"item_id": item_id, "unit_cost": "10"}], "补录后可退")
 
     with get_db() as conn:
-        assert [row["id"] for row in _return_source_orders(conn)] == [order_id]
+        assert [row["id"] for row in _return_source_candidates(conn)[0]] == [order_id]
 
 
 # --------------------------- Phase 1：快照保护与状态保护 ---------------------------

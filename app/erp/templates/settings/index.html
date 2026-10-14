@@ -130,6 +130,20 @@
         <input class="form-control" type="number" step="0.01" min="0.80" max="1.20" id="print_scale" name="print_scale" value="{{ config.print_scale }}">
       </div>
     </div>
+    <div class="row g-3 mt-1">
+      <div class="col-md-4">
+        <label class="form-label" for="slip_size">每联打印行数</label>
+        <select class="form-select" id="slip_size" name="slip_size">
+          {% for size in slip_size_choices %}
+          <option value="{{ size }}" {% if size == slip_size %}selected{% endif %}>{{ size }} 行</option>
+          {% endfor %}
+        </select>
+        <div class="form-text">
+          四类开单每张连续纸打几行，默认 10 行；超出部分自动续打下一联（续打处会标「本张已满 N 行」）。
+          行数越多行内边距越紧（12 行最紧），字号不变。
+        </div>
+      </div>
+    </div>
   </section>
 
   <div class="settings-actions">

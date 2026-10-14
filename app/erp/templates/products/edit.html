@@ -1,83 +1,154 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="page-header">
+{#
+  2026-10-14「主次与分组」重构 + 同日用户调整（见 开发短计划/2026-10-14_档案编辑页主次与分组重构_执行计划.md）：
+    · 主栏 = 要用户做的事与**参考数据**：基本信息 → 当前库存与成本（只读）→ 库存期初；
+    · 侧栏 = 低频、占位小的块：商品图片（用户 2026-10-14 指定与「当前库存与成本」对调位置）；
+    · 库存期初按用户要求**默认展开**（门店上线期初时直接可填，不必先找折叠条）；
+    · 「待补全」为页头 chip + 字段上的 ⚠（口径仍走 master_data_quality）。
+  三个 form 各自独立（基本信息 / 图片 / 期初），所以「保存」留在主表单底部，不搬到页头。
+#}
+{% set missing_keys = product_missing_keys(product) %}
+<header class="page-header">
   <h2>编辑商品</h2>
+  {% if missing_keys %}
+  <span class="completion-chip" title="补全后会自动退出「待补全」筛选">待补全 · 缺{{ product_missing_summary(product) }}</span>
+  {% endif %}
   <div class="page-actions"><a class="btn btn-outline-secondary page-return" href="/products/">返回商品管理</a></div>
-</div>
+</header>
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
 {% if inventory_message %}<div class="alert alert-success">{{ inventory_message }}</div>{% endif %}
-<section class="card mb-3" aria-label="当前库存与计算成本">
-  <div class="card-body">
-    <div class="d-flex flex-wrap justify-content-between gap-2 mb-3"><h3 class="h5 mb-0">当前库存与成本</h3><span class="text-muted small">由库存流水计算，只读</span></div>
-    <dl class="row mb-0">
-      <div class="col-md-3"><dt class="text-muted small">当前库存（{{ product.unit }}）</dt><dd class="fs-5 text-nowrap">{{ format_quantity_3dp(inventory_state.quantity_3dp, product.unit) if inventory_state and inventory_state.enabled else '—' }}</dd></div>
-      <div class="col-md-3"><dt class="text-muted small">移动平均成本（元/{{ product.unit }}）</dt><dd id="currentAverageCost" class="fs-5 text-nowrap">{% if not inventory_status.inventory_enabled or inventory_state.quantity_3dp is none %}—{% elif inventory_state.quantity_3dp == 0 %}无库存{% else %}{{ micro_to_yuan(inventory_state.avg_cost_micro) }}{% endif %}</dd></div>
-      <div class="col-md-3"><dt class="text-muted small">库存金额（元）</dt><dd class="fs-5 text-nowrap">{{ micro_to_yuan(inventory_state.cost_total_micro) if inventory_state and inventory_state.enabled else '—' }}</dd></div>
-      <div class="col-md-3"><dt class="text-muted small">启用状态</dt><dd class="fs-5 text-nowrap" data-field="enable-status">{{ inventory_status.enable_status }}</dd></div>
-      <div class="col-md-3"><dt class="text-muted small">库存状况</dt><dd class="fs-5 text-nowrap" data-field="inventory-status">{{ inventory_status.inventory_status }}</dd></div>
-    </dl>
-  </div>
-</section>
-<form method="post" class="col-6">
-  <label class="form-label">商品名称</label><input class="form-control mb-3" name="name" value="{{product.name}}" required>
-  <label class="form-label">品牌</label><input class="form-control mb-3" name="brand" value="{{product.brand or ''}}" placeholder="可留空">
-  <label class="form-label">单位</label><input class="form-control mb-3" name="unit" value="{{product.unit}}" {% if inventory_state and inventory_state.enabled %}readonly title="单位已锁定"{% endif %} required>
-  <label class="form-label">默认单价(元)</label><input class="form-control mb-3" name="default_price" value="{{cents_to_yuan(product.default_price_cents)}}" required>
-  <label class="form-label">安全库存</label><input class="form-control mb-3" name="safety_stock" value="{{format_quantity_3dp(product.safety_stock_3dp, product.unit)}}" required>
-  <button class="btn btn-primary">保存</button>
 
-</form>
-<section class="col-8 mt-4">
-  <h3>商品图片</h3>
-  {% if product.image_path %}<p><img src="/products/{{product.id}}/image" alt="{{product.name}}" style="max-width:180px;max-height:140px;object-fit:contain"></p>{% else %}<p class="text-muted">尚未上传图片</p>{% endif %}
-  <form method="post" action="/products/{{product.id}}/image" enctype="multipart/form-data" class="d-flex gap-2 align-items-center">
-    <input class="form-control" type="file" name="image" accept="image/jpeg,image/png" required>
-    <button class="btn btn-outline-primary text-nowrap">上传/替换图片</button>
-  </form>
-  <p class="text-muted small mt-2">仅支持 JPEG/PNG，单文件不超过 5MB；系统会重新编码并保存到数据目录。</p>
-</section>
-<hr class="my-4">
-<section class="col-8">
-  <h3>库存期初</h3>
-  <p class="text-muted small">
-    本系统<strong>一个商品只有一个单位</strong>，不支持箱/个换算——迁移时请先选定一个基准单位再填期初（C-4）。
-    期初日期决定「可补录单据的最早业务日期」，补录的单据<strong>不得早于期初日期</strong>（C-3）。
-  </p>
-  {% if not inventory_state %}
-  <p class="text-muted">状态：未启用。未启用商品不计入库存告急和库存金额。</p>
-  <form method="post" action="/products/{{product.id}}/inventory/initialize">
-    <input type="hidden" name="request_key" value="web-init-{{product.id}}-{{product.updated_at}}">
-    <div class="row g-2">
-      <div class="col-md-3"><label class="form-label">期初数量</label><input class="form-control" name="quantity" required></div>
-      <div class="col-md-3"><label class="form-label">单位成本(元)</label><input class="form-control" name="unit_cost" placeholder="与下方总金额二选一"></div>
-      <div class="col-md-3"><label class="form-label">库存总金额(元)</label><input class="form-control" name="total_cost" placeholder="填了则按数量反推单位成本"></div>
-      <div class="col-md-3"><label class="form-label">期初日期</label><input class="form-control" type="date" name="business_date" required></div>
-      <div class="col-md-3"><label class="form-label">成本来源</label>
-        <select class="form-select" name="cost_source">
-          <option value="known" selected>已知成本（有进货单/发票）</option>
-          <option value="estimated">用户确认估算（大致成本，留痕可审计）</option>
-        </select>
+<div class="detail-grid">
+  <div class="detail-col">
+    <section class="card">
+      <div class="card-body">
+        <div class="card-head">
+          <h3>基本信息</h3>
+          <span class="card-cap">{% if missing_keys %}带 ⚠ 的是待补全字段{% else %}商品身份 = 单一名称{% endif %}</span>
+        </div>
+        <form method="post">
+          <div class="field-grid">
+            <div class="field-full">
+              <label class="form-label" for="productName">商品名称</label>
+              <input class="form-control" id="productName" name="name" value="{{product.name}}" required>
+            </div>
+            <div{% if 'brand' in missing_keys %} class="field-warn"{% endif %}>
+              <label class="form-label" for="productBrand">品牌{% if 'brand' in missing_keys %}<span class="field-flag">⚠ 待补</span>{% endif %}</label>
+              <input class="form-control" id="productBrand" name="brand" value="{{product.brand or ''}}" placeholder="可留空">
+            </div>
+            <div>
+              <label class="form-label" for="productUnit">单位</label>
+              <input class="form-control" id="productUnit" name="unit" value="{{product.unit}}" {% if inventory_state and inventory_state.enabled %}readonly title="单位已锁定"{% endif %} required>
+            </div>
+            <div{% if 'default_price' in missing_keys %} class="field-warn"{% endif %}>
+              <label class="form-label" for="productPrice">默认单价(元){% if 'default_price' in missing_keys %}<span class="field-flag">⚠ 待补</span>{% endif %}</label>
+              <input class="form-control" id="productPrice" name="default_price" value="{{cents_to_yuan(product.default_price_cents)}}" required>
+            </div>
+            <div>
+              <label class="form-label" for="productSafety">安全库存</label>
+              <input class="form-control" id="productSafety" name="safety_stock" value="{{format_quantity_3dp(product.safety_stock_3dp, product.unit)}}" required>
+            </div>
+          </div>
+          <div class="card-foot">
+            {% if missing_keys %}<span class="text-muted small">补全后会自动退出「待补全」筛选。</span>{% endif %}
+            <button class="btn btn-primary">保存</button>
+          </div>
+        </form>
       </div>
-      <div class="col-md-3"><label class="form-label">来源备注</label><input class="form-control" name="source" value="系统上线期初"></div>
-    </div>
-    <label class="form-check mt-3"><input class="form-check-input" type="checkbox" name="confirm_zero" value="1"><span class="form-check-label">确认零期初（数量为 0 时勾选，成本来源将记为「明确零成本」）</span></label>
-    <button class="btn btn-outline-primary mt-3">启用期初库存</button>
-  </form>
-  {% else %}
-  <p>状态：已启用{% if initialization and initialization.locked %}，期初已锁定{% else %}，允许首笔库存流水前修订{% endif %}
-    {% if initialization and initialization.cost_source %}；成本来源：{% if initialization.cost_source == 'known' %}已知成本{% elif initialization.cost_source == 'estimated' %}用户确认估算{% elif initialization.cost_source == 'zero' %}明确零成本{% else %}未标注{% endif %}{% endif %}</p>
+    </section>
 
-  {% if initialization and not initialization.locked %}
-  <form method="post" action="/products/{{product.id}}/inventory/revise">
-    <input type="hidden" name="expected_version" value="{{inventory_state.version}}">
-    <div class="row g-2">
-      <div class="col-md-3"><label class="form-label">修订数量</label><input class="form-control" name="quantity" required></div>
-      <div class="col-md-3"><label class="form-label">修订单位成本(元)</label><input class="form-control" name="unit_cost" required></div>
-      <div class="col-md-6"><label class="form-label">修订原因</label><input class="form-control" name="reason" required></div>
-    </div>
-    <button class="btn btn-outline-secondary mt-3">修订期初</button>
-  </form>
-  {% endif %}
-  {% endif %}
-</section>
+    <section class="card">
+      <div class="card-body">
+        <div class="card-head"><h3>当前库存与成本</h3><span class="card-cap">由库存流水计算，只读</span></div>
+        {# 只读派生数据：宽栏下按 auto-fit 铺成一行（5 项在 947px 主栏里正好 5 列），
+           窄栏自动回落 3 / 2 列。整块不含任何表单控件。 #}
+        <dl class="readonly-grid" aria-label="当前库存与计算成本">
+          <div class="readonly-cell">
+            <dt>当前库存（{{ product.unit }}）</dt>
+            <dd class="readonly-value">{{ format_quantity_3dp(inventory_state.quantity_3dp, product.unit) if inventory_state and inventory_state.enabled else '—' }}</dd>
+          </div>
+          <div class="readonly-cell">
+            <dt>移动平均成本（元/{{ product.unit }}）</dt>
+            <dd id="currentAverageCost" class="readonly-value">{% if not inventory_status.inventory_enabled or inventory_state.quantity_3dp is none %}—{% elif inventory_state.quantity_3dp == 0 %}无库存{% else %}{{ micro_to_yuan(inventory_state.avg_cost_micro) }}{% endif %}</dd>
+          </div>
+          <div class="readonly-cell">
+            <dt>库存金额（元）</dt>
+            <dd class="readonly-value">{{ micro_to_yuan(inventory_state.cost_total_micro) if inventory_state and inventory_state.enabled else '—' }}</dd>
+          </div>
+          <div class="readonly-cell">
+            <dt>启用状态</dt>
+            <dd class="readonly-value" data-field="enable-status">{{ inventory_status.enable_status }}</dd>
+          </div>
+          <div class="readonly-cell">
+            <dt>库存状况</dt>
+            <dd class="readonly-value" data-field="inventory-status">{{ inventory_status.inventory_status }}</dd>
+          </div>
+        </dl>
+
+        {# 库存期初：门店上线期初时的高频入口，按用户要求默认展开；摘要行仍写清当前状态。 #}
+        <details class="fold" open>
+          <summary>库存期初<span class="fold-state">
+            {%- if not inventory_state %}未启用 · 填完点「启用期初库存」
+            {%- elif initialization and initialization.locked %}已启用 · 期初已锁定
+            {%- else %}已启用 · 允许首笔库存流水前修订{% endif -%}
+          </span></summary>
+          <div class="fold-body">
+            {% if not inventory_state %}
+            <p class="field-hint" style="margin:0 0 12px">未启用商品不计入库存告急和库存金额。期初日期决定「可补录单据的最早业务日期」，补录的单据<strong>不得早于期初日期</strong>（C-3）。本系统<strong>一个商品只有一个单位</strong>，不支持箱/个换算——请先选定一个基准单位再填期初（C-4）。</p>
+            <form method="post" action="/products/{{product.id}}/inventory/initialize">
+              <input type="hidden" name="request_key" value="web-init-{{product.id}}-{{product.updated_at}}">
+              <div class="field-grid">
+                <div><label class="form-label">期初数量</label><input class="form-control" name="quantity" required></div>
+                <div><label class="form-label">期初日期</label><input class="form-control" type="date" name="business_date" required></div>
+                <div><label class="form-label">单位成本(元)</label><input class="form-control" name="unit_cost" placeholder="与库存总金额二选一"></div>
+                <div><label class="form-label">库存总金额(元)</label><input class="form-control" name="total_cost" placeholder="填了则按数量反推单位成本"></div>
+                <div><label class="form-label">成本来源</label>
+                  <select class="form-select" name="cost_source">
+                    <option value="known" selected>已知成本（有进货单/发票）</option>
+                    <option value="estimated">用户确认估算（大致成本，留痕可审计）</option>
+                  </select>
+                </div>
+                <div><label class="form-label">来源备注</label><input class="form-control" name="source" value="系统上线期初"></div>
+              </div>
+              <label class="form-check" style="display:flex;gap:8px;align-items:center;margin:14px 0 0">
+                <input class="form-check-input" type="checkbox" name="confirm_zero" value="1">
+                <span class="form-check-label">确认零期初（数量为 0 时勾选，成本来源将记为「明确零成本」）</span>
+              </label>
+              <button class="btn btn-outline-secondary" style="margin-top:14px">启用期初库存</button>
+            </form>
+            {% else %}
+            <p class="field-hint" style="margin:0 0 12px">状态：已启用{% if initialization and initialization.locked %}，期初已锁定{% else %}，允许首笔库存流水前修订{% endif %}{% if initialization and initialization.cost_source %}；成本来源：{% if initialization.cost_source == 'known' %}已知成本{% elif initialization.cost_source == 'estimated' %}用户确认估算{% elif initialization.cost_source == 'zero' %}明确零成本{% else %}未标注{% endif %}{% endif %}</p>
+            {% if initialization and not initialization.locked %}
+            <form method="post" action="/products/{{product.id}}/inventory/revise">
+              <input type="hidden" name="expected_version" value="{{inventory_state.version}}">
+              <div class="field-grid">
+                <div><label class="form-label">修订数量</label><input class="form-control" name="quantity" required></div>
+                <div><label class="form-label">修订单位成本(元)</label><input class="form-control" name="unit_cost" required></div>
+                <div class="field-full"><label class="form-label">修订原因</label><input class="form-control" name="reason" required></div>
+              </div>
+              <button class="btn btn-outline-secondary" style="margin-top:14px">修订期初</button>
+            </form>
+            {% endif %}
+            {% endif %}
+          </div>
+        </details>
+      </div>
+    </section>
+  </div>
+
+  <div class="detail-col">
+    <section class="card">
+      <div class="card-body">
+        <div class="card-head"><h3>商品图片</h3><span class="card-cap">仅 JPEG/PNG，≤5MB</span></div>
+        <form method="post" action="/products/{{product.id}}/image" enctype="multipart/form-data" class="img-stack">
+          <div class="img-thumb">{% if product.image_path %}<img src="/products/{{product.id}}/image" alt="{{product.name}}">{% else %}无图片{% endif %}</div>
+          <input class="form-control" type="file" name="image" accept="image/jpeg,image/png" required>
+          <button class="btn btn-outline-secondary">上传/替换图片</button>
+        </form>
+        <p class="field-hint">系统会重新编码并保存到数据目录。</p>
+      </div>
+    </section>
+  </div>
+</div>
 {% endblock %}

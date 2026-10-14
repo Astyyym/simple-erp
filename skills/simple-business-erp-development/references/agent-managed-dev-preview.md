@@ -44,6 +44,14 @@ client.get("/health").get_json()["data_root"] == str(DATA)
 
 权威目录：`本地 Windows 仓库根目录`。`config.json` 默认值不代表预览端口。
 
+### 跑全量 pytest 前必须先关掉本机正在运行的 EXE
+
+`tests/test_desktop_startup.py::test_main_reports_real_database_failure_before_opening_webview` 依赖 `127.0.0.1:5000` **空闲**：它把库文件写成非法内容后要求 `main()` 抛「简单ERP启动失败…」。用户自己的 `dist\local-*\简单ERP\简单ERP.exe` 一旦占住 5000，`_port_is_open()` 就返回真、桌面壳判定「已在运行」直接返回 → 该测试既不抛错（报 `DID NOT RAISE`）又把端口探测拖到十几分钟。现象是**全量卡在 28% 不动**，而该文件单独跑全过——**这是环境占用，不是代码回归**，别去改业务代码。定位：`netstat -ano | grep LISTENING | grep ':5000'` 取 PID，再核对它的 `CommandLine` 是不是 `dist\...\简单ERP.exe`；关掉后全量 4 分钟跑完。
+
+`node --test` 必须给 glob（`node --test tests/frontend/*.test.mjs`）：Node 26 下传目录会被当成单个测试文件，报 `pass 0 / fail 1`。
+
+读 `打包Windows安装包.bat` 的输出日志要用 `iconv -c -f GBK -t UTF-8`（**带 `-c`**）：PyInstaller/ISCC 会写出非法 GBK 字节，不带 `-c` 时 iconv 在第一个坏字节处中断，日志看起来「只跑到 [1/5]」，容易误判成打包没跑完——脚本其实已经 5 步全过并 `EXIT=0`。
+
 ### Windows PowerShell 启动源码预览示例
 
 在项目根目录执行，确认 `.venv-win` 存在且依赖已安装。务必把数据写入本次独立临时目录，不要让预览连接正式业务库：

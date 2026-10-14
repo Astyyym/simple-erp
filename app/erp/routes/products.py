@@ -10,7 +10,7 @@ from erp.services.accounting import create_product, update_product_record
 from erp.services.inventory import initialize_product, revise_initialization
 from erp.services.inventory_status import project_inventory_status
 from erp.utils.errors import error_response, not_found
-from erp.utils.pinyin import pinyin_initials as build_pinyin_initials
+from erp.utils.pinyin import name_match_clause, name_match_params, pinyin_fields as build_pinyin_fields
 from erp.utils.exporting import (
     export_filename,
     product_export_headers,
@@ -21,10 +21,12 @@ from erp.config import data_root
 from erp.services.master_data_import import (
     PRODUCT_HEADERS,
     PRODUCT_HEADERS_TEMPLATE,
+    PRODUCT_TEMPLATE_NOTES,
     build_product_preview,
     product_totals,
     ImportPreview,
 )
+from erp.services.master_data_quality import COMPLETION_ORIGINS_SQL
 from erp.utils.importing import ImportFileError, ImportResult, excel_template, normalized_name, price_to_cents, read_upload_detailed
 from erp.utils.money import yuan_to_cents, cents_to_yuan, micro_to_yuan
 from erp.utils.backup import list_backups
@@ -56,14 +58,14 @@ def _backup_hint() -> dict:
 
 @products_bp.get("/import/template")
 def download_import_template():
-    return excel_template(list(PRODUCT_HEADERS_TEMPLATE), "商品导入模板.xlsx")
+    return excel_template(list(PRODUCT_HEADERS_TEMPLATE), "商品导入模板.xlsx", PRODUCT_TEMPLATE_NOTES)
 
 
 @products_bp.get("/export.xlsx")
 def export_products_excel():
     q = request.args.get("q", "").strip()
     with get_db() as conn:
-        products, _suggestions, _truncated = _product_list_context(conn, q)
+        products, _suggestions, _truncated, _todo_count = _product_list_context(conn, q)
     return workbook_download(
         product_export_headers(),
         product_export_rows(products),
@@ -72,37 +74,57 @@ def export_products_excel():
     )
 
 
-def _product_list_context(conn, q: str = ""):
-    # v14：商品身份只有名称，「待补全（型号为空）」筛选已随 spec 列一起删除
-    #（删列后该判定恒为真，留着只会让筛选永远全亮）。
+def _product_list_context(conn, q: str = "", quality: str = "", sort: str = ""):
+    # v14：商品身份只有名称，「待补全（型号为空）」筛选已随 spec 列一起删除。
+    # 2026-10-14 第一轮：用户要求商品页恢复「全部 / 待补全」+ 新增「按拼音排序」。
+    # 2026-10-14 第二轮：口径扩到「开单攒出 + 批量导入」，且缺品牌**或**缺默认价都算
+    #（导入时默认价可留空 → 落库 0）。判定必须与 services/master_data_quality 同源，
+    # 别在这里另写一套条件。
+    todo_sql = (
+        f" AND origin IN {COMPLETION_ORIGINS_SQL}"
+        " AND (TRIM(COALESCE(brand, ''))='' OR COALESCE(default_price_cents, 0) <= 0)"
+        if quality == "todo"
+        else ""
+    )
+    # 按拼音排序：pinyin_full 是「无分隔符小写全拼」，空值排最后再回落名称。
+    # 默认仍按名称（NOCASE）——中文是按码位排，不是拼音，这正是要加这个开关的原因。
+    pinyin_order = (
+        "ORDER BY (CASE WHEN COALESCE(p.pinyin_full, '') = '' THEN 1 ELSE 0 END), "
+        "p.pinyin_full COLLATE NOCASE ASC, p.name COLLATE NOCASE ASC, p.id ASC"
+    )
     if q:
         products = conn.execute(
-            """
+            f"""
             SELECT p.*, s.enabled AS inventory_enabled, s.quantity_3dp, s.cost_total_micro, s.avg_cost_micro
             FROM products AS p
             LEFT JOIN product_inventory_state AS s ON s.product_id=p.id
-            WHERE p.deleted_at IS NULL AND (p.name LIKE ? OR p.pinyin_initials LIKE ?)
-            ORDER BY p.usage_count DESC, p.id DESC
+            WHERE p.deleted_at IS NULL AND {name_match_clause('p.')}{todo_sql}
+            {pinyin_order if sort == 'pinyin' else 'ORDER BY p.usage_count DESC, p.id DESC'}
             """,
-            (f"%{q}%", f"%{q}%"),
+            (*name_match_params(q),),
         ).fetchall()
         truncated = False
     else:
         products = conn.execute(
-            """
+            f"""
             SELECT p.*, s.enabled AS inventory_enabled, s.quantity_3dp, s.cost_total_micro, s.avg_cost_micro
             FROM products AS p
             LEFT JOIN product_inventory_state AS s ON s.product_id=p.id
-            WHERE p.deleted_at IS NULL
-            ORDER BY p.name COLLATE NOCASE ASC, p.id ASC LIMIT 200
+            WHERE p.deleted_at IS NULL{todo_sql}
+            {pinyin_order if sort == 'pinyin' else 'ORDER BY p.name COLLATE NOCASE ASC, p.id ASC'} LIMIT 200
             """
         ).fetchall()
         # E4：到达上限即提示「已截断，可用搜索缩小范围」。
         truncated = len(products) >= 200
     suggestions = conn.execute(
-        "SELECT DISTINCT name FROM products WHERE deleted_at IS NULL AND (name LIKE ? OR pinyin_initials LIKE ?) ORDER BY usage_count DESC, name LIMIT 20",
-        (f"%{q}%" if q else "%", f"%{q}%" if q else "%"),
+        f"SELECT DISTINCT name FROM products WHERE deleted_at IS NULL AND {name_match_clause()} ORDER BY usage_count DESC, name LIMIT 20",
+        (*name_match_params(q),),
     ).fetchall()
+    todo_count = conn.execute(
+        "SELECT COUNT(*) AS c FROM products WHERE deleted_at IS NULL"
+        f" AND origin IN {COMPLETION_ORIGINS_SQL}"
+        " AND (TRIM(COALESCE(brand, ''))='' OR COALESCE(default_price_cents, 0) <= 0)"
+    ).fetchone()["c"]
     projected_products = []
     for row in products:
         product = dict(row)
@@ -112,7 +134,7 @@ def _product_list_context(conn, q: str = ""):
             safety_stock_3dp=product["safety_stock_3dp"],
         ))
         projected_products.append(product)
-    return projected_products, suggestions, truncated
+    return projected_products, suggestions, truncated, todo_count
 
 
 @products_bp.post("/import")
@@ -123,7 +145,7 @@ def import_products():
     except (ImportFileError, AttributeError) as exc:
         message = str(exc) if str(exc) else "请选择要导入的文件"
         with get_db() as conn:
-            products, suggestions, truncated = _product_list_context(conn)
+            products, suggestions, truncated, todo_count = _product_list_context(conn)
         return render_template(
             "products/list.html",
             products=products,
@@ -132,6 +154,9 @@ def import_products():
             cents_to_yuan=cents_to_yuan,
         micro_to_yuan=micro_to_yuan,
             q="",
+            quality="",
+            sort="",
+            todo_count=todo_count,
             import_error=message,
             **_backup_hint(),
         ), 400
@@ -207,22 +232,27 @@ def import_products_confirm():
                 if identity in existing:
                     result.skipped += 1
                     continue
+                initials, full = build_pinyin_fields(name)
                 cur = conn.execute(
-                    "INSERT INTO products(name, brand, unit, default_price_cents, pinyin_initials, origin) VALUES (?, ?, ?, ?, ?, 'import')",
+                    "INSERT INTO products(name, brand, unit, default_price_cents, pinyin_initials, pinyin_full, origin) VALUES (?, ?, ?, ?, ?, ?, 'import')",
                     (name, row.payload.get("brand") or None, row.payload.get("unit", "个"), int(row.payload.get("default_price_cents", 0)),
-                     build_pinyin_initials(name)),
+                     initials, full),
                 )
                 product_id = int(cur.lastrowid)
                 existing.add(identity)
                 result.added += 1
+                if row.completion:
+                    # 字段不完整的新增行：列表里已经带上「待补全」徽标，摘要里如实报数。
+                    result.pending_completion += 1
             elif row.action == "update":
                 if identity not in existing:
                     result.add_error(f"第{row.line_number}行：同名商品已不存在，无法更新")
                     continue
+                initials, full = build_pinyin_fields(name)
                 conn.execute(
-                    "UPDATE products SET brand=?, unit=?, default_price_cents=?, pinyin_initials=?, updated_at=CURRENT_TIMESTAMP WHERE TRIM(name)=? AND deleted_at IS NULL",
+                    "UPDATE products SET brand=?, unit=?, default_price_cents=?, pinyin_initials=?, pinyin_full=?, updated_at=CURRENT_TIMESTAMP WHERE TRIM(name)=? AND deleted_at IS NULL",
                     (row.payload.get("brand") or None, row.payload.get("unit", "个"), int(row.payload.get("default_price_cents", 0)),
-                     build_pinyin_initials(name), name),
+                     initials, full, name),
                 )
                 found = conn.execute(
                     "SELECT id FROM products WHERE TRIM(name)=? AND deleted_at IS NULL",
@@ -254,7 +284,7 @@ def import_products_confirm():
             init_errors.append(f"第{info['line']}行：商品已建档，但期初初始化失败（{exc}）")
 
     with get_db() as conn:
-        products, suggestions, truncated = _product_list_context(conn)
+        products, suggestions, truncated, todo_count = _product_list_context(conn)
     return render_template(
         "products/list.html",
         products=products,
@@ -263,6 +293,9 @@ def import_products_confirm():
         cents_to_yuan=cents_to_yuan,
         micro_to_yuan=micro_to_yuan,
         q="",
+        quality="",
+        sort="",
+        todo_count=todo_count,
         import_result=result,
         import_init_errors=init_errors,
         **_backup_hint(),
@@ -272,8 +305,15 @@ def import_products_confirm():
 @products_bp.get("/")
 def list_products():
     q = request.args.get("q", "").strip()
+    # 档案筛选与排序都只接受白名单取值（不把任意串带进查询）。
+    quality = request.args.get("quality", "").strip()
+    if quality not in ("", "todo"):
+        quality = ""
+    sort = request.args.get("sort", "").strip()
+    if sort not in ("", "pinyin"):
+        sort = ""
     with get_db() as conn:
-        rows, suggestions, truncated = _product_list_context(conn, q)
+        rows, suggestions, truncated, todo_count = _product_list_context(conn, q, quality, sort)
     return render_template(
         "products/list.html",
         products=rows,
@@ -282,6 +322,9 @@ def list_products():
         cents_to_yuan=cents_to_yuan,
         micro_to_yuan=micro_to_yuan,
         q=q,
+        quality=quality,
+        sort=sort,
+        todo_count=todo_count,
         **_backup_hint(),
     )
 
@@ -290,8 +333,8 @@ def product_suggestions():
     q = request.args.get("q", "").strip()
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT DISTINCT name FROM products WHERE deleted_at IS NULL AND (name LIKE ? OR pinyin_initials LIKE ?) ORDER BY usage_count DESC, name LIMIT 20",
-            (f"%{q}%", f"%{q}%"),
+            f"SELECT DISTINCT name FROM products WHERE deleted_at IS NULL AND {name_match_clause()} ORDER BY usage_count DESC, name LIMIT 20",
+            (*name_match_params(q),),
         ).fetchall()
     return jsonify([row["name"] for row in rows])
 
@@ -299,12 +342,13 @@ def product_suggestions():
 @products_bp.post("/create")
 def create_product_view():
     try:
-        create_product(request.form["name"], request.form["unit"], yuan_to_cents(request.form["default_price"]), (request.form.get("pinyin_initials", "") or build_pinyin_initials(request.form["name"])), safety_stock=request.form.get("safety_stock", "0"), brand=request.form.get("brand", ""))
+        initials, full = build_pinyin_fields(request.form["name"])
+        create_product(request.form["name"], request.form["unit"], yuan_to_cents(request.form["default_price"]), (request.form.get("pinyin_initials", "") or initials), pinyin_full=(request.form.get("pinyin_full", "") or full), safety_stock=request.form.get("safety_stock", "0"), brand=request.form.get("brand", ""))
     except (InvalidOperation, KeyError, TypeError, ValueError) as exc:
         message = str(exc) if isinstance(exc, ValueError) and str(exc) else "默认单价不是有效数字，请填写例如 12.00 的金额"
         with get_db() as conn:
-            products, suggestions, truncated = _product_list_context(conn)
-        return render_template("products/list.html", products=products, suggestions=suggestions, truncated=truncated, cents_to_yuan=cents_to_yuan, micro_to_yuan=micro_to_yuan, q="", import_error=message, create_open=True, **_backup_hint()), 400
+            products, suggestions, truncated, todo_count = _product_list_context(conn)
+        return render_template("products/list.html", products=products, suggestions=suggestions, truncated=truncated, cents_to_yuan=cents_to_yuan, micro_to_yuan=micro_to_yuan, q="", quality="", sort="", todo_count=todo_count, import_error=message, create_open=True, **_backup_hint()), 400
     return redirect(url_for("products.list_products"))
 
 @products_bp.get("/<int:product_id>/edit")

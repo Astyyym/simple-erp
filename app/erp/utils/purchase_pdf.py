@@ -3,7 +3,7 @@ from pathlib import Path
 
 from flask import current_app
 
-from erp.config import load_config, project_path, runtime_root
+from erp.config import load_config, project_path, runtime_root, slip_row_padding_mm, slip_size_from_config
 from erp.db import get_db
 from erp.utils.errors import RecordNotFound
 from erp.utils.money import cents_to_yuan
@@ -96,12 +96,17 @@ def generate_purchase_pdf(order_id: int, *, is_return: bool = False) -> Path:
     )}
     # 四类开单统一走连续纸逻辑页（配置默认 215.9×139.7），不再强制 A4。
     # 仍只复用销售单据的偏移/缩放校准，不引入界面缩放或过时纸型。
+    # P6（2026-10-14）：这里用 jinja_env 直渲、**不经过 context processor**，所以单联容量与
+    # 行内边距必须显式传值，否则会退回模板默认（10 行 / 0.9mm），与设置页选的档位不一致。
+    slip_size = slip_size_from_config(config)
     html = current_app.jinja_env.get_template('orders/print_template.html').render(
         order=public_order, items=public_items,
         config=public_config, cents_to_yuan=cents_to_yuan, document_title=title,
         document_type='purchase_return' if is_return else 'purchase',
         document_direction='本店退给对方' if is_return else '本店买入',
         object_role='往来对象（本单卖方）',
+        slip_size=slip_size,
+        slip_row_padding_mm=slip_row_padding_mm(slip_size),
     )
     out = project_path('temp_pdf', f"{'purchase_return' if is_return else 'purchase'}_{int(order_id)}.pdf")
     _, html_cls = _weasy()

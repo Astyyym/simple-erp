@@ -11,6 +11,7 @@
 {% if import_result %}
 <div class="alert alert-info">
   <strong>导入完成：</strong>新增：{{ import_result.added }}，跳过：{{ import_result.skipped }}，错误：{{ import_result.error_count }}
+  {% if import_result.pending_completion %}<div class="small mt-2">其中 <strong>{{ import_result.pending_completion }}</strong> 条字段不完整，已在列表里标记为「待补全」（点上方「待补全」可只看这些，补上后自动移出）。</div>{% endif %}
   {% if import_result.errors %}<ul class="mb-0 mt-2">{% for error in import_result.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
   {% if import_result.error_count > import_result.errors|length %}<div class="small mt-2">仅显示前{{ import_result.errors|length }}条错误，其余{{ import_result.error_count - import_result.errors|length }}条未展开。</div>{% endif %}
 </div>
@@ -32,7 +33,20 @@
         </select>
         <button class="btn btn-primary text-nowrap">预检并导入</button>
       </form>
-      <p class="list-import-hint">支持.xlsx/.csv，最大5MB；列：客户名称/电话/地址/期初余额（元）/备注；旧单列表头仍兼容。期初填**未结欠款**（正数=客户欠我）。</p>
+      <p class="list-import-hint">支持.xlsx/.csv，最大5MB；列：客户名称/电话/地址/期初余额（元）/备注；旧单列表头仍兼容。<strong>电话、地址可留空：留空的行照样导入，并在列表里标记为「待补全」</strong>；模板第二个 sheet「填写说明」有同一份规则。期初填**未结欠款**（正数=客户欠我）。</p>
+    </details>
+    <!-- 2026-10-14 第二轮（用户要求）：新增放在「批量导入」右侧，两页同构。 -->
+    <details class="list-create-panel" {% if create_open %}open{% endif %}>
+      <summary class="list-create-toggle">新增客户</summary>
+      <form class="list-create" method="post" action="/customers/create">
+        <div class="list-create-fields">
+          <input class="form-control" name="name" placeholder="客户名称" required>
+          <input class="form-control" name="phone" placeholder="电话">
+          <input class="form-control" name="address" placeholder="地址">
+          <input class="form-control" name="opening_balance" placeholder="期初余额(元)" value="0">
+        </div>
+        <button class="btn btn-primary">确认新增</button>
+      </form>
     </details>
   </div>
 </div>
@@ -43,29 +57,32 @@
       <div class="suggest-list d-none" id="customer_name_suggestions" role="listbox" aria-label="客户建议"></div>
     </div>
     {% if quality == 'todo' %}<input type="hidden" name="quality" value="todo">{% endif %}
+    {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
     <button class="btn btn-primary">查找客户</button>
     <a class="btn btn-outline-secondary" href="/customers/">清除信息</a>
   </form>
-  <div class="list-facet">
-    <span class="list-facet-cap">档案筛选：</span>
-    <a class="btn btn-sm {{ 'btn-primary' if quality != 'todo' else 'btn-outline-secondary' }}" data-inplace href="/customers/{% if q %}?q={{ q|urlencode }}{% endif %}">全部</a>
-    <a class="btn btn-sm {{ 'btn-primary' if quality == 'todo' else 'btn-outline-secondary' }}" data-inplace href="/customers/?quality=todo{% if q %}&q={{ q|urlencode }}{% endif %}">待补全{% if todo_count %}（{{ todo_count }}）{% endif %}</a>
-    {% if quality == 'todo' %}<span class="list-facet-hint">仅显示开单自动建档、且电话与地址都为空的客户；补全后会自动移出本筛选。</span>{% endif %}
-  </div>
-  <details class="list-create-panel" {% if create_open %}open{% endif %}>
-    <summary class="list-create-toggle">新增客户</summary>
-    <form class="list-create" method="post" action="/customers/create">
-      <div class="list-create-fields">
-        <input class="form-control" name="name" placeholder="客户名称" required>
-        <input class="form-control" name="phone" placeholder="电话">
-        <input class="form-control" name="address" placeholder="地址">
-        <input class="form-control" name="opening_balance" placeholder="期初余额(元)" value="0">
-      </div>
-      <button class="btn btn-primary">确认新增</button>
-    </form>
-  </details>
 </div>
-<button class="btn btn-danger mb-3" type="button" onclick="submitSelected('bulkCustomersForm','确认删除选中的客户吗？')">删除选中</button>
+<!-- 2026-10-14 第二轮：客户页同步商品页结构——「删除选中」与档案筛选同处批量动作条，
+     不再把 chip 单独放搜索行下面（两页此前不一致，用户截图指出）。 -->
+<div class="list-batch-bar" id="customersViewBar" data-refresh-fragment>
+  <button class="btn btn-danger" type="button" onclick="submitSelected('bulkCustomersForm','确认删除选中的客户吗？')">删除选中</button>
+  <div class="list-view-options">
+    <span class="list-view-cap">档案筛选：</span>
+    <a class="btn btn-sm {{ 'btn-primary' if quality != 'todo' else 'btn-outline-secondary' }}" data-inplace
+       href="/customers/?{% if q %}q={{ q|urlencode }}&{% endif %}{% if sort %}sort={{ sort }}{% endif %}">全部</a>
+    <a class="btn btn-sm {{ 'btn-primary' if quality == 'todo' else 'btn-outline-secondary' }}" data-inplace
+       href="/customers/?{% if q %}q={{ q|urlencode }}&{% endif %}quality=todo{% if sort %}&sort={{ sort }}{% endif %}">待补全{% if todo_count %}（{{ todo_count }}）{% endif %}</a>
+    <span class="list-view-sep" aria-hidden="true"></span>
+    {% if sort == 'pinyin' %}
+    <a class="btn btn-sm btn-primary" data-inplace
+       href="/customers/?{% if q %}q={{ q|urlencode }}&{% endif %}{% if quality %}quality={{ quality }}{% endif %}">按拼音排序</a>
+    {% else %}
+    <a class="btn btn-sm btn-outline-secondary" data-inplace
+       href="/customers/?{% if q %}q={{ q|urlencode }}&{% endif %}{% if quality %}quality={{ quality }}&{% endif %}sort=pinyin">按拼音排序</a>
+    {% endif %}
+  </div>
+</div>
+<p class="list-legend">「待补全」= 开单或批量导入时建的客户档案，电话与地址都为空（导入可留空），补齐后自动移出本筛选；「按拼音排序」按名称拼音排，可与筛选、搜索叠加。</p>
 <section id="customersResults" data-refresh-fragment>
 {% if truncated %}<div class="alert alert-warning py-2 mb-2" role="status"><strong>列表已截断</strong>（仅显示前 200 条）。迁移后客户可能很多，请用上方搜索缩小范围，**不要据此认为数据丢失**。</div>{% endif %}
 <form id="bulkCustomersForm" method="post" action="/customers/bulk_delete"></form>

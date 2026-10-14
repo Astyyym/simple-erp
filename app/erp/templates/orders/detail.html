@@ -13,7 +13,9 @@
 <div class="card mb-3"><div class="card-body">
   <p><strong>客户：</strong>{{order.customer_name}}</p>
   <p><strong>日期：</strong>{{order.order_date}}</p>
-  {% if order.source_order_id %}<p><strong>原销售单：</strong>{% if order.source_order_available %}<a href="/orders/{{order.source_order_id}}">{{order.source_order_no or order.source_order_id}}</a>{% else %}<span class="text-muted">{{order.source_order_no or ('#' ~ order.source_order_id) }}（原单已删除）</span>{% endif %}</p>{% endif %}
+  {# `source_order_available` 是路由单独传的上下文变量；写成 `order.source_order_available`
+     在 sqlite3.Row 上恒为 undefined → 永远渲染成「原单已删除」，即使原单好好的（2026-10-13 实修）。 #}
+  {% if order.source_order_id %}<p><strong>原销售单：</strong>{% if source_order_available %}<a href="/orders/{{order.source_order_id}}">{{order.source_order_no or order.source_order_id}}</a>{% else %}<span class="text-muted">{{order.source_order_no or ('#' ~ order.source_order_id) }}（原单已删除）</span>{% endif %}</p>{% endif %}
   <p><strong>状态：</strong>{{ {'draft':'草稿','saved':'正式保存','printed':'已打印','void':'已作废'}.get(order.status, order.status) }}</p>
   {% if order.status == 'void' %}<p><strong>作废原因：</strong>{{order.void_reason}}</p>{% endif %}
   <p><strong>备注：</strong>{{order.notes}}</p>

@@ -11,6 +11,7 @@
 {% if import_result %}
 <div class="alert alert-info">
   <strong>导入完成：</strong>新增：{{ import_result.added }}，跳过：{{ import_result.skipped }}，错误：{{ import_result.error_count }}
+  {% if import_result.pending_completion %}<div class="small mt-2">其中 <strong>{{ import_result.pending_completion }}</strong> 条字段不完整，已在列表里标记为「待补全」（点上方「待补全」可只看这些，补上后自动移出）。</div>{% endif %}
   {% if import_result.errors %}<ul class="mb-0 mt-2">{% for error in import_result.errors %}<li>{{ error }}</li>{% endfor %}</ul>{% endif %}
   {% if import_result.error_count > import_result.errors|length %}<div class="small mt-2">仅显示前{{ import_result.errors|length }}条错误，其余{{ import_result.error_count - import_result.errors|length }}条未展开。</div>{% endif %}
 </div>
@@ -38,7 +39,22 @@
         </select>
         <button class="btn btn-primary text-nowrap">预检并导入</button>
       </form>
-      <p class="list-import-hint">支持.xlsx/.csv，最大5MB；列：商品名称/品牌/单位/默认价/期初数量/期初成本（元）/备注（品牌可留空）；旧表头仍兼容（无品牌列时品牌留空，单位回落“个”）。<strong>不再识别「型号」列</strong>：请把型号直接写进商品名称（例如 闸阀DN50），含「型号」列的旧文件会报「表头错误」而不是静默丢数据。</p>
+      <p class="list-import-hint">支持.xlsx/.csv，最大5MB；列：商品名称/品牌/单位/默认价/期初数量/期初成本（元）/备注（品牌可留空）；旧表头仍兼容（无品牌列时品牌留空，单位回落“个”）。<strong>品牌、默认价可留空：留空的行照样导入，并在列表里标记为「待补全」（默认价留空按 0 元）</strong>；模板第二个 sheet「填写说明」有同一份规则。<strong>不再识别「型号」列</strong>：请把型号直接写进商品名称（例如 闸阀DN50），含「型号」列的旧文件会报「表头错误」而不是静默丢数据。</p>
+    </details>
+    <!-- 2026-10-14 第二轮（用户要求）：新增放在「批量导入」右侧，两页同构。
+         展开时 flex-basis:100% 占满整行（见 base.html .list-create-panel[open]）。 -->
+    <details class="list-create-panel" {% if create_open %}open{% endif %}>
+      <summary class="list-create-toggle">新增商品</summary>
+      <form class="list-create" method="post" action="/products/create">
+        <div class="list-create-fields">
+          <input class="form-control" name="name" placeholder="商品名" required>
+          <input class="form-control" name="brand" placeholder="品牌(可选)">
+          <input class="form-control" name="unit" placeholder="单位" required>
+          <input class="form-control" name="default_price" placeholder="默认单价(元)" required>
+          <input class="form-control" name="safety_stock" placeholder="安全库存">
+        </div>
+        <button class="btn btn-primary">确认新增</button>
+      </form>
     </details>
   </div>
 </div>
@@ -48,24 +64,31 @@
       <input class="form-control" id="productSearchInput" name="q" value="{{q}}" autocomplete="off" placeholder="输入相似字符查找商品">
       <div class="suggest-list d-none" id="product_name_suggestions" role="listbox" aria-label="商品建议"></div>
     </div>
+    {% if quality %}<input type="hidden" name="quality" value="{{ quality }}">{% endif %}
+    {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
     <button class="btn btn-primary">查找商品</button>
     <a class="btn btn-outline-secondary" href="/products/">清除信息</a>
   </form>
-  <details class="list-create-panel" {% if create_open %}open{% endif %}>
-    <summary class="list-create-toggle">新增商品</summary>
-    <form class="list-create" method="post" action="/products/create">
-      <div class="list-create-fields">
-        <input class="form-control" name="name" placeholder="商品名" required>
-        <input class="form-control" name="brand" placeholder="品牌(可选)">
-        <input class="form-control" name="unit" placeholder="单位" required>
-        <input class="form-control" name="default_price" placeholder="默认单价(元)" required>
-        <input class="form-control" name="safety_stock" placeholder="安全库存">
-      </div>
-      <button class="btn btn-primary">确认新增</button>
-    </form>
-  </details>
 </div>
-<button class="btn btn-danger mb-3" type="button" onclick="submitSelected('bulkProductsForm','确认删除选中的商品吗？')">删除选中</button>
+<div class="list-batch-bar" id="productsViewBar" data-refresh-fragment>
+  <button class="btn btn-danger" type="button" onclick="submitSelected('bulkProductsForm','确认删除选中的商品吗？')">删除选中</button>
+  <div class="list-view-options">
+    <span class="list-view-cap">档案筛选：</span>
+    <a class="btn btn-sm {{ 'btn-primary' if quality != 'todo' else 'btn-outline-secondary' }}" data-inplace
+       href="/products/?{% if q %}q={{ q|urlencode }}&{% endif %}{% if sort %}sort={{ sort }}{% endif %}">全部</a>
+    <a class="btn btn-sm {{ 'btn-primary' if quality == 'todo' else 'btn-outline-secondary' }}" data-inplace
+       href="/products/?{% if q %}q={{ q|urlencode }}&{% endif %}quality=todo{% if sort %}&sort={{ sort }}{% endif %}">待补全{% if todo_count %}（{{ todo_count }}）{% endif %}</a>
+    <span class="list-view-sep" aria-hidden="true"></span>
+    {% if sort == 'pinyin' %}
+    <a class="btn btn-sm btn-primary" data-inplace
+       href="/products/?{% if q %}q={{ q|urlencode }}&{% endif %}{% if quality %}quality={{ quality }}{% endif %}">按拼音排序</a>
+    {% else %}
+    <a class="btn btn-sm btn-outline-secondary" data-inplace
+       href="/products/?{% if q %}q={{ q|urlencode }}&{% endif %}{% if quality %}quality={{ quality }}&{% endif %}sort=pinyin">按拼音排序</a>
+    {% endif %}
+  </div>
+</div>
+<p class="list-legend">「待补全」= 开单或批量导入时建的商品档案，缺品牌或默认价（导入可留空，默认价留空按 0 元），补齐后自动移出本筛选；「按拼音排序」按名称拼音排，可与筛选、搜索叠加。</p>
 {% if truncated %}<div class="alert alert-warning py-2 mb-2" role="status"><strong>列表已截断</strong>（仅显示前 200 条）。迁移后商品可能很多，请用上方搜索缩小范围，**不要据此认为数据丢失**。</div>{% endif %}
 <form id="bulkProductsForm" method="post" action="/products/bulk_delete"></form>
 <style>
@@ -83,7 +106,7 @@
   <thead><tr><th class="selection-cell"><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>名称</th><th>品牌</th><th>单位</th><th class="numeric-cell">默认价</th><th class="numeric-cell">当前库存</th><th class="numeric-cell">安全库存</th><th class="numeric-cell">移动平均成本</th><th class="numeric-cell">库存金额</th><th>启用状态</th><th>库存状况</th><th>来源</th><th class="action-cell">操作</th></tr></thead>
   <tbody>{% for p in products %}
   <tr data-product-id="{{p.id}}">
-    <td class="selection-cell"><input form="bulkProductsForm" type="checkbox" name="ids" value="{{p.id}}"></td><td title="{{p.name}}">{{p.name}}</td><td title="{{p.brand}}">{{p.brand or ''}}</td><td>{{p.unit}}</td>
+    <td class="selection-cell"><input form="bulkProductsForm" type="checkbox" name="ids" value="{{p.id}}"></td><td title="{{p.name}}">{{p.name}}{% if product_needs_completion(p) %}<span class="badge text-bg-warning ms-1" title="缺品牌：补全后便于区分同名同规格商品">待补全</span>{% endif %}</td><td title="{{p.brand}}">{{p.brand or ''}}</td><td>{{p.unit}}</td>
     <td class="numeric-cell">¥{{cents_to_yuan(p.default_price_cents)}}</td>
     <td class="numeric-cell">{{format_quantity_3dp(p.quantity_3dp, p.unit) if p.inventory_enabled else '—'}}</td>
     <td class="numeric-cell">{{format_quantity_3dp(p.safety_stock_3dp, p.unit)}}</td>

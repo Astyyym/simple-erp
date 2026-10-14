@@ -16,7 +16,7 @@ from erp.utils.errors import error_response, not_found
 from erp.utils.audit import log_action
 from erp.utils.filter_chips import order_filter_chips
 from erp.utils.money import cents_to_yuan, line_subtotal_cents, micro_to_yuan, yuan_to_cents
-from erp.utils.pinyin import pinyin_initials as build_pinyin_initials
+from erp.utils.pinyin import name_like_pattern, name_match_clause, name_match_params, pinyin_fields as build_pinyin_fields
 from erp.services.units import unit_options
 from erp.utils.pdf import (
     ensure_order_printable,
@@ -228,8 +228,8 @@ def _resolve_customer_scope(conn, customer_q: str):
         return "customer", exact, None, [exact["name"]]
 
     fuzzy = conn.execute(
-        "SELECT id, name FROM customers WHERE deleted_at IS NULL AND (name LIKE ? OR pinyin_initials LIKE ?) ORDER BY name LIMIT 20",
-        (f"%{customer_q}%", f"%{customer_q}%"),
+        f"SELECT id, name FROM customers WHERE deleted_at IS NULL AND {name_match_clause()} ORDER BY name LIMIT 20",
+        (*name_match_params(customer_q),),
     ).fetchall()
     names = [row["name"] for row in fuzzy]
     if len(fuzzy) == 1:
@@ -349,23 +349,33 @@ def list_orders():
                 conditions.append("o.customer_id=?")
                 params.append(customer_row["id"])
             elif customer_q:
-                conditions.append("c.name LIKE ?")
-                params.append(f"%{customer_q}%")
+                # 2026-10-14：筛选框也按全拼匹配（此前只按名称/首字母）。
+                conditions.append(name_match_clause("c."))
+                params.extend(name_match_params(customer_q))
             return " AND ".join(conditions), params
 
-        def purchase_side_conditions():
+        def purchase_side_conditions(table: str):
+            """拿货/退拿货表只有客户名快照（无拼音列）→ 拼音回查客户档案。
+
+            `table` 用来限定 customer_id 属于哪个分支（两个 UNION 分支共用一个条件构造器）。
+            """
             conditions = ["deleted_at IS NULL", "business_date >= ?", "business_date <= ?"]
             params = [start_date, end_date]
             if scope == "customer":
                 conditions.append("customer_id=?")
                 params.append(customer_row["id"])
             elif customer_q:
-                conditions.append("customer_name LIKE ?")
-                params.append(f"%{customer_q}%")
+                conditions.append(
+                    "(customer_name LIKE ? OR EXISTS (SELECT 1 FROM customers c"
+                    f" WHERE c.id = {table}.customer_id AND c.deleted_at IS NULL AND {name_match_clause('c.')}))"
+                )
+                params.append(name_like_pattern(customer_q))
+                params.extend(name_match_params(customer_q))
             return " AND ".join(conditions), params
 
         order_where, order_params = order_side_conditions()
-        name_where, name_params = purchase_side_conditions()
+        purchase_where, purchase_params = purchase_side_conditions("purchase_orders")
+        purchase_return_where, purchase_return_params = purchase_side_conditions("purchase_return_orders")
 
         # orders stores no name snapshot: join customers for display and filtering.
         union_sql = f"""
@@ -387,15 +397,15 @@ def list_orders():
                    'purchase' AS order_type, total_amount_cents, status,
                    {_postings_expr(('purchase',), 'id')} AS has_postings,
                    0 AS has_missing_cost
-              FROM purchase_orders WHERE {name_where} AND {purchase_condition}
+              FROM purchase_orders WHERE {purchase_where} AND {purchase_condition}
             UNION ALL
             SELECT id, order_no, customer_id, customer_name, business_date,
                    'purchase_return' AS order_type, total_amount_cents, status,
                    {_postings_expr(('purchase_return',), 'id')} AS has_postings,
                    0 AS has_missing_cost
-              FROM purchase_return_orders WHERE {name_where} AND {purchase_return_condition}
+              FROM purchase_return_orders WHERE {purchase_return_where} AND {purchase_return_condition}
         """
-        union_params = [*order_params, *order_params, *name_params, *name_params]
+        union_params = [*order_params, *order_params, *purchase_params, *purchase_return_params]
         total_order_count = int(conn.execute(
             f"SELECT COUNT(*) AS total_count FROM ({union_sql})", union_params
         ).fetchone()["total_count"])
@@ -635,8 +645,9 @@ def _order_export_filter_context(fixed_order_type: str):
         conditions = ["o.deleted_at IS NULL", "o.order_type = ?"]
         params: list = [fixed_order_type]
         if customer_q:
-            conditions.append("c.name LIKE ?")
-            params.append(f"%{customer_q}%")
+            # 2026-10-14：导出/明细的客户筛选也按全拼匹配。
+            conditions.append(name_match_clause("c."))
+            params.extend(name_match_params(customer_q))
         conditions.append("o.order_date >= ?")
         params.append(start_date)
         conditions.append("o.order_date <= ?")
@@ -711,22 +722,69 @@ def _today_history(conn, today: str) -> list[dict]:
     ]
 
 
-def _return_source_orders(conn) -> list[dict]:
+# 退货来源候选上限：页面点击输入框即列出最近单据，输入按单号/客户名过滤，不做服务端全量渲染。
+RETURN_SOURCE_LIMIT = 30
+
+
+def _all_rows_linked(rows) -> bool:
+    """明细行是否**全部**关联了原单明细。
+
+    只要有一行是手输（没有 source_item_id），整单就按手输路径保存：来源关联此时
+    只是「参考 / 追溯」，不能反过来要求每一行都能对上原单。
+    """
+    rows = list(rows or [])
+    return bool(rows) and all(str(row.get("source_item_id") or "").strip() for row in rows)
+
+
+def _linked_rows_from_form() -> list[dict]:
+    """退货单里**关联了原单明细**的行：source_item_id + 数量 + 单位。"""
+    source_item_ids = request.form.getlist("source_item_id")
+    quantities = request.form.getlist("quantity")
+    units = request.form.getlist("unit")
+    return [
+        {"source_item_id": source_item_id, "quantity": quantity,
+         "unit": units[index] if index < len(units) else ""}
+        for index, (source_item_id, quantity) in enumerate(zip(source_item_ids, quantities))
+        if str(source_item_id).strip() and str(quantity).strip()
+    ]
+
+
+def _return_source_candidates(conn, query: str = "") -> tuple[list[dict], int]:
+    """退货来源候选：`(候选销售单, 被成本门槛挡掉的张数)`。
+
+    成本门槛必须保留：关联退货走 `create_return_order_from_source` → `_prepare_return_items`，
+    来源明细缺成本会被硬拒；列出来却选不了等于给用户一条死路。
+    被挡掉的张数单独返回，页面上提示「另有 N 张缺成本的销售单」，而不是把死路塞进候选。
+    """
+    q = (query or "").strip()
+    where = ("o.order_type='sale' AND o.status IN ('saved', 'printed') AND o.deleted_at IS NULL "
+             "AND c.deleted_at IS NULL")
+    params: list = []
+    if q:
+        where += f" AND (o.order_no LIKE ? OR {name_match_clause('c.')})"
+        params.append(name_like_pattern(q))
+        params.extend(name_match_params(q))
+    has_cost = ("EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id=o.id "
+                "AND oi.unit_cost_micro IS NOT NULL AND oi.cost_total_micro IS NOT NULL)")
     rows = conn.execute(
-        """
+        f"""
         SELECT o.id, o.order_no, o.order_date, o.customer_id, c.name AS customer_name,
                o.total_amount_cents
         FROM orders o JOIN customers c ON c.id=o.customer_id
-        WHERE o.order_type='sale' AND o.status IN ('saved', 'printed') AND o.deleted_at IS NULL
-          AND EXISTS (
-              SELECT 1 FROM order_items oi
-              WHERE oi.order_id=o.id AND oi.unit_cost_micro IS NOT NULL AND oi.cost_total_micro IS NOT NULL
-          )
+        WHERE {where} AND {has_cost}
         ORDER BY o.order_date DESC, o.id DESC
-        LIMIT 100
-        """
+        LIMIT ?
+        """,
+        (*params, RETURN_SOURCE_LIMIT),
     ).fetchall()
-    return [dict(row) for row in rows]
+    missing_cost_count = conn.execute(
+        f"""
+        SELECT COUNT(*) FROM orders o JOIN customers c ON c.id=o.customer_id
+        WHERE {where} AND NOT {has_cost}
+        """,
+        tuple(params),
+    ).fetchone()[0]
+    return [dict(row) for row in rows], int(missing_cost_count)
 
 
 @orders_bp.get("/api/today_history")
@@ -735,6 +793,20 @@ def api_today_history():
     with get_db() as conn:
         orders = _today_history(conn, today)
     return jsonify({"date": today, "orders": orders})
+
+
+@orders_bp.get("/api/return_sources")
+def api_return_sources():
+    """退货来源候选列表：点击输入框即列最近单据，输入按单号/客户名/拼音过滤。"""
+    with get_db() as conn:
+        rows, missing_cost_count = _return_source_candidates(conn, request.args.get("q", ""))
+    return jsonify({
+        "orders": [
+            {**row, "amount_display": cents_to_yuan(row["total_amount_cents"])}
+            for row in rows
+        ],
+        "missing_cost_count": missing_cost_count,
+    })
 
 
 @orders_bp.get("/api/return_sources/<int:source_order_id>")
@@ -803,8 +875,9 @@ def _new_order_form(order_type: str):
         products = conn.execute("SELECT * FROM products WHERE deleted_at IS NULL ORDER BY usage_count DESC, name").fetchall()
         order_no = next_order_no(conn, today)
         today_history = _today_history(conn, today)
-        return_sources = _return_source_orders(conn) if order_type == "return" else []
-    return render_template("orders/new.html", customers=customers, products=products, product_catalog=_product_catalog(products), today=today, order_no=order_no, request_key=uuid.uuid4().hex, order_type=order_type, today_history=today_history, return_sources=return_sources, cents_to_yuan=cents_to_yuan, unit_options=unit_options())
+    # 退货来源候选改由 `/orders/api/return_sources` 按需取（点击输入框即列最近单据），
+    # 不再在页面渲染时一次性铺全量候选。
+    return render_template("orders/new.html", customers=customers, products=products, product_catalog=_product_catalog(products), today=today, order_no=order_no, request_key=uuid.uuid4().hex, order_type=order_type, today_history=today_history, cents_to_yuan=cents_to_yuan, unit_options=unit_options())
 
 
 def _product_catalog(products) -> list[dict]:
@@ -851,9 +924,10 @@ def _resolve_customer_id(*, order_no: str = "") -> int:
                     conn=conn,
                 )
             return customer_id
+        customer_initials, customer_full = build_pinyin_fields(customer_name)
         cur = conn.execute(
-            "INSERT INTO customers(name, pinyin_initials, origin) VALUES (?, ?, 'order')",
-            (customer_name, build_pinyin_initials(customer_name)),
+            "INSERT INTO customers(name, pinyin_initials, pinyin_full, origin) VALUES (?, ?, ?, 'order')",
+            (customer_name, customer_initials, customer_full),
         )
         new_id = int(cur.lastrowid)
         # G-0b：自动建档必须留痕，摘要写明来源单据号。
@@ -936,24 +1010,22 @@ def _create_order_view(order_type: str):
         return error_response("订单状态无效，请选择“草稿”或“正式保存”。", title="订单未保存",
                               back_url=url_for("orders.new_order"))
     source_order_id_text = request.form.get("source_order_id", "").strip() if order_type == "return" else ""
+    source_order_id = None
     if source_order_id_text:
-        source_item_ids = request.form.getlist("source_item_id")
-        quantities = request.form.getlist("quantity")
-        units = request.form.getlist("unit")
-        rows = [
-            {"source_item_id": source_item_id, "quantity": quantity,
-             "unit": units[index] if index < len(units) else ""}
-            for index, (source_item_id, quantity) in enumerate(zip(source_item_ids, quantities))
-            if str(source_item_id).strip() and str(quantity).strip()
-        ]
         try:
             source_order_id = int(source_order_id_text)
         except ValueError:
             return error_response("退货来源销售单无效，请重新选择。", title="订单未保存",
                                   back_url=url_for("orders.new_return_order"))
-        if not rows:
+    # 2026-10-13：原单关联只作**参考 / 追溯**。只有「每一行都关联了原单明细」时才走
+    # 来源分摊路径（可退额度 + 成本快照）；只要有手输行，就按普通手输退货保存 ——
+    # 既不会因为"新增行没关联"被拒，也不会把手输行悄悄丢掉（原实现只保留有关联的行）。
+    linked_rows = _linked_rows_from_form() if source_order_id is not None else []
+    if order_type == "return" and source_order_id is not None and _all_rows_linked(linked_rows):
+        if not linked_rows:
             return error_response("退货至少选择一行并填写数量。", title="订单未保存",
                                   back_url=url_for("orders.new_return_order"))
+        rows = linked_rows
     else:
         rows = _typed_rows_from_form()
         detail_error = _validate_typed_rows(rows)
@@ -969,7 +1041,10 @@ def _create_order_view(order_type: str):
     except ValueError as exc:
         return error_response(str(exc), title="订单未保存", back_url=url_for("orders.new_order"))
     try:
-        if order_type == "return" and source_order_id_text:
+        # 2026-10-13：原单关联只作**参考 / 追溯**——只有「每一行都关联了原单明细」时才走
+        # 来源分摊路径（可退额度 + 成本快照）；只要有手输行，就按普通手输退货保存，
+        # 单据上仍记住原单号。此前只要有原单就强制逐行关联，新增行一保存就被拒。
+        if order_type == "return" and source_order_id_text and _all_rows_linked(rows):
             created_id = create_return_order_from_source(
                 customer_id,
                 order_no,
@@ -990,6 +1065,8 @@ def _create_order_view(order_type: str):
                 notes=request.form.get("notes", ""),
                 order_type=order_type,
                 request_key=request.form.get("request_key", ""),
+                # 关联只是参考：明细手输时也要把原单号记下来供对账回溯。
+                source_order_id=source_order_id if order_type == "return" else None,
             )
     except ValueError as exc:
         return error_response(str(exc), title="订单未保存", back_url=url_for("orders.new_order"))
@@ -1326,8 +1403,8 @@ def api_customers():
     q = request.args.get("q", "").strip()
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT id, name, phone, address FROM customers WHERE deleted_at IS NULL AND (name LIKE ? OR pinyin_initials LIKE ?) ORDER BY name LIMIT 20",
-            (f"%{q}%", f"%{q}%"),
+            f"SELECT id, name, phone, address FROM customers WHERE deleted_at IS NULL AND {name_match_clause()} ORDER BY name LIMIT 20",
+            (*name_match_params(q),),
         ).fetchall()
     return jsonify([dict(row) for row in rows])
 
@@ -1338,7 +1415,7 @@ def api_products():
     customer_id = request.args.get("customer_id", type=int) or 0
     with get_db() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT p.id, p.name, p.unit,
                    COALESCE(cp.price_cents, p.default_price_cents) AS effective_price_cents,
                    p.default_price_cents,
@@ -1347,11 +1424,11 @@ def api_products():
             FROM products p
             LEFT JOIN customer_prices cp ON cp.product_id=p.id AND cp.customer_id=?
             LEFT JOIN product_inventory_state s ON s.product_id=p.id
-            WHERE p.deleted_at IS NULL AND (p.name LIKE ? OR p.pinyin_initials LIKE ?)
+            WHERE p.deleted_at IS NULL AND {name_match_clause('p.')}
             ORDER BY CASE WHEN cp.price_cents IS NULL THEN 1 ELSE 0 END, p.usage_count DESC, p.name
             LIMIT 20
             """,
-            (customer_id, f"%{q}%", f"%{q}%"),
+            (customer_id, *name_match_params(q)),
         ).fetchall()
     return jsonify([
         {"id": row["id"], "name": row["name"], "unit": row["unit"], "unit_price": cents_to_yuan(row["effective_price_cents"]), "regular_price": cents_to_yuan(row["default_price_cents"]), "customer_price": cents_to_yuan(row["customer_price_cents"]) if row["customer_price_cents"] is not None else None, "is_customer_price": row["customer_price_cents"] is not None, "cost_available": bool(row["enabled"] and row["avg_cost_micro"] is not None and row["quantity_3dp"]), "unit_cost": micro_to_yuan(row["avg_cost_micro"], precision=6) if row["enabled"] and row["avg_cost_micro"] is not None and row["quantity_3dp"] else None}
