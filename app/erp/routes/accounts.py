@@ -12,12 +12,20 @@ from erp.services.accounting import (
     void_payment as void_payment_record,
     void_adjustment as void_adjustment_record,
 )
+from erp.services.reconciliation import (
+    create_reconciliation_snapshot,
+    get_reconciliation_order_detail,
+    get_reconciliation_print_context,
+    get_reconciliation_snapshot,
+    toggle_reconciliation_selection,
+    update_reconciliation_selection,
+)
 from erp.utils.errors import error_response, not_found, RecordNotFound
 from erp.utils.money import yuan_to_cents, cents_to_yuan
 from erp.utils.pdf import (
     ensure_account_summary_printable,
     generate_account_summary_pdf,
-    generate_account_ledger_pdf,
+    generate_reconciliation_pdf,
     render_desktop_preview,
     send_pdf_for_preview,
     wants_desktop_preview,
@@ -130,29 +138,6 @@ def summary_pdf():
     return send_pdf_for_preview(path, "客户货款汇总表.pdf", "客户货款汇总表")
 
 
-@accounts_bp.get("/ledger_pdf")
-def ledger_pdf():
-    customer_id = request.args.get("customer_id", type=int)
-    if not customer_id:
-        return error_response("请先在账款管理页选择客户，再打印客户账款流水。", title="未选择客户",
-                              back_url=url_for("accounts.accounts"))
-    start_date = request.args.get("start_date", "").strip()
-    end_date = request.args.get("end_date", "").strip()
-    if wants_desktop_preview():
-        # 预览页只渲染工具栏；PDF 由 iframe 再请求一次（一次点击只渲染一次）。
-        try:
-            # 账流水的校验口径在 get_customer_account_ledger 内（客户不存在即 ValueError）。
-            get_customer_account_ledger(customer_id, start_date, end_date)
-        except ValueError as error:
-            return not_found(str(error), back_url=url_for("accounts.accounts"))
-        return render_desktop_preview("客户账款流水.pdf", "客户账款流水")
-    try:
-        path = generate_account_ledger_pdf(customer_id, start_date, end_date)
-    except ValueError as error:
-        return not_found(str(error), back_url=url_for("accounts.accounts"))
-    return send_pdf_for_preview(path, "客户账款流水.pdf", "客户账款流水")
-
-
 def _redirect_to_ledger(customer_id: int | None = None):
     customer_id = customer_id or request.form.get("customer_id", type=int)
     params = {}
@@ -246,3 +231,156 @@ def adjustment():
         return error_response(str(error) if isinstance(error, ValueError) else "调整金额不合法或客户不存在。",
                               title="未能登记调整", back_url=back_url)
     return _redirect_to_ledger(customer_id)
+
+
+# ── 往来对账（2026-10-14 起归属账款管理）──────────────────────────────────────
+# 原路由在 /analytics/reconciliation：页面由账款管理进入，侧栏高亮与返回按钮却
+# 归数据分析，`from=accounts` 覆盖机制有三个漏点（勾选跳转、全选 redirect、
+# 打印预览 return_to），已实测复现。现整体并入 accounts 模块：endpoint 即
+# owner，归属与返回恒定「账款管理」，不再需要来源参数。
+
+@accounts_bp.get("/reconciliation")
+def reconciliation():
+    with get_db() as conn:
+        customers = conn.execute("SELECT * FROM customers WHERE deleted_at IS NULL ORDER BY name").fetchall()
+    customer_id = request.args.get("customer_id", type=int)
+    start_date = request.args.get("start_date", "").strip()
+    end_date = request.args.get("end_date", "").strip()
+    order_type_filter = request.args.get("order_type", "all").strip() or "all"
+    snapshot_id = request.args.get("snapshot_id", type=int)
+    page = max(request.args.get("page", 1, type=int), 1)
+    page_size = 50
+    error = ""
+    snapshot = None
+    if snapshot_id:
+        try:
+            snapshot = get_reconciliation_snapshot(snapshot_id)
+            customer_id = snapshot["customer_id"]
+            start_date = snapshot["start_date"]
+            end_date = snapshot["end_date"]
+            order_type_filter = snapshot["order_type_filter"]
+        except ValueError as exc:
+            error = str(exc)
+    elif customer_id:
+        try:
+            snapshot_id = create_reconciliation_snapshot(customer_id, start_date, end_date, order_type_filter)
+            snapshot = get_reconciliation_snapshot(snapshot_id)
+        except ValueError as exc:
+            error = str(exc)
+    display_rows = []
+    total_pages = 0
+    if snapshot:
+        total_pages = max((snapshot["scope_count"] + page_size - 1) // page_size, 1)
+        page = min(page, total_pages)
+        start = (page - 1) * page_size
+        display_rows = snapshot["rows"][start : start + page_size]
+    return render_template(
+        "accounts/reconciliation.html",
+        customers=customers,
+        snapshot=snapshot,
+        error=error,
+        customer_id=customer_id,
+        start_date=start_date,
+        end_date=end_date,
+        order_type_filter=order_type_filter,
+        cents_to_yuan=cents_to_yuan,
+        display_rows=display_rows,
+        page=page,
+        total_pages=total_pages,
+        recon_back_url=url_for(
+            "accounts.accounts",
+            customer_id=customer_id or None,
+            start_date=start_date or None,
+            end_date=end_date or None,
+        ),
+        recon_back_label="返回账款管理",
+        return_url=(
+            request.full_path.removesuffix("?")
+            if request.args.get("snapshot_id", type=int) == snapshot_id and request.args.get("page", 1, type=int) == page
+            else url_for("accounts.reconciliation", snapshot_id=snapshot_id, page=page)
+        ) if snapshot else "",
+    ), (400 if error else 200)
+
+
+@accounts_bp.post("/reconciliation/select/<int:snapshot_id>")
+def reconciliation_select(snapshot_id: int):
+    try:
+        update_reconciliation_selection(
+            snapshot_id,
+            mode=request.form.get("mode", "explicit"),
+            selected_ids=request.form.getlist("selected_ids"),
+            excluded_ids=request.form.getlist("excluded_ids"),
+        )
+        snapshot = get_reconciliation_snapshot(snapshot_id)
+    except (TypeError, ValueError) as exc:
+        return error_response(str(exc), title="对账选择未保存", back_url=url_for("accounts.reconciliation"))
+    return redirect(url_for(
+        "accounts.reconciliation",
+        customer_id=snapshot["customer_id"],
+        start_date=snapshot["start_date"] or None,
+        end_date=snapshot["end_date"] or None,
+        order_type=snapshot["order_type_filter"],
+        snapshot_id=snapshot_id,
+        page=max(request.form.get("page", 1, type=int), 1),
+    ))
+
+
+@accounts_bp.post("/reconciliation/toggle/<int:snapshot_id>/<int:order_id>")
+def reconciliation_toggle(snapshot_id: int, order_id: int):
+    try:
+        # Compatibility endpoint: a bare integer always refers to orders.
+        snapshot = get_reconciliation_snapshot(snapshot_id)
+        toggle_reconciliation_selection(
+            snapshot_id,
+            order_id if snapshot["scope_version"] == 1 else f"order:{order_id}",
+            request.form.get("selected", "0") == "1",
+        )
+    except (TypeError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"ok": True})
+
+
+@accounts_bp.post("/reconciliation/toggle/<int:snapshot_id>/document/<string:document_key>")
+def reconciliation_document_toggle(snapshot_id: int, document_key: str):
+    try:
+        toggle_reconciliation_selection(snapshot_id, document_key, request.form.get("selected", "0") == "1")
+    except (TypeError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"ok": True})
+
+
+@accounts_bp.get("/reconciliation/<int:snapshot_id>/document/<string:order_id>")
+def reconciliation_document_detail(snapshot_id: int, order_id: str):
+    return reconciliation_order_detail(snapshot_id, order_id)
+
+
+@accounts_bp.get("/reconciliation/<int:snapshot_id>/order/<int:order_id>")
+def reconciliation_order_detail(snapshot_id: int, order_id: int):
+    try:
+        detail = get_reconciliation_order_detail(snapshot_id, order_id)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    if detail is None:
+        return jsonify({"error": "单据不在当前对账查询范围内"}), 404
+    return jsonify(detail)
+
+
+@accounts_bp.get("/reconciliation/pdf/<int:snapshot_id>")
+def reconciliation_pdf(snapshot_id: int):
+    if wants_desktop_preview():
+        # 预览页只渲染工具栏；PDF 由 iframe 再请求一次（一次点击只渲染一次）。
+        try:
+            # 对账单的校验口径在 get_reconciliation_print_context 内（快照非法/未选单据即抛错）。
+            get_reconciliation_print_context(snapshot_id)
+        except RecordNotFound as exc:
+            return not_found(str(exc), title="对账查询不存在", back_url=url_for("accounts.reconciliation"))
+        except ValueError as exc:
+            return error_response(str(exc), title="对账单未能生成", back_url=url_for("accounts.reconciliation"))
+        return render_desktop_preview("往来交易对账单.pdf", "往来交易对账单")
+    try:
+        path = generate_reconciliation_pdf(snapshot_id)
+    except RecordNotFound as exc:
+        return not_found(str(exc), title="对账查询不存在", back_url=url_for("accounts.reconciliation"))
+    except ValueError as exc:
+        return error_response(str(exc), title="对账单未能生成", back_url=url_for("accounts.reconciliation"))
+    return send_pdf_for_preview(path, "往来交易对账单.pdf", "往来交易对账单")

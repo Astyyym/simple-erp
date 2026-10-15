@@ -1,16 +1,18 @@
 import re
 import threading
 from pathlib import Path
-from collections import defaultdict
 from urllib.parse import urlencode, urlsplit, urlunsplit
 from flask import current_app, render_template, request, send_file
 from jinja2 import Environment, select_autoescape
 
 from erp.config import load_config, project_path, runtime_root
 from erp.db import get_db
-from erp.services.accounting import get_customer_account_ledger
 from erp.utils.pinyin import name_match_clause, name_match_params
-from erp.services.reconciliation import get_reconciliation_print_context
+from erp.services.reconciliation import (
+    DIRECTIONS,
+    TYPE_LABELS,
+    get_reconciliation_print_context,
+)
 from erp.utils.errors import RecordNotFound
 from erp.utils.money import cents_to_yuan
 from erp.utils.quantity import format_quantity
@@ -74,10 +76,124 @@ def settings_print_preview_context() -> tuple[dict, list[dict], dict]:
     return order, items, config
 
 
+def settings_summary_preview_context() -> dict:
+    """Fixed sample for the Settings 客户货款汇总 preview.
+
+    与四类开单样张同一原则：只读 config，不碰任何真实单据/客户。行的分组元数据
+    （rowspan、是否退货）复用真实导出用的 `_account_summary_table_rows`，
+    避免样张自己写一套口径而与线上漂移。
+    """
+    rows = [
+        {"order_no": "MD202601120001", "order_date": "2026-01-12", "order_type": "sale",
+         "order_total_cents": 36000, "product_name": "消防水带10-65-25m", "unit": "米",
+         "quantity": "20", "unit_price_cents": 1250, "subtotal_cents": 25000},
+        {"order_no": "MD202601120001", "order_date": "2026-01-12", "order_type": "sale",
+         "order_total_cents": 36000, "product_name": "消防喷嘴68度下垂型", "unit": "个",
+         "quantity": "2", "unit_price_cents": 5500, "subtotal_cents": 11000},
+        {"order_no": "MD202601150002", "order_date": "2026-01-15", "order_type": "return",
+         "order_total_cents": -5500, "product_name": "消防喷嘴68度下垂型", "unit": "个",
+         "quantity": "1", "unit_price_cents": 5500, "subtotal_cents": -5500},
+        {"order_no": "MD202601180003", "order_date": "2026-01-18", "order_type": "sale",
+         "order_total_cents": 16000, "product_name": "烟灰包250型", "unit": "个",
+         "quantity": "2", "unit_price_cents": 8000, "subtotal_cents": 16000},
+    ]
+    prepared = _account_summary_table_rows(rows)
+    order_totals: dict[str, int] = {}
+    for row in rows:
+        order_totals.setdefault(row["order_no"], row["order_total_cents"])
+    return {
+        "config": load_config(),
+        "sections": [{
+            "customer": {"name": "预览客户（示例）"},
+            "rows": prepared,
+            "start_date": "2026-01-01",
+            "end_date": "2026-01-31",
+            "total_cents": sum(order_totals.values()),
+            "totals": _account_summary_totals(prepared),
+        }],
+    }
+
+
+def settings_reconciliation_preview_context() -> dict:
+    """Fixed sample for the Settings 往来交易对账单 preview.
+
+    形状与 `get_reconciliation_print_context` 的输出对齐（snapshot + documents），
+    数字自洽：四类总额相加 = 流水总额 281.00，加资金流水合计 −200.00 得汇总 81.00。
+    对账单纸面只印四类总额、资金流水合计、流水总额、汇总，样张照此给值。
+    """
+    documents = [
+        {"order": {"order_no": "MD202601120001", "order_date": "2026-01-12", "order_type": "sale",
+                   "type_label": TYPE_LABELS["sale"], "direction": DIRECTIONS["sale"],
+                   "total_amount_cents": 36000, "notes": ""},
+         "items": [
+             {"product_name": "消防水带10-65-25m", "unit": "米", "quantity": "20",
+              "unit_price_cents": 1250, "subtotal_cents": 25000},
+             {"product_name": "消防喷嘴68度下垂型", "unit": "个", "quantity": "2",
+              "unit_price_cents": 5500, "subtotal_cents": 11000},
+         ]},
+        {"order": {"order_no": "MD202601150002", "order_date": "2026-01-15", "order_type": "customer_return",
+                   "type_label": TYPE_LABELS["customer_return"], "direction": DIRECTIONS["customer_return"],
+                   "total_amount_cents": -5500, "notes": "客户退回，外观无破损"},
+         "items": [
+             {"product_name": "消防喷嘴68度下垂型", "unit": "个", "quantity": "1",
+              "unit_price_cents": 5500, "subtotal_cents": -5500},
+         ]},
+        {"order": {"order_no": "NH202601180001", "order_date": "2026-01-18", "order_type": "purchase",
+                   "type_label": TYPE_LABELS["purchase"], "direction": DIRECTIONS["purchase"],
+                   "total_amount_cents": -4000, "notes": ""},
+         "items": [
+             {"product_name": "烟灰包250型", "unit": "个", "quantity": "5",
+              "unit_price_cents": 800, "subtotal_cents": -4000},
+         ]},
+        {"order": {"order_no": "TN202601200001", "order_date": "2026-01-20", "order_type": "purchase_return",
+                   "type_label": TYPE_LABELS["purchase_return"], "direction": DIRECTIONS["purchase_return"],
+                   "total_amount_cents": 1600, "notes": ""},
+         "items": [
+             {"product_name": "烟灰包250型", "unit": "个", "quantity": "2",
+              "unit_price_cents": 800, "subtotal_cents": 1600},
+         ]},
+    ]
+    type_totals = {"sale": 0, "customer_return": 0, "purchase": 0, "purchase_return": 0}
+    for document in documents:
+        type_totals[document["order"]["order_type"]] += document["order"]["total_amount_cents"]
+    return {
+        "config": {"shop_name": load_config()["shop_name"]},
+        "snapshot": {
+            "customer": {"name": "预览客户（示例）", "phone": "", "address": ""},
+            "start_date": "2026-01-01",
+            "end_date": "2026-01-31",
+            "selected_count": len(documents),
+            "scope_count": len(documents),
+            "selected_total_cents": sum(type_totals.values()),
+            "type_totals_cents": type_totals,
+            "funds": {
+                "rows": [{"date": "2026-01-18", "type": "payment", "reference": "微信",
+                          "description": "货款", "amount_cents": 20000, "balance_delta_cents": -20000}],
+                "opening_balance_cents": 0,
+                "start_balance_cents": 0,
+                "net_change_cents": sum(type_totals.values()) - 20000,
+                "end_balance_cents": sum(type_totals.values()) - 20000,
+                "payment_cents": -20000,
+                "adjustments_cents": 0,
+            },
+        },
+        "documents": documents,
+    }
+
+
+def _write_sample_pdf(filename: str, template: str, **context) -> Path:
+    """Render one Settings sample through the real template and write it under temp_pdf/."""
+    html = render_template(template, **context)
+    out = project_path("temp_pdf", filename)
+    _html_class()(string=html, base_url=str(runtime_root())).write_pdf(out)
+    return out
+
+
 def generate_settings_print_preview_pdf() -> Path:
     """Render Settings' sample with the same order-print template as real orders."""
     order, items, config = settings_print_preview_context()
-    html = render_template(
+    return _write_sample_pdf(
+        "settings_print_preview.pdf",
         "orders/print_template.html",
         order=order,
         items=items,
@@ -85,9 +201,30 @@ def generate_settings_print_preview_pdf() -> Path:
         cents_to_yuan=cents_to_yuan,
         document_title="销售清单",
     )
-    out = project_path("temp_pdf", "settings_print_preview.pdf")
-    _html_class()(string=html, base_url=str(runtime_root())).write_pdf(out)
-    return out
+
+
+def generate_settings_summary_preview_pdf() -> Path:
+    """Render Settings' 客户货款汇总 sample with the real A4 summary template."""
+    context = settings_summary_preview_context()
+    return _write_sample_pdf(
+        "settings_summary_preview.pdf",
+        "accounts/summary_pdf.html",
+        sections=context["sections"],
+        config=context["config"],
+        cents_to_yuan=cents_to_yuan,
+    )
+
+
+def generate_settings_reconciliation_preview_pdf() -> Path:
+    """Render Settings' 往来交易对账单 sample with the real A4 statement template."""
+    context = settings_reconciliation_preview_context()
+    return _write_sample_pdf(
+        "settings_reconciliation_preview.pdf",
+        "accounts/reconciliation_pdf.html",
+        **context,
+        cents_to_yuan=cents_to_yuan,
+        format_quantity=format_quantity,
+    )
 
 
 def render_desktop_preview(filename: str, title: str):
@@ -257,7 +394,7 @@ def ensure_account_summary_printable(customer_id: int) -> None:
 
 def generate_account_summary_pdf(customer_id: int, start_date: str = "", end_date: str = "") -> Path:
     # A7：指定客户不存在属于「资源不存在」，抛 RecordNotFound 让路由呈现 404，
-    # 与 /accounts/ledger_pdf 对不存在客户的处理保持一致。
+    # 与账款管理页对不存在客户的处理保持一致。
     # 注意：客户存在但该时间段无单据时，_load_account_summary_section 会返回空表段落，
     # 仍正常出 PDF（不算错误），因此这里只拦「客户本身不存在」。
     ensure_account_summary_printable(customer_id)
@@ -381,85 +518,6 @@ def resolve_summary_customer_ids(customer_q: str, start_date: str, end_date: str
         return [int(row["id"]) for row in rows]
 
 
-def _account_ledger_print_context(ledger: dict) -> dict:
-    """Add public item snapshots without recomputing the accounting ledger.
-
-    One order stays in a single block so a short order never gets a fake
-    「第 N/M 段」 split, and a long one lets the layout engine break the page
-    naturally. Every item row carries the document amount, so a continued
-    page still shows which order the rows belong to.
-    """
-    details = defaultdict(list)
-    order_ids = {entry["source_id"] for entry in ledger["entries"] if entry["source"] == "order"}
-    if order_ids:
-        conditions = ["o.customer_id=?", "o.deleted_at IS NULL", "o.status IN ('saved','printed','void')"]
-        params = [ledger["customer"]["id"]]
-        for key, operator in (("start_date", ">="), ("end_date", "<=")):
-            if ledger["period"][key]:
-                conditions.append(f"o.order_date {operator} ?")
-                params.append(ledger["period"][key])
-        with get_db() as conn:
-            rows = conn.execute(
-                f"""SELECT oi.order_id, oi.product_name, oi.unit, oi.quantity,
-                           oi.unit_price_cents, oi.subtotal_cents
-                    FROM orders o JOIN order_items oi ON oi.order_id=o.id
-                    WHERE {' AND '.join(conditions)} ORDER BY o.id, oi.id""", params,
-            ).fetchall()
-        for row in rows:
-            if row["order_id"] in order_ids:
-                details[row["order_id"]].append({
-                    "product_name": row["product_name"],
-                    "unit": row["unit"], "quantity": row["quantity"],
-                    "unit_price_cents": int(row["unit_price_cents"]),
-                    "subtotal_cents": int(row["subtotal_cents"]),
-                })
-    public = {key: ledger[key] for key in (
-        "opening_balance_cents", "document_net_cents", "purchase_net_cents",
-        "adjustment_cents", "payment_cents", "current_balance_cents",
-    )}
-    public["customer"] = {"name": ledger["customer"]["name"]}
-    public["period"] = dict(ledger["period"])
-    # D-2：PDF 标题按实际区间动态化，对外出示时不再用「客户账款流水」这种内部语义。
-    period = public["period"]
-    if period.get("start_date") or period.get("end_date"):
-        start_label = period.get("start_date") or "最早"
-        end_label = period.get("end_date") or "至今"
-        public["doc_title"] = f"对账单 {start_label} ~ {end_label}"
-    else:
-        public["doc_title"] = "客户账款流水（全部）"
-    entry_fields = ("source", "source_id", "type", "date", "reference", "description", "amount_cents", "status", "void_reason")
-    entries = []
-    for entry in ledger["entries"]:
-        base = {key: entry[key] for key in entry_fields}
-        items = details.get(entry["source_id"], []) if entry["source"] == "order" else []
-        base["items"] = items
-        # 单据金额按业务方向显示：销售 +、退货 −、拿货 −、退拿货 +。
-        # 库中退货已是负数、拿货恒为正，故只有拿货需要翻转符号。
-        base["doc_amount_cents"] = -entry["amount_cents"] if entry["type"] == "purchase" else entry["amount_cents"]
-        entries.append(base)
-    public["entries"] = entries
-    return public
-
-
-def generate_account_ledger_pdf(customer_id: int, start_date: str = "", end_date: str = "") -> Path:
-    """Render the same current-balance and period-ledger model used by the account page."""
-    ledger = get_customer_account_ledger(customer_id, start_date, end_date)
-    config = load_config()
-    html = render_template(
-        "accounts/ledger_pdf.html",
-        ledger=_account_ledger_print_context(ledger),
-        config=config,
-        cents_to_yuan=cents_to_yuan,
-    )
-    safe_range = "_".join(
-        re.sub(r"[^0-9A-Za-z_-]+", "-", value or "all")[:40]
-        for value in (start_date, end_date)
-    )
-    out = project_path("temp_pdf", f"account_ledger_{int(customer_id)}_{safe_range}.pdf")
-    _html_class()(string=html, base_url=str(runtime_root())).write_pdf(out)
-    return out
-
-
 def _render_reconciliation_template(template: str, **context) -> str:
     """An isolated print environment: no Flask config/request/context processors."""
     environment = Environment(loader=current_app.jinja_loader, autoescape=select_autoescape(("html", "xml")))
@@ -471,7 +529,7 @@ def generate_reconciliation_pdf(snapshot_id: int) -> Path:
     settings = load_config()
     config = {key: settings[key] for key in ("shop_name",)}
     html = _render_reconciliation_template(
-        "analytics/reconciliation_pdf.html",
+        "accounts/reconciliation_pdf.html",
         **context,
         config=config,
         cents_to_yuan=cents_to_yuan,

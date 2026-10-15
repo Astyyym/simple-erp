@@ -132,7 +132,7 @@ def create_app() -> Flask:
             "product_missing_summary": product_missing_summary,
             # E-5：打印用店铺信息缺哪些（页面提示与路由判定共用同一口径）。
             "print_info_missing": missing_print_info_fields(cfg_now),
-            # 侧栏高亮：按路由 owner 判定，跨模块页面用来源参数覆盖（见 utils/nav.py）。
+            # 侧栏高亮：按路由 owner 判定（见 utils/nav.py）。
             # nav_state 内部自取 request 并在无请求上下文时返回「无高亮」，
             # 因为打印模板也会经过 context processor 渲染。
             "nav": nav_state(),

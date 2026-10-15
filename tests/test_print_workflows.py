@@ -528,14 +528,26 @@ def test_desktop_print_links_stay_in_shell_without_blank_target(monkeypatch):
     assert f'href="/orders/{order_id}/pdf?desktop_preview=1" target="_blank"' not in detail_html
 
     settings_html = client.get("/settings/").get_data(as_text=True)
-    assert 'id="settingsPrintPreview"' in settings_html
-    assert 'id="settingsPrintPreview" href="/settings/print-preview" target="_blank"' not in settings_html
-    assert 'id="settingsPrintPreviewPdf" href="/settings/print-preview.pdf?desktop_preview=1&amp;return_to=/settings/?"' in settings_html
-    assert 'id="settingsPrintPreviewPdf" href="/settings/print-preview.pdf?desktop_preview=1" target="_blank"' not in settings_html
+    # 2026-10-15：三个版面的样张入口并进同一张表，属性顺序变了但契约不变——
+    # 桌面壳内每个链接都必须留在壳里（无 target="_blank"）并携带来源页。
+    for entry, base in (
+        ("settingsPrintPreview", "/settings/print-preview"),
+        ("settingsPrintPreviewPdf", "/settings/print-preview.pdf"),
+        ("settingsSummaryPreview", "/settings/print-preview/summary"),
+        ("settingsSummaryPreviewPdf", "/settings/print-preview/summary.pdf"),
+        ("settingsReconPreview", "/settings/print-preview/reconciliation"),
+        ("settingsReconPreviewPdf", "/settings/print-preview/reconciliation.pdf"),
+    ):
+        tag = re.search(rf'<a[^>]*id="{entry}"[^>]*>', settings_html)
+        assert tag, entry
+        assert 'target="_blank"' not in tag.group(0), entry
+        if base.endswith(".pdf"):
+            assert f'href="{base}?desktop_preview=1&amp;return_to=/settings/?"' in tag.group(0), entry
+        else:
+            assert f'href="{base}"' in tag.group(0), entry
 
     accounts_html = client.get(f"/accounts/?customer_id={customer_id}").get_data(as_text=True)
-    assert "打印账款流水 PDF" in accounts_html
-    assert f'id="ledgerPdfLink" href="/accounts/ledger_pdf?customer_id={customer_id}' in accounts_html
-    assert "&amp;desktop_preview=1&amp;return_to=/accounts/%3Fcustomer_id%3D" in accounts_html
-    assert 'id="ledgerPdfLink" href="/accounts/summary_pdf' not in accounts_html
-    assert 'id="ledgerPdfLink" href="/accounts/ledger_pdf?customer_id=' + str(customer_id) + '" target="_blank"' not in accounts_html
+    # 2026-10-14：打印账款流水 PDF 已删除（内容并入往来对账），页面只剩对账入口。
+    assert "打印账款流水 PDF" not in accounts_html
+    assert 'id="ledgerPdfLink"' not in accounts_html
+    assert f'id="reconEntryLink" href="/accounts/reconciliation?customer_id={customer_id}' in accounts_html

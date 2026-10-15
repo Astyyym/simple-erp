@@ -2,7 +2,14 @@ from pathlib import Path
 
 from erp import create_app
 from erp.db import get_db, init_db
-from erp.services.accounting import create_customer, create_order_from_typed_rows, create_product
+from erp.services.accounting import (
+    add_adjustment,
+    add_payment,
+    create_customer,
+    create_order_from_typed_rows,
+    create_product,
+    void_payment,
+)
 from erp.services.inventory import initialize_product
 from erp.services.reconciliation import (
     create_reconciliation_snapshot,
@@ -80,12 +87,27 @@ def test_reconciliation_rejects_scope_change_and_cross_customer_selection():
         update_reconciliation_selection(snapshot_id, mode="explicit", selected_ids=[f"order:{sale_id}", f"order:{other_order_id}"])
 
 
-def test_reconciliation_page_and_pdf_are_business_only_and_do_not_write_payments(tmp_path, monkeypatch):
+def test_reconciliation_statement_summary_block_and_keeps_print_whitelist(tmp_path, monkeypatch):
+    """2026-10-15 单段式：业务单据明细 + 四类框/三行文字的汇总段；白名单哨兵不放松。
+
+    2026-10-14 决策（打印账款流水 PDF 的收款/调整/余额并入对账单）保留，但 2026-10-15
+    用户把纸面收紧为：只印四类开单各自总额 + 资金流水合计 + 流水总额 + 汇总，
+    逐笔资金明细、四格余额、说明小字、免责声明全部不再打印。
+    内部字段（成本/毛利/库存/货源）仍不得出现在纸面；打印本身不写任何资金记录。
+    """
     customer_id, sale_id, return_id, _ = _seed_reconciliation_data()
+    # 区间内一笔生效收款（微信 + 备注）、一笔生效调整、一笔作废收款。
+    add_payment(customer_id, 1500, payment_date="2026-10-01", method="微信", notes="部分货款")
+    adjustment_id = add_adjustment(customer_id, 300, "差额补记")
+    voided = add_payment(customer_id, 999, payment_date="2026-10-02", method="现金")
+    void_payment(voided, "重复登记")
+    with get_db() as conn:
+        conn.execute("UPDATE adjustments SET created_at=? WHERE id=?", ("2026-10-02 12:00:00", adjustment_id))
+
     app = create_app()
     client = app.test_client()
     page = client.get(
-        "/analytics/reconciliation",
+        "/accounts/reconciliation",
         query_string={"customer_id": customer_id, "start_date": "2026-10-01", "end_date": "2026-10-02"},
     )
     html = page.get_data(as_text=True)
@@ -110,21 +132,49 @@ def test_reconciliation_page_and_pdf_are_business_only_and_do_not_write_payments
         generated = pdf.generate_reconciliation_pdf(snapshot_id)
     rendered = captured["html"]
     assert generated.read_bytes().startswith(b"%PDF")
-    assert "交易对账净额" in rendered
+
+    # 业务单据段：净额只算选中单据（排除退货后只剩销售 40.00）。
+    assert "流水总额：+¥40.00" in rendered
     assert "对账灭火器" in rendered
-    assert "成本" not in rendered
-    assert "毛利润" not in rendered
-    assert "库存" not in rendered
-    assert "货源" not in rendered
     assert "MD202610020202" not in rendered
+
+    # 汇总段（2026-10-15 用户要求）：四类各一个矩形框，框下居中三行文字。
+    assert "对账汇总" in rendered
+    for label in ("销售（+）", "客户退货（−）", "拿货（−）", "退拿货（+）"):
+        assert f'<div class="type-label">{label}</div>' in rendered
+    assert rendered.count('class="type-cell"') == 4
+    # 选中范围只剩销售 40.00；退货已取消勾选，另外三个框是 0.00。
+    assert '<div class="type-value">¥40.00</div>' in rendered
+    assert rendered.count('<div class="type-value">¥0.00</div>') == 3
+    # 资金流水合计 = 收款 −15.00 + 调整 +3.00（作废收款 999 不计）；汇总 = 40.00 − 12.00。
+    assert "资金流水合计：−¥12.00" in rendered
+    assert "汇总：+¥28.00" in rendered
+    # 旧的「资金往来与余额」整段（说明小字 + 逐笔资金明细 + 四格余额卡片）已按用户决策删除。
+    for removed in ('class="section-note"', 'class="funds-table"', 'class="balance-grid"', 'class="summary"'):
+        assert removed not in rendered, removed
+    assert "期初余额" not in rendered and "区间截止欠款" not in rendered
+    assert "微信" not in rendered and "差额补记" not in rendered
+    assert "重复登记" not in rendered and "¥9.99" not in rendered
+
+    # 整单交易总额独立竖列：只在「日期 · 单号 · 类型」那一行印一次，
+    # 商品行留空单元格（保住整列底色），不再逐行重复该单总额。
+    assert '<th class="col-doc-total">整单交易总额</th>' in rendered
+    assert rendered.count('class="col-doc-total">¥40.00<') == 1
+    assert rendered.count('class="col-doc-total"></td>') == 1
+    assert "document-total" not in rendered  # 旧的合计横条已删除
+
+    # 对外打印白名单哨兵：内部字段一律不得出现。
+    for sentinel in ("unit_cost", "毛利润", "库存", "货源", "成本价"):
+        assert sentinel not in rendered, sentinel
+    # 打印不写资金记录：库里只有我们自建的两笔（一生效一作废）。
     with get_db() as conn:
-        assert conn.execute("SELECT COUNT(*) AS count FROM payments").fetchone()["count"] == 0
+        assert conn.execute("SELECT COUNT(*) AS count FROM payments").fetchone()["count"] == 2
 
 
 def test_reconciliation_pdf_endpoint_returns_a4_portrait_pdf():
     customer_id, _, _, _ = _seed_reconciliation_data()
     snapshot_id = create_reconciliation_snapshot(customer_id, "2026-10-01", "2026-10-02", "all")
-    response = create_app().test_client().get(f"/analytics/reconciliation/pdf/{snapshot_id}")
+    response = create_app().test_client().get(f"/accounts/reconciliation/pdf/{snapshot_id}")
     assert response.status_code == 200
     assert response.mimetype == "application/pdf"
     assert response.data.startswith(b"%PDF")
@@ -158,10 +208,10 @@ def test_reconciliation_order_detail_endpoint_is_limited_to_snapshot_scope():
     customer_id, sale_id, _, other_order_id = _seed_reconciliation_data()
     snapshot_id = create_reconciliation_snapshot(customer_id, "2026-10-01", "2026-10-02", "all")
     client = create_app().test_client()
-    detail = client.get(f"/analytics/reconciliation/{snapshot_id}/order/{sale_id}")
+    detail = client.get(f"/accounts/reconciliation/{snapshot_id}/order/{sale_id}")
     assert detail.status_code == 200
     assert detail.get_json()["items"][0]["product_name"] == "对账灭火器4kg"
-    rejected = client.get(f"/analytics/reconciliation/{snapshot_id}/order/{other_order_id}")
+    rejected = client.get(f"/accounts/reconciliation/{snapshot_id}/order/{other_order_id}")
     assert rejected.status_code == 404
 
 
@@ -178,7 +228,7 @@ def test_reconciliation_keeps_selection_across_result_pages():
             order_date="2026-10-02",
         )
     snapshot_id = create_reconciliation_snapshot(customer_id, "2026-10-01", "2026-10-02", "all")
-    page_two = create_app().test_client().get(f"/analytics/reconciliation?snapshot_id={snapshot_id}&page=2")
+    page_two = create_app().test_client().get(f"/accounts/reconciliation?snapshot_id={snapshot_id}&page=2")
     assert page_two.status_code == 200
     assert "第 2 / 2 页" in page_two.get_data(as_text=True)
     snapshot = get_reconciliation_snapshot(snapshot_id)

@@ -1,8 +1,11 @@
-"""侧栏高亮归属：按路由 owner 判定，跨模块页面用来源参数覆盖。
+"""侧栏高亮归属：按路由 owner 判定。
 
 覆盖 2026-10-10 反馈：
 - 账款管理 → 「往来对账」后侧栏不再跳到「数据分析」；
 - 同一页最多一项高亮（去掉旧的 `current` 半高亮）。
+
+2026-10-14 对账收口：往来对账路由迁到 /accounts/reconciliation，归属由
+endpoint 直接决定，`from=` 来源覆盖机制已删除。
 """
 import re
 
@@ -11,6 +14,7 @@ import pytest
 from erp import create_app
 from erp.db import init_db
 from erp.services.accounting import create_customer, create_order_from_typed_rows
+from erp.services.reconciliation import create_reconciliation_snapshot
 
 
 def _active_labels(html: str) -> list[str]:
@@ -58,8 +62,8 @@ def test_sidebar_highlights_exactly_one_owner(path, expected):
     assert set(labels) <= allowed, f"{path} 出现多余高亮：{labels}"
 
 
-def test_reconciliation_from_accounts_keeps_accounts_highlighted():
-    """从账款管理进入往来对账 → 侧栏仍归账款管理（与「返回账款管理」一致）。"""
+def test_reconciliation_is_owned_by_accounts():
+    """往来对账（/accounts/reconciliation）侧栏恒归账款管理，与返回按钮一致。"""
     init_db()
     customer_id = create_customer("对账归属客户")
     create_order_from_typed_rows(
@@ -70,7 +74,7 @@ def test_reconciliation_from_accounts_keeps_accounts_highlighted():
     client = create_app().test_client()
 
     html = client.get(
-        f"/analytics/reconciliation?customer_id={customer_id}&from=accounts"
+        f"/accounts/reconciliation?customer_id={customer_id}"
     ).get_data(as_text=True)
     nav = re.search(r'<nav class="sidebar">.*?</nav>', html, re.S).group(0)
     assert 'href="/accounts/">账款管理</a>' in nav
@@ -80,15 +84,22 @@ def test_reconciliation_from_accounts_keeps_accounts_highlighted():
     assert "返回账款管理" in html
 
 
-def test_reconciliation_without_source_stays_in_analytics():
+def test_reconciliation_snapshot_url_is_owned_by_accounts():
+    """勾选/全选后跳转的快照 URL（历史上的漏点）也必须归账款管理。"""
     init_db()
-    customer_id = create_customer("对账默认归属客户")
+    customer_id = create_customer("对账快照归属客户")
+    create_order_from_typed_rows(
+        customer_id, "MD202610141002",
+        [{"product_name": "灭火器", "unit": "个", "unit_price_yuan": "30", "quantity": "1"}],
+        status="saved", order_date="2026-10-14",
+    )
+    snapshot_id = create_reconciliation_snapshot(customer_id)
     nav = _nav_html(
         create_app().test_client(),
-        f"/analytics/reconciliation?customer_id={customer_id}",
+        f"/accounts/reconciliation?snapshot_id={snapshot_id}",
     )
-    assert re.search(r'class="active" href="/analytics/">数据分析</a>', nav), nav
-    assert not re.search(r'class="active" href="/accounts/">账款管理</a>', nav)
+    assert re.search(r'class="active" href="/accounts/">账款管理</a>', nav), nav
+    assert not re.search(r'class="active" href="/analytics/">数据分析</a>', nav)
 
 
 def test_sidebar_has_no_ancestor_current_class():

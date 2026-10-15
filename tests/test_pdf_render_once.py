@@ -175,31 +175,47 @@ def test_purchase_desktop_preview_keeps_validation_without_rendering(monkeypatch
 
 
 def test_settings_sample_desktop_preview_skips_render(monkeypatch):
-    """设置样张与业务数据无关，预览页同样不再预渲染。"""
+    """设置样张与业务数据无关，预览页同样不再预渲染；三个版面都要守这条。"""
     monkeypatch.setenv("ERP_DESKTOP", "1")
     init_db()
     from erp.utils import pdf as pdf_module
 
-    calls = {"count": 0}
-    original = pdf_module.generate_settings_print_preview_pdf
+    calls = {name: 0 for name in (
+        "generate_settings_print_preview_pdf",
+        "generate_settings_summary_preview_pdf",
+        "generate_settings_reconciliation_preview_pdf",
+    )}
 
-    def counting():
-        calls["count"] += 1
-        return original()
+    def counting(name):
+        original = originals[name]
 
-    monkeypatch.setattr(pdf_module, "generate_settings_print_preview_pdf", counting)
+        def wrapper():
+            calls[name] += 1
+            return original()
+
+        return wrapper
+
     from erp.routes import settings as settings_module
 
-    monkeypatch.setattr(settings_module, "generate_settings_print_preview_pdf", counting)
+    # 先把原函数抓在手里再打补丁：否则第二次 getattr 会拿到第一层包装，计数翻倍。
+    originals = {name: getattr(pdf_module, name) for name in calls}
+    for name in calls:
+        monkeypatch.setattr(pdf_module, name, counting(name))
+        monkeypatch.setattr(settings_module, name, counting(name))
 
     client = create_app().test_client()
-    preview = client.get("/settings/print-preview.pdf?desktop_preview=1")
-    assert preview.status_code == 200 and preview.mimetype == "text/html"
-    assert calls["count"] == 0
-    # 浏览器直接访问仍返回真实 PDF。
-    direct = client.get("/settings/print-preview.pdf")
-    assert direct.mimetype == "application/pdf"
-    assert calls["count"] == 1
+    for name, path in (
+        ("generate_settings_print_preview_pdf", "/settings/print-preview.pdf"),
+        ("generate_settings_summary_preview_pdf", "/settings/print-preview/summary.pdf"),
+        ("generate_settings_reconciliation_preview_pdf", "/settings/print-preview/reconciliation.pdf"),
+    ):
+        preview = client.get(f"{path}?desktop_preview=1")
+        assert preview.status_code == 200 and preview.mimetype == "text/html", path
+        assert calls[name] == 0, f"{path} 预览页不应渲染 PDF"
+        # 浏览器直接访问仍返回真实 PDF。
+        direct = client.get(path)
+        assert direct.mimetype == "application/pdf", path
+        assert calls[name] == 1, path
 
 
 def test_pdf_engine_prewarm_imports_weasyprint_without_rendering():

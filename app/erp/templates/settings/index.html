@@ -110,10 +110,10 @@
     <p class="text-muted small">
       打印分两套纸型，不要混用：<strong>销售单 / 退货单 / 拿货单 / 退拿货单</strong> 走
       <strong>241mm 两侧走纸孔连续纸</strong>（PDF 逻辑页 215.9×139.7mm，页内左右各留 7.3mm 版心）；
-      <strong>客户货款汇总 / 账款流水 / 往来交易对账单</strong> 走
+      <strong>客户货款汇总 / 往来交易对账单</strong> 走
       <strong>A4 竖向（210×297mm）</strong>。
       <code>NantianPR-LQ</code> 驱动请选择 <strong>A4 横向、实际大小/100%、不要“适合页面”或缩放</strong>，
-      连续纸由驱动居中映射。下面的偏移与缩放仅作用于四类开单及设置样张，不作用于账款汇总/流水/对账；
+      连续纸由驱动居中映射。下面的偏移与缩放仅作用于四类开单及设置样张，不作用于账款汇总/对账；
       若真机仍有 1～3mm 偏差，再用下面偏移微调（横向正右负左，纵向正下负上）。
     </p>
     <div class="row g-3">
@@ -146,10 +146,46 @@
     </div>
   </section>
 
+  <section class="settings-card settings-card-wide" id="printLayoutPreviewSection">
+    <h3>打印版面预览</h3>
+    <p class="text-muted small">
+      三个版面都用固定示例数据渲染，不含任何真实单据。
+    </p>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead><tr><th>版面</th><th>纸型</th><th class="text-end">预览</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>销售单 / 退货单 / 拿货单 / 退拿货单</td>
+            <td>241mm 连续纸（每联 {{ slip_size }} 行）</td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-info" id="settingsPrintPreview" data-print-preview href="{{ url_for('settings.print_preview') }}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>预览打印效果</a>
+              <a class="btn btn-sm btn-outline-info" id="settingsPrintPreviewPdf" data-print-preview href="{{ url_for('settings.print_preview_pdf', desktop_preview=1, return_to=request.full_path) if is_desktop else url_for('settings.print_preview_pdf') }}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>生成预览 PDF</a>
+            </td>
+          </tr>
+          <tr>
+            <td>客户货款汇总表</td>
+            <td>A4 竖版（210×297mm）</td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-info" id="settingsSummaryPreview" data-print-preview href="{{ url_for('settings.summary_print_preview') }}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>预览打印效果</a>
+              <a class="btn btn-sm btn-outline-info" id="settingsSummaryPreviewPdf" data-print-preview href="{{ url_for('settings.summary_print_preview_pdf', desktop_preview=1, return_to=request.full_path) if is_desktop else url_for('settings.summary_print_preview_pdf') }}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>生成预览 PDF</a>
+            </td>
+          </tr>
+          <tr>
+            <td>往来交易对账单</td>
+            <td>A4 竖版（210×297mm）</td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-info" id="settingsReconPreview" data-print-preview href="{{ url_for('settings.reconciliation_print_preview') }}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>预览打印效果</a>
+              <a class="btn btn-sm btn-outline-info" id="settingsReconPreviewPdf" data-print-preview href="{{ url_for('settings.reconciliation_print_preview_pdf', desktop_preview=1, return_to=request.full_path) if is_desktop else url_for('settings.reconciliation_print_preview_pdf') }}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>生成预览 PDF</a>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
   <div class="settings-actions">
     <button type="submit" class="btn btn-primary btn-lg" id="settingsSaveBtn">保存设置</button>
-    <a class="btn btn-info btn-lg" id="settingsPrintPreview" href="{{ url_for('settings.print_preview') }}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>预览打印效果</a>
-    <a class="btn btn-outline-info btn-lg" id="settingsPrintPreviewPdf" href="{{ url_for('settings.print_preview_pdf', desktop_preview=1, return_to=request.full_path) if is_desktop else url_for('settings.print_preview_pdf') }}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>生成预览 PDF</a>
     <span class="settings-dirty-hint d-none" id="settingsDirtyHint">有未保存的修改</span>
   </div>
 </form>
@@ -365,7 +401,7 @@
   const btnSave = document.getElementById('settingsLeaveSave');
   const btnDiscard = document.getElementById('settingsLeaveDiscard');
   const btnCancel = document.getElementById('settingsLeaveCancel');
-  const previewLink = document.getElementById('settingsPrintPreview');
+  const previewLinks = Array.from(document.querySelectorAll('[data-print-preview]'));
 
   let baseline = '';
   let allowLeave = false;
@@ -471,14 +507,15 @@
     });
   }
 
-  if (previewLink) {
-    previewLink.addEventListener('click', function (event) {
+  // 三个版面的样张链接都读服务端已保存的配置：有未保存修改时先确认。
+  previewLinks.forEach(function (link) {
+    link.addEventListener('click', function (event) {
       if (!isDirty()) return;
       // Preview reads saved config from server; warn but still allow new tab.
       const ok = window.confirm('当前修改尚未保存，打印预览仍显示上次已保存的内容。是否继续打开预览？');
       if (!ok) event.preventDefault();
     });
-  }
+  });
 
   // Desktop native folder picker (pywebview js_api); browser falls back to paste path.
   const browseBtn = document.getElementById('settingsBrowseFolder');

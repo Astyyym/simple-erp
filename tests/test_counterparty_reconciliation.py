@@ -7,6 +7,8 @@ import pytest
 from erp import create_app
 from erp.db import get_db, init_db
 from erp.services.accounting import (
+    add_adjustment,
+    add_payment,
     create_customer, create_product, create_order_from_typed_rows,
     create_return_order_from_source,
 )
@@ -48,6 +50,11 @@ def funds_and_inventory():
 def test_four_type_scope_has_source_namespaces_and_real_public_pdf(monkeypatch):
     cid, pid, sale, ret, purchase, pr = seed_four()
     assert (sale, purchase, pr) == (1, 1, 1)
+    # 2026-10-14 两段式：资金行进纸面（白名单字段），先造一笔生效收款/调整。
+    add_payment(cid, 500, payment_date='2026-10-01', method='PUBLIC-METHOD', notes='PUBLIC-PAYMENT-NOTE')
+    adjustment_id = add_adjustment(cid, 200, 'PUBLIC-ADJUSTMENT-REASON')
+    with get_db() as conn:
+        conn.execute('UPDATE adjustments SET created_at=? WHERE id=?', ('2026-10-01 12:00:00', adjustment_id))
     before = funds_and_inventory()
     sid = service.create_reconciliation_snapshot(cid, '2026-10-01', '2026-10-01')
     result = service.get_reconciliation_snapshot(sid)
@@ -75,9 +82,15 @@ def test_four_type_scope_has_source_namespaces_and_real_public_pdf(monkeypatch):
     assert len(captured['documents']) == 3
     assert len(captured['documents'][0]['items']) == 2
     serialized = json.dumps(captured, ensure_ascii=False, default=str)
-    for forbidden in ('INTERNAL-PURCHASE-NOTE', 'INTERNAL-RETURN-NOTE', 'scope_hash', 'scope_json', 'unit_cost_micro', 'cost_total_micro', 'payload_hash', 'opening_balance_cents', 'image_path', 'source_notes'):
+    # 白名单（2026-10-14 起含资金与余额字段：用户决策把账款流水 PDF 的
+    # 收款/调整/余额并入对账单；'opening_balance_cents' 由此不再是禁词）。
+    for forbidden in ('INTERNAL-PURCHASE-NOTE', 'INTERNAL-RETURN-NOTE', 'scope_hash', 'scope_json', 'unit_cost_micro', 'cost_total_micro', 'payload_hash', 'image_path', 'source_notes', 'void_reason'):
         assert forbidden not in serialized
     assert 'PUBLIC-SALE-NOTE' in serialized
+    # 资金行的白名单字段在纸：方式/备注/调整原因。
+    assert 'PUBLIC-METHOD' in serialized and 'PUBLIC-PAYMENT-NOTE' in serialized
+    assert 'PUBLIC-ADJUSTMENT-REASON' in serialized
+    assert 'INTERNAL-INIT' not in serialized
     assert sum(doc['order']['total_amount_cents'] for doc in captured['documents']) == 6000
     assert funds_and_inventory() == before
 
@@ -188,13 +201,13 @@ def test_legacy_snapshot_migration_is_byte_preserving_orders_only_and_retryable(
     assert result['scope_count'] == 2 and result['selected_total_cents'] == -2000
     assert service.validate_reconciliation_snapshot(41) is None
     client = create_app().test_client()
-    assert client.get('/analytics/reconciliation?snapshot_id=41&page=2').status_code == 200
-    assert client.get('/analytics/reconciliation/41/order/1').get_json()['order']['order_type'] == 'sale'
-    assert client.get('/analytics/reconciliation/41/document/purchase:1').status_code == 404
-    response = client.get('/analytics/reconciliation/pdf/41')
+    assert client.get('/accounts/reconciliation?snapshot_id=41&page=2').status_code == 200
+    assert client.get('/accounts/reconciliation/41/order/1').get_json()['order']['order_type'] == 'sale'
+    assert client.get('/accounts/reconciliation/41/document/purchase:1').status_code == 404
+    response = client.get('/accounts/reconciliation/pdf/41')
     assert response.status_code == 200
     assert_a4_portrait_pdf(response.data)
-    assert client.post('/analytics/reconciliation/toggle/41/1', data={'selected':'1'}).status_code == 200
+    assert client.post('/accounts/reconciliation/toggle/41/1', data={'selected':'1'}).status_code == 200
     assert service.get_reconciliation_snapshot(41)['selected_ids'] == [1,2]
     assert funds_and_inventory() == before_business
 
@@ -243,9 +256,9 @@ def test_unselected_candidate_business_changes_block_every_print_and_detail(key,
             conn.execute(f"UPDATE {table} SET deleted_at='2026-10-03' WHERE id=?",(oid,))
     assert service.validate_reconciliation_snapshot(sid) == '查询结果已变化，请重新查询后打印'
     client = create_app().test_client()
-    response = client.get(f'/analytics/reconciliation/pdf/{sid}')
+    response = client.get(f'/accounts/reconciliation/pdf/{sid}')
     assert response.status_code == 400 and '重新查询' in response.get_data(as_text=True)
-    assert client.get(f'/analytics/reconciliation/{sid}/document/order:1').status_code == 404
+    assert client.get(f'/accounts/reconciliation/{sid}/document/order:1').status_code == 404
     with get_db() as conn:
         assert conn.execute('SELECT selected_json FROM reconciliation_snapshots WHERE id=?',(sid,)).fetchone()[0] == stored_selection
 
@@ -329,26 +342,26 @@ def test_typed_api_filters_cross_object_dedupe_and_new_candidate_reset():
     other_purchase = create_purchase_order('NH202610010002','2026-10-01',[{'product_id':pid,'quantity':'1','unit_cost_yuan':'7'}],customer_id=other,request_key='api-other')['order_id']
     sid = service.create_reconciliation_snapshot(cid)
     client = create_app().test_client()
-    purchase = client.get(f'/analytics/reconciliation/{sid}/document/purchase:1').get_json()
+    purchase = client.get(f'/accounts/reconciliation/{sid}/document/purchase:1').get_json()
     assert purchase['order']['order_type'] == 'purchase'
     assert purchase['order']['total_amount_cents'] == -3000
     assert purchase['items'][0]['unit_price_cents'] == 1000 and purchase['items'][0]['subtotal_cents'] == -3000
-    assert client.get(f'/analytics/reconciliation/{sid}/order/1').get_json()['order']['order_type'] == 'sale'
-    assert client.get(f'/analytics/reconciliation/{sid}/document/purchase:{other_purchase}').status_code == 404
-    rejected = client.post(f'/analytics/reconciliation/select/{sid}',data={'mode':'explicit','selected_ids':f'purchase:{other_purchase}'})
+    assert client.get(f'/accounts/reconciliation/{sid}/order/1').get_json()['order']['order_type'] == 'sale'
+    assert client.get(f'/accounts/reconciliation/{sid}/document/purchase:{other_purchase}').status_code == 404
+    rejected = client.post(f'/accounts/reconciliation/select/{sid}',data={'mode':'explicit','selected_ids':f'purchase:{other_purchase}'})
     assert rejected.status_code == 400
-    rejected = client.post(f'/analytics/reconciliation/select/{sid}',data={'mode':'explicit','selected_ids':'1'})
+    rejected = client.post(f'/accounts/reconciliation/select/{sid}',data={'mode':'explicit','selected_ids':'1'})
     assert rejected.status_code == 400
-    response = client.post(f'/analytics/reconciliation/select/{sid}',data={'mode':'explicit','selected_ids':['purchase_return:1','order:2','order:1','order:2'],'page':'2'})
+    response = client.post(f'/accounts/reconciliation/select/{sid}',data={'mode':'explicit','selected_ids':['purchase_return:1','order:2','order:1','order:2'],'page':'2'})
     assert response.status_code == 302 and 'page=2' in response.headers['Location']
     assert service.get_reconciliation_snapshot(sid)['selected_ids'] == ['order:1','order:2','purchase_return:1']
-    assert client.post(f'/analytics/reconciliation/toggle/{sid}/1',data={'selected':'0'}).status_code == 200
+    assert client.post(f'/accounts/reconciliation/toggle/{sid}/1',data={'selected':'0'}).status_code == 200
     assert service.get_reconciliation_snapshot(sid)['selected_ids'] == ['order:2','purchase_return:1']
     for kind,key in [('sale','order:1'),('return','order:2'),('customer_return','order:2'),('purchase','purchase:1'),('purchase_return','purchase_return:1')]:
         filtered = service.get_reconciliation_snapshot(service.create_reconciliation_snapshot(cid,order_type_filter=kind))
         assert filtered['scope_ids'] == [key]
     new = create_purchase_order('NH202610010003','2026-10-01',[{'product_id':pid,'quantity':'1','unit_cost_yuan':'7'}],customer_id=cid,request_key='api-new')['order_id']
-    assert client.get(f'/analytics/reconciliation/pdf/{sid}').status_code == 400
+    assert client.get(f'/accounts/reconciliation/pdf/{sid}').status_code == 400
     with get_db() as conn:
         assert json.loads(conn.execute('SELECT selected_json FROM reconciliation_snapshots WHERE id=?',(sid,)).fetchone()[0]) == ['order:2','purchase_return:1']
     fresh = service.get_reconciliation_snapshot(service.create_reconciliation_snapshot(cid))

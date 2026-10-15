@@ -1,11 +1,15 @@
 """Batch D：往来对账入口 + 死路由清理（2026-10-08 第二轮修复）。
 
 覆盖审查证据 #8/#9：
-- 账款管理页选中客户后出现「往来对账」按钮，携带客户与日期、且带 from=accounts
+- 账款管理页选中客户后出现「往来对账」按钮，携带客户与日期
 - 点击直达结果（自动建快照，快照行出现），返回按钮指向账款管理并携带原筛选
-- 默认（无 from）返回数据分析
 - 死路由 accounts.bulk_delete_orders 已删除（不再静默软删绕过自动冲回）
+
+2026-10-14 对账收口：路由由 /analytics/reconciliation 迁到 /accounts/reconciliation，
+归属恒定账款管理，`from=accounts` 来源参数整个删除（旧参数传入不得改变归属）。
 """
+import re
+
 from erp import create_app
 from erp.db import get_db, init_db
 from erp.services.accounting import create_customer, create_order_from_typed_rows, create_product
@@ -32,7 +36,8 @@ def test_accounts_page_has_reconciliation_entry_with_params():
     assert 'id="reconEntryLink"' in html
     assert "往来对账" in html
     assert f"customer_id={cid}" in html
-    assert "from=accounts" in html
+    assert 'href="/accounts/reconciliation?customer_id=' in html
+    assert "from=accounts" not in html
 
 
 def test_reconciliation_entry_lands_on_results_and_returns_to_accounts():
@@ -40,7 +45,7 @@ def test_reconciliation_entry_lands_on_results_and_returns_to_accounts():
     _, cid = _seed("LAND")
     client = create_app().test_client()
     response = client.get(
-        f"/analytics/reconciliation?customer_id={cid}&start_date=2026-10-01&end_date=2026-10-31&from=accounts"
+        f"/accounts/reconciliation?customer_id={cid}&start_date=2026-10-01&end_date=2026-10-31"
     )
     assert response.status_code == 200
     html = response.get_data(as_text=True)
@@ -57,14 +62,30 @@ def test_reconciliation_entry_lands_on_results_and_returns_to_accounts():
     assert count >= 1
 
 
-def test_reconciliation_default_back_is_analytics():
+def test_reconciliation_ownership_is_always_accounts():
+    """2026-10-14 起对账并入账款模块：任何入口都归账款管理，返回恒为账款管理。
+
+    含历史上的三个漏点形态：裸客户 URL、快照 URL（勾选后跳转目标）、
+    以及已失效的 `from=accounts` 旧参数（传入不得改变归属）。
+    """
     init_db()
-    _, cid = _seed("DEFAULT")
-    html = create_app().test_client().get(
-        f"/analytics/reconciliation?customer_id={cid}"
-    ).get_data(as_text=True)
-    assert "返回数据分析" in html
-    assert "返回账款管理" not in html
+    _, cid = _seed("OWNER")
+    client = create_app().test_client()
+    html = client.get(f"/accounts/reconciliation?customer_id={cid}").get_data(as_text=True)
+    assert "返回账款管理" in html
+    assert "返回数据分析" not in html
+    assert re.search(r'class="active" href="/accounts/">账款管理</a>', html), html
+    assert not re.search(r'class="active" href="/analytics/">数据分析</a>', html)
+    # 旧来源参数已失效：不得把归属带去数据分析。
+    stale = client.get(f"/accounts/reconciliation?customer_id={cid}&from=accounts").get_data(as_text=True)
+    assert "返回账款管理" in stale
+    assert not re.search(r'class="active" href="/analytics/">数据分析</a>', stale)
+    # 快照 URL（勾选/全选后的跳转目标）同样归账款管理。
+    with get_db() as conn:
+        snapshot_id = conn.execute("SELECT id FROM reconciliation_snapshots ORDER BY id DESC LIMIT 1").fetchone()[0]
+    snap = client.get(f"/accounts/reconciliation?snapshot_id={snapshot_id}").get_data(as_text=True)
+    assert "返回账款管理" in snap
+    assert re.search(r'class="active" href="/accounts/">账款管理</a>', snap), snap
 
 
 def test_accounts_bulk_delete_orders_dead_route_is_removed():

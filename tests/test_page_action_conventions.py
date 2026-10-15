@@ -72,14 +72,14 @@ def pages():
     ("purchase", "/orders/"),
     ("customer", "/customers/"),
     ("prices", "/customers/"),
-    ("reconciliation", "/analytics/"),
+    ("reconciliation", "/accounts/"),
 ])
 def test_secondary_return_is_last_title_action(pages, page, return_href):
     client, customer_id, order_id, purchase_id = pages
     paths = {
         "order": f"/orders/{order_id}", "purchase": f"/purchases/{purchase_id}",
         "customer": f"/customers/{customer_id}/edit", "prices": f"/customers/{customer_id}/prices",
-        "reconciliation": "/analytics/reconciliation",
+        "reconciliation": "/accounts/reconciliation",
     }
     if page == "prices":
         # This retained template currently has no registered HTTP route.
@@ -193,11 +193,11 @@ def test_reconciliation_pdf_preserves_browser_mode_and_exact_desktop_source(page
     if desktop:
         monkeypatch.setenv("ERP_DESKTOP", "1")
     snapshot_id = create_reconciliation_snapshot(customer_id, "2026-10-02", "2026-10-02", "all")
-    source = "/analytics/reconciliation?" + urlencode({"snapshot_id": snapshot_id, "page": 1, "source": "中文 & + /"})
+    source = "/accounts/reconciliation?" + urlencode({"snapshot_id": snapshot_id, "page": 1, "source": "中文 & + /"})
     response = client.get(source)
     assert response.status_code == 200
     dom = Elements(response.get_data(as_text=True))
-    links = [node for node in dom.nodes if node["tag"] == "a" and node["attrs"].get("href", "").startswith(f"/analytics/reconciliation/pdf/{snapshot_id}")]
+    links = [node for node in dom.nodes if node["tag"] == "a" and node["attrs"].get("href", "").startswith(f"/accounts/reconciliation/pdf/{snapshot_id}")]
     assert len(links) == 1
     pdf_href = links[0]["attrs"]["href"]
     query = parse_qs(urlsplit(pdf_href).query)

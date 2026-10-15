@@ -273,6 +273,47 @@ def get_reconciliation_snapshot(snapshot_id: int) -> dict[str, Any]:
         return _public_snapshot(conn, snapshot, _read_scope(conn, snapshot))
 
 
+def _funds_section(customer_id: int, start_date: str, end_date: str) -> dict[str, Any]:
+    """资金与余额段：复用账款管理页同一 ledger 口径，不新造数学。
+
+    2026-10-14 用户决策：打印账款流水 PDF 的独有内容（收款/调整/余额三卡）
+    并入往来交易对账单。资金行**不参与快照指纹**——快照只钉业务单据选择，
+    资金按打印时点实时计算。
+    2026-10-15 用户决策：纸面只留「资金流水合计」一行（= 收款 + 调整），逐笔资金
+    明细与四格余额卡片不再打印；本函数仍返回完整投影（含 rows 与余额），
+    供后续调整打印口径时复用，不重新造数。
+    """
+    from erp.services.accounting import get_customer_account_ledger
+
+    ledger = get_customer_account_ledger(customer_id, start_date, end_date)
+    rows = [
+        {
+            "date": entry["date"],
+            "type": entry["type"],
+            "reference": entry["reference"] or "",
+            "description": entry["description"] or "",
+            "amount_cents": int(entry["amount_cents"]),
+            "balance_delta_cents": int(entry["balance_delta_cents"]),
+            "_sort": (entry["date"], entry["sort_at"] or "", entry["source"], entry["source_id"]),
+        }
+        for entry in ledger["entries"]
+        if entry["source"] in {"payment", "adjustment"} and entry["status"] == "active"
+    ]
+    rows.sort(key=lambda row: row["_sort"])
+    for row in rows:
+        del row["_sort"]
+    period = ledger["period"]
+    return {
+        "rows": rows,
+        "opening_balance_cents": int(ledger["opening_balance_cents"]),
+        "start_balance_cents": int(period["start_balance_cents"]),
+        "net_change_cents": int(period["net_change_cents"]),
+        "end_balance_cents": int(period["end_balance_cents"]),
+        "payment_cents": int(period["payments_cents"]),
+        "adjustments_cents": int(period["adjustments_cents"]),
+    }
+
+
 def get_reconciliation_print_context(snapshot_id: int) -> dict[str, Any]:
     """Validate ALL candidates and project selected documents in ONE read transaction."""
     with get_db() as conn:
@@ -286,6 +327,7 @@ def get_reconciliation_print_context(snapshot_id: int) -> dict[str, Any]:
         # Do not forward private scope keys, fingerprints, or database rows to print.
         print_snapshot = {key: public[key] for key in ("customer", "start_date", "end_date", "selected_count", "scope_count", "selected_total_cents", "type_totals_cents")}
         print_snapshot["customer"] = {key: public["customer"][key] for key in ("name", "phone", "address")}
+        print_snapshot["funds"] = _funds_section(snapshot["customer_id"], snapshot["start_date"], snapshot["end_date"])
         return {"snapshot": print_snapshot, "documents": [{"order": {key: doc["order"][key] for key in ("order_no", "order_date", "order_type", "type_label", "direction", "total_amount_cents", "notes")}, "items": doc["items"]} for doc in documents if doc["key"] in selected]}
 
 

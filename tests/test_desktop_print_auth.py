@@ -45,6 +45,10 @@ def test_summary_and_print_preview_open_without_login(monkeypatch):
         "/orders/summary_pdf",
         "/settings/print-preview",
         "/settings/print-preview.pdf",
+        "/settings/print-preview/summary",
+        "/settings/print-preview/summary.pdf",
+        "/settings/print-preview/reconciliation",
+        "/settings/print-preview/reconciliation.pdf",
         "/",
     ):
         resp = client.get(path, follow_redirects=False)

@@ -7,7 +7,8 @@ from erp import create_app
 from erp import config as config_module
 from erp.config import load_config, migrate_data_root, data_root, save_config
 from erp.db import get_db, init_db
-from erp.services.accounting import create_customer, create_order_from_typed_rows
+from erp.services.accounting import create_customer, create_order_from_typed_rows, create_product
+from erp.services.inventory import initialize_product
 
 
 def test_settings_page_renders_and_nav_link():
@@ -327,3 +328,47 @@ def test_migrate_data_root_copies_db_and_refuses_overwrite(tmp_path):
         assert False, "expected ValueError"
     except ValueError as exc:
         assert "拒绝覆盖" in str(exc)
+
+
+def test_settings_print_samples_never_read_business_data():
+    """三个版面的样张都是固定示例：真实客户/商品不得出现，内部字段不得上纸。
+
+    2026-10-15：设置页预览从「只有四类开单」扩到三个版面；样张存在的前提就是
+    不碰业务库，否则门店会拿别人的单据当自己的版面看。
+    """
+    init_db()
+    product = create_product("真实商品名称哨兵", "个", 100)
+    initialize_product(product, "10", "5", "2026-10-01", "期初", "settings-sample-sentinel")
+    customer = create_customer("真实客户名称哨兵")
+    create_order_from_typed_rows(
+        customer,
+        "MD202610010001",
+        [{"product_id": product, "product_name": "真实商品名称哨兵", "unit": "个",
+          "unit_price_yuan": "1", "quantity": "1"}],
+        status="saved",
+        order_date="2026-10-01",
+    )
+    client = create_app().test_client()
+
+    for path in ("/settings/print-preview", "/settings/print-preview/summary",
+                 "/settings/print-preview/reconciliation"):
+        html = client.get(path).get_data(as_text=True)
+        assert "预览客户（示例）" in html, path
+        for sentinel in ("真实客户名称哨兵", "真实商品名称哨兵", "unit_cost", "毛利润", "货源", "成本价"):
+            assert sentinel not in html, (path, sentinel)
+
+    # 对账单样张：四类矩形框 + 居中三行，数字自洽（281.00 − 200.00 = 81.00）。
+    recon = client.get("/settings/print-preview/reconciliation").get_data(as_text=True)
+    assert recon.count('class="type-cell"') == 4
+    assert "销售（+）" in recon and "¥360.00" in recon
+    assert "客户退货（−）" in recon and "¥55.00" in recon
+    assert "拿货（−）" in recon and "¥40.00" in recon
+    assert "退拿货（+）" in recon and "¥16.00" in recon
+    assert "资金流水合计：−¥200.00" in recon
+    assert "流水总额：+¥281.00" in recon
+    assert "汇总：+¥81.00" in recon
+
+    # 货款汇总样张：销售 − 退货 = 总金额 的口径与真实导出一致。
+    summary = client.get("/settings/print-preview/summary").get_data(as_text=True)
+    assert "销售总金额 ¥520.00 - 退货总金额 ¥55.00 = 总金额 ¥465.00" in summary
+    assert "MD202601150002" in summary

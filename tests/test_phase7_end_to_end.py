@@ -108,7 +108,7 @@ def test_phase7_complete_inventory_to_reconciliation_path_keeps_contract_values(
         query_string={"start_date": "2026-10-01", "end_date": "2026-10-02", "customer_id": customer_id, "product_name": "Phase7灭火器4kg", "metric": "amount"},
     )
     reconciliation_page = client.get(
-        "/analytics/reconciliation",
+        "/accounts/reconciliation",
         query_string={"customer_id": customer_id, "start_date": "2026-10-01", "end_date": "2026-10-02"},
     )
     assert analytics_page.status_code == 200

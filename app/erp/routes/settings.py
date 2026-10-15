@@ -30,12 +30,17 @@ from erp.utils.backup import (
     restore_backup,
 )
 from erp.utils.money import cents_to_yuan
+from erp.utils.quantity import format_quantity
 from erp.utils.legacy_archive import archive_dir, list_archives, save_archive
 from erp.utils.pdf import (
     generate_settings_print_preview_pdf,
+    generate_settings_reconciliation_preview_pdf,
+    generate_settings_summary_preview_pdf,
     render_desktop_preview,
     send_pdf_for_preview,
     settings_print_preview_context,
+    settings_reconciliation_preview_context,
+    settings_summary_preview_context,
     wants_desktop_preview,
 )
 from typing import Any
@@ -210,6 +215,51 @@ def print_preview_pdf():
         return render_desktop_preview("打印样张.pdf", "打印样张 PDF")
     path = generate_settings_print_preview_pdf()
     return send_pdf_for_preview(path, "打印样张.pdf", "打印样张 PDF")
+
+
+# 另外两个版面的样张（2026-10-15）：同样是固定示例数据，不读业务库。
+# 桌面壳里「预览 PDF」走统一预览页（返回/保存），浏览器直接返回真实 PDF。
+
+@settings_bp.get("/print-preview/summary")
+def summary_print_preview():
+    """Sample 客户货款汇总 HTML — fixed sample data, never reads business rows."""
+    context = settings_summary_preview_context()
+    html = render_template(
+        "accounts/summary_pdf.html",
+        sections=context["sections"],
+        config=context["config"],
+        cents_to_yuan=cents_to_yuan,
+    )
+    return Response(html, mimetype="text/html; charset=utf-8")
+
+
+@settings_bp.get("/print-preview/summary.pdf")
+def summary_print_preview_pdf():
+    if wants_desktop_preview():
+        return render_desktop_preview("货款汇总样张.pdf", "货款汇总样张 PDF")
+    path = generate_settings_summary_preview_pdf()
+    return send_pdf_for_preview(path, "货款汇总样张.pdf", "货款汇总样张 PDF")
+
+
+@settings_bp.get("/print-preview/reconciliation")
+def reconciliation_print_preview():
+    """Sample 往来交易对账单 HTML — fixed sample data, never reads business rows."""
+    context = settings_reconciliation_preview_context()
+    html = render_template(
+        "accounts/reconciliation_pdf.html",
+        **context,
+        cents_to_yuan=cents_to_yuan,
+        format_quantity=format_quantity,
+    )
+    return Response(html, mimetype="text/html; charset=utf-8")
+
+
+@settings_bp.get("/print-preview/reconciliation.pdf")
+def reconciliation_print_preview_pdf():
+    if wants_desktop_preview():
+        return render_desktop_preview("对账单样张.pdf", "对账单样张 PDF")
+    path = generate_settings_reconciliation_preview_pdf()
+    return send_pdf_for_preview(path, "对账单样张.pdf", "对账单样张 PDF")
 
 
 # ---------------------------------------------------------------------------

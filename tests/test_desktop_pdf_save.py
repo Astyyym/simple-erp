@@ -68,6 +68,8 @@ def test_desktop_preview_covers_order_summaries_and_settings_sample(monkeypatch)
         "/orders/summary_pdf?desktop_preview=1",
         f"/accounts/summary_pdf?customer_id={customer_id}&desktop_preview=1",
         "/settings/print-preview.pdf?desktop_preview=1",
+        "/settings/print-preview/summary.pdf?desktop_preview=1",
+        "/settings/print-preview/reconciliation.pdf?desktop_preview=1",
     ):
         response = client.get(path)
         assert response.status_code == 200, path
@@ -115,6 +117,9 @@ def test_browser_pdf_sources_still_return_real_pdf():
     a4_paths = (
         "/orders/summary_pdf",
         f"/accounts/summary_pdf?customer_id={customer_id}",
+        # 2026-10-15 起的两个 A4 样张也走真 PDF，页框必须仍是 A4 竖版。
+        "/settings/print-preview/summary.pdf",
+        "/settings/print-preview/reconciliation.pdf",
     )
     for path in continuous_paper_paths:
         response = client.get(path)
@@ -135,10 +140,23 @@ def test_settings_page_exposes_html_and_pdf_preview_entries(monkeypatch):
     init_db()
     html = create_app().test_client().get("/settings/").get_data(as_text=True)
 
-    assert 'id="settingsPrintPreview"' in html
-    assert 'id="settingsPrintPreviewPdf"' in html
-    assert "生成预览 PDF" in html
+    # 三个版面各有「预览打印效果」+「生成预览 PDF」，2026-10-15 起并排在同一张版面表里。
+    assert "打印版面预览" in html
+    for entry, pdf_entry in (
+        ("settingsPrintPreview", "settingsPrintPreviewPdf"),
+        ("settingsSummaryPreview", "settingsSummaryPreviewPdf"),
+        ("settingsReconPreview", "settingsReconPreviewPdf"),
+    ):
+        assert f'id="{entry}"' in html, entry
+        assert f'id="{pdf_entry}"' in html, pdf_entry
+    assert html.count("预览打印效果") == 3
+    assert html.count("生成预览 PDF") == 3
     assert "/settings/print-preview.pdf?desktop_preview=1" in html
+    assert "/settings/print-preview/summary.pdf?desktop_preview=1" in html
+    assert "/settings/print-preview/reconciliation.pdf?desktop_preview=1" in html
+    assert "客户货款汇总表" in html and "往来交易对账单" in html
+    # 未保存修改的确认提示必须挂在全部六个链接上，而不是只挂四类开单那两个。
+    assert html.count("data-print-preview href=") == 6
 
 
 def test_save_pdf_writes_exact_bytes_and_sanitizes_filename(monkeypatch, tmp_path):

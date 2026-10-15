@@ -184,7 +184,9 @@ def test_accounts_page_shows_current_balance_and_filtered_mixed_ledger():
     assert "PAGE-SEP-SALE" in html
     assert "PAGE-SEP-RETURN" in html
     assert "PAGE-AUG-SALE" not in html
-    assert f"/accounts/ledger_pdf?customer_id={customer_id}" in html
+    # 2026-10-14：打印账款流水 PDF 已删除，页面打印入口只剩「往来对账」。
+    assert f"/accounts/ledger_pdf?customer_id={customer_id}" not in html
+    assert f'id="reconEntryLink" href="/accounts/reconciliation?customer_id={customer_id}' in html
 
 
 def test_payment_void_route_records_reason_and_preserves_ledger_filters():
@@ -215,18 +217,6 @@ def test_payment_void_route_records_reason_and_preserves_ledger_filters():
     assert payment["status"] == "void"
     assert payment["void_reason"] == "重复登记"
     assert accounting.customer_balance_cents(customer_id) == 5000
-
-
-def test_browser_ledger_pdf_opens_new_tab_without_leaving_the_account_page():
-    init_db()
-    customer_id = accounting.create_customer("账款 PDF 浏览器客户")
-    html = create_app().test_client().get(f"/accounts/?customer_id={customer_id}").get_data(as_text=True)
-
-    link_start = html.index('id="ledgerPdfLink"')
-    link_end = html.index(">", link_start)
-    link_tag = html[link_start:link_end]
-    assert 'target="_blank"' in link_tag
-    assert 'rel="noopener"' in link_tag
 
 
 def test_adjustment_filter_uses_local_date_for_utc_created_at_near_midnight():

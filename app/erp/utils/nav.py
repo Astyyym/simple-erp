@@ -5,7 +5,12 @@
 打在「数据分析」上，而返回按钮写着「返回账款管理」——两处打架。
 
 路径前缀法匹配的是「服务命名空间」，不是「用户所在模块」；每新增一个跨模块页面
-就会再错一次。这里改为 endpoint → owner 映射，并允许显式来源参数覆盖。
+就会再错一次。这里改为 endpoint → owner 映射。
+
+2026-10-14：往来对账整体并入账款模块（路由 `/accounts/reconciliation`），
+不再有跨模块页面，`from=` 来源覆盖机制随之删除——该机制有三个漏点
+（勾选后跳转、全选 redirect、打印预览 return_to 都会丢参数），已实测复现。
+现在归属由 endpoint 直接决定，设计上不可能再错。
 
 调用方：`app/erp/__init__.py` 的 context processor 注入模板变量 `nav`。
 
@@ -43,20 +48,16 @@ _OWNER_BY_ENDPOINT: dict[str, str] = {
     "purchases.purchase_return_pdf": "purchase_return_entry",
     # 其余一级模块
     "accounts.accounts": "accounts",
+    # 往来对账（2026-10-14 起在账款模块内，endpoint 即 owner）
+    "accounts.reconciliation": "accounts",
+    "accounts.reconciliation_pdf": "accounts",
     "analytics.analytics_center": "analytics",
-    "analytics.reconciliation": "analytics",
     "products.list_products": "products",
     "products.edit_product": "products",
     "customers.list_customers": "customers",
     "customers.edit_customer": "customers",
     "recycle.recycle_bin": "recycle",
     "settings.settings_page": "settings",
-}
-
-# 跨模块页面：endpoint → {来源参数值: 覆盖后的 owner}
-_SOURCE_OVERRIDES: dict[str, dict[str, str]] = {
-    # 从账款管理点「往来对账」进入 → 侧栏仍归账款管理（与「返回账款管理」按钮一致）。
-    "analytics.reconciliation": {"accounts": "accounts"},
 }
 
 _NAV_KEYS = (
@@ -76,26 +77,20 @@ _NAV_KEYS = (
 )
 
 
-def nav_owner(endpoint: str | None, source: str | None = None) -> str | None:
+def nav_owner(endpoint: str | None) -> str | None:
     """当前页所属的侧栏条目；未登记的路由返回 None（不高亮任何一项）。"""
-    owner = _OWNER_BY_ENDPOINT.get(endpoint or "")
-    if source:
-        override = _SOURCE_OVERRIDES.get(endpoint or "", {}).get(source)
-        if override:
-            owner = override
-    return owner
+    return _OWNER_BY_ENDPOINT.get(endpoint or "")
 
 
-def nav_state(endpoint: str | None = None, source: str | None = None) -> dict[str, bool]:
+def nav_state(endpoint: str | None = None) -> dict[str, bool]:
     """模板用的高亮布尔表。同一页最多一项为 True。
 
     可在无请求上下文时调用（打印模板渲染）：此时取当前 request 的值，取不到就
     返回「全部不高亮」。
     """
-    if endpoint is None and source is None and has_request_context():
+    if endpoint is None and has_request_context():
         endpoint = request.endpoint
-        source = request.args.get("from")
-    owner = nav_owner(endpoint, source)
+    owner = nav_owner(endpoint)
     state = {key: False for key in _NAV_KEYS}
     if owner in state:
         state[owner] = True

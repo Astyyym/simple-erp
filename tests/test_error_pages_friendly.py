@@ -233,19 +233,18 @@ def test_orders_summary_pdf_without_customer_is_friendly_page():
     assert "没有可导出" in response.get_data(as_text=True)
 
 
-def test_accounts_summary_and_ledger_pdf_without_customer_are_friendly():
+def test_accounts_summary_pdf_without_customer_is_friendly():
     """未选客户属请求参数问题 → 400（不是 404）。"""
     init_db()
     client = create_app().test_client()
-    for path in ("/accounts/summary_pdf", "/accounts/ledger_pdf"):
-        response = client.get(path)
-        assert response.status_code == 400, path
-        assert _is_error_page(response), path
-        assert "选择客户" in response.get_data(as_text=True)
+    response = client.get("/accounts/summary_pdf")
+    assert response.status_code == 400
+    assert _is_error_page(response)
+    assert "选择客户" in response.get_data(as_text=True)
 
 
 def test_accounts_summary_pdf_with_missing_customer_is_404():
-    """A7：客户不存在属资源不存在 → 404（与 ledger_pdf 一致）。"""
+    """A7：客户不存在属资源不存在 → 404。"""
     init_db()
     client = create_app().test_client()
     response = client.get("/accounts/summary_pdf?customer_id=999999")
@@ -267,7 +266,7 @@ def test_reconciliation_pdf_for_missing_snapshot_is_404():
     """A7：对账快照不存在属资源不存在 → 404。"""
     init_db()
     client = create_app().test_client()
-    response = client.get("/analytics/reconciliation/pdf/999999")
+    response = client.get("/accounts/reconciliation/pdf/999999")
     assert response.status_code == 404
     assert _is_error_page(response)
 

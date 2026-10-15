@@ -1,0 +1,62 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+@page { size: A4 portrait; margin: 9mm 11mm; @bottom-center { content: counter(page) " / " counter(pages); font-size:10px; } }
+body { font-family: "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; margin: 0; color: #000; }
+.page { box-sizing: border-box; }
+h1 { text-align:center; margin:0 0 3mm; font-size:22px; } .subtitle{text-align:center;font-size:16px;margin-bottom:4mm}
+.meta{display:grid;grid-template-columns:1fr 1fr;gap:2mm;font-size:13px;margin-bottom:4mm}
+table{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}td,th{border:1px solid #333;padding:1.3mm 1mm;text-align:center;vertical-align:middle;overflow-wrap:anywhere}.name{text-align:left}.return-row,.return-row td{color:#c00000}
+/* 整单交易总额＝该单只计一次的口径，独立竖列 + 整列加深（2026-10-14 用户要求）。
+   配方与已验收的账款流水 PDF「单据金额」列一致：加粗 700 + 深墨蓝 #0f2b46
+   + 浅蓝底 #dce9f8（表头 #cfe0f4）。
+   2026-10-15 用户要求改为：金额只印在「日期 · 单号 · 类型」那一行的右侧，
+   下方逐条商品行不再重复（空单元格保留底色，整列仍是连续加深的一条）。
+   单据整体不跨页（tbody.document{break-inside:avoid}），所以续页看不到金额的风险不存在。
+   坑（见 print-offset-calibration reference）：列底色选择器必须限定 td/th，
+   写成 `.col-doc-total{background}` 会命中 <colgroup> 里的 <col> 让
+   WeasyPrint 在 layout_backgrounds 崩；td 跨页拆分加底色是安全的（90 行实测）。 */
+.document-head td{background:#f3f3f3;font-weight:600}
+th.col-doc-total{background:#cfe0f4;color:#0f2b46}
+td.col-doc-total{background:#dce9f8;color:#0f2b46;font-weight:700;text-align:right;white-space:nowrap}
+.section-title{font-size:15px;font-weight:700;margin:6mm 0 2mm;text-align:center}
+/* 四类开单各自一个矩形框：上侧类型、下方该类型金额（2026-10-15 用户要求，
+   取代原「资金往来与余额」整段：说明小字 + 逐笔资金明细表 + 四格余额卡片）。 */
+.type-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:2mm}
+.type-cell{border:1px solid #333;padding:2mm;text-align:center}
+.type-label{font-size:10.5px;color:#444}
+.type-value{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:1mm}
+.summary-lines{margin-top:3mm;text-align:center;font-size:12.5px;line-height:1.9}
+.summary-lines .grand{font-size:14px;font-weight:700}
+.signatures{display:grid;grid-template-columns:1fr 1fr;gap:25mm;margin-top:18mm;font-size:13px}thead{display:table-header-group}tbody.document{break-inside:avoid}.notes td{text-align:left;font-size:11px}
+</style></head><body><section class="page">
+<h1>{{ config.shop_name }}</h1><div class="subtitle">往来交易对账单</div>
+<div class="meta"><span>往来对象：{{ snapshot.customer.name }}</span><span>对账期间：{{ snapshot.start_date or '最早' }} 至 {{ snapshot.end_date or '最新' }}</span></div>
+<table><colgroup><col><col style="width:15mm"><col style="width:12mm"><col style="width:20mm"><col style="width:22mm"><col style="width:26mm"></colgroup>
+<thead><tr><th>商品名称</th><th>单位</th><th>数量</th><th>业务单价</th><th>明细金额</th><th class="col-doc-total">整单交易总额</th></tr></thead>
+{% for doc in documents %}<tbody class="document {{ 'return-row' if doc.order.total_amount_cents < 0 else '' }}">
+<tr class="document-head"><td colspan="5">{{ doc.order.order_date }} · {{ doc.order.order_no }} · {{ doc.order.type_label }} · {{ doc.order.direction }}</td><td class="col-doc-total">¥{{ cents_to_yuan(doc.order.total_amount_cents) }}</td></tr>
+{% for item in doc['items'] %}<tr><td class="name">{{ item.product_name }}</td><td>{{ item.unit }}</td><td>{{ format_quantity(item.quantity, item.unit) }}</td><td>¥{{ cents_to_yuan(item.unit_price_cents) }}</td><td>¥{{ cents_to_yuan(item.subtotal_cents) }}</td><td class="col-doc-total"></td></tr>{% endfor %}
+{% if doc.order.notes %}<tr class="notes"><td colspan="6">备注：{{ doc.order.notes }}</td></tr>{% endif %}</tbody>{% endfor %}</table>
+
+{% set funds = snapshot.funds %}
+{% set type_totals = snapshot.type_totals_cents %}
+{# 汇总段（2026-10-15 用户要求）：四类各一个矩形框 + 居中三行文字。
+   资金流水合计 = 收款（−）+ 账务调整（±），与「账款管理」台账同一口径；
+   流水总额 = 上方四个框之和（选中单据净额）；汇总 = 两者相加。
+   默认全选时汇总恰好等于台账的区间净变动；取消勾选后它是「选中单据 + 全部资金」的口径。 #}
+{% set funds_net = funds.payment_cents + funds.adjustments_cents %}
+{% set grand_total = snapshot.selected_total_cents + funds_net %}
+<div class="section-title">对账汇总</div>
+<div class="type-grid">
+  <div class="type-cell"><div class="type-label">销售（+）</div><div class="type-value">¥{{ cents_to_yuan(type_totals.sale|abs) }}</div></div>
+  <div class="type-cell"><div class="type-label">客户退货（−）</div><div class="type-value">¥{{ cents_to_yuan(type_totals.customer_return|abs) }}</div></div>
+  <div class="type-cell"><div class="type-label">拿货（−）</div><div class="type-value">¥{{ cents_to_yuan(type_totals.purchase|abs) }}</div></div>
+  <div class="type-cell"><div class="type-label">退拿货（+）</div><div class="type-value">¥{{ cents_to_yuan(type_totals.purchase_return|abs) }}</div></div>
+</div>
+<div class="summary-lines">
+  <div>资金流水合计：{{ '+' if funds_net > 0 }}{{ '−' if funds_net < 0 }}¥{{ cents_to_yuan(funds_net|abs) }}</div>
+  <div>流水总额：{{ '+' if snapshot.selected_total_cents > 0 }}{{ '−' if snapshot.selected_total_cents < 0 }}¥{{ cents_to_yuan(snapshot.selected_total_cents|abs) }}</div>
+  <div class="grand">汇总：{{ '+' if grand_total > 0 }}{{ '−' if grand_total < 0 }}¥{{ cents_to_yuan(grand_total|abs) }}</div>
+</div>
+<div class="signatures"><span>对方确认：________________</span><span>日期：________________</span></div>
+</section></body></html>
