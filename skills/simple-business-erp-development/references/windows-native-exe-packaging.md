@@ -58,6 +58,15 @@ Before rebuild:
 
 Smoke from **ASCII temp copy**, not live `dist/`.
 
+## Agent self-inflicted locks and probe artifacts
+
+Failures that come from the agent's own tooling, not the build. Confirm the owner before blaming the packaging script.
+
+- **A leaked handle breaks the next rebuild.** `make_release_zip.py` calls `target.unlink()` on the old ZIP, so any process still holding `dist\simple-erp-windows-*.zip` opens the run with `PermissionError: [WinError 32]` — a *stale step*, the clean build and the installer compile fine. Always inspect the log tail for the step marker that failed instead of assuming PyInstaller. The lock is usually the agent: open archives with `with zipfile.ZipFile(...)` (never a bare call), and remember the persistent `execute_code` kernel keeps stdlib handles alive across calls — `reset` the kernel, or delete from a separate `terminal` process, when a probe file refuses to go.
+- **Never hand an MSYS path to a frozen app.** `ERP_DATA_ROOT="$PWD/..."` in bash stays `/c/...`/`C:\c\...` for the native EXE, which happily creates a junk data root at `C:\c\...`. Pass a native `C:\...` path (set it from Python `os.environ`, or `$LOCALAPPDATA`-style vars that are already native), and read `/health`'s `data_root` back as the check that the override actually landed.
+- **Probing a SQLite path can create it.** `sqlite3.connect(nonexistent)` succeeds and writes a 0-byte DB; the next query says `no such table` and looks like a broken package. For read-only inspection use `file:<path>?mode=ro` (add `&immutable=1` when the file must not gain `-wal`/`-shm`, e.g. a shipped demo DB). Before trusting a count, list the real layout — the green demo DB is `demo_data\data\erp.db`, one level deeper than `demo_data\`.
+- **Line endings are per-file.** `CHANGELOG.md` is CRLF while some `开发短计划/` files are LF. Rewriting a whole file with `"\n".join(...)` reflows every line and turns a 3-line edit into a whole-file diff. Split and rejoin on the newline the file actually uses (`newline=""` read, detect, `assert` the old anchor still matches, then write).
+
 ## Verification checklist
 
 - Free port 5000; no process from `dist/简单ERP`.
