@@ -113,6 +113,21 @@ def test_workspace_config_is_ignored_while_template_stays_tracked():
     assert TEMPLATE.exists(), "出厂模板必须留在仓库里，它是源码运行的回退源"
 
 
+def test_factory_template_matches_every_code_default():
+    """出厂模板必须与 `CONFIG_DEFAULTS` 键、值完全一致。
+
+    模板是装进包里的 `config.json`（`简单ERP.spec` TOC 重命名）。新增配置项时忘了补
+    模板，运行时 `_merge_defaults()` 会填上代码默认值，看不出问题，但包内配置就和代码
+    默认漂移了（reference「出厂模板要与 CONFIG_DEFAULTS 同步」这条要求的可执行版本）。
+    """
+    factory = _factory_template()
+    defaults = config_module.CONFIG_DEFAULTS
+    assert sorted(set(defaults) - set(factory)) == [], "出厂模板缺配置键"
+    assert sorted(set(factory) - set(defaults)) == [], "出厂模板多出配置键"
+    for key, value in defaults.items():
+        assert factory[key] == value, key
+
+
 def test_template_has_no_private_or_absolute_paths():
     factory = _factory_template()
     assert factory["shop_name"] == factory["app_name"] == "简单ERP"
