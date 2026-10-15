@@ -176,7 +176,7 @@
 
 <script type="application/json" id="productCatalog">{{ product_catalog|tojson }}</script>
 <script src="{{ url_for('static', filename='order-product-picker.js') }}?v=1"></script>
-<script src="{{ url_for('static', filename='order-entry-common.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='order-entry-common.js') }}?v=3"></script>
 <script>
 const money = ErpOrderEntry.money;
 const costMoney = ErpOrderEntry.costMoney;
@@ -204,28 +204,30 @@ function recalc() {
   });
   document.getElementById('grandTotal').textContent = money(total);
 }
-async function refineProductRow(tr, product) {
-  const customerId = document.getElementById('customer_id').value || '0';
+/* 拿货 / 退拿货的单价是**入库成本**，与客户售价无关，所以这里不取客户价、也不打接口：
+   「常规价」= 商品档案零售价（`products.default_price_cents`，随目录内嵌下发），
+   只作参考按钮；当前移动平均成本显示在行尾只读成本列，两者都不覆盖用户已填的单价。 */
+function priceYuan(cents) {
+  return (Number(cents || 0) / 100).toFixed(2);
+}
+function renderPriceQuick(tr, product) {
   const quick = tr.querySelector('.price-quick');
-  let list;
-  try { list = await fetchJson('/orders/api/products?q=' + encodeURIComponent(product.name) + '&customer_id=' + encodeURIComponent(customerId)); }
-  catch (_) { return; }
-  const match = (Array.isArray(list) ? list : []).find(item => String(item.id) === String(product.id));
-  if (!match || String(tr.querySelector('.product-id').value) !== String(product.id)) return;
+  if (!quick) return;
+  const source = product || catalogById.get(String(tr.querySelector('.product-id')?.value || '')) || {};
+  const regular = Number(source.default_price_cents || 0);
   quick.innerHTML = '';
-  const prices = [];
-  if (match.regular_price) prices.push(['常规价', match.regular_price]);
-  if (match.is_customer_price && match.customer_price) prices.push(['客户价', match.customer_price]);
-  if (!prices.length) { quick.classList.add('d-none'); return; }
-  prices.forEach(([label, value]) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'price-quick-btn';
-    button.textContent = label + ' ' + value + '元';
-    button.addEventListener('click', () => { tr.querySelector('.unit-price').value = value; recalc(); });
-    quick.appendChild(button);
-  });
+  if (!regular) { quick.classList.add('d-none'); return; }
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'price-quick-btn';
+  button.textContent = '常规价 ' + priceYuan(regular) + '元';
+  button.addEventListener('click', () => { tr.querySelector('.unit-price').value = priceYuan(regular); recalc(); });
+  quick.appendChild(button);
   quick.classList.remove('d-none');
+}
+function refineProductRow(tr, product) {
+  if (String(tr.querySelector('.product-id')?.value || '') !== String(product.id)) return;
+  renderPriceQuick(tr, product);
 }
 /* P3：未建档提示要随行收起（清空行 / 一键清空 / 新增行）。 */
 function clearMissingHint(tr) {

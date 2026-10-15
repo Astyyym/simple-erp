@@ -33,7 +33,7 @@ def _seed():
 
 
 def _seed_costless_sale():
-    """第二张销售单：商品未启用库存 → 明细无成本快照（不能作为关联退货来源）。"""
+    """第二张销售单：商品未启用库存 → 明细无成本快照（关联它只作追溯，不能逐行分摊成本）。"""
     customer = create_customer("缺成本对象")
     product_id = create_product("缺成本商品", "个", 1000)
     sale_id = create_order_from_typed_rows(
@@ -44,7 +44,11 @@ def _seed_costless_sale():
         status="saved",
         order_date="2026-10-13",
     )
-    return sale_id
+    with get_db() as conn:
+        item_id = conn.execute(
+            "SELECT id FROM order_items WHERE order_id=?", (sale_id,)
+        ).fetchone()[0]
+    return customer, sale_id, item_id
 
 
 def test_return_page_submits_source_order_id():
@@ -77,13 +81,158 @@ def test_source_candidates_list_recent_orders_and_filter_by_number_or_customer()
     assert client.get("/orders/api/return_sources?q=不存在").get_json()["orders"] == []
 
 
-def test_source_candidates_hide_costless_orders_and_only_list_linkable_ones():
-    """成本门槛保留：缺成本的单不进候选（选了也会被后端硬拒），只记张数用于提示。"""
+def test_source_candidates_include_costless_orders_flagged_trace_only():
+    """2026-10-15 口径：缺成本的单**也进候选**，用 `cost_ready=False` 标注「仅追溯」。
+
+    旧实现把缺成本的单整单挡在候选外（选了也会被来源分摊路径硬拒），但自 2026-10-13 起
+    关联已降级为「只作参考」，挡在门外等于让门店给旧单留个关联线索都做不到。
+    现在候选全放行，保存时按成本是否齐备分流（见下一条回归）。
+    """
     _seed()
-    costless_sale = _seed_costless_sale()
+    _costless_customer, costless_sale, _costless_item = _seed_costless_sale()
     payload = create_app().test_client().get("/orders/api/return_sources").get_json()
-    assert costless_sale not in [row["id"] for row in payload["orders"]]
+    by_id = {row["id"]: row for row in payload["orders"]}
+    assert costless_sale in by_id, "缺成本单应出现在候选里"
+    assert by_id[costless_sale]["cost_ready"] is False
+    ready = [row for row in payload["orders"] if row["cost_ready"]]
+    assert len(ready) == 1 and ready[0]["cost_ready"] is True
     assert payload["missing_cost_count"] == 1
+
+
+def test_return_linked_to_costless_sale_saves_as_manual_return():
+    """关联缺成本原单（即便每行都带 source_item_id）→ 必须能存下来，走手输路径。
+
+    这是本次改动的核心风险：候选放行了，若保存仍走来源分摊，
+    `_prepare_return_items` 会以「原销售明细缺少可靠成本」整单拒掉 → 变成「能选不能存」。
+    """
+    _seed()
+    customer, costless_sale, costless_item = _seed_costless_sale()
+    client = create_app().test_client()
+    response = client.post(
+        "/orders/return/create",
+        data={
+            "customer_id": str(customer),
+            "customer_name": "缺成本对象",
+            "source_order_id": str(costless_sale),
+            "source_item_id": [str(costless_item)],
+            "product_id": [""],
+            "product_name": ["缺成本商品"],
+            "unit": ["个"],
+            "quantity": ["1"],
+            "unit_price": ["10"],
+            "order_date": "2026-10-14",
+            "status": "saved",
+        },
+    )
+    assert response.status_code == 302, "关联缺成本单退货应保存成功"
+    with get_db() as conn:
+        order = conn.execute(
+            "SELECT id, source_order_id, total_amount_cents FROM orders WHERE order_type='return'"
+        ).fetchone()
+        assert order is not None
+        assert order["source_order_id"] == costless_sale, "追溯信息必须记在单上"
+        item = conn.execute(
+            "SELECT product_name, source_item_id FROM order_items WHERE order_id=?", (order["id"],)
+        ).fetchone()
+    # 走手输路径：不逐行绑定来源明细，成本由 post_typed_return_order 按当前移动平均回冲
+    assert item["source_item_id"] is None, "缺成本关联退货应走手输路径（不逐行绑来源）"
+    assert item["product_name"] == "缺成本商品"
+
+
+def test_return_linked_to_cost_ready_sale_still_uses_source_allocation():
+    """成本齐备的原单不变：关联 + 逐行 source_item_id 仍走来源分摊（按原成本回冲、记来源行）。"""
+    customer, product_id, sale_id, item_id = _seed()
+    client = create_app().test_client()
+    response = client.post(
+        "/orders/return/create",
+        data={
+            "customer_id": str(customer),
+            "customer_name": "退货来源对象",
+            "source_order_id": str(sale_id),
+            "source_item_id": [str(item_id)],
+            "unit": ["个"],
+            "quantity": ["2"],
+            "order_date": "2026-10-13",
+            "status": "saved",
+        },
+    )
+    assert response.status_code == 302
+    with get_db() as conn:
+        order = conn.execute(
+            "SELECT id, source_order_id, total_amount_cents FROM orders WHERE order_type='return'"
+        ).fetchone()
+        assert order["source_order_id"] == sale_id
+        assert order["total_amount_cents"] == -6000
+        item = conn.execute(
+            "SELECT source_item_id FROM order_items WHERE order_id=?", (order["id"],)
+        ).fetchone()
+    assert item["source_item_id"] == item_id, "成本齐备应走来源分摊路径（逐行绑来源）"
+
+
+def test_draft_return_linked_to_costless_sale_can_be_re_edited_and_finalized():
+    """关联缺成本原单的退货**草稿**：重编辑并正式保存必须走得通（不能成为死路）。
+
+    旧编辑分支只要 `source_order_id` 非空就强制走 `update_return_draft_from_source`
+    → `_prepare_return_items`，而该路径要求逐行绑定来源明细且原明细必须有成本。
+    候选放行缺成本单之后，若这里不分流，用户就会「能关联、能存草稿、改不了」。
+    """
+    _seed()
+    customer, costless_sale, costless_item = _seed_costless_sale()
+    client = create_app().test_client()
+    created = client.post(
+        "/orders/return/create",
+        data={
+            "customer_id": str(customer),
+            "customer_name": "缺成本对象",
+            "source_order_id": str(costless_sale),
+            "source_item_id": [str(costless_item)],
+            "product_id": [""],
+            "product_name": ["缺成本商品"],
+            "unit": ["个"],
+            "quantity": ["1"],
+            "unit_price": ["10"],
+            "order_date": "2026-10-14",
+            "status": "draft",
+        },
+    )
+    assert created.status_code == 302
+    with get_db() as conn:
+        draft = conn.execute(
+            "SELECT id, status, source_order_id, version FROM orders WHERE order_type='return'"
+        ).fetchone()
+    assert draft["status"] == "draft" and draft["source_order_id"] == costless_sale
+    order_id = draft["id"]
+
+    # 编辑页必须可进（草稿不因关联而锁死）
+    page = client.get(f"/orders/{order_id}/edit")
+    assert page.status_code == 200
+    assert "无法重编辑" not in page.get_data(as_text=True)
+
+    # 改数量后正式保存：走手输路径，不该被「缺少可靠成本」拦下
+    edited = client.post(
+        f"/orders/{order_id}/edit",
+        data={
+            "customer_id": str(customer),
+            "customer_name": "缺成本对象",
+            "product_id": [""],
+            "product_name": ["缺成本商品"],
+            "unit": ["个"],
+            "quantity": ["2"],
+            "unit_price": ["10"],
+            "status": "saved",
+            "version": str(draft["version"]),
+        },
+    )
+    assert edited.status_code == 302
+    body = client.get(edited.headers["Location"]).get_data(as_text=True)
+    assert "无法重编辑" not in body
+    with get_db() as conn:
+        order = conn.execute(
+            "SELECT id, status, source_order_id, total_amount_cents FROM orders WHERE id=?", (order_id,)
+        ).fetchone()
+    assert order["status"] == "saved"
+    assert order["source_order_id"] == costless_sale, "重编辑后追溯关联仍要保留"
+    assert order["total_amount_cents"] == -2000  # 2 × 10 元
 
 
 def test_return_created_from_source_keeps_link_and_source_item_in_database():

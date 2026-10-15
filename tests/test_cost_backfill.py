@@ -134,23 +134,29 @@ def test_backfill_makes_profit_complete_and_deducts_backfilled_cost():
     assert after["gross_profit_cents"] == 18000
 
 
-def test_backfill_keeps_order_out_of_return_sources_until_cost_present():
-    """补录后该单出现在退货来源候选（EXISTS 条件自动满足）。
+def test_backfill_upgrades_order_from_trace_only_to_cost_ready():
+    """补录前后该单都在退货来源候选里，差别是 `cost_ready`（2026-10-15 口径）。
 
-    2026-10-13：候选取数从 `_return_source_orders` 收敛为 `_return_source_candidates`
-    （返回 `(候选, 缺成本张数)`，供检索式候选接口复用），断言口径不变。
+    原断言是「补录前不进候选、补录后才进」。本 2026-10-15 用户决策放开了候选：
+    缺成本的销售单也进候选（关联后只作追溯），所以这里守的变成
+    **「补录 → 该单从仅追溯升级为可逐行关联分摊」**这条真实价值，意图不变。
     """
     from erp.routes.orders import _return_source_candidates
     from erp.services.cost_backfill import backfill_order_costs
 
     order_id, item_id, _, _ = _seed_sale_without_cost()
     with get_db() as conn:
-        assert [row["id"] for row in _return_source_candidates(conn)[0]] == []
+        rows, missing = _return_source_candidates(conn)
+    assert [row["id"] for row in rows] == [order_id], "缺成本单也应出现在候选"
+    assert rows[0]["cost_ready"] == 0 and missing == 1
 
     backfill_order_costs(order_id, [{"item_id": item_id, "unit_cost": "10"}], "补录后可退")
 
     with get_db() as conn:
-        assert [row["id"] for row in _return_source_candidates(conn)[0]] == [order_id]
+        rows, missing = _return_source_candidates(conn)
+    assert [row["id"] for row in rows] == [order_id]
+    assert rows[0]["cost_ready"] == 1, "补录后应可走来源分摊"
+    assert missing == 0
 
 
 # --------------------------- Phase 1：快照保护与状态保护 ---------------------------

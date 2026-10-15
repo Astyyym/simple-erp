@@ -257,6 +257,30 @@
     );
   }
 
+  /* 往来对象（hidden `customer_id`）变化监听（2026-10-15，修复「换客户后单价不跟」）。
+     为什么不是 addEventListener('change')：hidden 输入框上的赋值有三类来源——
+       1. 候选点选 / 手输清空（bindAutocomplete 的 onPick / onInputChange）→ 直接 `.value =`，无事件；
+       2. `syncCounterparty` 关联原单带出对象 → 同样直接赋值，无事件；
+       3. 用户改名字但没命中候选 → 也只写 value。
+     `input`/`change` 只在**用户交互**的元素上触发，写 hidden 的 value 既不触发事件、
+     MutationObserver 也不监视 value 属性，所以这里用「值指纹 + 轻量轮询」兜底：
+     每 200ms 只比一个字符串，代价可忽略，换来的是三条赋值路径都能可靠重取价。
+     返回 commit 函数供调用方在需要时立即强制比对。 */
+  function onCounterpartyChanged(input, callback) {
+    if (!input || typeof callback !== 'function') return () => {};
+    let last = String(input.value ?? '');
+    const commit = () => {
+      const current = String(input.value ?? '');
+      if (current === last) return;
+      last = current;
+      callback(current);
+    };
+    input.addEventListener('change', commit);
+    input.addEventListener('erp-counterparty-change', commit);
+    window.setInterval(commit, 200);
+    return commit;
+  }
+
   /* 关联原单后对齐「往来对象 / 客户名称」（退货单、退拿货单共用一份）。
      关联都要求与原单同一对象（后端会硬校验），所以这里**以原单为准**：
      空则带出；已填且不同则改成原单对象并说明原因 —— 之前「已填就只警告不覆盖」会让用户
@@ -334,6 +358,7 @@
     costMoney: costMoney,
     bindAutocomplete: bindAutocomplete,
     bindUnitCell: bindUnitCell,
+    onCounterpartyChanged: onCounterpartyChanged,
     syncCounterparty: syncCounterparty,
     closeFloatingProductSuggestions: closeFloatingProductSuggestions,
     createPreviewApply: createPreviewApply,

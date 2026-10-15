@@ -749,12 +749,39 @@ def _linked_rows_from_form() -> list[dict]:
     ]
 
 
-def _return_source_candidates(conn, query: str = "") -> tuple[list[dict], int]:
-    """退货来源候选：`(候选销售单, 被成本门槛挡掉的张数)`。
+# 退货来源单「成本是否齐备」的**唯一口径**（2026-10-15）：
+#   有明细、且每一行都带 unit_cost_micro + cost_total_micro，才能走来源分摊路径
+#   （逐行关联 + 可退额度 + 按原单成本回冲）。候选标注、保存分流、重编辑分流三处共用，
+#   任何一处各写各的都会漂移成「候选说可选、保存却硬拒」或反之。
+RETURN_SOURCE_COST_READY_SQL = (
+    "EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id=o.id) "
+    "AND NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id=o.id "
+    "AND (oi.unit_cost_micro IS NULL OR oi.cost_total_micro IS NULL))"
+)
 
-    成本门槛必须保留：关联退货走 `create_return_order_from_source` → `_prepare_return_items`，
-    来源明细缺成本会被硬拒；列出来却选不了等于给用户一条死路。
-    被挡掉的张数单独返回，页面上提示「另有 N 张缺成本的销售单」，而不是把死路塞进候选。
+
+def _source_order_cost_ready(conn, source_order_id: int) -> bool:
+    """来源销售单能否走来源分摊（成本齐备）。单条判定与候选列表同一 SQL 口径。"""
+    row = conn.execute(
+        f"SELECT ({RETURN_SOURCE_COST_READY_SQL}) AS cost_ready FROM orders o WHERE o.id=?",
+        (source_order_id,),
+    ).fetchone()
+    return bool(row and row["cost_ready"])
+
+
+def _return_source_candidates(conn, query: str = "") -> tuple[list[dict], int]:
+    """退货来源候选：`(候选销售单, 明细不全带成本的张数)`。
+
+    **2026-10-15 口径变更（用户决策）**：原先候选只列「明细带成本快照」的销售单，
+    缺成本的整单不进候选、只报张数。但自 2026-10-13 起原单关联已降级为
+    「只作参考 / 追溯、不改变计价」，一个纯追溯功能被成本分摊的前置条件挡在门外，
+    门店实际表现为「想给旧单留个关联线索却选不了」。
+
+    现在：
+      - 全部有效销售单都进候选；
+      - 每张带 `cost_ready`（明细是否**全部**带成本）：True 才能走来源分摊路径
+        （逐行关联 + 可退额度 + 按原成本回冲库存）；False 只做追溯，保存走手输路径；
+      - `missing_cost_count` 改为统计候选内 `cost_ready` 为 False 的张数，供页面提示。
     """
     q = (query or "").strip()
     where = ("o.order_type='sale' AND o.status IN ('saved', 'printed') AND o.deleted_at IS NULL "
@@ -764,27 +791,24 @@ def _return_source_candidates(conn, query: str = "") -> tuple[list[dict], int]:
         where += f" AND (o.order_no LIKE ? OR {name_match_clause('c.')})"
         params.append(name_like_pattern(q))
         params.extend(name_match_params(q))
-    has_cost = ("EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id=o.id "
-                "AND oi.unit_cost_micro IS NOT NULL AND oi.cost_total_micro IS NOT NULL)")
+    # 逐行成本判定：有明细、且每一行都带 unit_cost_micro + cost_total_micro 才算 cost_ready。
+    # 「至少有一行有成本」不够——来源分摊路径要求**所选项**都有成本，部分有成本的单
+    # 走分摊仍会被后端硬拒，那又是一条死路。
     rows = conn.execute(
         f"""
         SELECT o.id, o.order_no, o.order_date, o.customer_id, c.name AS customer_name,
-               o.total_amount_cents
+               o.total_amount_cents,
+               ({RETURN_SOURCE_COST_READY_SQL}) AS cost_ready
         FROM orders o JOIN customers c ON c.id=o.customer_id
-        WHERE {where} AND {has_cost}
-        ORDER BY o.order_date DESC, o.id DESC
+        WHERE {where}
+        ORDER BY cost_ready DESC, o.order_date DESC, o.id DESC
         LIMIT ?
         """,
         (*params, RETURN_SOURCE_LIMIT),
     ).fetchall()
-    missing_cost_count = conn.execute(
-        f"""
-        SELECT COUNT(*) FROM orders o JOIN customers c ON c.id=o.customer_id
-        WHERE {where} AND NOT {has_cost}
-        """,
-        tuple(params),
-    ).fetchone()[0]
-    return [dict(row) for row in rows], int(missing_cost_count)
+    results = [dict(row) for row in rows]
+    missing_cost_count = sum(1 for row in results if not row["cost_ready"])
+    return results, int(missing_cost_count)
 
 
 @orders_bp.get("/api/today_history")
@@ -797,12 +821,17 @@ def api_today_history():
 
 @orders_bp.get("/api/return_sources")
 def api_return_sources():
-    """退货来源候选列表：点击输入框即列最近单据，输入按单号/客户名/拼音过滤。"""
+    """退货来源候选列表：点击输入框即列最近单据，输入按单号/客户名/拼音过滤。
+
+    `cost_ready=False` 的单**照样返回**（2026-10-15）：关联它只做追溯，不能逐行分摊成本；
+    页面据此标注「无成本，仅追溯」，保存时走手输退货路径。
+    """
     with get_db() as conn:
         rows, missing_cost_count = _return_source_candidates(conn, request.args.get("q", ""))
     return jsonify({
         "orders": [
-            {**row, "amount_display": cents_to_yuan(row["total_amount_cents"])}
+            {**row, "cost_ready": bool(row["cost_ready"]),
+             "amount_display": cents_to_yuan(row["total_amount_cents"])}
             for row in rows
         ],
         "missing_cost_count": missing_cost_count,
@@ -813,9 +842,10 @@ def api_return_sources():
 def api_return_source(source_order_id: int):
     with get_db() as conn:
         source = conn.execute(
-            """
+            f"""
             SELECT o.id, o.order_no, o.order_date, o.customer_id, c.name AS customer_name,
-                   o.total_amount_cents
+                   o.total_amount_cents,
+                   ({RETURN_SOURCE_COST_READY_SQL}) AS cost_ready
             FROM orders o JOIN customers c ON c.id=o.customer_id
             WHERE o.id=? AND o.order_type='sale' AND o.status IN ('saved', 'printed')
               AND o.deleted_at IS NULL
@@ -865,7 +895,10 @@ def api_return_source(source_order_id: int):
             "cost_available": item["unit_cost_micro"] is not None and item["cost_total_micro"] is not None,
             "unit_cost": micro_to_yuan(int((Decimal(int(item["cost_total_micro"])) / original_quantity).quantize(Decimal("1"), rounding=ROUND_HALF_UP)), precision=6) if item["cost_total_micro"] is not None and original_quantity > 0 else None,
         })
-    return jsonify({"source": dict(source), "items": payload_items})
+    # `cost_ready` 必须转成真布尔：sqlite3 返回 0/1，前端按 `=== false` 判「仅追溯」会失效，
+    # 于是给缺成本的原单写出「按原单成本回冲」这种错误承诺（2026-10-15 真实浏览器实测抓到）。
+    return jsonify({"source": {**dict(source), "cost_ready": bool(source["cost_ready"])},
+                    "items": payload_items})
 
 
 def _new_order_form(order_type: str):
@@ -1020,8 +1053,19 @@ def _create_order_view(order_type: str):
     # 2026-10-13：原单关联只作**参考 / 追溯**。只有「每一行都关联了原单明细」时才走
     # 来源分摊路径（可退额度 + 成本快照）；只要有手输行，就按普通手输退货保存 ——
     # 既不会因为"新增行没关联"被拒，也不会把手输行悄悄丢掉（原实现只保留有关联的行）。
+    #
+    # 2026-10-15：来源单成本不齐时**也强制走手输路径**。候选现在会列出缺成本的旧单
+    # （标注「无成本，仅追溯」），若仍按逐行关联去分摊，`_prepare_return_items` 会以
+    # 「原销售明细缺少可靠成本」整单拒掉 —— 用户看到的就又是「能选不能存」。
+    # 手输路径同样把 `source_order_id` 记在单上，追溯信息不丢；库存照旧回冲，
+    # 成本按当前移动平均（与手工退货同一口径）。
     linked_rows = _linked_rows_from_form() if source_order_id is not None else []
-    if order_type == "return" and source_order_id is not None and _all_rows_linked(linked_rows):
+    source_cost_ready = False
+    if source_order_id is not None:
+        with get_db() as conn:
+            source_cost_ready = _source_order_cost_ready(conn, source_order_id)
+    if (order_type == "return" and source_order_id is not None and source_cost_ready
+            and _all_rows_linked(linked_rows)):
         if not linked_rows:
             return error_response("退货至少选择一行并填写数量。", title="订单未保存",
                                   back_url=url_for("orders.new_return_order"))
@@ -1337,7 +1381,15 @@ def update_order_view(order_id: int):
     if status not in {"draft", "saved", "printed"}:
         return error_response("订单状态无效，请选择“草稿”“正式保存”或“已打印”。", title="无法重编辑",
                               back_url=url_for("orders.view_order", order_id=order_id))
+    # 来源单成本齐备时，退货草稿重编辑仍走「逐行关联 + 来源分摊」（可退额度、按原成本回冲）；
+    # 成本不齐（2026-10-15 起这类单也允许关联，只做追溯）时必须走手输更新路径 —— 否则
+    # `_prepare_return_items` 会以「退货必须选择原销售明细 / 缺少可靠成本」把草稿锁成死路。
+    # `source_order_id` 已在单上，手输路径的 UPDATE 不改这一列，追溯信息保留。
+    source_cost_ready = False
     if existing["source_order_id"] is not None:
+        with get_db() as conn:
+            source_cost_ready = _source_order_cost_ready(conn, int(existing["source_order_id"]))
+    if existing["source_order_id"] is not None and source_cost_ready:
         if existing["status"] != "draft":
             return error_response("正式退货单经济字段已锁定，请在详情页修改备注。", title="无法重编辑",
                                   back_url=url_for("orders.view_order", order_id=order_id))

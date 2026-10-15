@@ -153,14 +153,23 @@ def test_return_fetch_save_print_returns_json():
     assert payload["next_url"] == "/purchases/return/new"
 
 
-def test_entry_pages_expose_regular_and_customer_price_quick_fill():
+def test_purchase_entry_price_quick_offers_regular_price_only():
+    """拿货 / 退拿货的单价是入库成本，不提供「客户价」（2026-10-15 决策）。
+
+    旧实现借用 `/orders/api/products?customer_id=…`，而那里 `customer_id` 的语义是**客户**，
+    拿货页同名字段存的是**供应商**（两者共用 `customers` 档案）→ 页面会把「这家客户当初
+    买多少钱」当成拿货单价候选。现在常规价改用内嵌商品目录的 `default_price_cents`。
+    """
     init_db()
     client = create_app().test_client()
     for path in ("/purchases/new", "/purchases/return/new"):
         html = client.get(path).get_data(as_text=True)
         assert "price-quick" in html
-        assert "/orders/api/products" in html
-        assert "常规价" in html and "客户价" in html
+        assert "常规价" in html
+        # 「客户价」三个字允许出现在说明正文里（页头写着「不影响客户价和客户账款」），
+        # 但取价逻辑不能再出现客户价分支与其接口字段。
+        assert "is_customer_price" not in html, path
+        assert "/orders/api/products" not in html, path
 
 
 def test_purchase_fetch_save_error_returns_json_message_not_html_page():

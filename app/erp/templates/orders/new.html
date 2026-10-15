@@ -141,7 +141,7 @@
       {% for item in rows %}
       <tr{% if item and item.unit_cost_micro is not none %} data-unit-cost="{{ micro_to_yuan(item.unit_cost_micro, precision=6) }}"{% endif %}>
         <td class="text-center row-no">{{loop.index}}</td>
-        <td class="product-picker"><div class="picker-row"><input type="hidden" name="product_id" class="product-id" value="{{item.product_id if item else ''}}"><input type="hidden" name="source_item_id" class="source-item-id" value="{{item.source_item_id if item else ''}}"><input type="hidden" name="product_name" class="product-name" value="{{item.product_name if item else ''}}"><div class="suggest-wrap product-suggest-wrap"><input class="form-control form-control-sm picker-name-input" autocomplete="off" aria-label="第 {{loop.index}} 行产品名称" placeholder="输入或选择商品名" value="{{item.product_name if item else ''}}"><div class="suggest-list d-none product-suggestions" role="listbox" aria-label="商品建议"></div></div></div></td>
+        <td class="product-picker"><div class="picker-row"><input type="hidden" name="product_id" class="product-id" value="{{item.product_id if item else ''}}"><input type="hidden" name="source_item_id" class="source-item-id" value="{{item.source_item_id or ''}}"><input type="hidden" name="product_name" class="product-name" value="{{item.product_name if item else ''}}"><div class="suggest-wrap product-suggest-wrap"><input class="form-control form-control-sm picker-name-input" autocomplete="off" aria-label="第 {{loop.index}} 行产品名称" placeholder="输入或选择商品名" value="{{item.product_name if item else ''}}"><div class="suggest-list d-none product-suggestions" role="listbox" aria-label="商品建议"></div></div></div></td>
         <td><div class="unit-cell suggest-wrap"><input name="unit" class="unit form-control form-control-sm" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="单位" aria-label="第 {{loop.index}} 行单位" aria-expanded="false" data-unit-options="{{ (unit_options or ['个','套','件'])|join('|') }}" value="{{item.unit if item else ''}}"><div class="suggest-list d-none unit-suggestions" role="listbox" aria-label="单位建议"></div></div></td>
         <td><input name="quantity" class="quantity" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0" value="{{item.quantity if item else ''}}"></td>
         <td class="price-cell"><input name="unit_price" class="unit-price" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.00" value="{{cents_to_yuan(item.unit_price_cents) if item else ''}}"><label class="regular-price-option"><input type="checkbox" class="regular-price-check">常规价 <span class="regular-price-text"></span></label></td>
@@ -218,7 +218,7 @@
 
 <script type="application/json" id="productCatalog">{{ product_catalog|tojson }}</script>
 <script src="{{ url_for('static', filename='order-product-picker.js') }}?v=2"></script>
-<script src="{{ url_for('static', filename='order-entry-common.js') }}?v=2"></script>
+<script src="{{ url_for('static', filename='order-entry-common.js') }}?v=3"></script>
 <script>
 // v14/Phase 3：联想与金额格式化统一来自 order-entry-common.js（原先本页内联一份副本）。
 const { money, costMoney, bindAutocomplete } = window.ErpOrderEntry;
@@ -387,12 +387,17 @@ function hideRegularPriceOption(regularOption, regularCheck, regularText) {
   regularCheck.checked = false;
   regularOption.style.display = 'none';
 }
+const repriceSeq = new WeakMap();
 async function refineProductRow(tr, product) {
+  // 换客户会一次重算多行、也会连续换客户；旧响应不能覆盖新结果（同商品跨客户价不同时尤其明显）。
+  const seq = (repriceSeq.get(tr) || 0) + 1;
+  repriceSeq.set(tr, seq);
   const customerId = document.getElementById('customer_id').value || '0';
   let list;
   try {
     list = await fetchJson('/orders/api/products?q=' + encodeURIComponent(product.name) + '&customer_id=' + encodeURIComponent(customerId));
   } catch (_) { return; }
+  if (seq !== repriceSeq.get(tr)) return;
   const match = (Array.isArray(list) ? list : []).find(item => String(item.id) === String(product.id));
   // A stale response must not overwrite a row that already moved to another product.
   if (!match || String(tr.querySelector('.product-id').value) !== String(product.id)) return;
@@ -499,6 +504,38 @@ function bindRow(tr) {
   }
 }
 document.querySelectorAll('#orderBody tr:not(.slip-notice)').forEach(bindRow);
+/* 关联的原单是否「只作追溯」（来源单成本不齐）。为 true 时带入的行**允许**随客户重取价：
+   这种关联不承诺按原单成本回冲，单价本来就是可自由改的手输值。默认 false ——
+   销售页（非退货）与未关联时都用不到它。 */
+let sourceTraceOnly = false;
+/* 关联原单的语义说明（2026-10-15）：成本齐备的关联才承诺「可退上限 + 按原单成本回冲」；
+   缺成本的关联只作追溯，保存按手工退货处理、回冲成本按当前移动平均 —— 两种语义不能都写成
+   「不影响计价规则」，否则用户会以为无成本单的退货也和原单成本一致。 */
+function sourceLinkNote() {
+  return sourceTraceOnly
+    ? '本次关联只作追溯（该原单明细没有成本快照，保存按手工退货处理，回冲成本按当前移动平均）'
+    : '不影响计价规则（按原单成本回冲）';
+}
+/* 单价跟着客户走（2026-10-15 哥哥决策）：往来对象一变，就按**新客户**重写所有已命中
+   商品档案的行（有客户价取客户价，没有则取档案默认价），不保护手输过的值。
+   原缺陷：`refineProductRow()` 只在「点选商品」那一刻读一次 `customer_id`，所以
+   ① 先点商品、后选客户 → 单价停在档案默认价；② 编辑已有单据/已填行后换客户 → 单价不跟。
+   两条都在隔离库实测复现（同一商品：默认价 100、甲 80、乙 85）。 */
+function repriceRowsForCustomer() {
+  document.querySelectorAll('#orderBody tr:not(.slip-notice)').forEach(tr => {
+    const idField = tr.querySelector('.product-id');
+    if (!idField || !idField.value) return;
+    // 原单带入的退货行：成本齐备的关联承诺「按原成交价 + 原成本退」，重算会让单价与预览
+    // 带出的原单金额对不上，所以跳过。只作追溯的关联（来源单缺成本）不适用这条承诺 → 放行。
+    if (tr.querySelector('.source-item-id')?.value && !sourceTraceOnly) return;
+    // 查询串用商品档案里的规范名：输入框可能被用户改成同义写法，接口按名匹配会打不中。
+    const catalogItem = productCatalog.find(item => String(item.id) === String(idField.value));
+    const name = String(catalogItem?.name || tr.querySelector('.picker-name-input')?.value || '').trim();
+    if (!name) return;
+    refineProductRow(tr, { id: Number(idField.value), name });
+  });
+}
+ErpOrderEntry.onCounterpartyChanged(document.getElementById('customer_id'), repriceRowsForCustomer);
 document.addEventListener('click', event => {
   document.querySelectorAll('[role="combobox"]').forEach(input => {
     if (!input.closest('.suggest-wrap')?.contains(event.target)) input._closeSuggestions?.();
@@ -598,6 +635,9 @@ if (returnSourceInput && returnSourceHidden) {
     previewRows.replaceChildren();
     previewMeta.textContent = '';
     previewItems = [];
+    // 解除关联后不再有「来源单」，语义标记必须回落到默认（成本齐备）——
+    // 留着 true 会让后续手输行被误标成「只作追溯」。
+    sourceTraceOnly = false;
     previewApplyState.reset();
     appliedSourceId = '';
     syncPreviewApply();
@@ -628,6 +668,8 @@ if (returnSourceInput && returnSourceHidden) {
   const renderPreview = (payload) => {
     const source = payload.source || {};
     const items = Array.isArray(payload.items) ? payload.items : [];
+    // 来源单成本不齐 → 这次关联只作追溯（保存走手输路径），带入的行因此**允许**随客户重取价。
+    sourceTraceOnly = source.cost_ready === false;
     previewItems = items;
     previewRows.replaceChildren();
     items.forEach(item => {
@@ -654,9 +696,10 @@ if (returnSourceInput && returnSourceHidden) {
     // 只有换成别的原单才重新放开「带入」；重复选中同一张不放开（否则又能插一遍重复行）。
     if (String(source.id || '') !== String(appliedSourceId)) previewApplyState.reset();
     syncPreviewApply();
-    previewHint.textContent = (customerNote ? customerNote + ' ' : '') + (previewApplyState.applied()
-      ? '已按预览带入原销售单商品行与可退上限（只带入一次）；仍可自由加行与修改，不影响计价规则。如需重新带入，请改选原单或点「清除关联」后重选。'
-      : '带入的是可退上限，仍可自由加行、改数量与单价，不影响计价规则。');
+    previewHint.textContent = (customerNote ? customerNote + ' ' : '')
+      + (previewApplyState.applied()
+        ? `已按预览带入原销售单商品行与可退上限（只带入一次）；仍可自由加行与修改，${sourceLinkNote()}。如需重新带入，请改选原单或点「清除关联」后重选。`
+        : `带入的是可退上限，仍可自由加行、改数量与单价，${sourceLinkNote()}。`);
     preview.classList.remove('d-none');
   };
 
@@ -678,8 +721,10 @@ if (returnSourceInput && returnSourceHidden) {
       const skipped = Number(payload && payload.missing_cost_count) || 0;
       if (missingHint) {
         missingHint.classList.toggle('d-none', !skipped);
+        // 2026-10-15：缺成本的单也在候选里了，这里从「不能关联」改成说明两种关联的差别，
+        // 避免用户以为「选了这张就退不了 / 会被拒」。
         missingHint.textContent = skipped
-          ? `另有 ${skipped} 张销售单没有成本快照，补录历史成本后才能关联退货。`
+          ? `其中 ${skipped} 张的销售明细没有成本快照：仍可关联，但只作追溯（按手工退货保存，成本按当前移动平均回冲）；只有成本齐备的单才能逐行关联原明细并按原成本回冲。`
           : '';
       }
       return Array.isArray(payload && payload.orders) ? payload.orders : [];
@@ -689,8 +734,8 @@ if (returnSourceInput && returnSourceHidden) {
       const nameNode = document.createElement('strong');
       nameNode.textContent = order.order_no;
       const detailsNode = document.createElement('small');
-      detailsNode.textContent = [order.customer_name, order.order_date, '¥' + order.amount_display]
-        .filter(Boolean).join(' · ');
+      detailsNode.textContent = [order.customer_name, order.order_date, '¥' + order.amount_display,
+        order.cost_ready ? '' : '无成本，仅追溯'].filter(Boolean).join(' · ');
       fragment.append(nameNode, document.createTextNode(' '), detailsNode);
       return fragment;
     },
@@ -708,7 +753,7 @@ if (returnSourceInput && returnSourceHidden) {
         clearSourceAssociation('原销售单已改动，已解除关联；重新选中后才会带入商品行。', { clearInput: false });
       }
     },
-    '没有匹配的销售单（只列有成本快照的正式销售单）',
+    '没有匹配的销售单（有效销售单都可关联；缺成本的只作追溯）',
     { listOnEmpty: true, openOnClick: true, maxHeight: 210 },
   );
 
@@ -728,8 +773,8 @@ if (returnSourceInput && returnSourceHidden) {
     recalc();
     syncPreviewApply();
     previewHint.textContent = (counterpartyNote ? counterpartyNote + ' ' : '')
-      + '已按预览带入原销售单商品行与可退上限（只带入一次）；仍可自由加行与修改，不影响计价规则。如需重新带入，请改选原单或点「清除关联」后重选。';
-    document.getElementById('profitPreview').textContent = '已按预览带入原销售单商品行与可退上限；仍可自由加行与修改，不影响计价规则。';
+      + `已按预览带入原销售单商品行与可退上限（只带入一次）；仍可自由加行与修改，${sourceLinkNote()}。如需重新带入，请改选原单或点「清除关联」后重选。`;
+    document.getElementById('profitPreview').textContent = `已按预览带入原销售单商品行与可退上限；仍可自由加行与修改，${sourceLinkNote()}。`;
   });
   syncPreviewApply();
 }
