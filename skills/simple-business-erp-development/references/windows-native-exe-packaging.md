@@ -67,6 +67,17 @@ Failures that come from the agent's own tooling, not the build. Confirm the owne
 - **Probing a SQLite path can create it.** `sqlite3.connect(nonexistent)` succeeds and writes a 0-byte DB; the next query says `no such table` and looks like a broken package. For read-only inspection use `file:<path>?mode=ro` (add `&immutable=1` when the file must not gain `-wal`/`-shm`, e.g. a shipped demo DB). Before trusting a count, list the real layout — the green demo DB is `demo_data\data\erp.db`, one level deeper than `demo_data\`.
 - **Line endings are per-file.** `CHANGELOG.md` is CRLF while some `开发短计划/` files are LF. Rewriting a whole file with `"\n".join(...)` reflows every line and turns a 3-line edit into a whole-file diff. Split and rejoin on the newline the file actually uses (`newline=""` read, detect, `assert` the old anchor still matches, then write).
 
+## In-package content gates: where the files actually live (2026-10-15)
+
+Asserting "this round's change really shipped" needs the frozen layout, not the source layout:
+
+- Templates/static ship as loose files under `<app>/_internal/erp/...` — **`_internal/app/erp/...` does not exist**, and grepping that path returns nothing, which reads like "the build dropped the data files" when they are right there.
+- `app/erp/routes/*.py` and all other Python ship **inside the EXE's embedded PYZ**, as no loose file. A backend-only marker (a new SQL constant, a changed query) therefore **cannot** be verified by file grep — verify it at runtime against the isolated EXE (hit the endpoint, assert the new behaviour) and say so.
+- Cross-check hashes instead of timestamps: ZIP-internal EXE == clean-build EXE (else the ZIP grabbed the demo build), and green EXE ≠ delivery EXE (else the two entry points never separated). PE version strings need UTF-16-LE search.
+- Smoke the delivery EXE with all three overrides together — `ERP_PORT`, `ERP_DATA_ROOT`, `ERP_CONFIG_PATH` — otherwise it writes its config beside the EXE and dirties the shipped artifact. Afterwards hash `<app>/_internal/config.json` and `<app>/config.json` against `packaging/default_config.json`; a changed hash means the smoke leaked into the package. (The green build's root `config.json` legitimately differs — `demo_entry` writes the demo shop name.)
+- Baseline the real data root as (size, mtime_ns) per file **before** the smoke and diff after. `erp.db` lives at `<root>/data/erp.db`; a stale 0-byte `erp.db` at the root itself is debris, and hashing that returns the empty-string SHA — a "nothing changed" pass read from it is fake evidence.
+- Killing the smoke process from MSYS bash: `taskkill //PID` and `taskkill /PID` both fail ("无效参数/选项"); use `taskkill -PID <pid> -T -F`. Judge occupancy from the `LISTENING` line only — curl-driven probes leave many `TIME_WAIT` rows owned by `0`.
+
 ## Verification checklist
 
 - Free port 5000; no process from `dist/简单ERP`.
