@@ -26,5 +26,5 @@
 
 ## 坑
 
-- **验收动作会弄脏绿色版**：启动 EXE 会在 `demo_data` 里重建 `-wal`/`-shm` 并写日志；`seed` 生成时是干净的（manifest `problems: []`），脏是验收造成的。交付前用**读写**连接 `PRAGMA wal_checkpoint(TRUNCATE)` 后正常关闭（只有读写连接关闭才会删边车，`mode=ro` 会再造出 `-shm`），并清掉 `demo_data\logs\*.log`。
+- **验收动作会弄脏绿色版**：启动 EXE 会在 `demo_data` 里重建 `-wal`/`-shm` 并写日志；`seed` 生成时是干净的（manifest `problems: []`），脏是验收造成的。交付前用**读写**连接 `PRAGMA wal_checkpoint(TRUNCATE)` 后正常关闭（只有读写连接关闭才会删边车，`mode=ro` 会再造出 `-shm`），并清掉 `demo_data\logs\*.log`。**最终核对也一律用读写连接**：用 `mode=ro` 做交付门自检会凭空造出 `-shm`，把「无边车」那条判成 FAIL（实测踩过一次）。
 - **改 `.bat` 必须保住 CRLF**：用 `read_text()`（通用换行把 CRLF 归一成 LF）再 `write_text(newline="")` 写回会把整个脚本写成 LF，cmd.exe 会解析失步。正确写法是写盘时 `newline="\r\n"`，或直接按字节改。契约测试见 `tests/test_windows_packaging.py`。
