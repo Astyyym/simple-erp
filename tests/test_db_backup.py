@@ -10,8 +10,9 @@ def test_init_db_enables_wal_and_schema_version():
         journal_mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
         version = conn.execute("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1").fetchone()[0]
     assert journal_mode == "wal"
-    # 决策变更（v14）：商品身份 = 单一名称（spec 并入 name），schema 版本推进到 14。
-    assert version == 14
+    # 决策变更（v14）：商品身份 = 单一名称（spec 并入 name）。
+    # 决策变更（2026-10-16 ③，schema v15）：库存三表与 9 个库存/成本列物理删除，版本推进到 15。
+    assert version == 15
     assert integrity_check() == "ok"
 
 

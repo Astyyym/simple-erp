@@ -1,3 +1,10 @@
+"""销售/退货数据分析：月历热力图、单据流水与商品排行。
+
+2026-10-16（决策 ②/③）：成本/毛利润/库存口径全部下线——库存系统与成本快照列已删除，
+本模块只保留**数量与金额**口径（净销售额、单据流水净额、数量/金额排行）。
+原先的 `net_cost_*` / `gross_profit_*` / `gross_margin_rate` / `cost_complete` /
+`inventory_*` / `safety_stock_3dp` 字段与 `profit_excluded_products` 计数一并移除。
+"""
 from __future__ import annotations
 
 from collections import defaultdict
@@ -7,7 +14,6 @@ import re
 from typing import Any
 
 from erp.db import get_db
-from erp.services.inventory_status import project_inventory_status
 
 
 def _parse_date(value: str | None, label: str) -> str | None:
@@ -45,30 +51,9 @@ def _empty_product(product: Any) -> dict[str, Any]:
         "sales_amount_cents": 0,
         "returns_amount_cents": 0,
         "net_sales_amount_cents": 0,
-        "net_cost_cents": 0,
-        "net_cost_micro": 0,
-        "gross_profit_cents": 0,
-        "gross_margin_rate": None,
-        "cost_complete": True,
-        "unknown_line_count": 0,
-        "known_line_count": 0,
         "sales_line_count": 0,
         "returns_line_count": 0,
-        "known_net_sales_cents": 0,
-        "unknown_net_sales_cents": 0,
-        "inventory_enabled": bool(product["inventory_enabled"]),
-        "current_quantity_3dp": product["quantity_3dp"] if product["inventory_enabled"] else None,
-        "current_avg_cost_micro": product["avg_cost_micro"] if product["inventory_enabled"] else None,
-        "current_inventory_cost_micro": product["cost_total_micro"] if product["inventory_enabled"] else None,
-        "safety_stock_3dp": int(product["safety_stock_3dp"] or 0),
-        "inventory_is_current": True,
-        "inventory_status": "未启用",
     }
-
-
-def _micro_to_cents(value: int) -> int:
-    # Inventory cost is stored in millionths of a yuan; money is displayed in cents.
-    return int((Decimal(value) / Decimal("10000")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
 def summarize_analytics(
@@ -80,13 +65,12 @@ def summarize_analytics(
     metric: str = "amount",
     document_types: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Return one shared dataset for the Phase 5 heatmap and detail panels.
+    """Return one shared dataset for the heatmap and detail panels.
 
-    The query uses order business dates and only effective sales/returns. Current
-    inventory is joined separately so a historical date range never rewrites it.
+    The query uses order business dates and only effective sales/returns.
 
     ``document_types`` filters which of the four document kinds participate in the
-    flow figures. 利润类口径（净销售额/毛利润/产品排行）始终只算销售 + 退货：
+    flow figures. 数量/金额口径（净销售额、商品排行）始终只算销售 + 退货：
     picking 拿货/退拿货 only affects the flow heatmap and the 单据流水 card.
     """
     start_date = _parse_date(start_date, "起始日期")
@@ -118,11 +102,8 @@ def summarize_analytics(
             product_params.append(product_name)
         products = conn.execute(
             f"""
-            SELECT p.id, p.name, p.unit, p.safety_stock_3dp, p.is_active, p.created_at,
-                   COALESCE(s.enabled, 0) AS inventory_enabled,
-                   s.quantity_3dp, s.avg_cost_micro, s.cost_total_micro
+            SELECT p.id, p.name, p.unit, p.is_active, p.created_at
             FROM products p
-            LEFT JOIN product_inventory_state s ON s.product_id=p.id
             WHERE {' AND '.join(product_conditions)}
             ORDER BY p.name COLLATE NOCASE, p.id
             """,
@@ -155,8 +136,7 @@ def summarize_analytics(
             conditions.append("1 = 0")
         rows = conn.execute(
             f"""
-            SELECT o.order_date, o.order_type, oi.product_id, oi.quantity,
-                   oi.subtotal_cents, oi.cost_total_micro
+            SELECT o.order_date, o.order_type, oi.product_id, oi.quantity, oi.subtotal_cents
             FROM orders o
             JOIN order_items oi ON oi.order_id=o.id
             WHERE {' AND '.join(conditions)}
@@ -166,7 +146,7 @@ def summarize_analytics(
         ).fetchall()
 
         # 流水净额：四类单据的业务金额按方向相抵（销售+/退货−/拿货−/退拿货+）。
-        # 单据级口径，因此不套用商品/型号筛选，只跟随日期、往来对象与订单类型。
+        # 单据级口径，因此不套用商品筛选，只跟随日期、往来对象与订单类型。
         def flow_conditions_for(date_column: str) -> tuple[str, list[Any]]:
             conditions = ["deleted_at IS NULL", "status IN ('saved', 'printed')"]
             params: list[Any] = []
@@ -213,7 +193,7 @@ def summarize_analytics(
             flow_params.extend(order_flow_params if "order_date AS" in part else purchase_flow_params)
         flow_rows = conn.execute("\n UNION ALL \n".join(flow_parts), flow_params).fetchall() if flow_parts else []
 
-        # 单据流水：拿货/退拿货金额与单据数（利润口径之外的补充信息）。
+        # 单据流水：拿货/退拿货金额与单据数。
         flow_totals = {"purchase_amount_cents": 0, "purchase_return_amount_cents": 0,
                        "purchase_count": 0, "purchase_return_count": 0}
         if type_allowed("purchase"):
@@ -235,11 +215,7 @@ def summarize_analytics(
         )
 
     by_product = {int(row["id"]): _empty_product(row) for row in products}
-    heatmap = defaultdict(lambda: {"sales_quantity_3dp": 0, "returns_quantity_3dp": 0, "sales_amount_cents": 0, "returns_amount_cents": 0, "net_cost_micro": 0, "has_transactions": False, "known_line_count": 0, "unknown_line_count": 0, "known_net_sales_cents": 0, "unknown_net_sales_cents": 0})
-    known_sales_cents = 0
-    known_returns_cents = 0
-    known_net_cost_micro = 0
-    unknown_line_count = 0
+    heatmap = defaultdict(lambda: {"sales_quantity_3dp": 0, "returns_quantity_3dp": 0, "sales_amount_cents": 0, "returns_amount_cents": 0, "has_transactions": False})
     for row in rows:
         product_id = int(row["product_id"])
         target = by_product[product_id]
@@ -253,48 +229,18 @@ def summarize_analytics(
         is_return = row["order_type"] == "return"
         sign = -1 if is_return else 1
         target["returns_line_count" if is_return else "sales_line_count"] += 1
-        for projection in (target, heatmap[row["order_date"]]):
-            if row["cost_total_micro"] is None:
-                projection["unknown_net_sales_cents"] += sign * amount_cents
-            else:
-                projection["known_line_count"] += 1
-                projection["known_net_sales_cents"] += sign * amount_cents
         if is_return:
             target["returns_quantity_3dp"] += quantity_3dp
             target["returns_amount_cents"] += amount_cents
             heatmap[row["order_date"]]["returns_quantity_3dp"] += quantity_3dp
             heatmap[row["order_date"]]["returns_amount_cents"] += amount_cents
-            known_returns_cents += amount_cents if row["cost_total_micro"] is not None else 0
         else:
             target["sales_quantity_3dp"] += quantity_3dp
             target["sales_amount_cents"] += amount_cents
             heatmap[row["order_date"]]["sales_quantity_3dp"] += quantity_3dp
             heatmap[row["order_date"]]["sales_amount_cents"] += amount_cents
-            known_sales_cents += amount_cents if row["cost_total_micro"] is not None else 0
         target["net_sales_quantity_3dp"] += sign * quantity_3dp
         target["net_sales_amount_cents"] += sign * amount_cents
-        if row["cost_total_micro"] is None:
-            target["cost_complete"] = False
-            target["unknown_line_count"] += 1
-            unknown_line_count += 1
-            heatmap[row["order_date"]]["unknown_line_count"] += 1
-        else:
-            target["net_cost_micro"] += sign * int(row["cost_total_micro"])
-            heatmap[row["order_date"]]["net_cost_micro"] += sign * int(row["cost_total_micro"])
-            known_net_cost_micro += sign * int(row["cost_total_micro"])
-
-    for target in by_product.values():
-        target["net_cost_cents"] = _micro_to_cents(target["net_cost_micro"])
-        if target["cost_complete"]:
-            target["gross_profit_cents"] = _micro_to_cents(target["net_sales_amount_cents"] * 10000 - target["net_cost_micro"])
-        else:
-            target["gross_profit_cents"] = None
-        if target["net_sales_amount_cents"] > 0 and target["cost_complete"]:
-            target["gross_margin_rate"] = Decimal(target["net_sales_amount_cents"] * 10000 - target["net_cost_micro"]) / Decimal(target["net_sales_amount_cents"] * 10000)
-        target.update(project_inventory_status(
-            enabled=target["inventory_enabled"], quantity_3dp=target["current_quantity_3dp"],
-            safety_stock_3dp=target["safety_stock_3dp"],
-        ))
 
     observed_dates = [row["order_date"] for row in rows]
     days = _date_range(start_date, end_date, observed_dates)
@@ -307,14 +253,7 @@ def summarize_analytics(
         heatmap_rows.append(
             {
                 "date": day,
-                "net_cost_micro": values["net_cost_micro"],
-                "net_cost_cents": _micro_to_cents(values["net_cost_micro"]),
                 "has_transactions": values["has_transactions"] or day in flow_by_day,
-                "known_line_count": values["known_line_count"],
-                "unknown_line_count": values["unknown_line_count"],
-                "cost_complete": values["unknown_line_count"] == 0,
-                "known_net_sales_cents": values["known_net_sales_cents"],
-                "unknown_net_sales_cents": values["unknown_net_sales_cents"],
                 "sales_quantity_3dp": values["sales_quantity_3dp"],
                 "returns_quantity_3dp": values["returns_quantity_3dp"],
                 "net_quantity_3dp": values["sales_quantity_3dp"] - values["returns_quantity_3dp"],
@@ -356,8 +295,6 @@ def summarize_analytics(
     sales_quantity = sum(row["sales_quantity_3dp"] for row in product_rows)
     returns_quantity = sum(row["returns_quantity_3dp"] for row in product_rows)
     net_sales_amount = sum(row["net_sales_amount_cents"] for row in product_rows)
-    net_cost_cents = _micro_to_cents(known_net_cost_micro)
-    known_gross_profit_cents = _micro_to_cents((known_sales_cents - known_returns_cents) * 10000 - known_net_cost_micro)
     summary = {
         "sales_quantity_3dp": sales_quantity,
         "returns_quantity_3dp": returns_quantity,
@@ -367,26 +304,7 @@ def summarize_analytics(
         "sales_amount_cents": sum(row["sales_amount_cents"] for row in product_rows),
         "returns_amount_cents": sum(row["returns_amount_cents"] for row in product_rows),
         "net_sales_amount_cents": net_sales_amount,
-        "known_sales_cents": known_sales_cents,
-        "known_returns_cents": known_returns_cents,
-        "net_cost_cents": net_cost_cents,
-        "gross_profit_cents": known_gross_profit_cents if unknown_line_count == 0 else None,
-        "known_gross_profit_cents": known_gross_profit_cents,
-        "gross_margin_rate": None,
-        "cost_complete": unknown_line_count == 0,
-        "unknown_line_count": unknown_line_count,
-        "known_line_count": len(rows) - unknown_line_count,
-        "known_net_sales_cents": known_sales_cents - known_returns_cents,
-        "unknown_net_sales_cents": net_sales_amount - known_sales_cents + known_returns_cents,
-        "net_cost_micro": known_net_cost_micro,
-        "known_gross_margin_rate": None,
-        "inventory_is_current": True,
     }
-    known_net_sales = known_sales_cents - known_returns_cents
-    if known_net_sales > 0:
-        summary["known_gross_margin_rate"] = Decimal(known_net_sales * 10000 - known_net_cost_micro) / Decimal(known_net_sales * 10000)
-        if summary["cost_complete"]:
-            summary["gross_margin_rate"] = summary["known_gross_margin_rate"]
     cutoff = end_date or date.today().isoformat()
     rankings = {
         # 数量榜只按数量排序，全品类同一张榜，不按单位分组；单位随数值一起显示。
@@ -407,20 +325,6 @@ def summarize_analytics(
             if row["sales_line_count"] == 0 and row["returns_line_count"] == 0
             and row["is_active"] and row["created_date"] <= cutoff
         ],
-        "gross_profit": sorted(
-            [row for row in product_rows if row["cost_complete"]],
-            key=lambda row: (-row["gross_profit_cents"], row["product_id"]),
-        ),
-        "inventory_alert": [
-            row for row in sorted(
-                product_rows,
-                key=lambda row: (
-                    {"缺货": 0, "库存告急": 1, "正常": 2, "未知": 3, "未启用": 4}[row["inventory_status"]],
-                    row["product_id"],
-                ),
-            )
-            if row["inventory_status"] in {"缺货", "库存告急"}
-        ],
     }
     ranking_groups = {key: [{"unit": None, "rows": ranked_rows}] for key, ranked_rows in rankings.items()}
     return {
@@ -438,5 +342,4 @@ def summarize_analytics(
         "flow_totals": flow_totals,
         "rankings": rankings,
         "ranking_groups": ranking_groups,
-        "profit_excluded_products": sum(not row["cost_complete"] for row in product_rows),
     }

@@ -12,7 +12,7 @@
 from erp import create_app
 from erp.db import init_db
 from erp.services.accounting import create_customer, create_product, create_order_from_typed_rows
-from erp.services.inventory import create_purchase_order
+from erp.services.purchases import create_purchase_order
 
 
 def _client():

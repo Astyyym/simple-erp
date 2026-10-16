@@ -50,6 +50,11 @@ function load(entry, count) {
   const end = source.indexOf('/* ---- 单联容量提示行 end ---- */', start);
   assert(start >= 0 && end > start, `${entry.name}: 缺少换页提示行代码块`);
   const block = source.slice(start, end);
+  // v15（2026-10-16）：明细表删掉了成本列，列数随数据模型变化 —— 换页提示行必须横跨整行，
+  // 所以期望列数从模板自己的明细表头（thead.table-light）推导，不再写死数字。
+  const headMatch = source.match(/<thead class="table-light">([\s\S]*?)<\/thead>/);
+  assert(headMatch, `${entry.name}: 找不到开单明细表头 thead.table-light`);
+  const columnCount = (headMatch[1].match(/<th\b/g) || []).length;
   assert.match(block, /const slipSize = \{\{ slip_size \}\};/, `${entry.name}: 单联容量必须取自 jinja 注入值`);
   const code = block.replace(/const slipSize = .*?;/, 'const slipSize = 10;');
   const tbody = new Tbody(rows(count));
@@ -59,7 +64,7 @@ function load(entry, count) {
   };
   const context = vm.createContext({ document });
   vm.runInContext(code, context);
-  return { context, tbody, entry };
+  return { context, tbody, entry, columnCount };
 }
 
 function rows(count) {
@@ -73,7 +78,7 @@ function rows(count) {
 for (const entry of CASES) {
   for (const [count, expected] of [[1, 0], [9, 0], [10, 0], [11, 1], [20, 1], [21, 2], [31, 3]]) {
     test(`${entry.name}: ${count} 行时出现 ${expected} 条换页提示`, () => {
-      const { context, tbody } = load(entry, count);
+      const { context, tbody, columnCount } = load(entry, count);
 
       context.refreshSlipNotices();
 
@@ -90,7 +95,7 @@ for (const entry of CASES) {
         const cell = notice.children[0];
         assert.equal(cell.textContent, `本张已满 10 行；因行数限制，以下内容续打在第 ${index + 2} 张`);
         assert.equal(cell.children.length, 0, '提示行内不得有输入控件');
-        assert.equal(cell.colSpan, 8);
+        assert.equal(cell.colSpan, columnCount, '提示行必须横跨整行（列数取自模板明细表头）');
       });
 
       // 幂等：重复调用不会累积提示行，也不吃掉数据行。

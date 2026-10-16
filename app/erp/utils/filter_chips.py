@@ -45,8 +45,12 @@ def _multi_chip(values, order, labels, *, caption: str, key: str):
     return {"key": key, "label": f"{caption}：{_labels(values, order, labels)}", "url": removal_url({key})}
 
 
-def order_filter_chips(*, customer_q: str, order_types, order_statuses, cost_missing: bool = False) -> list[dict]:
-    """单据管理页的 chip：客户 / 订单类型 / 单据状态 / 成本完整性。"""
+def order_filter_chips(*, customer_q: str, order_types, order_statuses) -> list[dict]:
+    """单据管理页的 chip：客户 / 订单类型 / 单据状态。
+
+    v15（2026-10-16）：原先的「成本完整性」chip 随成本链整体下线——系统里不再有
+    「缺成本」这个概念，所以这里也没有对应的筛选参数。
+    """
     chips: list[dict] = []
     if customer_q:
         chips.append({"key": "customer", "label": f"客户：{customer_q}", "url": removal_url({"customer"})})
@@ -56,8 +60,6 @@ def order_filter_chips(*, customer_q: str, order_types, order_statuses, cost_mis
     ):
         if chip:
             chips.append(chip)
-    if cost_missing:
-        chips.append({"key": "cost", "label": "成本：只看缺成本", "url": removal_url({"cost"})})
     return chips
 
 

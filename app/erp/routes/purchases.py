@@ -13,7 +13,7 @@ from erp.utils.money import cents_to_yuan, micro_to_yuan
 from erp.utils.order_numbering import next_nh_order_no, peek_nh_order_no
 from erp.utils.pinyin import name_like_pattern, name_match_clause, name_match_params, pinyin_fields as build_pinyin_fields
 from erp.services.units import unit_options
-from erp.services.inventory import (
+from erp.services.purchases import (
     create_purchase_order,
     finalize_purchase_order,
     update_purchase_draft,
@@ -25,14 +25,6 @@ purchases_bp = Blueprint("purchases", __name__, url_prefix="/purchases")
 # 退拿货页「原拿货单」候选上限（与退货单的 `RETURN_SOURCE_LIMIT=30` 同口径）：
 # 点击即列最近 N 张，更多靠输入单号 / 往来对象检索，避免把 200 条塞进下拉。
 PURCHASE_SOURCE_LIMIT = 30
-
-
-def _has_purchase_postings(conn, purchase_id: int) -> bool:
-    """拿货单是否已入库（有 purchase 流水）；有流水即不可再改经济字段。"""
-    return conn.execute(
-        "SELECT 1 FROM inventory_postings WHERE source_type='purchase' AND (source_id=? OR source_id LIKE ?) LIMIT 1",
-        (str(purchase_id), f"{purchase_id}:%"),
-    ).fetchone() is not None
 
 
 def next_purchase_no(conn, business_date: str) -> str:
@@ -57,32 +49,25 @@ def _products():
     with get_db() as conn:
         return conn.execute(
             """SELECT p.id, p.name, p.unit
-                      , COALESCE(s.enabled, 0) AS inventory_enabled
-                      , s.avg_cost_micro, s.quantity_3dp
-               FROM products AS p LEFT JOIN product_inventory_state AS s ON s.product_id=p.id
+               FROM products AS p
                WHERE p.deleted_at IS NULL ORDER BY p.name COLLATE NOCASE, p.id"""
         ).fetchall()
 
 
 def _purchase_catalog(products) -> list[dict]:
-    """Compact product list for the entry-page picker, plus current moving-average cost.
+    """Compact product list for the entry-page picker.
 
     拿货 / 退拿货页的单价是**入库成本**，与售价无关。2026-10-15 起商品档案已不再保存售价
     （售价唯一来源 = 开单学习出的客户专属价），所以这里既不带档案价、也不带客户价
     —— 早前借 `/orders/api/products?customer_id=…` 是错的：那个参数语义是**客户**，
     而拿货页同名字段存的是**供应商**（客户与供应商共用 `customers` 档案）。
+    v15（决策 ②/③）：原先还会带出库存启用状态与移动平均成本，现在两者都不存在了，
+    拿货单价一律手输。
     """
-    catalog = []
-    for p in products:
-        enabled = bool(p["inventory_enabled"])
-        cost_available = bool(enabled and p["avg_cost_micro"] is not None and p["quantity_3dp"])
-        catalog.append({
-            "id": int(p["id"]), "name": p["name"], "unit": p["unit"],
-            "inventory_enabled": enabled,
-            "cost_available": cost_available,
-            "unit_cost": micro_to_yuan(p["avg_cost_micro"], precision=6) if cost_available else None,
-        })
-    return catalog
+    return [
+        {"id": int(p["id"]), "name": p["name"], "unit": p["unit"]}
+        for p in products
+    ]
 
 
 def _resolve_purchase_customer_id() -> int:
@@ -273,15 +258,12 @@ def edit_purchase(purchase_id: int):
     with get_db() as conn:
         order = conn.execute("SELECT * FROM purchase_orders WHERE id=? AND deleted_at IS NULL", (purchase_id,)).fetchone()
         items = conn.execute("SELECT * FROM purchase_order_items WHERE purchase_order_id=? ORDER BY id", (purchase_id,)).fetchall()
-        has_postings = _has_purchase_postings(conn, purchase_id)
     if order is None:
         return not_found("拿货单不存在，可能已被移入回收站或从未存在。", back_url=url_for("orders.list_orders"))
-    if order["status"] != "draft":
-        return error_response("正式拿货单经济字段已锁定，只能回看。", title="无法编辑",
+    if order["status"] == "void":
+        return error_response("已作废拿货单不能编辑，只能回看。", title="无法编辑",
                               back_url=url_for("purchases.purchase_detail", purchase_id=purchase_id))
-    if has_postings:
-        return error_response("该拿货单已入库，经济字段不能再改。请用「回看」核对。", title="无法编辑",
-                              back_url=url_for("purchases.purchase_detail", purchase_id=purchase_id))
+    # 2026-10-16（决策 ④）：正式拿货单编辑锁已撤；「已入库不能再改」也随库存系统删除而消失。
     return _purchase_form(
         order=order,
         form_rows=[dict(item) | {"quantity": f"{item['quantity_3dp'] / 1000:g}", "unit_cost_yuan": f"{item['unit_cost_cents'] / 100:.2f}"} for item in items],
@@ -344,7 +326,7 @@ def void_purchase(purchase_id: int):
 @purchases_bp.post("/<int:purchase_id>/delete")
 def delete_purchase(purchase_id: int):
     """Row/list delete for 拿货单: live documents are reversed (voided) first."""
-    from erp.services.inventory import void_then_delete_purchase_order
+    from erp.services.purchases import void_then_delete_purchase_order
 
     try:
         void_then_delete_purchase_order(purchase_id)
@@ -355,7 +337,7 @@ def delete_purchase(purchase_id: int):
 
 def _return_source_data(customer_id, source_order_id=''):
     from erp.services.purchase_returns import _source
-    from erp.services.inventory import _purchase_customer_id
+    from erp.services.purchases import _purchase_customer_id
     customer_id = _purchase_customer_id(customer_id)
     with get_db() as conn:
         candidates = conn.execute("SELECT id,order_no,business_date,total_amount_cents FROM purchase_orders WHERE customer_id=? AND status='saved' AND deleted_at IS NULL ORDER BY business_date DESC,id DESC",(customer_id,)).fetchall()
@@ -372,8 +354,7 @@ def _return_source_data(customer_id, source_order_id=''):
             _, rows = _source(conn,customer_id,source_order_id)
             for row in rows.values():
                 prior = conn.execute("SELECT COALESCE(SUM(i.quantity_3dp),0) FROM purchase_return_items i JOIN purchase_return_orders o ON o.id=i.purchase_return_id WHERE i.source_item_id=? AND o.status='saved' AND o.deleted_at IS NULL",(row['id'],)).fetchone()[0]
-                state = conn.execute('SELECT * FROM product_inventory_state WHERE product_id=?',(row['product_id'],)).fetchone()
-                items.append(dict(row) | {'source_item_id':row['id'],'returned_quantity_3dp':prior,'remaining_quantity_3dp':row['quantity_3dp']-prior,'stock_quantity_3dp':state['quantity_3dp'] if state and state['enabled'] else None,'avg_cost_micro':state['avg_cost_micro'] if state and state['enabled'] else None})
+                items.append(dict(row) | {'source_item_id':row['id'],'returned_quantity_3dp':prior,'remaining_quantity_3dp':row['quantity_3dp']-prior})
         return {'sources':sources,'items':items}
 
 
@@ -530,8 +511,9 @@ def edit_return(return_id):
         items = conn.execute('SELECT product_id,quantity_3dp,unit_price_cents FROM purchase_return_items WHERE purchase_return_id=? ORDER BY id',(return_id,)).fetchall()
     if order is None:
         return not_found('退拿货单不存在，可能已被移入回收站或从未存在。', back_url=url_for('orders.list_orders'))
-    if order['status'] != 'draft':
-        return error_response('正式退拿货经济字段已锁定，请在详情修改备注。', title="无法编辑",
+    # 2026-10-16（决策 ④）：正式退拿货单经济字段不再锁定，只有「已作废」不能编辑。
+    if order['status'] == 'void':
+        return error_response('已作废退拿货单不能编辑，只能回看。', title="无法编辑",
                               back_url=url_for('purchases.return_detail', return_id=return_id))
     return _return_form(order=order,form_rows=[{'product_id':i['product_id'],'quantity':f"{i['quantity_3dp']/1000:g}",'unit_price_yuan':f"{i['unit_price_cents']/100:.2f}"} for i in items],request_key=order['request_key'])
 
@@ -600,9 +582,7 @@ def api_products():
     with get_db() as conn:
         rows = conn.execute(
             f"""SELECT p.id, p.name, p.unit
-                      , COALESCE(s.enabled, 0) AS inventory_enabled
-                      , s.avg_cost_micro, s.quantity_3dp
-               FROM products AS p LEFT JOIN product_inventory_state AS s ON s.product_id=p.id
+               FROM products AS p
                WHERE p.deleted_at IS NULL AND {name_match_clause('p.')}
                ORDER BY p.usage_count DESC, p.name COLLATE NOCASE, p.id
                LIMIT 20""",

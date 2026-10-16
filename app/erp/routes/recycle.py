@@ -186,7 +186,8 @@ def _purge_one(conn, kind: str, item_id: int) -> None:
     if kind not in {'order','purchase_order','purchase_return','product','customer'}:
         raise ValueError('未知回收站类型')
     if kind in {'order','purchase_order','purchase_return'}:
-        # 连带明细与它自己的库存流水一起清掉（用户口径：不要了就清干净，不留孤儿流水）。
+        # 连带明细一起清掉（用户口径：不要了就清干净，不留孤儿记录）。
+        # v15：库存流水已随库存系统删除，这里不再有流水可清。
         purge_order_item(conn, kind, item_id)
     elif kind == "product":
         purge_product_item(conn, item_id)

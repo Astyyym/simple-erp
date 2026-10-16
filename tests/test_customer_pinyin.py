@@ -93,11 +93,11 @@ def test_auto_created_customer_from_sale_order_gets_pinyin():
 def test_auto_created_customer_from_purchase_order_gets_pinyin():
     """拿货开单自动建档（purchases.py 的 _resolve_purchase_customer_id）也写拼音。"""
     from erp.services.accounting import create_product
-    from erp.services.inventory import initialize_product
+
 
     init_db()
     product_id = create_product("拿货拼音商品", "个")
-    initialize_product(product_id, "10", "10", "2026-10-02", "期初", "pinyin-init")
+
     client = create_app().test_client()
     client.post(
         "/purchases/create",

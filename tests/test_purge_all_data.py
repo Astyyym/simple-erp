@@ -1,8 +1,9 @@
 """清空所有数据（Batch C）：清空口径、保留边界、单号高位与安全交互。
 
 契约（用户 2026-10-11 确认）：
-- 清空：四类单据与明细、客户/商品资料与客户价、库存状态/流水/期初、收付款与调整、
-  对账快照、审计日志、单号序列表、`product_images/`、`temp_pdf/`、`logs/`。
+- 清空：四类单据与明细、客户/商品资料与客户价、收付款与调整、对账快照、审计日志、
+  单号序列表、`product_images/`、`temp_pdf/`、`logs/`。
+  （v15 2026-10-16 决策 ②/③：库存状态/流水/期初三张表已随库存系统删除，不再列入清空清单。）
 - 保留：`backups/`、`legacy_archive/`、数据目录位置记忆、`data/erp.db` 文件本身。
 - 回出厂：公司名/店名、打印信息、界面主题/缩放/字重、打印偏移与缩放。
 - 保留单号流水高位：清空后同一天新单从高位续排，避免与已打出的纸质单撞号。
@@ -24,8 +25,7 @@ from erp.utils.reset import CLEARED_TABLES, purge_all_data
 BUSINESS_TABLES = (
     "orders", "order_items", "purchase_orders", "purchase_order_items",
     "purchase_return_orders", "purchase_return_items",
-    "customers", "customer_prices", "products", "product_inventory_state",
-    "inventory_postings", "inventory_initializations",
+    "customers", "customer_prices", "products",
     "payments", "adjustments", "reconciliation_snapshots", "audit_logs",
 )
 
@@ -170,12 +170,12 @@ def test_purge_keeps_md_high_water_so_same_day_numbers_do_not_collide():
 def test_purge_keeps_nh_high_water_for_same_day_purchase_numbers():
     init_db()
     from erp.services.accounting import create_product
-    from erp.services.inventory import create_purchase_order, initialize_product
+    from erp.services.purchases import create_purchase_order
     from erp.utils.order_numbering import next_nh_order_no
 
     customer_id = create_customer("清空采购方")
     product_id = create_product("清空采购商品C", "个")
-    initialize_product(product_id, "0", "0", "2026-10-11", "清空期初", "purge-init", confirm_zero=True)
+
     create_purchase_order(
         "NH202610110003", "2026-10-11",
         [{"product_id": product_id, "quantity": "1", "unit_cost_yuan": "5"}],

@@ -16,7 +16,7 @@
   function norm(s) { return String(s == null ? '' : s).trim(); }
 
   // row: a <tr>/container holding one .picker-name select.
-  // catalog: [{id, name, unit, inventory_enabled}]（2026-10-15 起目录不再带售价字段）
+  // catalog: [{id, name, unit}]（2026-10-15 起目录不再带售价字段；2026-10-16 起也不再带库存启用状态）
   // onPick: the chosen product object, or null when the placeholder is selected.
   function mountRow(row, catalog, onPick) {
     var nameSel = row.querySelector('.picker-name');
@@ -29,9 +29,7 @@
     }
 
     function label(product) {
-      var text = product.name;
-      if (product.inventory_enabled === false) text += ' · 未启用，仅可保存草稿';
-      return text;
+      return product.name;
     }
 
     function fill(selectedId) {

@@ -143,32 +143,3 @@ def test_workbench_recent_table_avoids_vertical_inner_scrollbar():
     html = create_app().test_client().get("/").get_data(as_text=True)
 
     assert ".recent-table-wrap{overflow-x:auto;overflow-y:hidden}" in html
-
-
-def test_workbench_inventory_reminder_jumps_to_analytics_alerts():
-    from erp.services.accounting import create_product
-    from erp.services.inventory import initialize_product
-
-    init_db()
-    alert_product = create_product("工作台提醒灭火器4kg", "个", safety_stock="5")
-    initialize_product(alert_product, "0", "0", date.today().isoformat(), "工作台提醒测试", "workbench-alert-init", confirm_zero=True)
-    normal_product = create_product("工作台正常水带20m", "卷", safety_stock="1")
-    initialize_product(normal_product, "10", "20", date.today().isoformat(), "工作台提醒测试", "workbench-normal-init")
-
-    response = create_app().test_client().get("/")
-    html = response.get_data(as_text=True)
-
-    assert response.status_code == 200
-    alerts = html.split('id="dashboardAlerts"', 1)[1].split("</section>", 1)[0]
-    assert "库存提醒" in alerts
-    assert "1 个商品需要关注" in alerts
-    assert 'href="/analytics/#inventoryAlert"' in alerts
-
-
-def test_workbench_keeps_inventory_reminder_entrypoint_without_alerts():
-    init_db()
-    html = create_app().test_client().get("/").get_data(as_text=True)
-
-    alerts = html.split('id="dashboardAlerts"', 1)[1].split("</section>", 1)[0]
-    assert "当前没有库存告急商品" in alerts
-    assert 'href="/analytics/#inventoryAlert"' in alerts

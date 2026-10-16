@@ -18,6 +18,17 @@ LEGACY_TABLES = (
 # 合并公式必须与 erp.db.MERGED_PRODUCT_NAME_SQL 逐字一致。
 MERGED_SPEC_NAME_COLUMNS = {"products": "name", "order_items": "product_name"}
 
+# 决策变更（v15，2026-10-16）：库存系统整体删除。三张库存表 + 九列物理删除；
+# 本文件只断言「老库升上来以后确实没有这些表与列」，迁移本身的测试在
+# tests/test_drop_inventory_migration.py。
+DROPPED_TABLES = ("inventory_postings", "inventory_initializations", "product_inventory_state")
+DROPPED_COLUMNS = {
+    "products": ("safety_stock_3dp", "default_price_cents"),
+    "order_items": ("unit_cost_micro", "cost_total_micro", "cost_source"),
+    "purchase_return_items": ("unit_cost_micro", "cost_total_micro", "posting_seq"),
+    "purchase_return_orders": ("posted_once",),
+}
+
 
 def seed_legacy_database(conn):
     """Only fictional records; do not copy or read a user's business database."""
@@ -50,11 +61,17 @@ def assert_legacy_rows_unchanged(conn, before):
     # 2026-10-14 全拼列），因此与历史业务列分开比较——业务列必须逐字节不变，派生列（回填）另行断言。
     # 决策变更（v14）：spec 已并入名称并删列；迁移完成后待比较列按合并结果取，
     # 迁移前（spec 仍在）按原样比较，两个调用点都能用。
+    # 决策变更（v15）：升级链有意删掉的列（库存/成本/安全库存）不参与守恒比较，
+    # 但**具体删了哪几列由本文件显式断言钉住**（见 assert_inventory_columns_gone），
+    # 不靠这里的 skip 静默放过——否则列被误删也测不出来。
     derived_columns = {"products": {"pinyin_initials", "pinyin_full"}}
     for table, rows in before.items():
+        current_columns = {col[1] for col in conn.execute(f"PRAGMA table_info({table})")}
         merged_name_column = MERGED_SPEC_NAME_COLUMNS.get(table)
-        spec_merged = merged_name_column is not None and "spec" not in {col[1] for col in conn.execute(f"PRAGMA table_info({table})")}
+        spec_merged = merged_name_column is not None and "spec" not in current_columns
         skip = set(derived_columns.get(table, set()))
+        if rows:
+            skip |= {key for key in rows[0] if key not in current_columns}
         if spec_merged:
             skip.add("spec")
         current = [dict(row) for row in conn.execute(f"SELECT * FROM {table} ORDER BY id")]
@@ -71,6 +88,18 @@ def assert_legacy_rows_unchanged(conn, before):
         ] == expected, table
 
 
+def assert_inventory_system_gone(conn):
+    """v15：三张库存表与九列必须不存在（允许清单之外不得残留）。"""
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    for table in DROPPED_TABLES:
+        assert table not in tables, table
+    for table, columns in DROPPED_COLUMNS.items():
+        present = {col[1] for col in conn.execute(f"PRAGMA table_info({table})")}
+        for column in columns:
+            assert column not in present, f"{table}.{column}"
+    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
 def test_schema2_application_startup_preserves_legacy_business_rows():
     with db.get_db() as conn:
         before = seed_legacy_database(conn)
@@ -83,15 +112,14 @@ def test_schema2_application_startup_preserves_legacy_business_rows():
             assert client.get(path).status_code == 200, path
     with db.get_db() as conn:
         assert_legacy_rows_unchanged(conn, before)
-        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 14
-        assert conn.execute("SELECT COUNT(*) FROM schema_version WHERE version=14").fetchone()[0] == 1
+        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == db.CURRENT_SCHEMA_VERSION == 15
+        assert conn.execute("SELECT COUNT(*) FROM schema_version WHERE version=15").fetchone()[0] == 1
         assert {"request_key", "payload_hash", "version"} <= db._columns(conn, "orders")
         assert any(row[1] == "idx_orders_request_key" and row[2] for row in conn.execute("PRAGMA index_list(orders)"))
-        assert [tuple(row) for row in conn.execute("SELECT unit_cost_micro,cost_total_micro,source_item_id FROM order_items")] == [(None, None, None), (None, None, None)]
-        assert conn.execute("SELECT COUNT(*) FROM inventory_postings").fetchone()[0] == 0
-        assert conn.execute("SELECT COUNT(*) FROM product_inventory_state").fetchone()[0] == 0
+        # v15 决策变更：成本快照列已删，只剩追溯用的 source_item_id。
+        assert [tuple(row) for row in conn.execute("SELECT source_item_id FROM order_items")] == [(None,), (None,)]
+        assert_inventory_system_gone(conn)
         assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
-        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
         # E7：升级后派生字段 pinyin_initials 已按名称回填（旧值 '' 被补齐；纯派生、无业务影响）。
         assert conn.execute("SELECT COUNT(*) FROM products WHERE COALESCE(pinyin_initials,'') = ''").fetchone()[0] == 0
         # 2026-10-14：全拼列同样在升级时补齐（旧库没有该列 → 幂等加列 + 只补空值回填）。
@@ -119,5 +147,6 @@ def test_schema2_failed_index_creation_rolls_back_and_can_retry():
         assert_legacy_rows_unchanged(conn, before)
     db.init_db()
     with db.get_db() as conn:
-        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 14
+        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == db.CURRENT_SCHEMA_VERSION == 15
+        assert_inventory_system_gone(conn)
         assert_legacy_rows_unchanged(conn, before)

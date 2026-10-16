@@ -7,15 +7,6 @@
     return (Math.round((Number(n) || 0) * 100) / 100).toFixed(2);
   }
 
-  // Format the six-decimal cost payload without binary-float rounding.
-  function costMoney(costText) {
-    const negative = String(costText).startsWith('-');
-    const [whole, fraction = ''] = String(costText).replace(/^-/, '').split('.');
-    const micro = BigInt(whole) * 1000000n + BigInt((fraction + '000000').slice(0, 6));
-    const cents = (micro + 5000n) / 10000n;
-    return (negative && cents !== 0n ? '-' : '') + String(cents / 100n) + '.' + String(cents % 100n).padStart(2, '0');
-  }
-
   function closeSuggestions(input, box) {
     if (box.hasAttribute('popover') && box.matches(':popover-open')) box.hidePopover();
     box.classList.add('d-none');
@@ -355,7 +346,6 @@
 
   window.ErpOrderEntry = {
     money: money,
-    costMoney: costMoney,
     bindAutocomplete: bindAutocomplete,
     bindUnitCell: bindUnitCell,
     onCounterpartyChanged: onCounterpartyChanged,

@@ -7,14 +7,14 @@ import pytest
 from erp import create_app
 from erp import db
 from erp.services.accounting import create_customer, create_product
-from erp.services.inventory import create_purchase_order, initialize_product, finalize_purchase_order, update_purchase_draft
+from erp.services.purchases import create_purchase_order, finalize_purchase_order, update_purchase_draft
 
 
 def _seed():
     db.init_db()
     customer_id = create_customer('双向测试对象', opening_balance_cents=12345)
     product_id = create_product('C1测试商品' '4kg', '个')
-    initialize_product(product_id, '10', '10', '2026-10-01', '测试期初', 'c1-init')
+
     return customer_id, product_id
 
 
@@ -28,8 +28,6 @@ def test_new_purchase_requires_explicit_stable_customer_id_and_rolls_back(invali
         assert conn.execute('SELECT COUNT(*) FROM purchase_orders').fetchone()[0] == 0
         assert conn.execute('SELECT COUNT(*) FROM purchase_order_items').fetchone()[0] == 0
         assert conn.execute('SELECT COUNT(*) FROM customers').fetchone()[0] == 1
-        assert conn.execute("SELECT COUNT(*) FROM inventory_postings WHERE source_type='purchase'").fetchone()[0] == 0
-        assert conn.execute('SELECT quantity_3dp,cost_total_micro FROM product_inventory_state').fetchone()[:] == (10000,100000000)
 
 
 def test_purchase_persists_stable_counterparty_snapshot_and_does_not_change_balance():
@@ -46,10 +44,9 @@ def test_purchase_persists_stable_counterparty_snapshot_and_does_not_change_bala
         assert conn.execute('SELECT opening_balance_cents FROM customers').fetchone()[0] == 12345
         assert conn.execute('SELECT COUNT(*) FROM orders').fetchone()[0] == 0
         assert conn.execute('SELECT COUNT(*) FROM customer_prices').fetchone()[0] == 0
-        assert conn.execute('SELECT quantity_3dp,cost_total_micro FROM product_inventory_state').fetchone()[:] == (12000,128000000)
 
 
-def test_legacy_draft_must_bind_before_posting_and_edit_posts_current_values_atomically():
+def test_legacy_draft_must_bind_before_finalize_and_edit_saves_current_values_atomically():
     cid, pid = _seed()
     with db.get_db() as conn:
         oid = conn.execute("INSERT INTO purchase_orders(order_no,business_date,total_amount_cents,status,source_notes,request_key,payload_hash) VALUES ('NH202610010903','2026-10-01',1400,'draft','不推断','legacy-draft','legacy')").lastrowid
@@ -58,15 +55,12 @@ def test_legacy_draft_must_bind_before_posting_and_edit_posts_current_values_ato
         finalize_purchase_order(oid)
     with db.get_db() as conn:
         assert conn.execute('SELECT status,customer_id FROM purchase_orders').fetchone()[:] == ('draft',None)
-        assert conn.execute('SELECT quantity_3dp,cost_total_micro FROM product_inventory_state').fetchone()[:] == (10000,100000000)
     update_purchase_draft(oid,'2026-10-02',[{'product_id':pid,'quantity':'3','unit_cost_yuan':'15'}],customer_id=cid,source_notes='当前填写',status='saved')
     assert finalize_purchase_order(oid)['order_no'] == 'NH202610010903'
     with db.get_db() as conn:
         order = conn.execute('SELECT * FROM purchase_orders').fetchone()
         assert (order['order_no'],order['business_date'],order['status'],order['customer_id'],order['customer_name'],order['total_amount_cents'],order['source_notes']) == ('NH202610010903','2026-10-01','saved',cid,'双向测试对象',4500,'当前填写')
         assert conn.execute('SELECT quantity_3dp,unit_cost_cents FROM purchase_order_items').fetchone()[:] == (3000,1500)
-        assert conn.execute("SELECT COUNT(*) FROM inventory_postings WHERE source_type='purchase'").fetchone()[0] == 1
-        assert conn.execute('SELECT quantity_3dp,cost_total_micro FROM product_inventory_state').fetchone()[:] == (13000,145000000)
 
 
 def test_real_purchase_form_create_error_refill_edit_and_detail_use_same_counterparty():
@@ -99,7 +93,6 @@ def test_real_purchase_form_create_error_refill_edit_and_detail_use_same_counter
     assert '当前选择的对象' in detail and '当前输入已入库' in detail and '45.00' in detail
     with db.get_db() as conn:
         assert conn.execute('SELECT customer_id,business_date,total_amount_cents,status FROM purchase_orders WHERE id=?',(oid,)).fetchone()[:] == (other,'2026-10-01',4500,'saved')
-        assert conn.execute('SELECT quantity_3dp,cost_total_micro FROM product_inventory_state').fetchone()[:] == (13000,145000000)
         conn.execute("UPDATE customers SET name='改名不得篡改历史' WHERE id=?",(other,))
     client.post(f'/customers/{other}/delete')
     assert '当前选择的对象' in client.get(location).get_data(as_text=True)
@@ -114,7 +107,6 @@ def test_finalize_endpoint_does_not_silently_ignore_unsaved_form_values():
     assert '编辑' in response.get_data(as_text=True)
     with db.get_db() as conn:
         assert conn.execute('SELECT status,total_amount_cents FROM purchase_orders').fetchone()[:] == ('draft',1400)
-        assert conn.execute('SELECT quantity_3dp,cost_total_micro FROM product_inventory_state').fetchone()[:] == (10000,100000000)
 
 
 def test_incomplete_second_form_line_rejects_entire_purchase_and_refills_counterparty():
@@ -125,7 +117,6 @@ def test_incomplete_second_form_line_rejects_entire_purchase_and_refills_counter
     with db.get_db() as conn:
         assert conn.execute('SELECT COUNT(*) FROM purchase_orders').fetchone()[0] == 0
         assert conn.execute('SELECT COUNT(*) FROM purchase_order_items').fetchone()[0] == 0
-        assert conn.execute('SELECT quantity_3dp,cost_total_micro FROM product_inventory_state').fetchone()[:] == (10000,100000000)
 
 
 @pytest.mark.parametrize('path', ['single','bulk','automatic'])
@@ -183,8 +174,8 @@ def test_schema9_migration_keeps_legacy_purchases_and_balances(tmp_path):
     db.init_db()
     db.init_db()
     with db.get_db() as conn:
-        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 14
-        assert conn.execute("SELECT COUNT(*) FROM schema_version WHERE version=14").fetchone()[0] == 1
+        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == db.CURRENT_SCHEMA_VERSION == 15
+        assert conn.execute("SELECT COUNT(*) FROM schema_version WHERE version=15").fetchone()[0] == 1
         columns = {r['name']: r for r in conn.execute('PRAGMA table_info(purchase_orders)')}
         assert columns['customer_id']['notnull'] == 0
         assert columns['customer_name']['notnull'] == 1
@@ -194,7 +185,6 @@ def test_schema9_migration_keeps_legacy_purchases_and_balances(tmp_path):
         assert [tuple(row)[:len(before[0])] for row in conn.execute("SELECT * FROM purchase_orders ORDER BY id")] == before
         assert [(r['customer_id'],r['customer_name']) for r in conn.execute('SELECT * FROM purchase_orders')] == [(None,''),(None,'')]
         assert conn.execute("SELECT opening_balance_cents+(SELECT SUM(total_amount_cents) FROM orders WHERE customer_id=?) FROM customers WHERE id=?", (cid,cid)).fetchone()[0] == before_balance == 9999
-        assert conn.execute('SELECT COUNT(*) FROM inventory_postings').fetchone()[0] == 0
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute("UPDATE purchase_orders SET customer_id=999999 WHERE id=1")
 
@@ -222,24 +212,21 @@ def test_schema9_partial_migration_failure_rolls_back_columns_and_version(tmp_pa
     assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0] == 9
     with conn:
         db.apply_schema(conn)
-    assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0] == 14
+    assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0] == db.CURRENT_SCHEMA_VERSION == 15
     conn.close()
 
 
 @pytest.mark.parametrize('status', ['draft','saved'])
-def test_same_key_other_counterparty_conflicts_without_extra_orders_or_stock(status):
+def test_same_key_other_counterparty_conflicts_without_extra_orders(status):
     cid, pid = _seed()
     other = create_customer('另一对象')
     rows = [{'product_id':pid,'quantity':'1','unit_cost_yuan':'14'}]
     first = create_purchase_order('NH202610010907','2026-10-01',rows,customer_id=cid,request_key='c1-cross-key',status=status)
-    with db.get_db() as conn:
-        state_before = tuple(conn.execute('SELECT * FROM product_inventory_state').fetchone())
     assert create_purchase_order('NH202610010907','2026-10-01',rows,customer_id=str(cid),request_key='c1-cross-key',status=status) == first
     with pytest.raises(ValueError, match='幂等键内容不一致'):
         create_purchase_order('NH202610010907','2026-10-01',rows,customer_id=other,request_key='c1-cross-key',status=status)
     with db.get_db() as conn:
         assert conn.execute('SELECT COUNT(*) FROM purchase_orders').fetchone()[0] == 1
-        assert tuple(conn.execute('SELECT * FROM product_inventory_state').fetchone()) == state_before
 
 
 @pytest.mark.parametrize('disabled', ['hidden','inactive'])
@@ -263,26 +250,23 @@ def test_hidden_counterparty_blocks_new_business_but_preserves_history(disabled)
     assert '双向测试对象' in html
     with db.get_db() as conn:
         assert conn.execute('SELECT COUNT(*) FROM purchase_orders').fetchone()[0] == 1
-        assert conn.execute('SELECT quantity_3dp,cost_total_micro FROM product_inventory_state').fetchone()[:] == (10000,100000000)
 
 
-def test_failed_draft_edit_keeps_original_object_rows_and_inventory():
+def test_failed_draft_edit_keeps_original_object_rows():
     cid, pid = _seed()
     other = create_customer('失败不得替换对象')
-    unknown = create_product('未启用测试商品' 'x','个')
     draft = create_purchase_order('NH202610010910','2026-10-01',[{'product_id':pid,'quantity':'1','unit_cost_yuan':'14'}],customer_id=cid,request_key='c1-failed-edit',status='draft')
     with db.get_db() as conn:
         before = tuple(conn.execute('SELECT * FROM purchase_orders').fetchone())
         before_items = [tuple(row) for row in conn.execute('SELECT * FROM purchase_order_items')]
-    with pytest.raises(ValueError,match='尚未启用库存'):
-        update_purchase_draft(draft['order_id'],'2026-10-01',[{'product_id':pid,'quantity':'2','unit_cost_yuan':'15'},{'product_id':unknown,'quantity':'1','unit_cost_yuan':'10'}],customer_id=other,status='saved')
+    with pytest.raises(ValueError,match='商品不存在或已删除'):
+        update_purchase_draft(draft['order_id'],'2026-10-01',[{'product_id':pid,'quantity':'2','unit_cost_yuan':'15'},{'product_id':999999,'quantity':'1','unit_cost_yuan':'10'}],customer_id=other,status='saved')
     with db.get_db() as conn:
         assert tuple(conn.execute('SELECT * FROM purchase_orders').fetchone()) == before
         assert [tuple(row) for row in conn.execute('SELECT * FROM purchase_order_items')] == before_items
-        assert conn.execute('SELECT quantity_3dp,cost_total_micro FROM product_inventory_state').fetchone()[:] == (10000,100000000)
 
 
-def test_legacy_formal_null_order_is_readable_locked_and_not_forced_to_bind():
+def test_legacy_formal_null_order_is_readable_editable_and_not_forced_to_bind():
     cid, pid = _seed()
     with db.get_db() as conn:
         oid = conn.execute("INSERT INTO purchase_orders(order_no,business_date,total_amount_cents,status,source_notes,request_key,payload_hash) VALUES ('NH202610010911','2026-10-01',1234,'saved','旧货源保留','legacy-saved','legacy')").lastrowid
@@ -290,7 +274,8 @@ def test_legacy_formal_null_order_is_readable_locked_and_not_forced_to_bind():
     client = create_app().test_client()
     html = client.get(f'/purchases/{oid}').get_data(as_text=True)
     assert '历史拿货未关联往来对象，需人工确认' in html and '旧货源保留' in html and '12.34' in html
-    assert client.get(f'/purchases/{oid}/edit').status_code == 400
+    # 决策 ④（v15）：正式单据编辑锁全撤，历史正式拿货单同样可编辑。
+    assert client.get(f'/purchases/{oid}/edit').status_code == 200
     assert finalize_purchase_order(oid)['status'] == 'saved'
     with db.get_db() as conn:
         assert tuple(conn.execute('SELECT * FROM purchase_orders WHERE id=?',(oid,)).fetchone()) == before

@@ -12,7 +12,6 @@ from erp.utils.audit import log_action
 from erp.utils.money import cents_to_yuan, line_subtotal_cents, yuan_to_cents
 from erp.utils.pinyin import pinyin_fields as build_pinyin_fields
 from erp.utils.quantity import format_quantity_3dp
-from erp.services.inventory import post_return_order, post_sale_order, post_typed_return_order
 
 
 def _validate_quantity(value) -> str:
@@ -102,16 +101,6 @@ def _typed_order_payload(
     }
 
 
-def _average_cost_micro_for_accounting(quantity_3dp: int, cost_total_micro: int) -> int | None:
-    if quantity_3dp == 0:
-        if cost_total_micro != 0:
-            raise ValueError("库存数量为零时库存成本必须为零")
-        return None
-    return int(
-        (Decimal(cost_total_micro) / Decimal(quantity_3dp) * Decimal("1000")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    )
-
-
 def create_customer(name: str, phone: str = "", address: str = "", opening_balance_cents: int = 0) -> int:
     initials, full = build_pinyin_fields(name)
     with get_db() as conn:
@@ -132,36 +121,20 @@ def normalize_product_name(name: str) -> str:
     return normalized_name
 
 
-def _validate_safety_stock(value) -> int:
-    try:
-        parsed = Decimal(str(value if value is not None and str(value).strip() else "0").strip())
-    except (InvalidOperation, TypeError, ValueError):
-        raise ValueError("安全库存必须是有效数字") from None
-    if not parsed.is_finite():
-        raise ValueError("安全库存必须是有限数字")
-    if parsed < 0:
-        raise ValueError("安全库存不能为负数")
-    scaled = parsed * Decimal("1000")
-    if scaled != scaled.to_integral_value():
-        raise ValueError("安全库存最多保留3位小数")
-    return int(scaled)
-
-
 def normalize_product_brand(brand) -> str | None:
     """E-2：品牌是可选的自由文本；空白一律归一成 NULL，避免「空串」和「没填」两种假状态。"""
     text = "" if brand is None else str(brand).strip()
     return text or None
 
 
-def create_product(name: str, unit: str, pinyin_initials: str = "", *, pinyin_full: str = "", safety_stock=None, brand=None) -> int:
+def create_product(name: str, unit: str, pinyin_initials: str = "", *, pinyin_full: str = "", brand=None) -> int:
     """新增商品档案。
 
     2026-10-15 起档案不再有「默认价」：售价唯一来源是开单学习出的客户专属价。
-    `products.default_price_cents` 列仍在（不删列 = 不写迁移），且 NOT NULL 无默认值，
-    所以建档时必须显式写 0——代码不再读它。
+    2026-10-16（决策 ⑦/③）：安全库存字段与 `safety_stock_3dp` 列已随库存系统删除；
+    `default_price_cents` 列同样已删，建档不再写它。
     """
     name = normalize_product_name(name)
-    safety_stock_3dp = _validate_safety_stock(safety_stock)
     # 两列都从名称派生：调用方只给一列时，另一列也补齐（否则该列搜索永远不命中）。
     built_initials, built_full = build_pinyin_fields(name)
     pinyin_initials = pinyin_initials or built_initials
@@ -169,8 +142,8 @@ def create_product(name: str, unit: str, pinyin_initials: str = "", *, pinyin_fu
     with get_db() as conn:
         try:
             cur = conn.execute(
-                "INSERT INTO products(name, unit, default_price_cents, pinyin_initials, pinyin_full, safety_stock_3dp, origin, brand) VALUES (?, ?, 0, ?, ?, ?, 'manual', ?)",
-                (name, unit, pinyin_initials, pinyin_full, safety_stock_3dp, normalize_product_brand(brand)),
+                "INSERT INTO products(name, unit, pinyin_initials, pinyin_full, origin, brand) VALUES (?, ?, ?, ?, 'manual', ?)",
+                (name, unit, pinyin_initials, pinyin_full, normalize_product_brand(brand)),
             )
         except sqlite3.IntegrityError as exc:
             if "idx_products_business_identity" in str(exc) or "UNIQUE constraint failed: index" in str(exc):
@@ -184,20 +157,17 @@ def create_product(name: str, unit: str, pinyin_initials: str = "", *, pinyin_fu
 _BRAND_UNSET = object()
 
 
-def update_product_record(product_id: int, name: str, unit: str, *, safety_stock=None, brand=_BRAND_UNSET) -> None:
-    """更新商品档案（不含售价：档案已无「默认价」字段）。"""
+def update_product_record(product_id: int, name: str, unit: str, *, brand=_BRAND_UNSET) -> None:
+    """更新商品档案（不含售价与安全库存：两者都已下线）。
+
+    2026-10-16：库存已删除 → 原先「库存已启用则单位锁定」的检查随库存系统一并取消；
+    安全库存参数与写库同样移除（决策 ⑦）。
+    """
     name = normalize_product_name(name)
-    safety_stock_3dp = _validate_safety_stock(safety_stock)
     with get_db() as conn:
-        inventory_state = conn.execute(
-            "SELECT enabled FROM product_inventory_state WHERE product_id=?",
-            (product_id,),
-        ).fetchone()
         current = conn.execute("SELECT unit FROM products WHERE id=? AND deleted_at IS NULL", (product_id,)).fetchone()
         if current is None:
             raise ValueError("商品不存在")
-        if inventory_state is not None and inventory_state["enabled"] and unit.strip() != current["unit"]:
-            raise ValueError("单位已锁定")
         try:
             initials, full = build_pinyin_fields(name)
             if brand is _BRAND_UNSET:
@@ -205,19 +175,19 @@ def update_product_record(product_id: int, name: str, unit: str, *, safety_stock
                 cursor = conn.execute(
                     """
                     UPDATE products
-                    SET name=?, unit=?, safety_stock_3dp=?, pinyin_initials=?, pinyin_full=?, updated_at=CURRENT_TIMESTAMP
+                    SET name=?, unit=?, pinyin_initials=?, pinyin_full=?, updated_at=CURRENT_TIMESTAMP
                     WHERE id=? AND deleted_at IS NULL
                     """,
-                    (name, unit, safety_stock_3dp, initials, full, product_id),
+                    (name, unit, initials, full, product_id),
                 )
             else:
                 cursor = conn.execute(
                     """
                     UPDATE products
-                    SET name=?, unit=?, safety_stock_3dp=?, pinyin_initials=?, pinyin_full=?, brand=?, updated_at=CURRENT_TIMESTAMP
+                    SET name=?, unit=?, pinyin_initials=?, pinyin_full=?, brand=?, updated_at=CURRENT_TIMESTAMP
                     WHERE id=? AND deleted_at IS NULL
                     """,
-                    (name, unit, safety_stock_3dp, initials, full, normalize_product_brand(brand), product_id),
+                    (name, unit, initials, full, normalize_product_brand(brand), product_id),
                 )
         except sqlite3.IntegrityError as exc:
             if "idx_products_business_identity" in str(exc) or "UNIQUE constraint failed: index" in str(exc):
@@ -302,8 +272,8 @@ def _upsert_product_and_customer_price(conn, customer_id: int, product_name: str
     if product is None:
         initials, full = build_pinyin_fields(product_name)
         cur_product = conn.execute(
-            # `default_price_cents` 已下线：列仍在且 NOT NULL 无默认值，建档显式写 0（不再读）。
-            "INSERT INTO products(name, unit, default_price_cents, pinyin_initials, pinyin_full, usage_count, origin) VALUES (?, ?, 0, ?, ?, 1, 'order')",
+            # 2026-10-16 v15：`default_price_cents` 列已随库存系统删除，建档不再写它。
+            "INSERT INTO products(name, unit, pinyin_initials, pinyin_full, usage_count, origin) VALUES (?, ?, ?, ?, 1, 'order')",
             (product_name, unit, initials, full),
         )
         new_id = int(cur_product.lastrowid)
@@ -467,38 +437,35 @@ def create_order_from_typed_rows(
             (order_no, customer_id, order_date, total, status, order_type, notes, request_key, payload_hash, source_order_id),
         )
         order_id = int(cur.lastrowid)
-        if status == "saved" and order_type == "sale":
-            snapshots = post_sale_order(
-                conn,
-                order_id,
-                [{"product_id": item[0], "quantity": item[3]} for item in prepared],
-                order_date,
-            )
-        elif status == "saved" and order_type == "return":
-            # Decoupled manual returns post inventory back at the current moving-average cost.
-            snapshots = post_typed_return_order(
-                conn,
-                order_id,
-                [{"product_id": item[0], "quantity": item[3]} for item in prepared],
-                order_date,
-            )
-        else:
-            snapshots = [{"unit_cost_micro": None, "cost_total_micro": None} for _ in prepared]
+        # v15（决策 ②/③）：销售/退货都不再过账库存、不再写成本快照列。
         conn.executemany(
             """
             INSERT INTO order_items(
                 order_id, product_id, product_name, unit, quantity,
-                unit_price_cents, subtotal_cents, unit_cost_micro, cost_total_micro
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                unit_price_cents, subtotal_cents
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            [(order_id, *item, snapshot["unit_cost_micro"], snapshot["cost_total_micro"])
-             for item, snapshot in zip(prepared, snapshots)],
+            [(order_id, *item) for item in prepared],
         )
     log_action("create_order", "order", order_id, f"录入式新增订单 {order_no}，状态 {status}，金额 {total} 分")
     return order_id
 
 
-def _prepare_return_items(conn, source_order_id: int, rows: list[dict], customer_id: int, order_date: str) -> list[dict]:
+def _prepare_return_items(
+    conn,
+    source_order_id: int,
+    rows: list[dict],
+    customer_id: int,
+    order_date: str,
+    *,
+    exclude_order_id: int | None = None,
+) -> list[dict]:
+    """整备「来源绑定」退货明细。
+
+    `exclude_order_id`：正在被重编辑的那张退货单本身要从「已退数量」里排除，
+    否则它的既有数量会占掉自己的可退额度，正式单重编辑必然报「超过可退数量」
+    （决策 ④ 放开正式单编辑后必须显式排除自己）。
+    """
     source = conn.execute(
         """
         SELECT * FROM orders
@@ -540,20 +507,19 @@ def _prepare_return_items(conn, source_order_id: int, rows: list[dict], customer
     for raw in rows:
         source_item_id = int(raw["source_item_id"])
         source_item = by_id[source_item_id]
-        if source_item["unit_cost_micro"] is None or source_item["cost_total_micro"] is None:
-            raise ValueError("原销售明细缺少可靠成本，当前退货路径不支持")
         original_quantity = _quantity_3dp(source_item["quantity"])
         requested_quantity = _quantity_3dp(raw.get("quantity"))
         previous_rows = conn.execute(
             """
-            SELECT oi.quantity, oi.subtotal_cents, oi.cost_total_micro
+            SELECT oi.quantity, oi.subtotal_cents
             FROM order_items oi
             JOIN orders r ON r.id=oi.order_id
             WHERE r.source_order_id=? AND r.order_type='return'
               AND r.status IN ('saved', 'printed') AND r.deleted_at IS NULL
               AND oi.source_item_id=?
+              AND (? IS NULL OR r.id != ?)
             """,
-            (source_order_id, source_item_id),
+            (source_order_id, source_item_id, exclude_order_id, exclude_order_id),
         ).fetchall()
         previous_quantity = sum(_quantity_3dp(row["quantity"]) for row in previous_rows)
         available = original_quantity - previous_quantity
@@ -561,15 +527,11 @@ def _prepare_return_items(conn, source_order_id: int, rows: list[dict], customer
             raise ValueError("退货数量超过可退数量")
         cumulative_quantity = previous_quantity + requested_quantity
         original_amount = int(source_item["subtotal_cents"])
-        original_cost = int(source_item["cost_total_micro"])
         previous_amount = sum(int(row["subtotal_cents"]) for row in previous_rows)
-        previous_cost = sum(int(row["cost_total_micro"] or 0) for row in previous_rows)
         if cumulative_quantity == original_quantity:
             cumulative_amount = original_amount
-            cumulative_cost = original_cost
         else:
             cumulative_amount = _proportional_amount(original_amount, cumulative_quantity, original_quantity)
-            cumulative_cost = _proportional_amount(original_cost, cumulative_quantity, original_quantity)
         submitted_unit = str(raw.get("unit") or "").strip()
         prepared.append({
             "source_item_id": source_item_id,
@@ -581,8 +543,6 @@ def _prepare_return_items(conn, source_order_id: int, rows: list[dict], customer
             "quantity_3dp": requested_quantity,
             "unit_price_cents": int(source_item["unit_price_cents"]),
             "subtotal_cents": cumulative_amount - previous_amount,
-            "unit_cost_micro": int(source_item["unit_cost_micro"]),
-            "cost_total_micro": cumulative_cost - previous_cost,
         })
     return prepared
 
@@ -598,7 +558,7 @@ def create_return_order_from_source(
     notes: str = "",
     request_key: str | None = None,
 ) -> int:
-    """Create a return tied to one sale; saved returns restore inventory atomically."""
+    """Create a return tied to one sale（v15 起不再回冲库存，决策 ②/③）。"""
     if status not in {"draft", "saved"}:
         raise ValueError("新建退货单只能是草稿或正式保存")
     order_date = (order_date or date.today().isoformat()).strip()
@@ -641,19 +601,17 @@ def create_return_order_from_source(
             """
             INSERT INTO order_items(
                 order_id, product_id, product_name, unit, quantity,
-                unit_price_cents, subtotal_cents, unit_cost_micro, cost_total_micro, source_item_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                unit_price_cents, subtotal_cents, source_item_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
                     order_id, item["product_id"], item["product_name"], item["unit"], item["quantity"],
-                    item["unit_price_cents"], item["subtotal_cents"], item["unit_cost_micro"], item["cost_total_micro"], item["source_item_id"],
+                    item["unit_price_cents"], item["subtotal_cents"], item["source_item_id"],
                 )
                 for item in prepared
             ],
         )
-        if status == "saved":
-            post_return_order(conn, order_id, prepared, order_date)
         log_action("create_return_order", "order", order_id, f"新增退货单 {order_no}", conn=conn)
         return order_id
 
@@ -667,7 +625,11 @@ def update_return_draft_from_source(
     notes: str = "",
     expected_version: int | None = None,
 ) -> None:
-    """Edit a source-linked return draft, optionally posting it once."""
+    """Edit a source-linked return, whatever its current status.
+
+    2026-10-16（决策 ④）：正式退货单编辑锁已撤（原先只有草稿可改）；
+    v15 起编辑不再过账/回冲库存（决策 ②/③）。
+    """
     if status not in {"draft", "saved"}:
         raise ValueError("退货单只能保存为草稿或正式保存")
     with get_db() as conn:
@@ -678,11 +640,12 @@ def update_return_draft_from_source(
         ).fetchone()
         if order is None:
             raise ValueError("退货单不存在")
-        if order["status"] != "draft":
-            raise ValueError("正式退货单经济字段已锁定")
         if expected_version is not None and int(order["version"]) != int(expected_version):
             raise ValueError("版本冲突，请刷新后重试")
-        prepared = _prepare_return_items(conn, int(order["source_order_id"]), rows, int(order["customer_id"]), order_date)
+        prepared = _prepare_return_items(
+            conn, int(order["source_order_id"]), rows, int(order["customer_id"]), order_date,
+            exclude_order_id=order_id,
+        )
         total_amount = sum(item["subtotal_cents"] for item in prepared)
         conn.execute(
             "UPDATE orders SET order_date=?, total_amount_cents=?, status=?, notes=?, version=version+1, updated_at=CURRENT_TIMESTAMP WHERE id=?",
@@ -693,19 +656,17 @@ def update_return_draft_from_source(
             """
             INSERT INTO order_items(
                 order_id, product_id, product_name, unit, quantity,
-                unit_price_cents, subtotal_cents, unit_cost_micro, cost_total_micro, source_item_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                unit_price_cents, subtotal_cents, source_item_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
                     order_id, item["product_id"], item["product_name"], item["unit"], item["quantity"],
-                    item["unit_price_cents"], item["subtotal_cents"], item["unit_cost_micro"], item["cost_total_micro"], item["source_item_id"],
+                    item["unit_price_cents"], item["subtotal_cents"], item["source_item_id"],
                 )
                 for item in prepared
             ],
         )
-        if status == "saved":
-            post_return_order(conn, order_id, prepared, order_date)
         log_action("edit_return_order", "order", order_id, f"编辑退货单 {order['order_no']}", conn=conn)
 
 
@@ -735,16 +696,8 @@ def update_order_from_typed_rows(
         order_type = order_type or existing["order_type"]
         if order_type not in {"sale", "return"}:
             raise ValueError("单据类型不合法")
-        if conn.execute(
-            """
-            SELECT 1 FROM inventory_postings
-            WHERE source_type IN ('sale', 'return') AND (source_id=? OR source_id LIKE ?)
-            LIMIT 1
-            """,
-            (str(order_id), f"{order_id}:%"),
-        ).fetchone() is not None:
-            raise ValueError("库存已过账，经济字段不能重编辑")
-        finalize_sale = existing["status"] == "draft" and status == "saved" and order_type == "sale"
+        # 2026-10-16（决策 ④）：原先的「库存已过账 → 经济字段不能重编辑」检查已撤——
+        # 库存系统删除后不再有过账概念，所有单据（含正式单）都可重编辑。
         sign = -1 if order_type == "return" else 1
         for row in rows:
             raw_product_name = str(row.get("product_name", ""))
@@ -773,18 +726,6 @@ def update_order_from_typed_rows(
             "INSERT INTO order_items(order_id, product_id, product_name, unit, quantity, unit_price_cents, subtotal_cents) VALUES (?, ?, ?, ?, ?, ?, ?)",
             prepared,
         )
-        if finalize_sale:
-            snapshots = post_sale_order(
-                conn,
-                order_id,
-                [{"product_id": item[1], "quantity": item[4]} for item in prepared],
-                order_date,
-            )
-            item_ids = conn.execute("SELECT id FROM order_items WHERE order_id=? ORDER BY id", (order_id,)).fetchall()
-            conn.executemany(
-                "UPDATE order_items SET unit_cost_micro=?, cost_total_micro=? WHERE id=?",
-                [(snapshot["unit_cost_micro"], snapshot["cost_total_micro"], row["id"]) for row, snapshot in zip(item_ids, snapshots)],
-            )
     log_action("edit_order", "order", order_id, f"重编辑订单 {order_no}，状态 {status}，金额 {total} 分")
 
 
@@ -809,53 +750,10 @@ def void_order(order_id: int, reason: str, expected_version: int | None = None) 
             raise ValueError("只有已保存或已打印订单可以作废")
 
         # 「销售单存在有效退货，不能作废」的旧限制已按用户决策移除（2026-10-07）：
-        # 引用它的退货单本身继续有效（退货的库存与金额照常保留），只是失去「原销售单」
-        # 这个追溯指向。用户确认不需要保留该追溯。库存不得为负的守恒校验保留。
-
-        postings = conn.execute(
-            """
-            SELECT * FROM inventory_postings
-            WHERE source_type IN ('sale', 'return') AND (source_id=? OR source_id LIKE ?)
-            ORDER BY posting_seq
-            """,
-            (str(order_id), f"{order_id}:%"),
-        ).fetchall()
-        if postings:
-            # 「必须是该商品最后一笔库存业务」的旧限制已按用户决策移除（2026-10-07）：
-            # 反向过账后库存数量、销售/拿货金额、账款余额都精确回到删除前的正确值，
-            # 只有移动均价/成本总额会漂（移动加权平均的固有性质，且成本只在本机内部页显示、
-            # 不进入任何对外打印）。用户确认均价只是「预期参考」，不据此定售价，
-            # 因此不再因为非末笔而拒绝删除。库存不得为负的守恒校验保留。
-            for posting in reversed(postings):
-                reverse_quantity = -int(posting["quantity_delta_3dp"])
-                reverse_cost = -int(posting["cost_delta_micro"])
-                state = conn.execute(
-                    "SELECT * FROM product_inventory_state WHERE product_id=?",
-                    (posting["product_id"],),
-                ).fetchone()
-                if state is None or int(state["quantity_3dp"]) + reverse_quantity < 0 or int(state["cost_total_micro"]) + reverse_cost < 0:
-                    raise ValueError("作废后库存不能为负数")
-                reverse_type = "sale_void" if posting["source_type"] == "sale" else "return_void"
-                reverse_source_id = f"{posting['source_id']}:void"
-                reverse_posting = conn.execute(
-                    """
-                    INSERT INTO inventory_postings(
-                        product_id, source_type, source_id, quantity_delta_3dp, cost_delta_micro, business_date
-                    ) VALUES (?, ?, ?, ?, ?, ?)
-                    """,
-                    (posting["product_id"], reverse_type, reverse_source_id, reverse_quantity, reverse_cost, order["order_date"]),
-                )
-                new_quantity = int(state["quantity_3dp"]) + reverse_quantity
-                new_cost = int(state["cost_total_micro"]) + reverse_cost
-                conn.execute(
-                    """
-                    UPDATE product_inventory_state
-                    SET quantity_3dp=?, cost_total_micro=?, avg_cost_micro=?, version=version+1,
-                        last_posting_seq=?, updated_at=CURRENT_TIMESTAMP
-                    WHERE product_id=?
-                    """,
-                    (new_quantity, new_cost, _average_cost_micro_for_accounting(new_quantity, new_cost), reverse_posting.lastrowid, posting["product_id"]),
-                )
+        # 引用它的退货单本身继续有效（退货的金额照常保留），只是失去「原销售单」
+        # 这个追溯指向。用户确认不需要保留该追溯。
+        # 2026-10-16（决策 ②/③）：库存系统已删除，作废不再反向过账库存、不再有
+        # 「作废后库存不能为负数」的守恒校验——作废只剩状态与原因。
         conn.execute("UPDATE orders SET status='void', void_reason=?, version=version+1, updated_at=CURRENT_TIMESTAMP WHERE id=?", (reason, order_id))
         log_action("void_order", "order", order_id, f"作废订单: {reason}", conn=conn)
 
@@ -890,11 +788,10 @@ AUTO_REVERSE_REASON = "列表删除（自动冲回）"
 def void_then_delete_order(order_id: int, reason: str = AUTO_REVERSE_REASON) -> None:
     """Delete any order from the list, voiding it first when it is a live document.
 
-    A live (saved/printed) document carries real business effects, so it must be
-    reversed before it can leave the ledger. Drafts have no postings and go straight
-    to the recycle bin. ``void_order`` keeps enforcing conservation (last posting per
-    product, dependent returns, non-negative stock) — its ValueError is surfaced, not
-    swallowed, so a batch delete can never silently skip a document.
+    A live (saved/printed) document must be voided before it can leave the ledger.
+    Drafts go straight to the recycle bin. v15 起作废不再反向过账库存（库存系统已删除），
+    这条路径只剩状态机要求；``void_order`` 的错误照常抛出，不吞掉，
+    这样批量删除永远不会静默跳过一张单据。
     """
     with get_db() as conn:
         row = conn.execute("SELECT status, version FROM orders WHERE id=? AND deleted_at IS NULL", (order_id,)).fetchone()

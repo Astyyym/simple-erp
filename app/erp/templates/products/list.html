@@ -16,13 +16,7 @@
   {% if import_result.error_count > import_result.errors|length %}<div class="small mt-2">仅显示前{{ import_result.errors|length }}条错误，其余{{ import_result.error_count - import_result.errors|length }}条未展开。</div>{% endif %}
 </div>
 {% endif %}
-{% if import_init_errors %}
-<div class="alert alert-warning">
-  <strong>以下行商品已建档，但期初初始化未成功，请到商品页手动启用：</strong>
-  <ul class="mb-0 mt-2">{% for error in import_init_errors %}<li>{{ error }}</li>{% endfor %}</ul>
-</div>
-{% endif %}
-{% if import_result or import_init_errors %}{% set import_open = true %}{% endif %}
+{% if import_result %}{% set import_open = true %}{% endif %}
 <div class="list-import-card">
   <div class="list-import-row">
     <div class="list-import-links">
@@ -39,7 +33,7 @@
         </select>
         <button class="btn btn-primary text-nowrap">预检并导入</button>
       </form>
-      <p class="list-import-hint">支持.xlsx/.csv，最大5MB；列：商品名称/品牌/单位/期初数量/期初成本（元）/备注（品牌可留空）；旧表头仍兼容（无品牌列时品牌留空，单位回落“个”；带价格列的旧文件照样导入，该列不再写入档案）。<strong>品牌可留空：留空的行照样导入，并在列表里标记为「待补全」</strong>；模板第二个 sheet「填写说明」有同一份规则。<strong>不再识别「型号」列</strong>：请把型号直接写进商品名称（例如 闸阀DN50），含「型号」列的旧文件会报「表头错误」而不是静默丢数据。</p>
+      <p class="list-import-hint">支持.xlsx/.csv，最大5MB；列：商品名称/品牌/单位/备注（品牌、单位、备注可留空）；旧表头仍兼容（无品牌列时品牌留空，单位回落“个”）。<strong>已不再接受「期初数量 / 期初成本」列</strong>：含这两列的旧文件会整表报「表头错误」，请先删掉这两列再导入。<strong>品牌可留空：留空的行照样导入，并在列表里标记为「待补全」</strong>；模板第二个 sheet「填写说明」有同一份规则。<strong>不再识别「型号」列</strong>：请把型号直接写进商品名称（例如 闸阀DN50），含「型号」列的旧文件会报「表头错误」而不是静默丢数据。</p>
     </details>
     <!-- 2026-10-14 第二轮（用户要求）：新增放在「批量导入」右侧，两页同构。
          展开时 flex-basis:100% 占满整行（见 base.html .list-create-panel[open]）。 -->
@@ -50,7 +44,6 @@
           <input class="form-control" name="name" placeholder="商品名" required>
           <input class="form-control" name="brand" placeholder="品牌(可选)">
           <input class="form-control" name="unit" placeholder="单位" required>
-          <input class="form-control" name="safety_stock" placeholder="安全库存">
         </div>
         <button class="btn btn-primary">确认新增</button>
       </form>
@@ -92,25 +85,19 @@
 <form id="bulkProductsForm" method="post" action="/products/bulk_delete"></form>
 <style>
   .product-table-shell{overflow-x:auto}
-  .product-table-shell .product-inventory-table{table-layout:auto;min-width:1240px;width:100%}
-  .product-table-shell .product-inventory-table th,.product-table-shell .product-inventory-table td{overflow:visible;text-overflow:clip;white-space:nowrap}
-  .product-table-shell .product-inventory-table .numeric-cell{font-variant-numeric:tabular-nums;text-align:right}
-  .product-table-shell .product-inventory-table .selection-cell{width:44px;min-width:44px}
-  .product-table-shell .product-inventory-table .selection-cell::before,.product-table-shell .product-inventory-table .selection-cell::after,.product-table-shell .product-inventory-table .numeric-cell::before,.product-table-shell .product-inventory-table .numeric-cell::after{content:none;display:none}
-  .product-table-shell .product-inventory-table .action-cell{width:auto;min-width:150px}
+  .product-table-shell .product-list-table{table-layout:auto;min-width:900px;width:100%}
+  .product-table-shell .product-list-table th,.product-table-shell .product-list-table td{overflow:visible;text-overflow:clip;white-space:nowrap}
+  .product-table-shell .product-list-table .selection-cell{width:44px;min-width:44px}
+  .product-table-shell .product-list-table .selection-cell::before,.product-table-shell .product-list-table .selection-cell::after{content:none;display:none}
+  .product-table-shell .product-list-table .action-cell{width:auto;min-width:150px}
 </style>
 <section id="productsResults" data-refresh-fragment>
 <div class="table-responsive product-table-shell">
-<table class="table table-striped align-middle stable-table product-inventory-table">
-  <thead><tr><th class="selection-cell"><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>名称</th><th>品牌</th><th>单位</th><th>专属价</th><th class="numeric-cell">当前库存</th><th class="numeric-cell">安全库存</th><th class="numeric-cell">移动平均成本</th><th class="numeric-cell">库存金额</th><th>库存状况</th><th>来源</th><th class="action-cell">操作</th></tr></thead>
+<table class="table table-striped align-middle stable-table product-list-table">
+  <thead><tr><th class="selection-cell"><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>名称</th><th>品牌</th><th>单位</th><th>专属价</th><th>来源</th><th class="action-cell">操作</th></tr></thead>
   <tbody>{% for p in products %}
   <tr data-product-id="{{p.id}}">
     <td class="selection-cell"><input form="bulkProductsForm" type="checkbox" name="ids" value="{{p.id}}"></td><td title="{{p.name}}">{{p.name}}{% if product_needs_completion(p) %}<span class="badge text-bg-warning ms-1" title="缺品牌：补全后便于区分同名同规格商品">待补全</span>{% endif %}</td><td title="{{p.brand}}">{{p.brand or ''}}</td><td>{{p.unit}}</td><td><a class="btn btn-sm btn-outline-primary text-nowrap" href="/products/{{p.id}}/edit#customerPrices">查看专属价格</a></td>
-    <td class="numeric-cell">{{format_quantity_3dp(p.quantity_3dp, p.unit) if p.inventory_enabled else '—'}}</td>
-    <td class="numeric-cell">{{format_quantity_3dp(p.safety_stock_3dp, p.unit)}}</td>
-    <td class="numeric-cell">{% if not p.inventory_enabled or p.quantity_3dp is none %}—{% elif p.quantity_3dp == 0 %}无库存{% else %}{{micro_to_yuan(p.avg_cost_micro)}}{% endif %}</td>
-    <td class="numeric-cell">{{micro_to_yuan(p.cost_total_micro) if p.inventory_enabled else '—'}}</td>
-    <td data-field="inventory-status">{{ p.inventory_status }}</td>
     <td>{{ origin_label(p.origin) }}</td>
     <td class="action-cell"><div class="action-wrap"><a class="btn btn-sm btn-primary" href="/products/{{p.id}}/edit">查看详情</a><form class="d-inline ajax-delete-form" method="post" action="/products/{{p.id}}/delete"><button class="btn btn-sm btn-danger">删除</button></form></div></td>
   </tr>

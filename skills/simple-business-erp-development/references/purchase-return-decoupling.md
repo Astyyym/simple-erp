@@ -11,9 +11,9 @@
 ## 当前规则
 
 - 销售单、退货单、拿货单、退拿货单四类互相独立：退货单不依赖销售单，退拿货单不依赖原拿货单。
-- 四类开单的商品选择共用 `app/erp/static/order-product-picker.js`（**v14：商品身份只剩名称，单框**）：销售 / 退货走 `mountHybrid`（单框手输 + 名称建议，未命中交给后端自动建档），拿货 / 退拿货走 `mountRow`（单一下拉，取值是 product id）；目录以 JSON（`#productCatalog`）喂数据，选项文本用 `textContent` 注入，不拼 HTML。未启用库存的商品标注“未启用，仅可保存草稿”。
-- 退拿货手工开单：往来对象 + 业务日期 + 商品行 + 手输单价；库存出库成本按**当前移动平均成本**精确分摊（`inventory.post_typed_purchase_return`）；缺货 / 未启用 / 未知商品整单拒绝且不产生半成品。
-- 旧带来源行的退拿货单只读兼容且可作废；`void/delete/restore/edit_notes` 与来源无关（作废按 `posting_seq` join 库存流水反向）。
+- 四类开单的商品选择共用 `app/erp/static/order-product-picker.js`（**v14：商品身份只剩名称，单框**）：销售 / 退货走 `mountHybrid`（单框手输 + 名称建议，未命中交给后端自动建档），拿货 / 退拿货走 `mountRow`（单一下拉，取值是 product id）；目录以 JSON（`#productCatalog`）喂数据，选项文本用 `textContent` 注入，不拼 HTML。**v15 起商品不再有「启用 / 库存」概念**，下拉只显示名称，不再有「未启用，仅可保存草稿」这类标注。
+- 退拿货手工开单：往来对象 + 业务日期 + 商品行 + 手输单价；**v15 起不再有任何库存/成本分摊**，只登记业务金额（`services/purchase_returns.py`）。原行不属于所选原拿货单、数量超可退上限、未知商品这三类仍是整单拒绝且不产生半成品。
+- 旧带来源行的退拿货单只读兼容且可作废；`void/delete/restore/edit_notes` 与来源无关（**v15 起作废只改状态与原因**，不再按 `posting_seq` 反向冲回任何流水——该列已随 schema 15 删除）。
 - `purchase_returns.create/update_draft/finalize` 支持双模：传 `source_order_id` 走旧来源路径，否则走手工 `items=[{product_id, quantity, unit_price_yuan}]` 路径。
 
 ## schema v13 迁移
@@ -24,5 +24,5 @@
 
 ## 易错点
 
-- `inventory.post_typed_purchase_return` 的入参是**已放大的 3 位小数整数** `quantity_3dp`，不要再经 `_scaled_quantity` 二次放大（会把 2 当成 2,000,000，误报“库存不足”）。它返回的 snapshot 含 `posting_seq`，手工路径必须写入 `purchase_return_items.posting_seq`（作废靠它匹配库存流水）。
-- 手工单价复用 `inventory._price_cents`；数量解析用 `_scaled_quantity`（这里接收人类可读数量）。
+- 退拿货明细的入参是**已放大的 3 位小数整数** `quantity_3dp`，不要再经 `_scaled_quantity` 二次放大（会把 2 当成 2,000,000）。**v15 起 `posting_seq` 列已删除**：`purchase_return_items` 只存名称/单位/数量/单价/小计，作废不再需要它。
+- 手工单价复用 `services/purchases._price_cents`；数量解析用 `_scaled_quantity`（这里接收人类可读数量）。模块已从 `services/inventory.py` 改名为 `services/purchases.py`（2026-10-16，决策 ①）。

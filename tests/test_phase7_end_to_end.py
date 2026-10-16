@@ -7,15 +7,21 @@ from erp.services.accounting import (
     create_return_order_from_source,
 )
 from erp.services.analytics import summarize_analytics
-from erp.services.inventory import create_purchase_order, initialize_product
+from erp.services.purchases import create_purchase_order
 from erp.services.reconciliation import create_reconciliation_snapshot, get_reconciliation_snapshot, update_reconciliation_selection
 
 
-def test_phase7_complete_inventory_to_reconciliation_path_keeps_contract_values():
+def test_phase7_complete_purchase_to_reconciliation_path_keeps_contract_values():
+    """Phase7 端到端契约：拿货/销售/退货 → 分析口径 → 对账快照。
+
+    决策变更（2026-10-16 ②/③）：库存与成本段（库存状态、明细成本快照、毛利润/净成本）
+    随库存系统整体删除；保留仍然成立的三段——单据金额与单号、分析汇总口径、
+    对账快照的范围/金额契约，外加各页面冒烟。
+    """
     init_db()
-    product_id = create_product("Phase7灭火器4kg", "个", safety_stock="2")
+    product_id = create_product("Phase7灭火器4kg", "个")
     customer_id = create_customer("Phase7验收客户")
-    initialize_product(product_id, "10", "10", "2026-10-01", "Phase 7 期初", "phase7-e2e-init")
+
 
     first_purchase = create_purchase_order(
         "NH202610010701",
@@ -50,22 +56,24 @@ def test_phase7_complete_inventory_to_reconciliation_path_keeps_contract_values(
     )
 
     with get_db() as conn:
-        state = conn.execute(
-            "SELECT quantity_3dp, cost_total_micro, avg_cost_micro FROM product_inventory_state WHERE product_id=?",
-            (product_id,),
-        ).fetchone()
         sale_item = conn.execute(
-            "SELECT subtotal_cents, cost_total_micro, unit_cost_micro FROM order_items WHERE order_id=?",
+            "SELECT subtotal_cents FROM order_items WHERE order_id=?",
             (sale_id,),
         ).fetchone()
         return_item = conn.execute(
-            "SELECT subtotal_cents, cost_total_micro FROM order_items WHERE order_id=?",
+            "SELECT subtotal_cents FROM order_items WHERE order_id=?",
             (return_id,),
         ).fetchone()
+        purchase_item = conn.execute(
+            "SELECT unit_cost_cents, subtotal_cents FROM purchase_order_items WHERE purchase_order_id=?",
+            (first_purchase["order_id"],),
+        ).fetchone()
 
-    assert (state["quantity_3dp"], state["cost_total_micro"]) == (22000, 304_000_000)
-    assert (sale_item["subtotal_cents"], sale_item["cost_total_micro"], sale_item["unit_cost_micro"]) == (10000, 60_000_000, 12_000_000)
-    assert (return_item["subtotal_cents"], return_item["cost_total_micro"]) == (4000, 24_000_000)
+    # 销售 5 × 20 元 = 10000 分；退货按原单价比例回销 2/5 → 4000 分。
+    assert sale_item["subtotal_cents"] == 10000
+    assert return_item["subtotal_cents"] == 4000
+    # 拿货单价是业务数据（决策 ①）：库存系统删除不影响它。
+    assert (purchase_item["unit_cost_cents"], purchase_item["subtotal_cents"]) == (1400, 14000)
     assert first_purchase["order_id"] != second_purchase["order_id"]
 
     # 决策变更（v14）：商品身份合并为单一名称（Phase7灭火器4kg），型号不再是独立筛选参数。
@@ -76,9 +84,12 @@ def test_phase7_complete_inventory_to_reconciliation_path_keeps_contract_values(
         product_name="Phase7灭火器4kg",
         metric="amount",
     )
+    # 汇总卡口径（决策 ②）：净销售额 = 销售 10000 − 退货 4000；成本/毛利润卡已下线。
+    assert analytics["summary"]["sales_amount_cents"] == 10000
+    assert analytics["summary"]["returns_amount_cents"] == 4000
     assert analytics["summary"]["net_sales_amount_cents"] == 6000
-    assert analytics["summary"]["net_cost_cents"] == 3600
-    assert analytics["summary"]["gross_profit_cents"] == 2400
+    assert "net_cost_cents" not in analytics["summary"]
+    assert "gross_profit_cents" not in analytics["summary"]
 
     snapshot_id = create_reconciliation_snapshot(customer_id, "2026-10-01", "2026-10-02", "all")
     snapshot = get_reconciliation_snapshot(snapshot_id)

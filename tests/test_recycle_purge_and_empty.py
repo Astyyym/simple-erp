@@ -14,12 +14,12 @@ from erp.services.accounting import (
     create_product,
     customer_balance_cents,
 )
-from erp.services.inventory import create_purchase_order, initialize_product
+from erp.services.purchases import create_purchase_order
 
 
 def _product(spec="PURGE"):
     product_id = create_product("回收站清理商品" + spec, "个")
-    initialize_product(product_id, "10", "10", "2026-10-01", "系统上线期初", f"purge-init-{spec}", confirm_zero=False)
+
     return product_id
 
 
@@ -55,29 +55,21 @@ def test_voided_order_in_recycle_bin_is_now_deletable():
         assert purge_order_blocker(conn, "order", order_id) is None
 
 
-def test_purge_removes_order_items_and_its_inventory_postings():
-    """确认删除会连明细与它自己的库存流水一起清掉，不留孤儿记录。"""
+def test_purge_removes_order_and_its_items_without_orphans():
+    """确认删除会连明细一起清掉，不留孤儿记录、不破坏外键完整性。"""
     init_db()
     product_id = _product(spec="PURGE-FULL")
     customer_id = create_customer("回收站清理客户2")
     order_id = _deleted_sale(customer_id, product_id, "MD202610070902", qty="2")
     with get_db() as conn:
         items_before = conn.execute("SELECT COUNT(*) FROM order_items WHERE order_id=?", (order_id,)).fetchone()[0]
-        postings_before = conn.execute(
-            "SELECT COUNT(*) FROM inventory_postings WHERE source_id=? OR source_id LIKE ?",
-            (str(order_id), f"{order_id}:%"),
-        ).fetchone()[0]
-    assert items_before > 0 and postings_before > 0
+    assert items_before > 0
 
     response = create_app().test_client().post(f"/recycle/order/{order_id}/purge")
     assert response.status_code == 302
     with get_db() as conn:
         assert conn.execute("SELECT 1 FROM orders WHERE id=?", (order_id,)).fetchone() is None
         assert conn.execute("SELECT COUNT(*) FROM order_items WHERE order_id=?", (order_id,)).fetchone()[0] == 0
-        assert conn.execute(
-            "SELECT COUNT(*) FROM inventory_postings WHERE source_id=? OR source_id LIKE ?",
-            (str(order_id), f"{order_id}:%"),
-        ).fetchone()[0] == 0
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
@@ -173,8 +165,8 @@ def test_seven_day_cleanup_now_actually_removes_voided_orders():
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
-def test_product_purge_removes_inventory_state_and_postings():
-    """商品没有活单据引用时，确认删除会连库存状态/期初/流水一起清掉。"""
+def test_product_purge_removes_the_product_row():
+    """商品没有活单据引用时，确认删除会把商品行本身清掉，且不留外键悬空。"""
     init_db()
     product_id = _product(spec="PROD-DEL")
     customer_id = create_customer("商品清理客户")
@@ -186,9 +178,7 @@ def test_product_purge_removes_inventory_state_and_postings():
     assert response.status_code == 302
     with get_db() as conn:
         assert conn.execute("SELECT 1 FROM products WHERE id=?", (product_id,)).fetchone() is None
-        assert conn.execute("SELECT COUNT(*) FROM product_inventory_state WHERE product_id=?", (product_id,)).fetchone()[0] == 0
-        assert conn.execute("SELECT COUNT(*) FROM inventory_postings WHERE product_id=?", (product_id,)).fetchone()[0] == 0
-        assert conn.execute("SELECT COUNT(*) FROM inventory_initializations WHERE product_id=?", (product_id,)).fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM order_items WHERE product_id=?", (product_id,)).fetchone()[0] == 0
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
@@ -209,21 +199,12 @@ def test_product_with_live_document_is_kept_with_reason():
 
 
 def test_purge_keeps_balance_correct_and_does_not_resurrect_effects():
-    """永久删除只清历史痕迹，不得让已冲回的账款/库存复活。"""
+    """永久删除只清历史痕迹，不得让已冲回的账款复活（作废单不进余额）。"""
     init_db()
     product_id = _product(spec="NO-REVIVE")
     customer_id = create_customer("不复活客户")
     order_id = _deleted_sale(customer_id, product_id, "MD202610070910", qty="2")
-    with get_db() as conn:
-        stock_before = tuple(conn.execute(
-            "SELECT quantity_3dp, cost_total_micro FROM product_inventory_state WHERE product_id=?", (product_id,)
-        ).fetchone())
     balance_before = customer_balance_cents(customer_id)
 
     assert create_app().test_client().post(f"/recycle/order/{order_id}/purge").status_code == 302
-    with get_db() as conn:
-        stock_after = tuple(conn.execute(
-            "SELECT quantity_3dp, cost_total_micro FROM product_inventory_state WHERE product_id=?", (product_id,)
-        ).fetchone())
-    assert stock_after == stock_before
     assert customer_balance_cents(customer_id) == balance_before

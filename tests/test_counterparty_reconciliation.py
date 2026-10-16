@@ -12,7 +12,7 @@ from erp.services.accounting import (
     create_customer, create_product, create_order_from_typed_rows,
     create_return_order_from_source,
 )
-from erp.services.inventory import initialize_product, create_purchase_order
+from erp.services.purchases import create_purchase_order
 from erp.services import purchase_returns, reconciliation as service
 from erp.utils import pdf
 from pdf_test_utils import assert_a4_portrait_pdf
@@ -22,7 +22,7 @@ def seed_four():
     init_db()
     cid = create_customer('四向虚构往来', opening_balance_cents=12345)
     pid = create_product('公开商品' '型号-A', '米')
-    initialize_product(pid, '20', '10', '2026-10-01', 'INTERNAL-INIT', 'c3-init')
+
     sale = create_order_from_typed_rows(cid, 'MD202610010001', [
         {'product_id': pid, 'product_name': '公开商品' '型号-A', 'unit': '米', 'quantity': '2', 'unit_price_yuan': '20'},
         {'product_id': pid, 'product_name': '公开商品' '型号-A', 'unit': '米', 'quantity': '1', 'unit_price_yuan': '30'},
@@ -41,10 +41,14 @@ def seed_four():
     return cid, pid, sale, ret, purchase, pr
 
 
-def funds_and_inventory():
+def funds_snapshot():
+    """资金/档案/单据的逐行快照，用于「生成与打印对账单不得改动任何业务数据」。
+
+    v15（2026-10-16 决策 ②/③）：库存状态与库存流水两张表已随库存系统删除，不再纳入快照。
+    """
     with get_db() as conn:
         return {table: [tuple(row) for row in conn.execute(f'SELECT * FROM {table} ORDER BY 1')]
-                for table in ('payments', 'adjustments', 'customers', 'product_inventory_state', 'inventory_postings', 'orders')}
+                for table in ('payments', 'adjustments', 'customers', 'orders')}
 
 
 def test_four_type_scope_has_source_namespaces_and_real_public_pdf(monkeypatch):
@@ -55,7 +59,7 @@ def test_four_type_scope_has_source_namespaces_and_real_public_pdf(monkeypatch):
     adjustment_id = add_adjustment(cid, 200, 'PUBLIC-ADJUSTMENT-REASON')
     with get_db() as conn:
         conn.execute('UPDATE adjustments SET created_at=? WHERE id=?', ('2026-10-01 12:00:00', adjustment_id))
-    before = funds_and_inventory()
+    before = funds_snapshot()
     sid = service.create_reconciliation_snapshot(cid, '2026-10-01', '2026-10-01')
     result = service.get_reconciliation_snapshot(sid)
     assert result['scope_version'] == 2
@@ -84,7 +88,8 @@ def test_four_type_scope_has_source_namespaces_and_real_public_pdf(monkeypatch):
     serialized = json.dumps(captured, ensure_ascii=False, default=str)
     # 白名单（2026-10-14 起含资金与余额字段：用户决策把账款流水 PDF 的
     # 收款/调整/余额并入对账单；'opening_balance_cents' 由此不再是禁词）。
-    for forbidden in ('INTERNAL-PURCHASE-NOTE', 'INTERNAL-RETURN-NOTE', 'scope_hash', 'scope_json', 'unit_cost_micro', 'cost_total_micro', 'payload_hash', 'image_path', 'source_notes', 'void_reason'):
+    # 2026-10-16（决策 ②/③）：明细的成本快照列已随 schema v15 删除，不再是可泄露字段。
+    for forbidden in ('INTERNAL-PURCHASE-NOTE', 'INTERNAL-RETURN-NOTE', 'scope_hash', 'scope_json', 'payload_hash', 'image_path', 'source_notes', 'void_reason'):
         assert forbidden not in serialized
     assert 'PUBLIC-SALE-NOTE' in serialized
     # 资金行的白名单字段在纸：方式/备注/调整原因。
@@ -92,7 +97,7 @@ def test_four_type_scope_has_source_namespaces_and_real_public_pdf(monkeypatch):
     assert 'PUBLIC-ADJUSTMENT-REASON' in serialized
     assert 'INTERNAL-INIT' not in serialized
     assert sum(doc['order']['total_amount_cents'] for doc in captured['documents']) == 6000
-    assert funds_and_inventory() == before
+    assert funds_snapshot() == before
 
 
 LEGACY_SNAPSHOT_SQL = """CREATE TABLE reconciliation_snapshots (
@@ -124,7 +129,7 @@ def test_empty_legacy_snapshot_migration_preserves_deleted_id_high_water():
     sid = service.create_reconciliation_snapshot(cid)
     assert sid == 78  # Never reuse a snapshot identity held by another window.
     with get_db() as conn:
-        assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0] == 14
+        assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0] == 15
         assert conn.execute("SELECT name FROM sqlite_master WHERE name='synthetic_recon_hash'").fetchone()
         assert conn.execute('PRAGMA foreign_key_check').fetchall() == []
 
@@ -170,7 +175,7 @@ def test_legacy_snapshot_migration_is_byte_preserving_orders_only_and_retryable(
     import sqlite3
     from erp import db
     cid, *_ = seed_four()
-    before_business = funds_and_inventory()
+    before_business = funds_snapshot()
     with get_db() as conn:
         rows = service._scope_rows(conn, cid, '2026-10-01', '2026-10-01', 'all')
         old_hash = service._fingerprint(rows)
@@ -193,7 +198,7 @@ def test_legacy_snapshot_migration_is_byte_preserving_orders_only_and_retryable(
     with conn: db.apply_schema(conn)
     with conn: db.apply_schema(conn)
     assert tuple(conn.execute('SELECT * FROM reconciliation_snapshots').fetchone()) == (*old,1)
-    assert conn.execute('SELECT COUNT(*) FROM schema_version WHERE version=14').fetchone()[0] == 1
+    assert conn.execute('SELECT COUNT(*) FROM schema_version WHERE version=15').fetchone()[0] == 1
     assert conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND tbl_name='reconciliation_snapshots'").fetchone()[0] == 2
     conn.close()
     result = service.get_reconciliation_snapshot(41)
@@ -209,7 +214,7 @@ def test_legacy_snapshot_migration_is_byte_preserving_orders_only_and_retryable(
     assert_a4_portrait_pdf(response.data)
     assert client.post('/accounts/reconciliation/toggle/41/1', data={'selected':'1'}).status_code == 200
     assert service.get_reconciliation_snapshot(41)['selected_ids'] == [1,2]
-    assert funds_and_inventory() == before_business
+    assert funds_snapshot() == before_business
 
 
 def test_item_tables_have_no_spec_column():

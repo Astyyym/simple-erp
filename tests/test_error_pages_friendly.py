@@ -14,13 +14,13 @@ import pytest
 from erp import create_app
 from erp.db import get_db, init_db
 from erp.services.accounting import create_customer, create_order_from_typed_rows, create_product
-from erp.services.inventory import create_purchase_order, initialize_product
+from erp.services.purchases import create_purchase_order
 from erp.utils.errors import error_response
 
 
 def _product(spec="A", price=2000):
     pid = create_product("错误页商品" + spec, "个")
-    initialize_product(pid, "10", "10", "2026-10-01", "系统上线期初", f"err-page-{spec}", confirm_zero=False)
+
     return pid
 
 
@@ -82,7 +82,12 @@ def test_missing_purchase_and_return_detail_and_edit_return_chinese_pages():
         assert "不存在" in response.get_data(as_text=True)
 
 
-def test_locked_formal_purchase_edit_is_friendly_page():
+def test_formal_purchase_edit_page_opens_now_that_the_lock_is_gone():
+    """决策 ④（2026-10-16）：正式拿货单编辑锁撤除 → 编辑页直接可开（旧断言是 400「已锁定」）。
+
+    旧用例锁住「正式拿货单点编辑 → 友好错误页（已锁定）」；锁已撤除，改为反向断言：
+    正式单的编辑页返回 200 且不再出现锁定文案。
+    """
     init_db()
     product_id = _product("LOCK-PUR")
     customer_id = create_customer("拿货锁定客户")
@@ -93,9 +98,8 @@ def test_locked_formal_purchase_edit_is_friendly_page():
     )
     client = create_app().test_client()
     response = client.get(f"/purchases/{created['order_id']}/edit")
-    assert response.status_code == 400
-    assert _is_error_page(response)
-    assert "已锁定" in response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "已锁定" not in response.get_data(as_text=True)
 
 
 # ---------------------------------------------------------------------------
@@ -108,7 +112,7 @@ def test_missing_product_edit_get_and_post_are_chinese_404():
     get_response = client.get("/products/999999/edit")
     assert get_response.status_code == 404 and _is_error_page(get_response)
     post_response = client.post("/products/999999/edit", data={
-        "name": "不存在商品", "unit": "个", "default_price": "10", "safety_stock": "0",
+        "name": "不存在商品", "unit": "个",
     })
     assert post_response.status_code == 404 and _is_error_page(post_response)
 
@@ -140,21 +144,21 @@ def test_invalid_customer_opening_balance_is_friendly_400():
         assert conn.execute("SELECT COUNT(*) FROM customers WHERE name='坏期初客户'").fetchone()[0] == 0
 
 
-def test_invalid_product_price_is_friendly_400():
-    """商品建档的数字校验仍给友好 400。
+def test_invalid_product_create_is_friendly_400():
+    """商品建档校验失败仍给可见的 400 中文提示，且不落库。
 
-    决策变更（2026-10-15）：默认价下线（不再是档案字段），改用仍在校验的
-    「安全库存」触发同一类错误。
+    决策变更（2026-10-15 默认价下线 / 2026-10-16 ⑦ 安全库存删除）：商品档案已不再有
+    可校验的数字字段，旧用例用「安全库存填 abc」触发的那条通道随字段消失；
+    改用仍然生效的重名校验触发同一类「友好 400 + 零写入」。
     """
     init_db()
+    create_product("重复建档商品", "个")
     client = create_app().test_client()
-    response = client.post("/products/create", data={
-        "name": "坏库存商品", "unit": "个", "safety_stock": "abc",
-    })
+    response = client.post("/products/create", data={"name": "重复建档商品", "unit": "个"})
     assert response.status_code == 400
-    assert "有效数字" in response.get_data(as_text=True)
+    assert "商品名称已存在" in response.get_data(as_text=True)
     with get_db() as conn:
-        assert conn.execute("SELECT COUNT(*) FROM products WHERE name='坏库存商品'").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM products WHERE name='重复建档商品'").fetchone()[0] == 1
 
 
 def test_negative_payment_is_friendly_400_not_500():

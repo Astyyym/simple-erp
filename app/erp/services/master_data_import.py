@@ -6,7 +6,8 @@
 - 表头**同时登记新旧**，旧模板仍可导入（单位回落「个」、无期初）。
 - 同名默认「跳过」；可选「更新」只覆盖可空档案字段，不动业务流水。
 - 命中**回收站**同名时明确提示，不静默跳过（B-8）。
-- 期初数量/成本走 `initialize_product`（其内部自开事务），用「批次号+行号」作幂等键。
+- 2026-10-16（决策 ⑥）：**不再接受「期初数量 / 期初成本」列**——库存系统已删除，
+  含这两列的旧文件整表报「表头错误」；下载模板与填写说明同步去掉这两列。
 """
 
 from __future__ import annotations
@@ -30,21 +31,15 @@ CUSTOMER_HEADERS = (
 )
 PRODUCT_HEADERS = (
     ["商品名称", "价格"],
-    # 2026-10-15 默认价下线后的新模板表头（**必须与 PRODUCT_HEADERS_TEMPLATE 一致**，
-    # 否则下载的模板自己导不回来 → 整表报「表头错误」）。
-    ["商品名称", "品牌", "单位", "期初数量", "期初成本（元）", "备注"],
-    ["商品名称", "品牌", "单位", "期初数量", "期初成本", "备注"],
-    ["商品名称", "单位", "期初数量", "期初成本（元）", "备注"],
-    # 旧模板（含「默认价」列）仍可导入：该列只是不再被读取（其余列照常落库），
-    # 不是静默丢数据——档案已无价格字段可存。
-    ["商品名称", "单位", "默认价", "期初数量", "期初成本（元）", "备注"],
-    ["商品名称", "单位", "默认价", "期初数量", "期初成本", "备注"],
-    ["商品名称", "品牌", "单位", "默认价", "期初数量", "期初成本（元）", "备注"],
-    ["商品名称", "品牌", "单位", "默认价", "期初数量", "期初成本", "备注"],
+    # 2026-10-16（决策 ⑥）：含「期初数量 / 期初成本」列的旧表头**不再登记** ——
+    # 库存系统已删除，这类文件整表报「表头错误」（行为变化，已在发版说明注明）；
+    # 下载的当前模板永远可回导。
+    # 必须与 PRODUCT_HEADERS_TEMPLATE 一致，否则模板自己导不回来。
+    ["商品名称", "品牌", "单位", "备注"],
 )
 # 导入模板下载专用（routes/products.py 用它生成样表）。
-# **不要**再用 `PRODUCT_HEADERS[2]` 这类魔法索引 —— v14 删掉含「型号」的候选后索引会移位。
-PRODUCT_HEADERS_TEMPLATE = ["商品名称", "品牌", "单位", "期初数量", "期初成本（元）", "备注"]
+# **不要**再用 `PRODUCT_HEADERS[1]` 这类魔法索引 —— v14/v15 收窄候选后索引会移位。
+PRODUCT_HEADERS_TEMPLATE = ["商品名称", "品牌", "单位", "备注"]
 
 # 模板里第二个 sheet「填写说明」的内容（第一行必须是表头，说明只能另开 sheet）。
 PRODUCT_TEMPLATE_NOTES = [
@@ -53,7 +48,7 @@ PRODUCT_TEMPLATE_NOTES = [
     "品牌可以留空：留空的行照样导入，但会在商品列表里标记为「待补全」，"
     "之后在档案里补上就会自动移出该筛选。",
     "商品档案已不再保存售价：开单单价按客户专属价带出，没有专属价则留空手输（手输价会自动记为该客户的专属价）。",
-    "期初数量与期初成本（元）要成对填：填了数量就必须填成本。",
+    "商品档案已不再记录库存与成本：不要再加「期初数量 / 期初成本」列，加了会整表报「表头错误」。",
     "型号请直接写进商品名称（例如「闸阀DN50」），不要再加「型号」列。",
     "同名处理在预检页选择：「跳过」（默认，不覆盖已有）或「更新」。",
 ]
@@ -184,10 +179,6 @@ def _money_to_cents(value, *, field_label: str, allow_blank: bool = True) -> int
     return int((amount * 100).to_integral_value())
 
 
-def _quantity_text(value) -> str:
-    return "" if value is None else str(value).strip()
-
-
 def _header_index(headers: list[str], *names: str) -> int | None:
     for i, h in enumerate(headers):
         if h in names:
@@ -243,17 +234,17 @@ def build_customer_preview(headers, rows, existing_names: set[str], soft_deleted
 
 
 def build_product_preview(headers, rows, existing_identities: set[str], soft_deleted_identities: set[str], *, same_name: str = "skip") -> ImportPreview:
-    """按**列名**映射，兼容「商品名称,价格」与新宽表头（含可选品牌列）。
+    """按**列名**映射，兼容「商品名称,价格」与当前宽表头（含可选品牌列）。
 
     v14 起商品身份只有名称：**不再识别「型号」列**，含该列的旧文件由
     `utils/importing.py` 的整表头精确匹配挡下并报「表头错误」，不是静默丢数据。
+    v15（决策 ⑥）起**不再接受「期初数量 / 期初成本」列**：库存系统已删除，
+    含这两列的旧文件整表报「表头错误」（表头白名单已收窄），不是静默丢数据。
     """
     preview = ImportPreview(kind="products")
     idx_name = _header_index(headers, "商品名称")
     idx_brand = _header_index(headers, "品牌")
     idx_unit = _header_index(headers, "单位")
-    idx_qty = _header_index(headers, "期初数量")
-    idx_cost = _header_index(headers, "期初成本（元）", "期初成本")
     seen: set[str] = set()
     for line_number, row in rows:
         name = normalized_name(_cell(row, idx_name))
@@ -263,31 +254,14 @@ def build_product_preview(headers, rows, existing_identities: set[str], soft_del
         # E-2：品牌可空；空单元格与「没这一列」都落成空串（写入时统一转 NULL）。
         brand = normalized_name(_cell(row, idx_brand))
         unit = normalized_name(_cell(row, idx_unit)) or "个"
-        qty_text = _quantity_text(_cell(row, idx_qty))
-        cost_value = _cell(row, idx_cost)
         identity = name
         label = name
         if identity in seen:
             preview.rows.append(PreviewRow(line_number, "skip", label, "文件内重复"))
             continue
         seen.add(identity)
-        try:
-            cost_cents = _money_to_cents(cost_value, field_label="期初成本")
-        except ValueError as exc:
-            preview.rows.append(PreviewRow(line_number, "error", label, str(exc)))
-            continue
-        try:
-            has_qty = bool(qty_text) and Decimal(qty_text) > 0
-        except (InvalidOperation, ValueError):
-            preview.rows.append(PreviewRow(line_number, "error", label, "期初数量格式无效"))
-            continue
-        if has_qty and cost_cents is None:
-            # 有数量必须有成本（缺成本不静默）。
-            preview.rows.append(PreviewRow(line_number, "error", label, "填了期初数量就必须填期初成本（元）"))
-            continue
         # 2026-10-15：档案不再有售价字段，文件里带「默认价/价格」列时该列被忽略（不解析、不落库）。
-        payload = {"name": name, "brand": brand, "unit": unit,
-                   "quantity": qty_text, "cost_cents": cost_cents}
+        payload = {"name": name, "brand": brand, "unit": unit}
         if identity in soft_deleted_identities:
             preview.rows.append(PreviewRow(line_number, "error", label, "该名称已被回收站记录占用，请先到回收站恢复或清理"))
             continue
@@ -306,16 +280,3 @@ def customer_totals(preview: ImportPreview) -> dict:
     """B-7：导入总额自检——客户欠款合计（新增+更新后）。"""
     total = sum(int(r.payload.get("opening_balance_cents", 0)) for r in preview.rows if r.action in ("add", "update"))
     return {"opening_balance_total_cents": total}
-
-
-def product_totals(preview: ImportPreview) -> dict:
-    """B-7：商品期初库存金额合计。"""
-    total = 0
-    for r in preview.rows:
-        if r.action not in ("add", "update"):
-            continue
-        qty = _quantity_text(r.payload.get("quantity"))
-        cost = r.payload.get("cost_cents")
-        if qty and cost is not None:
-            total += int((Decimal(qty) * Decimal(int(cost))).to_integral_value())
-    return {"initial_cost_total_cents": total}

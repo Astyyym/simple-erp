@@ -51,8 +51,9 @@ def test_product_and_customer_excel_templates_have_extended_headers():
     product_sheet = load_workbook(io.BytesIO(product_response.data), read_only=True).active
     # 决策变更（v14）：商品身份 = 单一名称，模板不再有「型号」列（型号直接写进商品名称）。
     # 决策变更（2026-10-15）：默认价下线，模板不再有「默认价」列（售价唯一来源 = 开单学习）。
+    # 决策变更（2026-10-16 ⑥）：库存系统下线，商品模板去掉「期初数量 / 期初成本」两列。
     assert list(next(product_sheet.iter_rows(values_only=True))) == [
-        "商品名称", "品牌", "单位", "期初数量", "期初成本（元）", "备注"
+        "商品名称", "品牌", "单位", "备注"
     ]
 
     assert customer_response.status_code == 200
@@ -73,20 +74,18 @@ def test_management_pages_show_chinese_import_controls():
 
 
 def test_product_import_preview_then_confirm_writes_rows():
-    """导入不再读写售价（2026-10-15 默认价下线）：文件里的价格列被忽略，其余列照常落库。
+    """导入不再读写售价：文件里的价格列被忽略，其余列照常落库。
 
-    旧断言「默认价留空按 0 落库 / 负价报错」随字段下线失效，改为钉住新契约：
-    价格列不解析也不校验（留空、负数都照样导入），落库的档案价一律为 0；
+    旧断言「默认价留空按 0 落库 / 负价报错」随字段下线失效；2026-10-16（决策 ⑥ + schema v15）
+    后商品档案的「默认价」列本身也已随 schema v15 删除，改为钉住新契约：
+    价格列不解析也不校验（留空、负数都照样导入），文件里的其它列照常落库；
     只有「商品名称」仍是必填校验项。
     """
     init_db()
     existing = _name("已有商品")
     fresh = _name("新增商品")
     with get_db() as conn:
-        conn.execute(
-            "INSERT INTO products(name, unit, default_price_cents) VALUES (?, '箱', 999)",
-            (existing,),
-        )
+        conn.execute("INSERT INTO products(name, unit) VALUES (?, '箱')", (existing,))
     csv_data = f"商品名称,价格\n{fresh},12.34\n{existing},88\n{fresh},20\n空价商品,\n负价商品,-1\n,10\n".encode("utf-8-sig")
 
     client = create_app().test_client()
@@ -111,10 +110,8 @@ def test_product_import_preview_then_confirm_writes_rows():
         old = conn.execute("SELECT * FROM products WHERE name=?", (existing,)).fetchone()
         blank_price = conn.execute("SELECT * FROM products WHERE name='空价商品'").fetchone()
     assert row["unit"] == "个"
-    # 档案价一律 0：文件里的价格不再写入（列仍在、只为兼容旧库）。
-    assert row["default_price_cents"] == 0
-    assert old["default_price_cents"] == 999
-    assert blank_price["default_price_cents"] == 0
+    # 价格列已下线：文件里的价格既不入库、也不影响其它列（单位不写则回落「个」）。
+    assert old["unit"] == "箱"
     assert blank_price["origin"] == "import"
 
 
@@ -156,10 +153,7 @@ def test_import_rejects_bad_suffix_header_empty_file_and_oversize_without_500():
     init_db()
     keep_name = _name("保留商品")
     with get_db() as conn:
-        conn.execute(
-            "INSERT INTO products(name, unit, default_price_cents) VALUES (?, '个', 100)",
-            (keep_name,),
-        )
+        conn.execute("INSERT INTO products(name, unit) VALUES (?, '个')", (keep_name,))
     client = create_app().test_client()
     cases = [
         ("/products/import", "bad.txt", b"x", "仅支持 .xlsx 或 .csv 文件"),
@@ -207,8 +201,8 @@ def test_product_import_rejects_spec_header_and_still_supports_two_column_header
     name = _name("同名型号商品")
     deleted = _name("回收站商品")
     with get_db() as conn:
-        conn.execute("INSERT INTO products(name, unit, default_price_cents) VALUES (?, '个', 100)", (name,))
-        conn.execute("INSERT INTO products(name, unit, default_price_cents, deleted_at) VALUES (?, '个', 100, CURRENT_TIMESTAMP)", (deleted,))
+        conn.execute("INSERT INTO products(name, unit) VALUES (?, '个')", (name,))
+        conn.execute("INSERT INTO products(name, unit, deleted_at) VALUES (?, '个', CURRENT_TIMESTAMP)", (deleted,))
 
     # 含「型号」列的旧文件：整表头精确匹配挡下，明确报错。
     legacy_csv = (
@@ -222,7 +216,7 @@ def test_product_import_rejects_spec_header_and_still_supports_two_column_header
     # 报错即零写入：既有商品价不动，回收站记录不动，也不新增。
     with get_db() as conn:
         assert conn.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 2
-        assert conn.execute("SELECT default_price_cents FROM products WHERE name=?", (name,)).fetchone()[0] == 100
+        assert conn.execute("SELECT unit FROM products WHERE name=?", (name,)).fetchone()[0] == "个"
         assert conn.execute("SELECT deleted_at FROM products WHERE name=?", (deleted,)).fetchone()[0] is not None
 
     # 旧两列模板仍可导入（单位回落「个」）。
@@ -233,9 +227,9 @@ def test_product_import_rejects_spec_header_and_still_supports_two_column_header
     assert old_preview.status_code == 200
     _confirm(client, "/products/import/confirm", _preview_json(old_html))
     with get_db() as conn:
-        old_row = conn.execute("SELECT unit, default_price_cents FROM products WHERE name=?", (old_name,)).fetchone()
-    # 旧两列模板「商品名称,价格」仍可导入：单位回落「个」；价格列已下线 → 档案价 0。
-    assert old_row["unit"] == "个" and old_row["default_price_cents"] == 0
+        old_row = conn.execute("SELECT unit FROM products WHERE name=?", (old_name,)).fetchone()
+    # 旧两列模板「商品名称,价格」仍可导入：价格列已下线（不再解析），单位回落「个」。
+    assert old_row["unit"] == "个"
 
 
 def test_incomplete_import_rows_import_anyway_and_get_flagged_todo():
@@ -250,9 +244,9 @@ def test_incomplete_import_rows_import_anyway_and_get_flagged_todo():
     no_brand = _name("导入缺品牌商品")
     with_brand = _name("导入有品牌商品")
     product_csv = (
-        "商品名称,品牌,单位,期初数量,期初成本（元）,备注\n"
-        f"{no_brand},,件,,,验证\n"
-        f"{with_brand},金枪,件,,,验证\n"
+        "商品名称,品牌,单位,备注\n"
+        f"{no_brand},,件,验证\n"
+        f"{with_brand},金枪,件,验证\n"
     ).encode("utf-8-sig")
     preview = _upload(client, "/products/import", "products.csv", product_csv)
     preview_html = preview.get_data(as_text=True)
@@ -273,7 +267,7 @@ def test_incomplete_import_rows_import_anyway_and_get_flagged_todo():
     with get_db() as conn:
         brand_row = conn.execute("SELECT * FROM products WHERE name=?", (with_brand,)).fetchone()
         assert brand_row["origin"] == "import"
-        assert brand_row["default_price_cents"] == 0, "档案价一律 0（售价不再进档案）"
+        assert brand_row["unit"] == "件"
     todo_html = client.get("/products/?quality=todo").get_data(as_text=True)
     assert no_brand in todo_html and with_brand not in todo_html
     body = client.get("/products/").get_data(as_text=True).split('id="productsResults"', 1)[1]
@@ -319,7 +313,7 @@ def test_templates_ship_a_fill_in_guide_sheet_and_keep_the_header_row_intact():
     init_db()
     client = create_app().test_client()
     cases = (
-        ("/products/import/template", ["商品名称", "品牌", "单位", "期初数量", "期初成本（元）", "备注"]),
+        ("/products/import/template", ["商品名称", "品牌", "单位", "备注"]),
         ("/customers/import/template", ["客户名称", "电话", "地址", "期初余额（元）", "备注"]),
     )
     for url, headers in cases:

@@ -114,7 +114,7 @@ def test_import_writes_import_origin():
 def test_product_side_pending_completion_uses_the_new_brand_criterion():
     """决策变更（v14 → 2026-10-14）：旧口径「型号为空」随 spec 列删除，商品侧按新口径恢复。
 
-    现行口径（2026-10-14 第二轮）：来源 = 开单自动建档或批量导入，缺品牌或缺默认价都算。
+    现行口径（2026-10-15 起，2026-10-16 复核）：来源 = 开单自动建档或批量导入，**缺品牌**算。
     本用例钉住其中的**来源边界**：手工建档即使没品牌也不算（缺什么是用户自己的选择）。
     客户侧「待补全（来源 order/import 且无联系方式）」同理，见下一条用例。
     """
@@ -122,11 +122,9 @@ def test_product_side_pending_completion_uses_the_new_brand_criterion():
 
     assert hasattr(quality, "product_needs_completion")
     init_db()
-    # 未启用库存仍是零建档路径的正常状态：不建任何库存状态行。
+    # 决策变更（2026-10-16 ②/③）：商品建档不再产生任何库存状态行（库存系统与三张库存表已删除）。
     create_product("无型号商品", "个")
     create_product("有型号商品4kg", "个")
-    with get_db() as conn:
-        assert conn.execute("SELECT COUNT(*) AS c FROM product_inventory_state").fetchone()["c"] == 0
     # 手工建档（即使没有品牌）不算待补全。
     assert quality.product_needs_completion(_row("products", "无型号商品")) is False
 

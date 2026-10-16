@@ -53,7 +53,7 @@
 </style>
 
 <div class="order-workspace" id="purchaseWorkspace"><div class="order-entry-area"><div class="order-heading page-header">
-  <div><h2>{{ '编辑拿货草稿' if is_edit else '新建拿货单' }}</h2><p>正式保存后入库并按移动加权平均更新成本；不影响客户价和客户账款。</p></div>
+  <div><h2>{{ '编辑拿货草稿' if is_edit else '新建拿货单' }}</h2><p>正式保存后只登记单据流水，不影响客户价和客户账款。</p></div>
   <div class="page-actions"><a class="btn btn-outline-secondary page-return" href="/orders/">返回单据管理</a></div>
 </div>
 {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
@@ -92,10 +92,10 @@
   <section class="order-details-card" id="purchaseDetailsCard" aria-labelledby="purchaseDetailsTitle">
   <h3 class="section-title" id="purchaseDetailsTitle">拿货明细</h3>
   <p class="text-muted small mb-2" id="purchaseZeroSetupHint">
-    新商品需先到「商品管理」页启用库存后才能入库（拿货单）。
+    新商品需先到「商品管理」页建档后才能用于拿货单。
   </p>
   <div class="order-table-scroll"><table class="table table-bordered order-table" id="purchaseTable">
-    <thead class="table-light"><tr><th style="width:50px">序号</th><th style="min-width:340px">产品名称</th><th style="width:110px">单位</th><th style="width:120px">数量</th><th style="width:150px">单价(元)</th><th style="width:130px">金额</th><th style="min-width:150px">成本(元)</th><th style="width:80px">操作</th></tr></thead>
+    <thead class="table-light"><tr><th style="width:50px">序号</th><th style="min-width:340px">产品名称</th><th style="width:110px">单位</th><th style="width:120px">数量</th><th style="width:150px">单价(元)</th><th style="width:130px">金额</th><th style="width:80px">操作</th></tr></thead>
     <tbody id="purchaseRows">
       {% for row in form_rows %}
       <tr>
@@ -105,12 +105,11 @@
         <td><input name="quantity" class="quantity" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.000" value="{{ row.quantity or '' }}"></td>
         <td class="price-cell"><input name="unit_cost_yuan" class="unit-price" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.00" value="{{ row.unit_cost_yuan or '' }}"></td>
         <td><div class="readonly-total line-total">0.00</div></td>
-        <td><div class="readonly-total unit-cost-display" aria-label="只读成本">未选择商品</div></td>
         <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="clearRow(this)">清空</button></td>
       </tr>
       {% endfor %}
     </tbody>
-    <tfoot><tr><th colspan="5" class="text-end p-2">合计</th><th class="p-2" id="grandTotal">0.00</th><th colspan="2"></th></tr></tfoot>
+    <tfoot><tr><th colspan="5" class="text-end p-2">合计</th><th class="p-2" id="grandTotal">0.00</th><th></th></tr></tfoot>
   </table>
   <div class="row-tools" id="rowTools" role="group" aria-label="明细行工具">
     <button type="button" class="btn btn-outline-primary" id="addRowButton" onclick="addRow()">新增一行</button>
@@ -118,7 +117,6 @@
     <button type="button" class="btn btn-outline-secondary" onclick="clearAllRows()">一键清空</button>
   </div>
   </div>
-  <div class="small text-muted mt-2" id="costHint" role="status">成本列显示商品当前移动平均成本（只读）；单位跟随商品档案。</div>
   {% if not products %}<div class="alert alert-warning mb-0">当前没有已建档商品。请先在商品资料中建档。</div>{% endif %}
   </section>
   <div class="d-flex gap-2 align-items-center justify-content-end" id="purchaseActions">
@@ -158,6 +156,7 @@
           <td>{{history.status_label}}</td>
           <td><div class="history-actions">
             <a class="btn btn-sm btn-outline-secondary" href="{{history.detail_url}}">查看</a>
+            <a class="btn btn-sm btn-outline-primary" href="{{history.detail_url}}/edit">编辑</a>
           </div></td>
         </tr>
         {% else %}
@@ -176,18 +175,10 @@
 <script src="{{ url_for('static', filename='order-entry-common.js') }}?v=3"></script>
 <script>
 const money = ErpOrderEntry.money;
-const costMoney = ErpOrderEntry.costMoney;
 const catalog = JSON.parse(document.getElementById('productCatalog').textContent || '[]');
 const catalogById = new Map(catalog.map(p => [String(p.id), p]));
 function fetchJson(url) { return fetch(url).then(r => r.json()); }
 
-function updateCost(tr) {
-  const display = tr.querySelector('.unit-cost-display');
-  const id = tr.querySelector('.product-id').value;
-  if (!id) { display.textContent = '未选择商品'; return; }
-  const product = catalogById.get(String(id));
-  display.textContent = product && product.cost_available ? costMoney(product.unit_cost) : '成本未知';
-}
 function recalc() {
   let total = 0;
   document.querySelectorAll('#purchaseRows tr:not(.slip-notice)').forEach((tr, idx) => {
@@ -197,13 +188,11 @@ function recalc() {
     const line = qty * price;
     tr.querySelector('.line-total').textContent = money(line);
     total += line;
-    updateCost(tr);
   });
   document.getElementById('grandTotal').textContent = money(total);
 }
-/* 拿货 / 退拿货的单价是**入库成本**，与售价无关：2026-10-15 起商品档案已不再保存售价
-   （售价唯一来源 = 开单学习出的客户专属价），所以这里既没有客户价、也没有档案零售价按钮；
-   当前移动平均成本显示在行尾只读成本列。 */
+/* 拿货 / 退拿货的单价是**拿货单价**（纯业务流水数据），与售价无关：2026-10-15 起商品档案已不再保存售价
+   （售价唯一来源 = 开单学习出的客户专属价），所以这里既没有客户价、也没有档案零售价按钮。 */
 /* P3：未建档提示要随行收起（清空行 / 一键清空 / 新增行）。 */
 function clearMissingHint(tr) {
   const hint = tr.querySelector('.picker-missing');
@@ -285,7 +274,7 @@ function refreshSlipNotices() {
     notice.className = 'slip-notice';
     const cell = document.createElement('td');
     cell.className = 'text-muted';
-    cell.colSpan = 8;
+    cell.colSpan = 7;
     cell.textContent = `本张已满 ${slipSize} 行；因行数限制，以下内容续打在第 ${position / slipSize + 1} 张`;
     notice.appendChild(cell);
     row.after(notice);
@@ -341,7 +330,7 @@ function bindRow(tr) {
         const nameNode = document.createElement('strong');
         nameNode.textContent = product.name;
         const detailsNode = document.createElement('small');
-        detailsNode.textContent = [product.unit, product.inventory_enabled === false ? '未启用库存，仅可保存草稿' : ''].filter(Boolean).join(' · ');
+        detailsNode.textContent = product.unit || '';
         fragment.append(nameNode, document.createTextNode(' '), detailsNode);
         return fragment;
       },
@@ -453,8 +442,8 @@ async function refreshTodayHistory() {
       const actions = document.createElement('div');
       actions.className = 'history-actions';
       const detailSuffix = item.order_type === 'purchase' ? `/purchases/${item.id}` : `/purchases/return/${item.id}`;
-      // 正式拿货/退拿货单经济字段已锁定，「编辑」永远是死路 → 面板只保留「查看」。
-      [['查看', '', 'secondary']].forEach(([label, suffix, color]) => {
+      // ④（2026-10-16）：编辑锁已全部放开；当天历史只列「正式保存」单（不含已作废），每行都给编辑入口。
+      [['查看', '', 'secondary'], ['编辑', '/edit', 'primary']].forEach(([label, suffix, color]) => {
         const link = document.createElement('a');
         link.className = `btn btn-sm btn-outline-${color}`;
         link.href = detailSuffix + suffix;

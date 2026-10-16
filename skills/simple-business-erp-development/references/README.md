@@ -8,7 +8,6 @@
 |---|---|
 | [customer-analytics-and-master-data-import.md](./customer-analytics-and-master-data-import.md) | 客户统计、日期筛选、导入规则与测试边界 |
 | [document-management-summary-export.md](./document-management-summary-export.md) | 单据管理筛选、货款汇总 PDF 的统计口径 |
-| [cost-backfill.md](./cost-backfill.md) | 历史成本人工补录（销售单）：只补利润不动库存、`cost_source` 标记、补录后禁编辑、已有退货时拒绝再修正 |
 | [data-root-probe-pitfalls.md](./data-root-probe-pitfalls.md) | 排查正式数据根时别把 `-wal`/`-shm` 或主库 mtime 当成「有人在写」；只读连接也会创建它们；用 WAL 大小 + 结构指纹判定 |
 | [excel-data-export.md](./excel-data-export.md) | Excel 导出字段、筛选语义及回归测试 |
 | [md-order-number-and-date-lock.md](./md-order-number-and-date-lock.md) | MD 单号、创建日期、重编辑保护规则 |
@@ -21,7 +20,7 @@
 | [name-search-and-pinyin-matching.md](./name-search-and-pinyin-matching.md) | 名称检索统一走 `utils/pinyin.py` 的三个 helper；**检索串必须先归一**（输入法隔音符号 `xiao'fang`、空格、全角）；只输分隔符不能退化成 `LIKE '%%'`；派生列写入/回填与已知边界 |
 | [erp-ui-redesign.md](./erp-ui-redesign.md) | UI 改版约束与视觉回归检查 |
 | [purchase-return-decoupling.md](./purchase-return-decoupling.md) | 四类开单解耦、商品选择器（v14 起单框：销售/退货手输、拿货/退拿货下拉）、手工退拿货与 schema13 迁移；NH 共用日流水取号 |
-| [analytics-visualization.md](./analytics-visualization.md) | 数据分析页月历热力图、条形排行、成本诊断三层图与顶部筛选口径 |
+| [analytics-visualization.md](./analytics-visualization.md) | 数据分析页月历热力图、四类流水口径、产品排行与条形生长动画（v15 起不再有成本诊断层） |
 
 ## 开发、部署与排障流程
 

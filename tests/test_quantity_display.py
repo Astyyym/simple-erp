@@ -38,74 +38,17 @@ def test_quantity_missing_zero_negative_and_large_values_are_exact():
     assert format_quantity_3dp(123456789012345678901234567890123, "米") == "123456789012345678901234567890.123"
 
 
-def test_product_list_renders_count_and_measure_quantities_in_separate_columns():
-    from html.parser import HTMLParser
-
-    from erp import create_app
-    from erp.services.accounting import create_product
-    from erp.services.inventory import initialize_product
-
-    app = create_app()
-    count_id = create_product("计件展示商品件型", "个", safety_stock="3")
-    measure_id = create_product("计量展示商品米型", "米", safety_stock="1.125")
-    initialize_product(count_id, "15", "11.333333", "2026-10-01", "测试", "quantity-list-count")
-    initialize_product(measure_id, "12.345", "2", "2026-10-01", "测试", "quantity-list-measure")
-
-    class TableRows(HTMLParser):
-        def __init__(self):
-            super().__init__()
-            self.rows, self.row, self.cell = [], None, None
-
-        def handle_starttag(self, tag, attrs):
-            if tag == "tr":
-                self.row = []
-            elif tag in ("th", "td") and self.row is not None:
-                self.cell = []
-
-        def handle_data(self, data):
-            if self.cell is not None:
-                self.cell.append(data)
-
-        def handle_endtag(self, tag):
-            if tag in ("th", "td") and self.cell is not None:
-                self.row.append("".join(self.cell).strip())
-                self.cell = None
-            elif tag == "tr" and self.row is not None:
-                self.rows.append(self.row)
-                self.row = None
-
-    response = app.test_client().get("/products/")
-    assert response.status_code == 200
-    html = response.get_data(as_text=True)
-    parser = TableRows()
-    parser.feed(html)
-    header = next(row for row in parser.rows if "名称" in row)
-    # 决策变更（v14）：商品列表删除「规格」列，身份=单一名称。
-    # 决策变更（2026-10-15）：删「默认价」列（售价不在档案）、新增「专属价」入口列、删「启用状态」列。
-    assert header == ["", "名称", "品牌", "单位", "专属价", "当前库存", "安全库存", "移动平均成本", "库存金额", "库存状况", "来源", "操作"]
-    count_row = next(row for row in parser.rows if "计件展示商品件型" in row)
-    measure_row = next(row for row in parser.rows if "计量展示商品米型" in row)
-    # 列位：专属价入口 = 4，当前库存/安全库存 = 5:7，库存状况 = 9。
-    assert count_row[5:7] == ["15", "3"]
-    assert measure_row[5:7] == ["12.345", "1.125"]
-    assert count_row[9] == measure_row[9] == "正常"
-    assert count_row[4] == measure_row[4] == "查看专属价格"
-    assert 'class="table-responsive product-table-shell"' in html
-    assert 'class="selection-cell"' in html
-    assert 'class="numeric-cell"' in html
-
-
 @pytest.mark.parametrize("unit,sale_quantity,expected", [("个", "2", "2"), ("米", "1.250", "1.25"), ("个", "1.001", "1.001")])
-def test_analytics_displays_unit_aware_quantity_in_summary_heatmap_ranking_and_product_rows(unit, sale_quantity, expected):
+def test_analytics_displays_unit_aware_quantity_in_heatmap_ranking_and_product_rows(unit, sale_quantity, expected):
     import re
 
     from erp import create_app
     from erp.services.accounting import create_customer, create_order_from_typed_rows, create_product
-    from erp.services.inventory import initialize_product
+
 
     app = create_app()
     product_id = create_product("分析数量商品Q1", unit)
-    initialize_product(product_id, "10", "3", "2026-10-01", "测试", "quantity-analytics-init")
+
     customer_id = create_customer("数量分析往来")
     create_order_from_typed_rows(customer_id, "MD202610010901", [{"product_id": product_id, "product_name": "分析数量商品Q1", "unit": unit, "unit_price_yuan": "20", "quantity": sale_quantity}], status="saved", order_date="2026-10-01")
     # 决策变更（v14）：分析中心商品筛选走精确名称匹配（p.name = ?），
@@ -116,7 +59,6 @@ def test_analytics_displays_unit_aware_quantity_in_summary_heatmap_ranking_and_p
     # 日历格子只显示日期数字；数量保留在悬停/无障碍标签里（不再占格子）
     assert re.search(r'aria-label="2026-10-01 · 有交易 · 净销售数量 ' + re.escape(expected) + r'"', html)
     assert '<span class="heatmap-value">' not in html
-    assert f'<span>净销售数量</span><strong>{expected}</strong>' in html
     # 排行改为竖向柱状图：数值标签带单位（全品类同一张榜），商品名在柱下
     assert f'<span class="rank-bar-value" style="bottom:' in html
     assert f'>{expected} {unit}</span>' in html

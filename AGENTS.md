@@ -46,7 +46,7 @@
 - 不要将正式目录复制成第二套长期“真源”；不要将 WSL 当权威源码树。
 - 不要擅自 `git push`、打 Release、覆盖用户机器上的业务数据。
 - 不要把真实订单库、日志、密钥、个人联系信息或不必要本机绝对路径写入公开说明。
-- 不要把 `products.default_price_cents` 当成可读字段（2026-10-15 用户决策）：该列保留、**值恒 0、代码不再读**；建档 INSERT 仍必须显式写它（该列 `NOT NULL` 且无默认值，省略会被 SQLite 直接拒），所以 `grep -rn "default_price" app/erp/` 不会、也不应字面归零。售价唯一来源 = 开单学习出的客户专属价（无专属价时单价留空手输，手输 > 0 才学）。
+- 不要把这些字段与表写回代码（2026-10-16 用户决策，schema v15 已物理删除）：`products.default_price_cents`、`products.safety_stock_3dp`、`order_items` 的成本三列（`unit_cost_micro` / `cost_total_micro` / `cost_source`）、`purchase_return_items` 的成本两列与 `posting_seq`、`purchase_return_orders.posted_once`，以及 `inventory_postings` / `inventory_initializations` / `product_inventory_state` 三张表。售价唯一来源 = 开单学习出的客户专属价（无专属价时单价留空手输，手输 > 0 才学）。改数据库前先读 `docs/需求/` 与本次迁移记录；老库升级不可逆，回退只能靠迁移前自动生成的整库备份。
 - 当前产品永久免登录，默认仅本机 `127.0.0.1` 使用；不得把服务暴露到局域网/公网，也不要擅自加回登录门。
 - UI：先对齐目标和验收再改。顶栏钉住 = content flex + page-body 滚动，保留毛玻璃；侧栏指定 HEX 时用实色并关闭 blur。
 - 开单：默认 1 行；关闭浏览器历史自动填充；一键清空恢复 1 行；单价取该客户专属价（无专属价则留空手输，手输 > 0 才学成专属价）的逻辑保持稳定。

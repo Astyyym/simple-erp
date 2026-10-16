@@ -10,7 +10,7 @@ from erp.services.accounting import (
     create_product,
     void_payment,
 )
-from erp.services.inventory import initialize_product
+
 from erp.services.reconciliation import (
     create_reconciliation_snapshot,
     get_reconciliation_snapshot,
@@ -25,7 +25,7 @@ from pdf_test_utils import assert_a4_portrait_pdf
 def _seed_reconciliation_data():
     init_db()
     product = create_product("对账灭火器4kg", "个")
-    initialize_product(product, "20", "10", "2026-10-01", "期初", "reconciliation-init")
+
     customer_id = create_customer("对账客户")
     sale_id = create_order_from_typed_rows(
         customer_id,

@@ -18,7 +18,7 @@ from erp.config import (
 )
 from erp.db import init_db
 from erp.services.accounting import create_customer, create_order_from_typed_rows, create_product
-from erp.services.inventory import create_purchase_order, initialize_product
+from erp.services.purchases import create_purchase_order
 
 TEMPLATES = Path(__file__).resolve().parents[1] / "app" / "erp" / "templates"
 ENTRY_PAGES = (
@@ -103,7 +103,7 @@ def test_order_pdf_render_point_uses_the_configured_tier(monkeypatch):
     save_config({"slip_size": 6})
     cid = create_customer("真源客户")
     pid = create_product("真源商品", "只")
-    initialize_product(pid, "100", "10", "2026-10-01", "期初", "slip-init")
+
     order_id = create_order_from_typed_rows(
         cid, "MD202610140001",
         [{"product_id": pid, "product_name": "真源商品", "unit": "只",
@@ -131,7 +131,7 @@ def test_purchase_pdf_render_point_gets_the_slip_values_explicitly(monkeypatch):
     rows = []
     for index in range(1, 8):  # 7 行 > 6 行档位 → 必须出现续打提示
         pid = create_product(f"真源商品B{index}", "只")
-        initialize_product(pid, "100", "10", "2026-10-01", "期初", f"slip-init-b{index}")
+
         rows.append({"product_id": pid, "quantity": "1", "unit_cost_yuan": "10"})
     order = create_purchase_order(
         "NH202610140001", "2026-10-14", rows,

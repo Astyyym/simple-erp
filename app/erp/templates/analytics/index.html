@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
-<link rel="stylesheet" href="{{ url_for('static', filename='analytics-v4.css') }}?v=2">
+<link rel="stylesheet" href="{{ url_for('static', filename='analytics-v4.css') }}?v=3">
 <section class="erp-analytics" data-scope-url="{{ view_url() }}">
 
 <div class="analytics-head">
-  <div><h1>数据分析中心</h1><p class="help">按业务日期查看销售 − 客户退货；当前库存状态不随历史日期回溯。</p></div>
+  <div><h1>数据分析中心</h1><p class="help">按业务日期查看销售 − 客户退货；只统计数量与金额。</p></div>
 </div>
 {% if error %}<div class="alert alert-danger" id="analyticsError" data-refresh-fragment role="alert">{{ error }} 筛选未生效，请修正输入后重新查询。<div id="invalidScopeInputs" style="overflow-wrap:anywhere">原始条件：日期 {{filters.start_date or '不限'}} 至 {{filters.end_date or '不限'}}；往来对象 ID {{filters.customer_id or '全部'}}；商品 {{filters.product_name or '全部'}}。</div></div>{% endif %}
 <form id="analyticsFilters" class="filter-card" method="get" data-inplace action="{{ url_for('analytics.analytics_center') }}" autocomplete="off">
@@ -52,7 +52,7 @@
           <button type="button" class="btn btn-outline-secondary analytics-type-none" data-type-none="1">清空</button>
         </div>
       </div>
-      <div class="form-text filter-type-hint">不勾选=四类全部；利润类指标（净销售额、毛利润、产品排行）只算销售 + 退货，拿货/退拿货只影响流水热力图与下方「单据流水」。</div>
+      <div class="form-text filter-type-hint">不勾选=四类全部；净销售额与产品排行只算销售 + 退货，拿货/退拿货只影响流水热力图与下方「单据流水」。</div>
     </div>
   </div>
   {% if filter_chips %}
@@ -84,16 +84,14 @@
 })();
 </script>
 {% if result %}
-<section id="analysisMetrics" class="analytics-summary" data-analytics-fragment aria-label="利润汇总">
+<section id="analysisMetrics" class="analytics-summary" data-analytics-fragment aria-label="金额汇总">
   <div class="analytics-card"><div class="label">净销售额</div><div class="value">¥{{ cents_to_yuan(result['summary']['net_sales_amount_cents']) }}</div></div>
   <div class="analytics-card"><div class="label">销售金额</div><div class="value">¥{{ cents_to_yuan(result['summary']['sales_amount_cents']) }}</div></div>
   <div class="analytics-card"><div class="label">退货金额</div><div class="value negative">−¥{{ cents_to_yuan(result['summary']['returns_amount_cents']) }}</div></div>
-  <div class="analytics-card"><div class="label">毛利润</div><div class="value">{% if result['summary']['gross_profit_cents'] is none %}不适用{% else %}¥{{ cents_to_yuan(result['summary']['gross_profit_cents']) }}{% endif %}</div></div>
-  <div class="analytics-card"><div class="label">毛利率</div><div class="value">{% if result['summary']['gross_margin_rate'] is not none %}{{ '%.1f'|format(result['summary']['gross_margin_rate'] * 100) }}%{% else %}不适用{% endif %}</div></div>
 </section>
 {% set flow = result['flow_totals'] %}
 <section id="documentFlow" class="analytics-panel" data-analytics-fragment aria-label="单据流水">
-  <div class="section-heading"><div><h2>单据流水</h2><p class="help">按当前时间范围与订单类型筛选统计；拿货与退拿货只在这里和流水热力图生效，不参与净销售额与毛利润。</p></div></div>
+  <div class="section-heading"><div><h2>单据流水</h2><p class="help">按当前时间范围与订单类型筛选统计；拿货与退拿货只在这里和流水热力图生效，不参与净销售额与产品排行。</p></div></div>
   <div class="analytics-flow-grid">
     <div class="analytics-card"><div class="label">拿货金额</div><div class="value">¥{{ cents_to_yuan(flow['purchase_amount_cents']) }}</div><div class="flow-meta">{{ flow['purchase_count'] }} 张拿货单</div></div>
     <div class="analytics-card"><div class="label">退拿货金额</div><div class="value">¥{{ cents_to_yuan(flow['purchase_return_amount_cents']) }}</div><div class="flow-meta">{{ flow['purchase_return_count'] }} 张退拿货单</div></div>
@@ -101,31 +99,9 @@
   </div>
 </section>
 {% macro view_fields(tab) %}{% for key,value in filters.items() %}{% if key == 'document_types' %}{% for item in value %}<input type="hidden" name="document_type" value="{{item}}">{% endfor %}{% elif key != 'metric' %}<input type="hidden" name="{{key}}" value="{{value if value is not none else ''}}">{% endif %}{% endfor %}<input type="hidden" name="tab" value="{{tab}}"><input type="hidden" name="date_mode" value="{{date_mode}}"><input type="hidden" name="year" value="{{year_value}}"><input type="hidden" name="start_month_raw" value="{{ '%04d-%02d'|format(start_year_value, start_month_value) }}"><input type="hidden" name="end_month_raw" value="{{ '%04d-%02d'|format(end_year_value, end_month_value) }}">{% endmacro %}
-{# 成本环形：从 12 时顺时针扫掠出现（mask 里白色弧生长），段间留缝、端头圆角；悬停时该段沿中角向外突出，数值浮标贴在环外缘。
-   命中层与视觉层解耦：`cost-ring-hit` 是永不移动的透明加厚弧，只负责鼠标判定；
-   `cost-ring-seg` 是可见弧，只负责外扩动画。两者都在同一段上，避免「段外移导致光标落空、状态抖动」。 #}
-{% macro cost_ring(ring, current) %}
-<div class="cost-ring-view" data-cost-view="ring">
-  <svg class="cost-ring" viewBox="{{ ring.view_min }} {{ ring.view_min }} {{ ring.view_size }} {{ ring.view_size }}" role="img" aria-label="{{ ring.total_label }} {{ ring.total_value }}：{% for seg in ring.segments %}{{ seg.label }} {{ seg.percent }}%{{ '，' if not loop.last else '' }}{% endfor %}">
-    <defs>
-      <pattern id="{{ ring.mask_id }}Hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" style="fill:var(--erp-surface-soft)"></rect><line x1="0" y1="0" x2="0" y2="8" style="stroke:var(--erp-border)" stroke-width="4"></line></pattern>
-      <mask id="{{ ring.mask_id }}"><rect x="{{ ring.view_min }}" y="{{ ring.view_min }}" width="{{ ring.view_size }}" height="{{ ring.view_size }}" fill="#000"></rect><circle class="cost-ring-sweep" cx="110" cy="110" r="78" fill="none" stroke="#fff" stroke-width="150" stroke-dasharray="{{ ring.sweep_len }}" stroke-dashoffset="{{ ring.sweep_len }}" transform="rotate(-90 110 110)" style="--sweep-len:{{ ring.sweep_len }}"></circle></mask>
-    </defs>
-    <g mask="url(#{{ ring.mask_id }})">
-      {% for seg in ring.segments %}{% set ring_fill = {'known':'var(--erp-heat-2)','unknown':'url(#' ~ ring.mask_id ~ 'Hatch)','cost':'var(--erp-heat-4)','profit':'var(--erp-primary)'}[seg.cls] %}<g class="cost-ring-seg {{ seg.cls }}" data-seg-label="{{ seg.label }}" data-seg-value="{{ seg.value_text }}" data-seg-percent="{{ seg.percent }}" style="--pop-x:{{ seg.pop_x }}px;--pop-y:{{ seg.pop_y }}px"><circle class="cost-ring-arc" cx="110" cy="110" r="78" pathLength="360" fill="none" stroke="{{ ring_fill }}" stroke-dasharray="{{ seg.length }} {{ seg.gap }}" stroke-dashoffset="{{ -seg.start }}" transform="rotate(-90 110 110)"></circle></g>{% endfor %}
-    </g>
-    <g class="cost-ring-hits">
-      {% for seg in ring.segments %}<circle class="cost-ring-hit" cx="110" cy="110" r="78" pathLength="360" fill="none" stroke="transparent" stroke-width="40" stroke-dasharray="{{ seg.length }} {{ seg.gap }}" stroke-dashoffset="{{ -seg.start }}" transform="rotate(-90 110 110)" data-seg-label="{{ seg.label }}"></circle>{% endfor %}
-    </g>
-  </svg>
-  <div class="cost-ring-center" aria-hidden="true"><span class="cost-ring-total">{{ ring.total_value }}</span><span class="cost-ring-total-label">{{ ring.total_label }}</span></div>
-  {% for seg in ring.segments %}
-  <span class="cost-ring-tip {{ seg.cls }}" data-seg-label="{{ seg.label }}" style="left:{{ seg.tip_left }}%;top:{{ seg.tip_top }}%"><strong>{{ seg.value_text }}</strong><em>{{ seg.percent }}%</em></span>
-  {% endfor %}
-</div>
-{% endmacro %}
+{# v15（2026-10-16）：成本诊断页签、成本覆盖/构成图与环形宏随成本链整体删除——本页只剩热力图与产品排行两个页签。 #}
 <section id="layeredAnalysis" class="analytics-panel" data-analytics-fragment aria-label="分层分析">
-  <div class="analysis-tabs" role="tablist" aria-label="辅助分析">{% for key,title in [('heat','流水热力图'),('rank','产品排行'),('health','成本诊断')] %}<button id="{{key}}Tab" type="button" role="tab" class="analysis-tab" data-tab="{{key}}" aria-selected="{{'true' if view.tab == key else 'false'}}" aria-controls="{{key}}Panel" tabindex="{{0 if view.tab == key else -1}}">{{title}}</button>{% endfor %}</div>
+  <div class="analysis-tabs" role="tablist" aria-label="辅助分析">{% for key,title in [('heat','流水热力图'),('rank','产品排行')] %}<button id="{{key}}Tab" type="button" role="tab" class="analysis-tab" data-tab="{{key}}" aria-selected="{{'true' if view.tab == key else 'false'}}" aria-controls="{{key}}Panel" tabindex="{{0 if view.tab == key else -1}}">{{title}}</button>{% endfor %}</div>
   <section id="heatPanel" role="tabpanel" aria-labelledby="heatTab" {% if view.tab != 'heat' %}hidden{% endif %}>
     <div class="section-heading"><div><h2 id="heatmapTitle">流水热力图</h2><p class="help">按当前时间范围与筛选条件渲染每个月的日历；格子只显示日期与颜色深浅，颜色按当天流水净额（销售+、退货−、拿货−、退拿货+）。悬停或点击日期查看当天数据。</p></div><form class="inline-field" method="get" data-view-form>{{view_fields('heat')}}<input type="hidden" name="sort" value="{{view.sort}}"><label for="heatMetric">指标</label><select id="heatMetric" name="metric" class="form-select"><option value="amount" {{'selected' if filters.metric == 'amount' else ''}}>流水净额</option><option value="quantity" {{'selected' if filters.metric == 'quantity' else ''}} {{'disabled' if not result.summary.quantity_comparable else ''}}>净销售数量</option></select><button class="btn btn-outline-secondary">显示</button></form></div>
     {% if not result.summary.quantity_comparable %}<p class="help">数量不可合计：当前范围包含不同单位，显示流水净额；按同单位商品筛选后可切换数量。</p>{% endif %}
@@ -140,74 +116,23 @@
         </div>
       </section>{% endfor %}
     </div>{% else %}<div class="empty-state">当前筛选范围暂无有效流水。</div>{% endif %}</div>
-    <aside id="heatDetail" class="heat-detail" aria-live="polite">{% if view.day_detail %}{% set cell=view.day_detail %}<h3 class="h6">{{cell.date}}</h3><p class="help">{{'有交易' if cell.has_transactions else '无交易'}} · {{'成本完整' if cell.cost_complete else '成本缺失'}}；当天数据不改变上方完整范围。</p><div class="profit-list"><div class="profit-line"><span>流水净额</span><strong>¥{{cents_to_yuan(cell.flow_net_cents)}}</strong></div><div class="profit-line"><span>销售额</span><strong>¥{{cents_to_yuan(cell.sales_amount_cents)}}</strong></div><div class="profit-line"><span>退货额</span><strong>¥{{cents_to_yuan(cell.returns_amount_cents)}}</strong></div><div class="profit-line"><span>净销售额</span><strong>¥{{cents_to_yuan(cell.net_amount_cents)}}</strong></div><div class="profit-line"><span>{{'历史净成本' if cell.cost_complete else '已知部分净成本'}}</span><strong>¥{{cents_to_yuan(cell.net_cost_cents)}}</strong></div><div class="profit-line"><span>未覆盖净销售额</span><strong>¥{{cents_to_yuan(cell.unknown_net_sales_cents)}}</strong></div></div>{% else %}选择日期查看流水净额、销售、退货与历史成本。{% endif %}</aside></div>
+    <aside id="heatDetail" class="heat-detail" aria-live="polite">{% if view.day_detail %}{% set cell=view.day_detail %}<h3 class="h6">{{cell.date}}</h3><p class="help">{{'有交易' if cell.has_transactions else '无交易'}}；当天数据不改变上方完整范围。</p><div class="detail-list"><div class="detail-line"><span>流水净额</span><strong>¥{{cents_to_yuan(cell.flow_net_cents)}}</strong></div><div class="detail-line"><span>销售额</span><strong>¥{{cents_to_yuan(cell.sales_amount_cents)}}</strong></div><div class="detail-line"><span>退货额</span><strong>¥{{cents_to_yuan(cell.returns_amount_cents)}}</strong></div><div class="detail-line"><span>净销售额</span><strong>¥{{cents_to_yuan(cell.net_amount_cents)}}</strong></div></div>{% else %}选择日期查看流水净额、销售与退货。{% endif %}</aside></div>
   </section>
   <section id="rankPanel" role="tabpanel" aria-labelledby="rankTab" {% if view.tab != 'rank' %}hidden{% endif %}>
-    <div class="section-heading"><div><h2>产品排行</h2><p class="help">柱高按同一榜内最大值等比缩放，柱顶显示实际数值（带单位）；数量榜按数量排序，全品类同一张榜，不按单位分组。毛利润排行排除 {{result.profit_excluded_products}} 个成本不完整商品。</p></div><form class="inline-field" id="rankingForm" method="get" data-view-form>{{view_fields('rank')}}<input type="hidden" name="sort" value="{{view.sort}}"><label for="rankingMode">排行</label><select id="rankingMode" name="rank_key" class="form-select">{% for key,title in [('hot_sales','热销商品'),('low_sales','低销量商品'),('net_returns','退货抵销 / 净退货'),('unsold','未销售商品'),('gross_profit','毛利润排行'),('inventory_alert','库存告急')] %}<option value="{{key}}" {{'selected' if view.rank_key == key else ''}}>{{title}}</option>{% endfor %}</select><label for="rankingSize">每组显示</label><select id="rankingSize" name="rank_size" class="form-select">{% for value,title in [('10','前 10 项'),('20','前 20 项'),('50','前 50 项'),('all','全部')] %}<option value="{{value}}" {{'selected' if view.rank_size == value else ''}}>{{title}}</option>{% endfor %}</select><button class="btn btn-outline-secondary" type="submit">显示</button></form></div>
-    {% for key,title in [('hot_sales','热销商品'),('low_sales','低销量商品'),('net_returns','退货抵销 / 净退货'),('unsold','未销售商品'),('gross_profit','毛利润排行'),('inventory_alert','库存告急')] %}<section data-rank-kind="{{key}}" {% if key != view.rank_key %}hidden{% endif %} {% if key == 'inventory_alert' %}id="inventoryAlert"{% endif %}>
+    <div class="section-heading"><div><h2>产品排行</h2><p class="help">柱高按同一榜内最大值等比缩放，柱顶显示实际数值（带单位）；数量榜按数量排序，全品类同一张榜，不按单位分组。</p></div><form class="inline-field" id="rankingForm" method="get" data-view-form>{{view_fields('rank')}}<input type="hidden" name="sort" value="{{view.sort}}"><label for="rankingMode">排行</label><select id="rankingMode" name="rank_key" class="form-select">{% for key,title in [('hot_sales','热销商品'),('low_sales','低销量商品'),('net_returns','退货抵销 / 净退货'),('unsold','未销售商品')] %}<option value="{{key}}" {{'selected' if view.rank_key == key else ''}}>{{title}}</option>{% endfor %}</select><label for="rankingSize">每组显示</label><select id="rankingSize" name="rank_size" class="form-select">{% for value,title in [('10','前 10 项'),('20','前 20 项'),('50','前 50 项'),('all','全部')] %}<option value="{{value}}" {{'selected' if view.rank_size == value else ''}}>{{title}}</option>{% endfor %}</select><button class="btn btn-outline-secondary" type="submit">显示</button></form></div>
+    {% for key,title in [('hot_sales','热销商品'),('low_sales','低销量商品'),('net_returns','退货抵销 / 净退货'),('unsold','未销售商品')] %}<section data-rank-kind="{{key}}" {% if key != view.rank_key %}hidden{% endif %}>
     {% for group in view.rank_groups[key] %}<article class="ranking-card" data-rank-unit="{{group.unit_key}}"><h3>{{title}}</h3>
       <div class="rank-columns" role="list">{% for row in group.rows %}<div class="rank-column {{'negative' if row.is_negative else ''}}" role="listitem" data-product-id="{{row.product_id}}"><span class="rank-bar-track"><span class="rank-bar-fill" style="height:{{row.bar_height_px}}px"></span><span class="rank-bar-value" style="bottom:{{row.bar_height_px}}px">{{row.value_text}}</span></span><span class="rank-bar-label" title="{{row.label}}">{{row.label}}</span></div>{% else %}<div class="empty-state">暂无数据</div>{% endfor %}</div>
       <div class="rank-pagination"><span class="help">符合条件 {{group.total_count}} 项{% if group.shown_count < group.total_count %} · 当前显示前 {{group.shown_count}} 项{% endif %}</span></div>
     </article>{% else %}<div class="empty-state">暂无符合条件商品。</div>{% endfor %}</section>{% endfor %}
   </section>
-  <section id="healthPanel" role="tabpanel" aria-labelledby="healthTab" {% if view.tab != 'health' %}hidden{% endif %}><h2 id="profitTitle">成本诊断</h2><p class="help">利润汇总使用交易保存时的历史快照，不以当前移动平均成本倒算；采购与退拿货不混入毛利润。条形与堆叠条都按当前筛选范围实时计算。</p>
-    {% if view.cost.has_sales %}
-    <div class="cost-view-switch" role="group" aria-label="成本图表类型">
-      <span class="cost-view-cap">图表</span>
-      <input type="radio" class="btn-check" name="cost_view_ui" id="costViewBar" value="bar" autocomplete="off" {{ 'checked' if view.cost_view != 'ring' else '' }}>
-      <label class="btn btn-outline-primary" for="costViewBar">堆叠条</label>
-      <input type="radio" class="btn-check" name="cost_view_ui" id="costViewRing" value="ring" autocomplete="off" {{ 'checked' if view.cost_view == 'ring' else '' }}>
-      <label class="btn btn-outline-primary" for="costViewRing">环形</label>
-      <form class="inline-field cost-view-form" method="get" data-view-form>{{view_fields('health')}}<input type="hidden" name="sort" value="{{view.sort}}"><input type="hidden" name="cost_view" value="{{view.cost_view}}"></form>
-    </div>
-    <div class="cost-charts" data-cost-view="bar" {% if view.cost_view == 'ring' %}hidden{% endif %}>
-      <article class="cost-chart">
-        <h3>成本覆盖</h3>
-        <p class="help">净销售额中，有多少行带着保存时的历史成本。</p>
-        <div class="cost-stack" role="img" aria-label="已知成本覆盖 {{view.cost.known_percent}}%，未覆盖 {{view.cost.unknown_percent}}%">
-          {% if view.cost.known_percent > 0 %}<span class="cost-stack-seg known" style="width:{{view.cost.known_percent}}%"><span class="cost-stack-text">已知 ¥{{cents_to_yuan(view.cost.known_cents)}}</span></span>{% endif %}
-          {% if view.cost.unknown_percent > 0 %}<span class="cost-stack-seg unknown" style="width:{{view.cost.unknown_percent}}%"><span class="cost-stack-text">未覆盖 ¥{{cents_to_yuan(view.cost.unknown_cents)}}</span></span>{% endif %}
-        </div>
-        <div class="cost-chart-legend"><span class="cost-legend-item"><i class="cost-swatch known"></i>已知成本 {{view.cost.known_percent}}%（¥{{cents_to_yuan(view.cost.known_cents)}}）</span><span class="cost-legend-item"><i class="cost-swatch unknown"></i>未覆盖 {{view.cost.unknown_percent}}%（¥{{cents_to_yuan(view.cost.unknown_cents)}}）</span></div>
-      </article>
-      <article class="cost-chart">
-        <h3>毛利构成（已知部分）</h3>
-        <p class="help">已知部分净销售额 = 历史净成本 + 已知部分毛利润。</p>
-        <div class="cost-stack" role="img" aria-label="历史净成本 {{view.cost.cost_percent}}%，已知毛利润 {{view.cost.profit_percent}}%">
-          {% if view.cost.cost_percent > 0 %}<span class="cost-stack-seg cost" style="width:{{view.cost.cost_percent}}%"><span class="cost-stack-text">成本 ¥{{cents_to_yuan(view.cost.net_cost_cents)}}</span></span>{% endif %}
-          {% if view.cost.profit_percent > 0 %}<span class="cost-stack-seg profit" style="width:{{view.cost.profit_percent}}%"><span class="cost-stack-text">毛利 ¥{{cents_to_yuan(view.cost.profit_cents)}}</span></span>{% endif %}
-        </div>
-        <div class="cost-chart-legend"><span class="cost-legend-item"><i class="cost-swatch cost"></i>历史净成本 ¥{{cents_to_yuan(view.cost.net_cost_cents)}}</span><span class="cost-legend-item"><i class="cost-swatch profit"></i>已知部分毛利润 ¥{{cents_to_yuan(view.cost.profit_cents)}}</span>{% if view.cost.margin_percent is not none %}<span class="cost-legend-item">已知部分毛利率 {{view.cost.margin_percent}}%</span>{% endif %}</div>
-      </article>
-    </div>
-    <div class="cost-charts cost-charts-ring" data-cost-view="ring" {% if view.cost_view != 'ring' %}hidden{% endif %}>
-      <article class="cost-chart">
-        <h3>成本覆盖</h3>
-        <p class="help">净销售额中，有多少行带着保存时的历史成本。</p>
-        {{ cost_ring(view.cost.coverage_ring, view.cost_view) }}
-        <div class="cost-chart-legend"><span class="cost-legend-item"><i class="cost-swatch known"></i>已知成本 {{view.cost.known_percent}}%（¥{{cents_to_yuan(view.cost.known_cents)}}）</span><span class="cost-legend-item"><i class="cost-swatch unknown"></i>未覆盖 {{view.cost.unknown_percent}}%（¥{{cents_to_yuan(view.cost.unknown_cents)}}）</span></div>
-      </article>
-      <article class="cost-chart">
-        <h3>毛利构成（已知部分）</h3>
-        <p class="help">已知部分净销售额 = 历史净成本 + 已知部分毛利润。</p>
-        {{ cost_ring(view.cost.composition_ring, view.cost_view) }}
-        <div class="cost-chart-legend"><span class="cost-legend-item"><i class="cost-swatch cost"></i>历史净成本 ¥{{cents_to_yuan(view.cost.net_cost_cents)}}</span><span class="cost-legend-item"><i class="cost-swatch profit"></i>已知部分毛利润 ¥{{cents_to_yuan(view.cost.profit_cents)}}</span>{% if view.cost.margin_percent is not none %}<span class="cost-legend-item">已知部分毛利率 {{view.cost.margin_percent}}%</span>{% endif %}</div>
-      </article>
-    </div>
-    <div class="cost-missing">
-      <div class="section-heading"><div><h3 class="section-title">成本缺失来源</h3><p class="help">按未覆盖净销售额从大到小排列{% if view.cost.missing_total_count > view.cost.missing|length %}，仅显示前 {{view.cost.missing|length}} 项（共 {{view.cost.missing_total_count}} 个商品）{% endif %}；补齐这些商品的成本后，全范围毛利润才可用。</p></div></div>
-      {% if view.cost.missing %}<div class="rank-columns cost-missing-columns" role="list">{% for row in view.cost.missing %}<div class="rank-column negative" role="listitem" data-product-id="{{row.product_id}}"><span class="rank-bar-track"><span class="rank-bar-fill" style="height:{{row.bar_height_px}}px"></span><span class="rank-bar-value" style="bottom:{{row.bar_height_px}}px">{{row.value_text}}</span></span><span class="rank-bar-label" title="{{row.label}}">{{row.label}}</span></div>{% endfor %}</div>{% else %}<div class="empty-state">当前范围内所有销售行都有历史成本。</div>{% endif %}
-    </div>
-    {% endif %}
-    <div id="costHealth" class="profit-list"><div class="profit-line"><span>净销售数量</span><strong>{% if result.summary.net_sales_quantity_3dp is none %}数量不可合计{% else %}{{format_quantity_3dp(result.summary.net_sales_quantity_3dp,result.summary.quantity_unit or '')}}{% endif %}</strong></div><div class="profit-line"><span>{{'历史净成本' if result.summary.cost_complete else '已知部分净成本'}}</span><strong>¥{{cents_to_yuan(result.summary.net_cost_cents)}}</strong></div><div class="profit-line"><span>成本覆盖</span><strong>已知 {{result.summary.known_line_count}} 行 / 缺失 {{result.summary.unknown_line_count}} 行</strong></div><div class="profit-line"><span>已知部分净销售额</span><strong>¥{{cents_to_yuan(result.summary.known_net_sales_cents)}}</strong></div><div class="profit-line"><span>未覆盖净销售额</span><strong>¥{{cents_to_yuan(result.summary.unknown_net_sales_cents)}}</strong></div><div class="profit-line"><span>已知部分毛利润</span><strong>¥{{cents_to_yuan(result.summary.known_gross_profit_cents)}}</strong></div><div class="profit-line"><span>已知部分毛利率</span><strong>{% if result.summary.known_gross_margin_rate is none %}不适用{% else %}{{'%.1f'|format(result.summary.known_gross_margin_rate * 100)}}%{% endif %}</strong></div><div class="profit-line"><span>当前库存状态</span><strong>当前状态，非历史回溯</strong></div></div>{% if not result.summary.cost_complete %}<p class="help">全范围毛利润与毛利率不适用；已知部分不能代表完整经营利润。</p>{% endif %}
-  </section>
 </section>
-<section id="productAnalysis" class="analytics-panel" data-analytics-fragment aria-labelledby="productAnalysisTitle"><div class="section-heading"><div><h2 id="productAnalysisTitle">具体产品分析与当前库存状态</h2><p class="help">完整筛选范围，按商品名称展开；排序不改变汇总。当前库存独立于历史日期和往来对象。</p></div><form class="inline-field" method="get" data-view-form>{{view_fields(view.tab)}}<input type="hidden" name="metric" value="{{filters.metric}}"><label for="analysisSort">排序</label><select id="analysisSort" name="sort" class="form-select">{% for key,title in [('amount','净销售额 ↓'),('profit','毛利润 ↓'),('stock','库存告急优先')] %}<option value="{{key}}" {{'selected' if view.sort == key else ''}}>{{title}}</option>{% endfor %}</select><button class="btn btn-outline-secondary">显示</button></form></div>
-  <div class="table-responsive analytics-product-table-shell"><table class="table table-sm analytics-product-table"><thead><tr><th>商品</th><th class="numeric-cell">净销售数量</th><th class="numeric-cell">净销售额</th><th class="numeric-cell">历史净成本</th><th class="numeric-cell">毛利润</th><th class="numeric-cell">毛利率</th><th class="numeric-cell">当前库存</th><th class="numeric-cell">当前移动平均成本</th><th class="numeric-cell">当前库存金额</th><th>启用状态</th><th>库存状态</th></tr></thead><tbody id="analysisRows">
-  {% for row in view.product_rows %}<tr data-product-id="{{row.product_id}}"><td>{{row.product_name}}</td><td class="numeric-cell">{{format_quantity_3dp(row.net_sales_quantity_3dp,row.unit)}} {{row.unit}}</td><td class="numeric-cell">¥{{cents_to_yuan(row.net_sales_amount_cents)}}</td><td class="numeric-cell">{% if row.cost_complete %}¥{{cents_to_yuan(row.net_cost_cents)}}{% elif row.known_line_count %}已知 ¥{{cents_to_yuan(row.net_cost_cents)}} · 缺 {{row.unknown_line_count}} 行{% else %}未知{% endif %}</td><td class="numeric-cell">{% if row.gross_profit_cents is none %}不适用{% else %}¥{{cents_to_yuan(row.gross_profit_cents)}}{% endif %}</td><td class="numeric-cell">{% if row.gross_margin_rate is none %}不适用{% else %}{{'%.1f'|format(row.gross_margin_rate * 100)}}%{% endif %}</td><td class="numeric-cell">{{format_quantity_3dp(row.current_quantity_3dp,row.unit)}}{% if row.current_quantity_3dp is not none %} {{row.unit}}{% endif %}</td><td class="numeric-cell">{% if not row.inventory_enabled or row.current_quantity_3dp is none %}—{% elif row.current_quantity_3dp == 0 %}无库存{% else %}{{micro_to_yuan(row.current_avg_cost_micro)}}{% endif %}</td><td class="numeric-cell">{{micro_to_yuan(row.current_inventory_cost_micro)}}</td><td>{{row.enable_status}}</td><td><span class="status-badge {{'danger' if row.inventory_alert else ''}}">{{row.inventory_status}}</span></td></tr>{% else %}<tr><td colspan="11" class="empty-state">暂无符合条件的具体产品。</td></tr>{% endfor %}</tbody></table></div>
+<section id="productAnalysis" class="analytics-panel" data-analytics-fragment aria-labelledby="productAnalysisTitle"><div class="section-heading"><div><h2 id="productAnalysisTitle">具体产品分析</h2><p class="help">完整筛选范围，按商品名称展开；排序不改变汇总。</p></div><form class="inline-field" method="get" data-view-form>{{view_fields(view.tab)}}<input type="hidden" name="metric" value="{{filters.metric}}"><button class="btn btn-outline-secondary">刷新</button></form></div>
+  <div class="table-responsive analytics-product-table-shell"><table class="table table-sm analytics-product-table"><thead><tr><th>商品</th><th class="numeric-cell">净销售数量</th><th class="numeric-cell">净销售额</th></tr></thead><tbody id="analysisRows">
+  {% for row in view.product_rows %}<tr data-product-id="{{row.product_id}}"><td>{{row.product_name}}</td><td class="numeric-cell">{{format_quantity_3dp(row.net_sales_quantity_3dp,row.unit)}} {{row.unit}}</td><td class="numeric-cell">¥{{cents_to_yuan(row.net_sales_amount_cents)}}</td></tr>{% else %}<tr><td colspan="3" class="empty-state">暂无符合条件的具体产品。</td></tr>{% endfor %}</tbody></table></div>
 </section>
 {% endif %}
 <script id="analysisProductOptions" type="application/json">{{products|tojson}}</script>
-<script type="module" src="{{url_for('static',filename='analytics-controls.mjs')}}?v=2"></script>
+<script type="module" src="{{url_for('static',filename='analytics-controls.mjs')}}?v=3"></script>
 </section>
 {% endblock %}

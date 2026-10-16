@@ -25,11 +25,6 @@
   <strong>核对用合计：</strong>客户欠款合计 <strong>¥{{ cents_to_yuan(totals.opening_balance_total_cents) }}</strong>
   （新增+更新行）。请与旧软件导出的应收合计对照，不一致请先排查再导入。
 </div>
-{% else %}
-<div class="alert alert-secondary">
-  <strong>核对用合计：</strong>商品期初库存金额合计 <strong>¥{{ cents_to_yuan(totals.initial_cost_total_cents) }}</strong>
-  （新增+更新行）。请与旧软件的库存金额对照，不一致请先排查再导入。
-</div>
 {% endif %}
 
 {% if preview.pending_completion %}
@@ -45,7 +40,7 @@
   <label class="form-label mb-0">同名处理：</label>
   <select class="form-select" name="same_name" style="max-width:220px">
     <option value="skip" selected>跳过（默认，不覆盖已有）</option>
-    <option value="update">更新（覆盖联系方式/期初等档案字段）</option>
+    <option value="update">更新（覆盖联系方式等档案字段）</option>
   </select>
   <button class="btn btn-primary">确认导入</button>
   <a class="btn btn-outline-secondary" href="{{ back_url }}">取消</a>

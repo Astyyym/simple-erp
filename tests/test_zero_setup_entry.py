@@ -133,10 +133,15 @@ def test_purchase_pages_show_zero_setup_hint_and_use_typeable_picker():
     （未命中不写 product_id、后端拒单，见 test_purchase_product_picker.py）。
     """
     client = _client()
-    for path, hint_id in (("/purchases/new", "purchaseZeroSetupHint"), ("/purchases/return/new", "purchaseReturnZeroSetupHint")):
+    for path, hint_id, hint_text in (
+        ("/purchases/new", "purchaseZeroSetupHint", "新商品需先到「商品管理」页建档后才能用于拿货单。"),
+        ("/purchases/return/new", "purchaseReturnZeroSetupHint", "新商品需先到「商品管理」页建档后才能用于退拿货单。"),
+    ):
         page = client.get(path).get_data(as_text=True)
         assert hint_id in page
-        assert "启用库存后才能入库" in page
+        # 决策变更（2026-10-16 ②/③）：库存系统删除后，提示不再说「启用库存后才能入库」，
+        # 改为「新商品需先到商品管理页建档」——零建档提示本身仍在，这正是本用例的核心。
+        assert hint_text in page
         # 与销售 / 退货同形态：手输框 + 候选浮层，不再是原生下拉。
         assert 'class="form-control form-control-sm picker-name-input"' in page
         assert 'class="suggest-list d-none product-suggestions"' in page

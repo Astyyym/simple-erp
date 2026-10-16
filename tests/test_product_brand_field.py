@@ -29,7 +29,6 @@ CREATE TABLE products (
     name TEXT NOT NULL,
     spec TEXT DEFAULT '',
     unit TEXT NOT NULL,
-    default_price_cents INTEGER NOT NULL CHECK(default_price_cents >= 0),
     notes TEXT DEFAULT '',
     is_active INTEGER NOT NULL DEFAULT 1,
     usage_count INTEGER NOT NULL DEFAULT 0,
@@ -39,8 +38,7 @@ CREATE TABLE products (
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TEXT,
     delete_reason TEXT DEFAULT '',
-    image_path TEXT NOT NULL DEFAULT '',
-    safety_stock_3dp INTEGER NOT NULL DEFAULT 0 CHECK(safety_stock_3dp >= 0)
+    image_path TEXT NOT NULL DEFAULT ''
 )
 """
 
@@ -78,7 +76,7 @@ def test_brand_column_migration_is_idempotent_and_keeps_legacy_rows_blank():
         conn.execute("DROP TABLE products")
         conn.execute(LEGACY_PRODUCTS_DDL)
         conn.execute(
-            "INSERT INTO products(name, spec, unit, default_price_cents, origin) VALUES ('旧库商品', 'DN20', '个', 1234, NULL)"
+            "INSERT INTO products(name, spec, unit, origin) VALUES ('旧库商品', 'DN20', '个', NULL)"
         )
     assert "brand" not in _columns("products")
 
@@ -146,8 +144,9 @@ def test_product_import_template_has_optional_brand_column():
     sheet = load_workbook(io.BytesIO(response.data), read_only=True).active
     # 决策变更（v14）：模板不再有「型号」列，品牌仍是可选列（紧随商品名称）。
     # 决策变更（2026-10-15）：默认价下线，模板不再有「默认价」列。
+    # 决策变更（2026-10-16 ⑥）：库存系统删除，模板不再有「期初数量 / 期初成本」列。
     assert list(next(sheet.iter_rows(values_only=True))) == [
-        "商品名称", "品牌", "单位", "期初数量", "期初成本（元）", "备注"
+        "商品名称", "品牌", "单位", "备注"
     ]
 
 
@@ -155,9 +154,9 @@ def test_product_import_with_brand_writes_it_and_blank_stays_null():
     init_db()
     # 决策变更（v14）：表头不再含「型号」列（型号直接写进商品名称）。
     csv = (
-        "商品名称,品牌,单位,默认价,期初数量,期初成本（元）,备注\n"
-        "有品牌商品,沪工,个,120,,\n"
-        "空品牌商品,,个,220,,\n"
+        "商品名称,品牌,单位,备注\n"
+        "有品牌商品,沪工,个,\n"
+        "空品牌商品,,个,\n"
     ).encode("utf-8-sig")
     client = create_app().test_client()
     preview = _upload(client, "/products/import", "p.csv", csv)
@@ -172,11 +171,13 @@ def test_product_import_with_brand_writes_it_and_blank_stays_null():
 def test_product_import_still_accepts_pre_brand_header():
     """E-2 之前的表头（无品牌列）必须继续可导入，品牌留空——不阻塞迁移。
 
-    决策变更（v14）：带「型号」列的旧表头已被整表头精确匹配挡下（明确报错），
-    这里改用**无型号、无品牌**的旧宽表头，仍验证「旧表头能导入、品牌留空」这一原意。
+    决策变更（v14）：带「型号」列的旧表头已被整表头精确匹配挡下（明确报错）。
+    决策变更（2026-10-16 ⑥）：含「期初数量 / 期初成本」列的旧宽表头同样被挡下。
+    仍登记、仍可导入的**无品牌**旧表头只剩最早的两列模板「商品名称,价格」——
+    这里改用它，继续验证「旧表头能导入、品牌留空、单位回落「个」」这一原意。
     """
     init_db()
-    csv = "商品名称,单位,默认价,期初数量,期初成本（元）,备注\n旧表头商品,个,120,,\n".encode("utf-8-sig")
+    csv = "商品名称,价格\n旧表头商品,120\n".encode("utf-8-sig")
     client = create_app().test_client()
     preview = _upload(client, "/products/import", "old.csv", csv)
     assert preview.status_code == 200
@@ -192,16 +193,15 @@ def test_product_import_update_branch_can_fill_brand():
     create_product("补品牌商品S1", "个")
     # 决策变更（v14）：身份 = 名称，型号写进名称；表头不再含「型号」列。
     # 决策变更（2026-10-15）：价格列已下线（导入不再写档案价）。
-    csv = "商品名称,品牌,单位,默认价,期初数量,期初成本（元）,备注\n补品牌商品S1,沪工,个,600,,\n".encode("utf-8-sig")
+    csv = "商品名称,品牌,单位,备注\n补品牌商品S1,沪工,个,\n".encode("utf-8-sig")
     client = create_app().test_client()
     preview = _upload(client, "/products/import", "p.csv", csv, same_name="update")
     assert "将更新：1" in preview.get_data(as_text=True)
     client.post("/products/import/confirm", data={"preview_json": _preview_json(preview), "same_name": "update"}, follow_redirects=True)
     with get_db() as conn:
-        row = conn.execute("SELECT brand, default_price_cents FROM products WHERE name='补品牌商品S1'").fetchone()
+        row = conn.execute("SELECT brand, unit FROM products WHERE name='补品牌商品S1'").fetchone()
     assert row["brand"] == "沪工"
-    # 更新分支同样不再写价格（列仍在、值恒 0）。
-    assert row["default_price_cents"] == 0
+    assert row["unit"] == "个"
 
 
 # --------------------------- 页面与导出 ---------------------------
@@ -222,7 +222,6 @@ def test_product_pages_show_optional_brand_controls_and_value():
     # 编辑页提交空品牌 → 真的清空（不是「不填就保留」）。
     client.post(f"/products/{pid}/edit", data={
         "name": "页面品牌商品", "brand": "", "unit": "个",
-        "default_price": "20", "safety_stock": "0",
     })
     assert _brand_of(pid) is None
 

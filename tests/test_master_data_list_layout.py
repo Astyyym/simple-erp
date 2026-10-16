@@ -187,10 +187,12 @@ def test_create_forms_keep_their_fields_and_action_endpoints():
     assert 'action="/products/create"' in create
     # 决策变更（v14）：商品身份 = 单一名称，型号输入（spec）已删除。
     # 决策变更（2026-10-15）：默认价下线，新增表单不再有价格输入。
-    for name in ("name", "brand", "unit", "safety_stock"):
+    # 决策变更（2026-10-16 ⑦）：安全库存整体下线（UI + 代码 + 列），新增表单不再有该项。
+    for name in ("name", "brand", "unit"):
         assert f'name="{name}"' in create, name
     assert 'name="spec"' not in create, "型号输入应已删除"
     assert 'name="default_price"' not in create, "默认价输入应已删除"
+    assert 'name="safety_stock"' not in create, "安全库存输入应已删除（决策 ⑦）"
     assert 'name="name"' in create and "required" in create
 
     customers = _html("/customers/")

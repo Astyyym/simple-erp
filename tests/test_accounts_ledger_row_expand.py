@@ -15,7 +15,7 @@ from __future__ import annotations
 from erp import create_app
 from erp.db import get_db, init_db
 from erp.services.accounting import add_payment, create_customer, create_order_from_typed_rows, create_product
-from erp.services.inventory import create_purchase_order, initialize_product
+from erp.services.purchases import create_purchase_order
 from erp.services import purchase_returns as purchase_returns_service
 
 ITEM_SOURCES = ("order", "purchase", "purchase_return")
@@ -26,7 +26,7 @@ def _seed():
     init_db()
     customer_id = create_customer("流水展开虚构客户")
     product_id = create_product("流水展开虚构商品", "个")
-    initialize_product(product_id, "20", "20", "2026-10-01", "期初", "ledger-expand-init")
+
 
     sale_id = create_order_from_typed_rows(
         customer_id, "MD202610140001",

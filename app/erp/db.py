@@ -7,12 +7,24 @@ from datetime import datetime, timedelta
 
 from .config import project_path
 
-CURRENT_SCHEMA_VERSION = 14
+CURRENT_SCHEMA_VERSION = 15
 
 # Phase 2（v14）：商品身份 = 单一名称。这四张表都带 `spec` 快照列，迁移时整表重建。
 PRODUCT_SPEC_TABLES = ("products", "order_items", "purchase_order_items", "purchase_return_items")
 # 合并公式必须与 tools/precheck_product_identity_merge.py 逐字一致。
 MERGED_PRODUCT_NAME_SQL = "TRIM(COALESCE(name, '')) || TRIM(COALESCE(spec, ''))"
+
+# v15（2026-10-16 用户决策 ③）：删除库存系统。三张库存表物理删除；
+# 下面四张表按列剥离（SQLite 不能 ALTER DROP COLUMN，只能整表重建）。
+DROP_INVENTORY_TABLES = ("inventory_postings", "inventory_initializations", "product_inventory_state")
+DROP_INVENTORY_COLUMNS: dict[str, tuple[str, ...]] = {
+    "products": ("safety_stock_3dp", "default_price_cents"),
+    "order_items": ("unit_cost_micro", "cost_total_micro", "cost_source"),
+    "purchase_return_items": ("unit_cost_micro", "cost_total_micro", "posting_seq"),
+    "purchase_return_orders": ("posted_once",),
+}
+# 版本行 notes：写进 `schema_version.notes` 说明这一版做了什么（只作留痕，无逻辑依赖）。
+SCHEMA_VERSION_NOTES = "v15: 删除库存系统（3 张库存表 + 9 个成本/安全库存列）"
 
 # Correlated NOT EXISTS is NULL-safe for historical unbound purchases.
 CUSTOMER_REFERENCE_GUARD_SQL = " AND ".join(
@@ -46,6 +58,10 @@ def init_db() -> None:
     # v14：spec 并进 name（必须在 apply_schema 之前——SCHEMA_SQL 已无 spec 列，
     # 老库要先被重建，否则两套 schema 分叉）。内部会先预检、再自动备份。
     migrate_merge_product_spec_into_name()
+    # v15：删除库存系统（三张库存表 + 九列）。同样必须在 apply_schema 之前——
+    # SCHEMA_SQL 已无这些表与列，老库要先被重建，否则两套 schema 分叉。
+    # 内部会先自动整库备份（pre_drop_inventory）。
+    migrate_drop_inventory_system()
     with get_db() as conn:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
@@ -53,16 +69,12 @@ def init_db() -> None:
         ensure_soft_delete_columns(conn)
         ensure_order_type_column(conn)
         ensure_product_image_column(conn)
-        ensure_product_inventory_fields(conn)
         ensure_product_identity_constraint(conn)
         ensure_purchase_order_fields(conn)
-        ensure_order_item_cost_fields(conn)
-        ensure_order_item_cost_source(conn)
         ensure_return_relation_fields(conn)
         ensure_order_submission_fields(conn)
         ensure_master_data_origin_fields(conn)
         ensure_product_brand_field(conn)
-        ensure_initialization_cost_source(conn)
         ensure_customer_pinyin_field(conn)
         ensure_pinyin_full_fields(conn)
         backfill_product_pinyin_initials(conn)
@@ -90,7 +102,7 @@ def apply_schema(conn: sqlite3.Connection) -> None:
     if existing is None:
         conn.execute("INSERT INTO schema_version(version, notes) VALUES (?, ?)", (CURRENT_SCHEMA_VERSION, "initial schema"))
     elif existing["version"] < CURRENT_SCHEMA_VERSION:
-        conn.execute("INSERT INTO schema_version(version, notes) VALUES (?, ?)", (CURRENT_SCHEMA_VERSION, "versioned four-source reconciliation snapshots"))
+        conn.execute("INSERT INTO schema_version(version, notes) VALUES (?, ?)", (CURRENT_SCHEMA_VERSION, SCHEMA_VERSION_NOTES))
 
 
 def ensure_reconciliation_scope_version(conn: sqlite3.Connection) -> None:
@@ -167,21 +179,6 @@ def ensure_product_brand_field(conn: sqlite3.Connection) -> None:
     """
     if "brand" not in _columns(conn, "products"):
         conn.execute("ALTER TABLE products ADD COLUMN brand TEXT")
-
-
-def ensure_initialization_cost_source(conn: sqlite3.Connection) -> None:
-    """C-1：期初成本来源结构化表达。
-
-    取值 `known`（已知成本）/`estimated`（用户确认估算）/`zero`（明确零成本）。
-    旧数据留空，读取时按「未标注」处理，不猜。
-    """
-    if "cost_source" not in _columns(conn, "inventory_initializations"):
-        conn.execute("ALTER TABLE inventory_initializations ADD COLUMN cost_source TEXT NOT NULL DEFAULT ''")
-
-
-def ensure_product_inventory_fields(conn: sqlite3.Connection) -> None:
-    if "safety_stock_3dp" not in _columns(conn, "products"):
-        conn.execute("ALTER TABLE products ADD COLUMN safety_stock_3dp INTEGER NOT NULL DEFAULT 0 CHECK(safety_stock_3dp >= 0)")
 
 
 def backfill_product_pinyin_initials(conn: sqlite3.Connection) -> None:
@@ -304,26 +301,6 @@ def ensure_purchase_order_fields(conn: sqlite3.Connection) -> None:
     if "customer_name" not in cols:
         conn.execute("ALTER TABLE purchase_orders ADD COLUMN customer_name TEXT NOT NULL DEFAULT ''")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_purchase_orders_customer ON purchase_orders(customer_id)")
-
-
-def ensure_order_item_cost_fields(conn: sqlite3.Connection) -> None:
-    """Add nullable sale-time cost snapshots without rewriting legacy orders."""
-    cols = _columns(conn, "order_items")
-    if "unit_cost_micro" not in cols:
-        conn.execute("ALTER TABLE order_items ADD COLUMN unit_cost_micro INTEGER")
-    if "cost_total_micro" not in cols:
-        conn.execute("ALTER TABLE order_items ADD COLUMN cost_total_micro INTEGER")
-
-
-def ensure_order_item_cost_source(conn: sqlite3.Connection) -> None:
-    """标记成本来源：NULL=销售时真实快照（不可改），'backfill'=人工补录（可再修正）。
-
-    幂等加列，**不推进** `CURRENT_SCHEMA_VERSION`——与 `ensure_master_data_origin_fields`、
-    `ensure_product_brand_field`、`ensure_initialization_cost_source` 同款惯例。
-    旧数据一律留空，即按真实快照处理。
-    """
-    if "cost_source" not in _columns(conn, "order_items"):
-        conn.execute("ALTER TABLE order_items ADD COLUMN cost_source TEXT")
 
 
 def ensure_return_relation_fields(conn: sqlite3.Connection) -> None:
@@ -566,8 +543,13 @@ def migrate_merge_product_spec_into_name() -> None:
             conn.execute("BEGIN IMMEDIATE")
             for table, ddl in table_sql.items():
                 new_table = f"{table}_spec_merged_new"
+                # 表名可能带引号：`ALTER TABLE ... RENAME TO` 之后 SQLite 会把新表名写成
+                # `CREATE TABLE "x" (...)`（v13 的解耦重建就 rename 过两张退拿货表）。
+                # 原正则只认不带引号的名字，会在这种库上抛「无法重命名建表语句里的表名」中止迁移。
                 new_ddl, replaced = re.subn(
-                    r"CREATE TABLE\s+(?:IF NOT EXISTS\s+)?" + re.escape(table) + r"\b",
+                    r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[\"'`\[]?"
+                    + re.escape(table)
+                    + r"[\"'`\]]?(?!\w)",
                     f"CREATE TABLE {new_table}",
                     _strip_spec_column_from_table_ddl(ddl),
                     count=1,
@@ -602,6 +584,216 @@ def migrate_merge_product_spec_into_name() -> None:
             if violations:
                 raise RuntimeError(
                     f"商品身份合并迁移后外键校验失败，已回滚: {[tuple(row) for row in violations[:3]]}"
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.execute("PRAGMA legacy_alter_table=OFF")
+            conn.execute("PRAGMA foreign_keys=ON")
+    finally:
+        conn.close()
+
+
+def _split_table_ddl(ddl: str) -> tuple[str, str, str]:
+    """把建表语句切成 (头含左括号, 括号内正文, 尾含右括号)。括号配对按深度找，不靠 rindex。"""
+    start = ddl.index("(")
+    depth = 0
+    quote: str | None = None
+    for index in range(start, len(ddl)):
+        char = ddl[index]
+        if quote is not None:
+            if char == quote:
+                quote = None
+            continue
+        if char in ("'", '"', "`"):
+            quote = char
+            continue
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return ddl[: start + 1], ddl[start + 1 : index], ddl[index:]
+    raise RuntimeError(f"建表语句括号不配对，迁移中止：{ddl}")
+
+
+def _split_top_level_commas(body: str) -> list[str]:
+    """把建表语句括号内的内容按**顶层**逗号切分（括号内与字符串字面量内的逗号不算）。"""
+    parts: list[str] = []
+    current: list[str] = []
+    depth = 0
+    quote: str | None = None
+    for char in body:
+        if quote is not None:
+            current.append(char)
+            if char == quote:
+                quote = None
+            continue
+        if char in ("'", '"', "`"):
+            quote = char
+            current.append(char)
+            continue
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        if char == "," and depth == 0:
+            parts.append("".join(current))
+            current = []
+            continue
+        current.append(char)
+    parts.append("".join(current))
+    return parts
+
+
+def _strip_column_lines_from_table_ddl(ddl: str, columns: tuple[str, ...]) -> str:
+    """从库内建表语句里删掉指定列（SQLite 不能 ALTER DROP COLUMN）。
+
+    **实现不是按行删**（尽管函数名沿用了计划里的名字）：本机实测
+    `ALTER TABLE ADD COLUMN` 会把新列追加到建表语句的**收尾行**上——
+
+        '...\\n, safety_stock_3dp INTEGER NOT NULL DEFAULT 0 CHECK(...))'
+
+    v3.x 老库升级上来的 `products.safety_stock_3dp`、`order_items` 的三个成本列
+    都是这个形态，按行删**定位不到**（会直接抛错中止迁移）。所以改成按**顶层逗号**
+    切出每个列/约束定义再挑，两种真实形态都能处理；末列被删也不会留悬空逗号
+    （逗号是分隔符，不属任何一段）。
+
+    每一列都必须被唯一定位到，否则抛错中止——不猜、不静默跳过。
+    """
+    wanted = {column.lower() for column in columns}
+    head, body, tail = _split_table_ddl(ddl)
+    kept: list[str] = []
+    removed: set[str] = set()
+    for part in _split_top_level_commas(body):
+        match = re.match(r"\s*([A-Za-z_][A-Za-z0-9_]*)\s", part)
+        name = match.group(1).lower() if match else None
+        if name is not None and name in wanted:
+            removed.add(name)
+            continue
+        kept.append(part)
+    missing = wanted - removed
+    if missing:
+        raise RuntimeError(f"无法从建表语句里定位列 {sorted(missing)}，迁移中止：{ddl}")
+    return head + ",".join(kept) + tail
+
+
+def migrate_drop_inventory_system() -> None:
+    """v15：删除库存系统（三张库存表 + 九列），拿货/退拿货单据与对账保留。
+
+    用户 2026-10-16 决策 ③：**物理删表删列**。老库不可逆——删完后 v3.15.0 及更早程序
+    打不开该库（回退唯一路径 = 迁移前自动生成的 `pre_drop_inventory` 整库备份）。
+
+    骨架同 v14 `migrate_merge_product_spec_into_name`：
+    存在性检查 → 版本门（`version >= CURRENT` 直接返回）→ 「无可删内容」即返回（幂等）
+    → **写库前自动整库备份** → 独立连接 + `foreign_keys=OFF` + `legacy_alter_table=ON`
+    → 按库内原 DDL 重建 4 张表（只剥离**实际存在**的列）→ DROP 3 张库存表
+    → 重建索引 → 恢复 `sqlite_sequence` 高位 → `PRAGMA foreign_key_check` → 失败整笔回滚。
+
+    两条顺序硬约束：
+    - `purchase_return_items.posting_seq` 引用 `inventory_postings(posting_seq)`，
+      必须先重建 purchase_return_items 去掉该列，再 DROP inventory_postings。
+    - 「只剥离实际存在的列」：升级链上存在只带一部分列的中间形态
+      （`tests/fixtures/legacy_schema_v2.sql` 的 products 没有 `safety_stock_3dp`，
+      order_items 也没有成本三列），不能假设九列全在。
+    """
+    path = db_path()
+    if not path.exists():
+        return
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    try:
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='products'").fetchone() is None:
+            return
+        # 与 migrate_purchase_return_decoupling 同规矩：不对更新版本程序建的库动 DDL。
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_version'").fetchone() is not None:
+            version = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
+            if version is not None and version >= CURRENT_SCHEMA_VERSION:
+                return
+
+        existing_tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        tables_to_drop = [table for table in DROP_INVENTORY_TABLES if table in existing_tables]
+
+        table_sql: dict[str, str] = {}
+        columns_to_strip: dict[str, tuple[str, ...]] = {}
+        for table, columns in DROP_INVENTORY_COLUMNS.items():
+            row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()
+            if row is None or not row["sql"]:
+                continue
+            present = {column[1] for column in conn.execute(f"PRAGMA table_info({table})")}
+            hit = tuple(column for column in columns if column in present)
+            if not hit:
+                continue
+            table_sql[table] = row["sql"]
+            columns_to_strip[table] = hit
+        if not tables_to_drop and not table_sql:
+            return  # 已经是 v15 形态：幂等返回，不做备份
+
+        # 只收「要重建的表」的索引；被 DROP 的表（如 idx_inventory_postings_product_seq）不能重建。
+        index_sql = [
+            (name, sql)
+            for table in table_sql
+            for name, sql in conn.execute(
+                "SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL",
+                (table,),
+            )
+        ]
+        sequences: dict[str, int] = {}
+        try:
+            for table in table_sql:
+                row = conn.execute("SELECT seq FROM sqlite_sequence WHERE name=?", (table,)).fetchone()
+                if row is not None:
+                    sequences[table] = int(row[0])
+        except sqlite3.OperationalError:
+            sequences = {}
+
+        # 从这里开始才是写库：先整库快照（erp.db + config.json + 商品图片 + 旧账存档）。
+        from erp.utils.backup import create_backup  # 延迟导入避免与 utils.backup 循环引用
+
+        create_backup("pre_drop_inventory")
+
+        conn.execute("PRAGMA foreign_keys=OFF")
+        conn.execute("PRAGMA legacy_alter_table=ON")
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            for table, ddl in table_sql.items():
+                new_table = f"{table}_drop_inventory_new"
+                # 表名可能是带引号的：SQLite 在 `ALTER TABLE ... RENAME TO` 之后会把新表名
+                # 写成 `CREATE TABLE "products" (...)`（实测，与 legacy_alter_table 无关）。
+                # v14 的 spec 重建已经 rename 过一次，所以这里必须兼容引号形态。
+                new_ddl, replaced = re.subn(
+                    r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[\"'`\[]?"
+                    + re.escape(table)
+                    + r"[\"'`\]]?(?!\w)",
+                    f"CREATE TABLE {new_table}",
+                    _strip_column_lines_from_table_ddl(ddl, columns_to_strip[table]),
+                    count=1,
+                )
+                if not replaced:
+                    raise RuntimeError(f"无法重命名建表语句里的表名，迁移中止：{table}")
+                kept = [
+                    column[1]
+                    for column in conn.execute(f"PRAGMA table_info({table})")
+                    if column[1] not in columns_to_strip[table]
+                ]
+                quoted = ", ".join(f'"{column}"' for column in kept)
+                conn.execute(f"DROP TABLE IF EXISTS {new_table}")
+                conn.execute(new_ddl)
+                conn.execute(f"INSERT INTO {new_table} ({quoted}) SELECT {quoted} FROM {table}")
+                conn.execute(f"DROP TABLE {table}")
+                conn.execute(f"ALTER TABLE {new_table} RENAME TO {table}")
+            for table in tables_to_drop:
+                conn.execute(f"DROP TABLE IF EXISTS {table}")
+            for _name, sql in index_sql:
+                conn.execute(sql)
+            for table, seq in sequences.items():
+                conn.execute("UPDATE sqlite_sequence SET seq=MAX(seq,?) WHERE name=?", (seq, table))
+            violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+            if violations:
+                raise RuntimeError(
+                    f"删除库存系统迁移后外键校验失败，已回滚: {[tuple(row) for row in violations[:3]]}"
                 )
             conn.commit()
         except Exception:
@@ -657,9 +849,9 @@ def _live_document_reference(conn, kind: str, item_id: int) -> str | None:
 
 
 _ORDER_PURGE_TABLES = {
-    'order': ('orders', 'order_items', 'order_id', ('sale', 'return')),
-    'purchase_order': ('purchase_orders', 'purchase_order_items', 'purchase_order_id', ('purchase',)),
-    'purchase_return': ('purchase_return_orders', 'purchase_return_items', 'purchase_return_id', ('purchase_return',)),
+    'order': ('orders', 'order_items', 'order_id'),
+    'purchase_order': ('purchase_orders', 'purchase_order_items', 'purchase_order_id'),
+    'purchase_return': ('purchase_return_orders', 'purchase_return_items', 'purchase_return_id'),
 }
 
 
@@ -687,12 +879,12 @@ def physically_deletable_order(conn, kind: str, item_id: int) -> bool:
 
 
 def purge_order_item(conn, kind: str, item_id: int) -> None:
-    """永久删除一张回收站单据：明细 + 它自己的库存流水 + 单据本体。
+    """永久删除一张回收站单据：明细 + 单据本体。
 
-    用户口径（2026-10-07）：单据不要了就该连流水一起清掉，不留孤儿记录。
-    删除顺序受外键约束：先明细（`purchase_return_items.posting_seq` 指向流水），
-    再流水，最后单据本体。`order_items` 因 `order_id ... ON DELETE CASCADE` 本可自动级联，
+    用户口径（2026-10-07）：单据不要了就该连明细一起清掉，不留孤儿记录。
+    `order_items` 因 `order_id ... ON DELETE CASCADE` 本可自动级联，
     但显式删除让意图更清楚、也不依赖级联行为。
+    （2026-10-16 v15：库存系统已删，不再有「它自己的库存流水」这一步。）
 
     还有一层约束：销售/退货的明细行之间用 `source_item_id` 自引用（退货明细指向销售明细）。
     若被引用的那张单还在库里（哪怕也已删除），删它会撞外键——这时转成可读的 ValueError，
@@ -701,18 +893,10 @@ def purge_order_item(conn, kind: str, item_id: int) -> None:
     blocker = purge_order_blocker(conn, kind, item_id)
     if blocker is not None:
         raise ValueError(blocker)
-    table, items_table, owner, types = _ORDER_PURGE_TABLES[kind]
+    table, items_table, owner = _ORDER_PURGE_TABLES[kind]
     try:
-        # 1) 明细必须先删：purchase_return_items.posting_seq 引用 inventory_postings。
+        # 先删明细，再删单据本体。
         conn.execute(f'DELETE FROM {items_table} WHERE {owner}=?', (item_id,))
-        # 2) 再删它自己的库存流水（含 :void 反向流水）。
-        namespaces = types + tuple(t + '_void' for t in types)
-        placeholders = ','.join('?' for _ in namespaces)
-        conn.execute(
-            f'DELETE FROM inventory_postings WHERE source_type IN ({placeholders}) AND (source_id=? OR source_id LIKE ?)',
-            (*namespaces, str(item_id), f'{item_id}:%'),
-        )
-        # 3) 最后删单据本体。
         conn.execute(f'DELETE FROM {table} WHERE id=?', (item_id,))
     except sqlite3.IntegrityError:
         raise PurgeBlockedByRecycledReference("还有回收站记录引用它的明细，请先清理引用它的记录") from None
@@ -744,10 +928,11 @@ def purge_product_blocker(conn, item_id: int) -> str | None:
 
 
 def purge_product_item(conn, item_id: int) -> None:
-    """永久删除商品：连带它的库存状态/期初/流水与客户价，历史单据保留名称快照。
+    """永久删除商品：连带它的客户价，历史单据保留名称快照。
 
     只有在「没有未删除单据引用它」时才允许，因此这里的引用都属于已删除单据，
     把 `product_id` 置空不会影响任何活单据的展示（明细自带商品名/单位/价格快照）。
+    （2026-10-16 v15：库存状态/期初/流水三张表已随库存系统删除。）
     """
     blocker = purge_product_blocker(conn, item_id)
     if blocker is not None:
@@ -756,9 +941,6 @@ def purge_product_item(conn, item_id: int) -> None:
     conn.execute('UPDATE purchase_order_items SET product_id=NULL WHERE product_id=?', (item_id,))
     conn.execute('UPDATE purchase_return_items SET product_id=NULL WHERE product_id=?', (item_id,))
     conn.execute('DELETE FROM customer_prices WHERE product_id=?', (item_id,))
-    conn.execute('DELETE FROM inventory_postings WHERE product_id=?', (item_id,))
-    conn.execute('DELETE FROM product_inventory_state WHERE product_id=?', (item_id,))
-    conn.execute('DELETE FROM inventory_initializations WHERE product_id=?', (item_id,))
     conn.execute('DELETE FROM products WHERE id=?', (item_id,))
 
 
@@ -848,7 +1030,6 @@ CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     unit TEXT NOT NULL,
-    default_price_cents INTEGER NOT NULL CHECK(default_price_cents >= 0),
     notes TEXT DEFAULT '',
     is_active INTEGER NOT NULL DEFAULT 1,
     usage_count INTEGER NOT NULL DEFAULT 0,
@@ -860,46 +1041,8 @@ CREATE TABLE IF NOT EXISTS products (
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TEXT,
     delete_reason TEXT DEFAULT '',
-    image_path TEXT NOT NULL DEFAULT '',
-    safety_stock_3dp INTEGER NOT NULL DEFAULT 0 CHECK(safety_stock_3dp >= 0)
+    image_path TEXT NOT NULL DEFAULT ''
 );
-CREATE TABLE IF NOT EXISTS product_inventory_state (
-    product_id INTEGER PRIMARY KEY REFERENCES products(id),
-    enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0, 1)),
-    quantity_3dp INTEGER NOT NULL DEFAULT 0 CHECK(quantity_3dp >= 0),
-    cost_total_micro INTEGER NOT NULL DEFAULT 0 CHECK(cost_total_micro >= 0),
-    avg_cost_micro INTEGER,
-    version INTEGER NOT NULL DEFAULT 0 CHECK(version >= 0),
-    last_posting_seq INTEGER,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE TABLE IF NOT EXISTS inventory_initializations (
-    product_id INTEGER PRIMARY KEY REFERENCES products(id),
-    quantity_3dp INTEGER NOT NULL CHECK(quantity_3dp >= 0),
-    cost_total_micro INTEGER NOT NULL CHECK(cost_total_micro >= 0),
-    business_date TEXT NOT NULL,
-    source TEXT NOT NULL DEFAULT '',
-    cost_source TEXT NOT NULL DEFAULT '',
-    request_key TEXT NOT NULL UNIQUE,
-    payload_hash TEXT NOT NULL,
-    revision_no INTEGER NOT NULL DEFAULT 0 CHECK(revision_no >= 0),
-    locked INTEGER NOT NULL DEFAULT 0 CHECK(locked IN (0, 1)),
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE TABLE IF NOT EXISTS inventory_postings (
-    posting_seq INTEGER PRIMARY KEY AUTOINCREMENT,
-    product_id INTEGER NOT NULL REFERENCES products(id),
-    source_type TEXT NOT NULL,
-    source_id TEXT NOT NULL,
-    quantity_delta_3dp INTEGER NOT NULL,
-    cost_delta_micro INTEGER NOT NULL,
-    business_date TEXT NOT NULL,
-    posted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(source_type, source_id)
-);
-CREATE INDEX IF NOT EXISTS idx_inventory_postings_product_seq
-    ON inventory_postings(product_id, posting_seq);
 CREATE TABLE IF NOT EXISTS purchase_orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     customer_id INTEGER REFERENCES customers(id),
@@ -942,7 +1085,6 @@ CREATE TABLE IF NOT EXISTS purchase_return_orders (
     request_key TEXT NOT NULL UNIQUE,
     creation_payload_hash TEXT NOT NULL,
     version INTEGER NOT NULL DEFAULT 0 CHECK(version >= 0),
-    posted_once INTEGER NOT NULL DEFAULT 0 CHECK(posted_once IN (0,1)),
     void_reason TEXT NOT NULL DEFAULT '',
     deleted_at TEXT,
     delete_reason TEXT NOT NULL DEFAULT '',
@@ -976,10 +1118,7 @@ CREATE TABLE IF NOT EXISTS purchase_return_items (
     unit TEXT NOT NULL,
     quantity_3dp INTEGER NOT NULL CHECK(quantity_3dp > 0),
     unit_price_cents INTEGER NOT NULL CHECK(unit_price_cents >= 0),
-    subtotal_cents INTEGER NOT NULL CHECK(subtotal_cents >= 0),
-    unit_cost_micro INTEGER,
-    cost_total_micro INTEGER CHECK(cost_total_micro >= 0),
-    posting_seq INTEGER REFERENCES inventory_postings(posting_seq)
+    subtotal_cents INTEGER NOT NULL CHECK(subtotal_cents >= 0)
 );
 CREATE INDEX IF NOT EXISTS idx_purchase_return_source ON purchase_return_orders(source_order_id);
 CREATE INDEX IF NOT EXISTS idx_purchase_return_customer ON purchase_return_orders(customer_id);
@@ -1039,9 +1178,6 @@ CREATE TABLE IF NOT EXISTS order_items (
     quantity TEXT NOT NULL,
     unit_price_cents INTEGER NOT NULL CHECK(unit_price_cents >= 0),
     subtotal_cents INTEGER NOT NULL CHECK(subtotal_cents >= 0),
-    unit_cost_micro INTEGER,
-    cost_total_micro INTEGER,
-    cost_source TEXT,
     source_item_id INTEGER REFERENCES order_items(id)
 );
 CREATE TABLE IF NOT EXISTS payments (

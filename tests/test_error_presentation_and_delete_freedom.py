@@ -9,12 +9,12 @@ from erp.services.accounting import (
     create_product,
     customer_balance_cents,
 )
-from erp.services.inventory import create_purchase_order, initialize_product
+from erp.services.purchases import create_purchase_order
 
 
 def _product(spec="ERR"):
     product_id = create_product("错误呈现商品" + spec, "个")
-    initialize_product(product_id, "10", "10", "2026-10-01", "系统上线期初", f"err-init-{spec}", confirm_zero=False)
+
     return product_id
 
 

@@ -8,12 +8,12 @@ test('view changes preserve the applied scope and blank date boundaries', async 
   const {withViewState} = await import(moduleUrl);
   // 决策变更（v14）：型号筛选整条删除 —— 应用范围的 URL 不再携带 spec/__unfilled__ 哨兵。
   const before = 'http://127.0.0.1:5000/analytics/?start_date=&end_date=&customer_id=7&product_name=%E6%B6%88%E9%98%B2%26A&metric=amount&tab=rank&rank_page=2';
-  const after = new URL(withViewState(before, {metric:'quantity', sort:'profit', rank_page:null, tab:'health'}));
+  const after = new URL(withViewState(before, {metric:'quantity', sort:'amount', rank_page:null, tab:'heat'}));
   for (const key of ['start_date','end_date','customer_id','product_name']) {
     assert.equal(after.searchParams.get(key), new URL(before).searchParams.get(key));
   }
   assert.equal(after.searchParams.get('metric'),'quantity');
-  assert.equal(after.searchParams.get('tab'),'health');
+  assert.equal(after.searchParams.get('tab'),'heat');
   assert.equal(after.searchParams.has('rank_page'),false);
   assert.throws(() => withViewState(before,{customer_id:9}), /展示/);
 });
@@ -34,14 +34,6 @@ test('rank_size is an allowed view key so 每组显示 can refresh without reloa
   const after = new URL(withViewState(base, {rank_key:'low_sales', rank_size:'50'}));
   assert.equal(after.searchParams.get('rank_key'), 'low_sales');
   assert.equal(after.searchParams.get('rank_size'), '50');
-});
-
-test('cost_view is an allowed view key so 堆叠条/环形 toggle can refresh in place', async () => {
-  const {withViewState} = await import(moduleUrl);
-  const base = 'http://127.0.0.1:5000/analytics/?tab=health&cost_view=bar';
-  const after = new URL(withViewState(base, {cost_view:'ring'}));
-  assert.equal(after.searchParams.get('cost_view'), 'ring');
-  assert.equal(after.searchParams.get('tab'), 'health');
 });
 
 test('in-place refresh replaces only the result fragments and restores the scroll anchor', async () => {
@@ -103,14 +95,13 @@ test('bar growth keeps one constant speed so taller bars take longer', async () 
   assert.deepEqual(growDurations([0, -5]), [0, 0]);
 });
 
-test('growth plan sizes stacks by width and bars by height', async () => {
-  const {growthPlan, BAR_GROW_SPEED_PX_S, STACK_GROW_SPEED_PX_S} = await import(moduleUrl);
-  const bars = growthPlan({heights: [190, 95], kind: 'bars'});
+test('growth plan sizes bars by height', async () => {
+  const {growthPlan, BAR_GROW_SPEED_PX_S} = await import(moduleUrl);
+  // v15（2026-10-16）：横向堆叠条随成本诊断一起删除，生长计划只剩竖向柱一种形态。
+  const bars = growthPlan({heights: [190, 95]});
   assert.equal(bars.seconds, 190 / BAR_GROW_SPEED_PX_S, '整组时长取最长的那根柱');
   assert.deepEqual(bars.perBar, [190 / BAR_GROW_SPEED_PX_S, 95 / BAR_GROW_SPEED_PX_S]);
-  const stack = growthPlan({widthPx: 700, kind: 'stack'});
-  assert.equal(stack.seconds, 700 / STACK_GROW_SPEED_PX_S);
-  assert.equal(growthPlan({heights: [], kind: 'bars'}).seconds, 0, '空图不播');
+  assert.equal(growthPlan({heights: []}).seconds, 0, '空图不播');
 });
 
 test('applyBarGrowth writes per-bar durations and skips hidden or reduced-motion charts', async () => {

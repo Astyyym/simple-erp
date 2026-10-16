@@ -75,7 +75,7 @@ def test_excel_export_endpoints_and_headers():
             (alive_customer,),
         )
         conn.execute(
-            "INSERT INTO products(name, unit, default_price_cents, notes, usage_count) VALUES (?, '箱', 1234, '商品备注', 3)",
+            "INSERT INTO products(name, unit, notes, usage_count) VALUES (?, '箱', '商品备注', 3)",
             (f"在用商品{suffix}",),
         )
 

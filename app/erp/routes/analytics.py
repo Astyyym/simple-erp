@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
-import math
 import re
 
 from flask import Blueprint, render_template, request, url_for
@@ -113,74 +112,6 @@ def _month_calendars(cells):
 
 RANK_BAR_MAX_HEIGHT_PX = 190
 
-# 环形（成本覆盖 / 毛利构成）几何：基础圆心 110、环半径 78、环宽 24。
-DONUT_CENTER = 110
-DONUT_RADIUS = 78
-DONUT_STROKE = 24
-# 环形四周留出外缘标签的空间：viewBox 从 -55 起、边长 330（中心仍是 110，故居中/对齐不变）。
-DONUT_VIEW_MIN = -55
-DONUT_VIEW_SIZE = 330
-# 相邻段之间的视觉缝隙（度）。
-DONUT_GAP_DEG = 7.0
-# stroke-linecap:round 会让每段两端各沿弧多伸出半个环宽（stroke/2 / 半径），
-# 必须按它预先收回，否则圆角端头会吃掉缝隙、相邻段视觉相连。
-DONUT_CAP_DEG = math.degrees((DONUT_STROKE / 2) / DONUT_RADIUS)
-DONUT_POP_PX = 6
-# 悬停数值浮标的锚点半径：环外缘再外推一段，落在段中角方向上。
-DONUT_TIP_RADIUS = DONUT_RADIUS + DONUT_STROKE / 2 + 16
-DONUT_SWEEP_LEN = round(2 * math.pi * DONUT_RADIUS, 1)
-
-
-def _donut_segments(parts):
-    """parts: [(css_class, label, value_text, fraction)]。
-
-    每段渲染成一条 `<circle>` 描边弧（pathLength=360，dasharray 控制可见弧长），
-    端头用 stroke-linecap:round 得到真正的圆角；缝隙与圆角伸出量都从本段跨度内预留，
-    因此段间恒留 DONUT_GAP_DEG 的缝，且不越过本段范围、不与相邻段重叠。
-    同时给出悬停标签的锚点（段中角、环外缘外侧），标签用绝对定位贴在 `.cost-ring-view` 上。
-    """
-    segments = []
-    cursor = 0.0
-    for css_class, label, value_text, fraction in parts:
-        span = 360.0 * (fraction or 0)
-        if span <= 0:
-            continue
-        # 预留 = 缝隙 + 两端圆角伸出；极小份额按比例收缩，避免短弧被吞掉或反向越界。
-        reserve = min(DONUT_GAP_DEG + 2 * DONUT_CAP_DEG, span * 0.9)
-        start = cursor + reserve / 2
-        length = max(span - reserve, 0.6)
-        mid_deg = start + length / 2
-        middle = math.radians(mid_deg)
-        tip_x = DONUT_CENTER + DONUT_TIP_RADIUS * math.sin(middle)
-        tip_y = DONUT_CENTER - DONUT_TIP_RADIUS * math.cos(middle)
-        segments.append({
-            "cls": css_class,
-            "label": label,
-            "value_text": value_text,
-            "percent": round(fraction * 100, 1),
-            "start": round(start, 2),
-            "length": round(length, 2),
-            "gap": round(360 - length, 2),
-            "pop_x": round(math.sin(middle) * DONUT_POP_PX, 2),
-            "pop_y": round(-math.cos(middle) * DONUT_POP_PX, 2),
-            "tip_left": round((tip_x - DONUT_VIEW_MIN) / DONUT_VIEW_SIZE * 100, 2),
-            "tip_top": round((tip_y - DONUT_VIEW_MIN) / DONUT_VIEW_SIZE * 100, 2),
-        })
-        cursor += span
-    return segments
-
-
-def _cost_ring(mask_key: str, total_value: str, total_label: str, parts):
-    return {
-        "mask_id": f"costRing{mask_key}Mask",
-        "view_min": DONUT_VIEW_MIN,
-        "view_size": DONUT_VIEW_SIZE,
-        "sweep_len": DONUT_SWEEP_LEN,
-        "total_label": total_label,
-        "total_value": total_value,
-        "segments": _donut_segments(parts),
-    }
-
 
 def _rank_bar_rows(key, group_rows, size):
     """Turn one ranking group into bar-chart rows (value label + relative size).
@@ -188,33 +119,19 @@ def _rank_bar_rows(key, group_rows, size):
     Bars are scaled to the largest absolute value inside the same chart so a
     chart never mixes scales; every row still carries its exact label, and
     quantity labels keep their unit because one chart now spans all products.
+    v15（决策 ②/③）：毛利润榜与库存告急榜已随成本/库存下线删除，这里只剩数量榜。
     """
     shown = group_rows if size is None else group_rows[:size]
+
     def magnitude(row):
-        if key in ("hot_sales", "low_sales", "net_returns"):
-            return abs(int(row["net_sales_quantity_3dp"]))
-        if key == "gross_profit":
-            return abs(int(row["gross_profit_cents"] or 0))
-        if key == "inventory_alert":
-            return abs(int(row["current_quantity_3dp"] or 0))
-        return 0
+        return abs(int(row["net_sales_quantity_3dp"]))
+
     peak = max((magnitude(row) for row in shown), default=0)
     rows = []
     for row in shown:
         value = magnitude(row)
-        if key in ("hot_sales", "low_sales", "net_returns"):
-            # 全品类同一张榜，数量必须带单位，否则「1 米」和「1 个」无法区分。
-            label = f'{format_quantity_3dp(row["net_sales_quantity_3dp"], row["unit"])} {row["unit"] or "未填写单位"}'
-            negative = int(row["net_sales_quantity_3dp"]) < 0
-        elif key == "gross_profit":
-            label = f"¥{cents_to_yuan(row['gross_profit_cents'])}"
-            negative = int(row["gross_profit_cents"] or 0) < 0
-        elif key == "inventory_alert":
-            label = f"{format_quantity_3dp(row['current_quantity_3dp'], row['unit'])} · {row['inventory_status']}"
-            negative = False
-        else:
-            label = row["inventory_status"]
-            negative = False
+        # 全品类同一张榜，数量必须带单位，否则「1 米」和「1 个」无法区分。
+        label = f'{format_quantity_3dp(row["net_sales_quantity_3dp"], row["unit"])} {row["unit"] or "未填写单位"}'
         rows.append({
             "product_id": row["product_id"],
             "label": row["product_name"],
@@ -222,90 +139,20 @@ def _rank_bar_rows(key, group_rows, size):
             "bar_percent": round(value * 100 / peak, 1) if peak else 0,
             # 柱高直接用像素：最高柱 = RANK_BAR_MAX_HEIGHT_PX，其余按同榜比例，标注贴在各自柱顶。
             "bar_height_px": round(value * RANK_BAR_MAX_HEIGHT_PX / peak, 1) if peak else 0,
-            "is_negative": negative,
+            "is_negative": int(row["net_sales_quantity_3dp"]) < 0,
         })
     return rows
-
-
-def _cost_diagnostics(result, limit=10):
-    """Visualisation data for the 成本诊断 tab.
-
-    Three layers, in order of decision value:
-    1. cost coverage — how much net sales has a historical cost behind it;
-    2. profit composition — net sales minus historical cost equals known profit;
-    3. which products contribute the uncovered net sales, so the gap is actionable.
-    """
-    summary = result["summary"]
-    known = int(summary["known_net_sales_cents"] or 0)
-    unknown = int(summary["unknown_net_sales_cents"] or 0)
-    total = known + unknown
-    net_cost = int(summary["net_cost_cents"] or 0)
-    profit = int(summary["known_gross_profit_cents"] or 0)
-    composition_total = known or 1
-    missing = []
-    for row in result["product_rows"]:
-        gap = int(row["unknown_net_sales_cents"] or 0)
-        if gap > 0:
-            missing.append({
-                "product_id": row["product_id"],
-                "label": row["product_name"],
-                "value_text": f"¥{cents_to_yuan(gap)} · 缺 {row['unknown_line_count']} 行",
-                "amount_cents": gap,
-            })
-    missing.sort(key=lambda item: (-item["amount_cents"], item["product_id"]))
-    missing = missing[:limit]
-    peak = max((item["amount_cents"] for item in missing), default=0)
-    for item in missing:
-        item["bar_percent"] = round(item["amount_cents"] * 100 / peak, 1) if peak else 0
-        # 竖向柱：用像素高度表达，和产品排行同一比例尺（最高柱 = RANK_BAR_MAX_HEIGHT_PX）。
-        item["bar_height_px"] = round(item["amount_cents"] * RANK_BAR_MAX_HEIGHT_PX / peak, 1) if peak else 0
-    coverage_ring = _cost_ring(
-        "Coverage",
-        f"¥{cents_to_yuan(total)}",
-        "净销售额",
-        [
-            ("known", "已知成本", f"¥{cents_to_yuan(known)}", known / total if total else 0),
-            ("unknown", "未覆盖", f"¥{cents_to_yuan(unknown)}", unknown / total if total else 0),
-        ],
-    )
-    composition_ring = _cost_ring(
-        "Composition",
-        f"¥{cents_to_yuan(known)}",
-        "已知部分净销售额",
-        [
-            ("cost", "历史净成本", f"¥{cents_to_yuan(net_cost)}", net_cost / composition_total if known else 0),
-            ("profit", "已知毛利润", f"¥{cents_to_yuan(profit)}", profit / composition_total if known else 0),
-        ],
-    )
-    return {
-        "has_sales": total > 0,
-        "known_cents": known,
-        "unknown_cents": unknown,
-        "known_percent": round(known * 100 / total, 1) if total else 0,
-        "unknown_percent": round(unknown * 100 / total, 1) if total else 0,
-        "net_cost_cents": net_cost,
-        "profit_cents": profit,
-        "cost_percent": round(net_cost * 100 / composition_total, 1) if known else 0,
-        "profit_percent": round(max(profit, 0) * 100 / composition_total, 1) if known else 0,
-        "margin_percent": round(profit * 100 / known, 1) if known > 0 else None,
-        "missing": missing,
-        "missing_total_count": sum(1 for row in result["product_rows"] if int(row["unknown_net_sales_cents"] or 0) > 0),
-        "coverage_ring": coverage_ring,
-        "composition_ring": composition_ring,
-    }
 
 
 def _analysis_presentation(result):
     """Display state never changes the aggregation's historical filter scope."""
     sort = request.args.get("sort", "amount")
     tab = request.args.get("tab", "heat")
-    if sort not in {"amount", "profit", "stock"} or tab not in {"heat", "rank", "health"}:
+    # v15（决策 ②/③）：`profit` / `stock` 排序与 `health` 页签随成本/库存下线；
+    # 排序白名单收窄为 `{amount}`，页签收窄为 `{heat, rank}`。
+    if sort not in {"amount"} or tab not in {"heat", "rank"}:
         raise ValueError("分析展示条件不合法")
     rows = list(result["product_rows"])
-    if sort == "profit":
-        rows.sort(key=lambda row: (not row["cost_complete"], -(row["net_sales_amount_cents"] * 10000 - row["net_cost_micro"]) if row["cost_complete"] else 0, row["product_id"]))
-    elif sort == "stock":
-        rows.sort(key=lambda row: ({"缺货": 0, "库存告急": 1, "正常": 2, "未知": 3, "未启用": 4}[row["inventory_status"]], row["product_id"]))
     selected_day = request.args.get("day", "")
     detail = next((cell for cell in result["heatmap"] if cell["date"] == selected_day), None)
     if selected_day and detail is None:
@@ -314,9 +161,6 @@ def _analysis_presentation(result):
     raw_size = request.args.get("rank_size", "10")
     if rank_key not in result["ranking_groups"] or raw_size not in {"10", "20", "50", "all"}:
         raise ValueError("排行展示条件不合法")
-    cost_view = request.args.get("cost_view", "bar")
-    if cost_view not in {"bar", "ring"}:
-        raise ValueError("成本视图展示条件不合法")
     size = None if raw_size == "all" else int(raw_size)
     rank_groups = {}
     for key, source_groups in result["ranking_groups"].items():
@@ -332,9 +176,7 @@ def _analysis_presentation(result):
             "product_rows": rows, "heatmap": result["heatmap"],
             "calendars": _month_calendars(result["heatmap"]),
             "day": selected_day, "day_detail": detail, "rank_groups": rank_groups,
-            "rank_key": rank_key, "rank_size": raw_size,
-            "cost_view": cost_view,
-            "cost": _cost_diagnostics(result)}
+            "rank_key": rank_key, "rank_size": raw_size}
 
 
 @analytics_bp.get("/")
@@ -388,7 +230,7 @@ def analytics_center():
         error = str(exc)
         result = None
     def view_url(**updates):
-        state = {**filters, **({key: view[key] for key in ("sort", "tab", "day", "rank_key", "rank_size", "cost_view")} if view else {})}
+        state = {**filters, **({key: view[key] for key in ("sort", "tab", "day", "rank_key", "rank_size")} if view else {})}
         state.update(updates)
         return url_for("analytics.analytics_center", **state)
     # 时间模式面板的回显值（按年/按月/按日各自一套）

@@ -4,7 +4,7 @@
 
 | 处理 | 对象 |
 |---|---|
-| 清空 | 四类单据与明细、客户/商品资料与客户价、库存状态/流水/期初、收付款与调整、对账快照、审计日志、单号序列表、`product_images/`、`temp_pdf/`、`logs/` |
+| 清空 | 四类单据与明细、客户/商品资料与客户价、收付款与调整、对账快照、审计日志、单号序列表、`product_images/`、`temp_pdf/`、`logs/` |
 | 保留 | `backups/`（安全网）、`legacy_archive/`（旧账留底）、数据目录路径记忆、`data/erp.db` 文件本身（清表不删库） |
 | 回出厂 | 公司名/店名、打印信息、界面主题/缩放/字重、打印偏移与缩放 |
 
@@ -36,9 +36,6 @@ CLEARED_TABLES = (
     "purchase_return_orders",
     "purchase_orders",
     "customer_prices",
-    "inventory_postings",
-    "inventory_initializations",
-    "product_inventory_state",
     "products",
     "payments",
     "adjustments",

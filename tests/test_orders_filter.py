@@ -82,7 +82,8 @@ def test_orders_list_paginates_full_filtered_result_and_preserves_filter_scope()
     assert "MD202607100001" in last_html
     # 只有草稿/已作废单据可勾选删除的旧契约已废止：现在全部单据可勾选，正式单据删除走自动冲回。
     assert len(re.findall(r'<input form="bulkOrdersForm" type="checkbox" name="ids" value="(?:sale|return):\d+">', first_html)) == 50
-    assert "正式单据会先按原流水自动冲回库存与账款" in first_html
+    # 决策变更（2026-10-16 ②/③）：库存系统删除，页面文案只说「自动作废并冲回账款」。
+    assert "正式单据会先自动作废并冲回账款" in first_html
     # 全店拿货统计已迁出单据管理，单据管理不再输出该数据块。
     assert 'id="customerPurchaseData"' not in first_html
 

@@ -7,8 +7,6 @@ from uuid import uuid4
 
 from erp.db import get_db
 from erp.services.accounting import create_product, update_product_record
-from erp.services.inventory import initialize_product, revise_initialization
-from erp.services.inventory_status import project_inventory_status
 from erp.utils.errors import error_response, not_found
 from erp.utils.pinyin import name_match_clause, name_match_params, pinyin_fields as build_pinyin_fields
 from erp.utils.exporting import (
@@ -23,7 +21,6 @@ from erp.services.master_data_import import (
     PRODUCT_HEADERS_TEMPLATE,
     PRODUCT_TEMPLATE_NOTES,
     build_product_preview,
-    product_totals,
     ImportPreview,
 )
 from erp.services.master_data_quality import COMPLETION_ORIGINS_SQL
@@ -95,9 +92,8 @@ def _product_list_context(conn, q: str = "", quality: str = "", sort: str = ""):
     if q:
         products = conn.execute(
             f"""
-            SELECT p.*, s.enabled AS inventory_enabled, s.quantity_3dp, s.cost_total_micro, s.avg_cost_micro
+            SELECT p.*
             FROM products AS p
-            LEFT JOIN product_inventory_state AS s ON s.product_id=p.id
             WHERE p.deleted_at IS NULL AND {name_match_clause('p.')}{todo_sql}
             {pinyin_order if sort == 'pinyin' else 'ORDER BY p.usage_count DESC, p.id DESC'}
             """,
@@ -107,9 +103,8 @@ def _product_list_context(conn, q: str = "", quality: str = "", sort: str = ""):
     else:
         products = conn.execute(
             f"""
-            SELECT p.*, s.enabled AS inventory_enabled, s.quantity_3dp, s.cost_total_micro, s.avg_cost_micro
+            SELECT p.*
             FROM products AS p
-            LEFT JOIN product_inventory_state AS s ON s.product_id=p.id
             WHERE p.deleted_at IS NULL{todo_sql}
             {pinyin_order if sort == 'pinyin' else 'ORDER BY p.name COLLATE NOCASE ASC, p.id ASC'} LIMIT 200
             """
@@ -125,15 +120,8 @@ def _product_list_context(conn, q: str = "", quality: str = "", sort: str = ""):
         f" AND origin IN {COMPLETION_ORIGINS_SQL}"
         " AND TRIM(COALESCE(brand, ''))=''"
     ).fetchone()["c"]
-    projected_products = []
-    for row in products:
-        product = dict(row)
-        product.update(project_inventory_status(
-            enabled=product["inventory_enabled"],
-            quantity_3dp=product["quantity_3dp"],
-            safety_stock_3dp=product["safety_stock_3dp"],
-        ))
-        projected_products.append(product)
+    projected_products = [dict(row) for row in products]
+    # v15（决策 ②/③/⑦）：库存状态/成本/安全库存字段全部下线，列表不再有投影步骤。
     return projected_products, suggestions, truncated, todo_count
 
 
@@ -182,7 +170,6 @@ def import_products():
         action_url=url_for("products.import_products_confirm"),
         back_url=url_for("products.list_products"),
         preview=preview,
-        totals=product_totals(preview),
         cents_to_yuan=cents_to_yuan,
         micro_to_yuan=micro_to_yuan,
         **_backup_hint(),
@@ -204,7 +191,6 @@ def import_products_confirm():
                               back_url=url_for("products.list_products"))
 
     result = ImportResult()
-    init_errors: list[str] = []
     with get_db() as conn:
         existing = {
             row["name"].strip()
@@ -214,8 +200,7 @@ def import_products_confirm():
             row["name"].strip()
             for row in conn.execute("SELECT name FROM products WHERE deleted_at IS NOT NULL")
         }
-        # 记录需要做期初初始化的商品（B-6：独立事务，事务外调用）。
-        pending_inits: list[tuple[int, dict]] = []
+        # v15（决策 ⑥）：导入不再有「期初数量/期初成本」列，因此没有待初始化项。
         for row in preview.rows:
             if row.action == "error":
                 result.add_error(f"第{row.line_number}行：{row.reason}")
@@ -233,14 +218,11 @@ def import_products_confirm():
                     result.skipped += 1
                     continue
                 initials, full = build_pinyin_fields(name)
-                cur = conn.execute(
-                    # `default_price_cents` 已下线（售价唯一来源 = 开单学习）。该列保留且
-                    # NOT NULL 无默认值（不删列 = 不写迁移），所以建档时必须显式写 0。
-                    "INSERT INTO products(name, brand, unit, default_price_cents, pinyin_initials, pinyin_full, origin) VALUES (?, ?, ?, 0, ?, ?, 'import')",
+                conn.execute(
+                    "INSERT INTO products(name, brand, unit, pinyin_initials, pinyin_full, origin) VALUES (?, ?, ?, ?, ?, 'import')",
                     (name, row.payload.get("brand") or None, row.payload.get("unit", "个"),
                      initials, full),
                 )
-                product_id = int(cur.lastrowid)
                 existing.add(identity)
                 result.added += 1
                 if row.completion:
@@ -256,34 +238,9 @@ def import_products_confirm():
                     (row.payload.get("brand") or None, row.payload.get("unit", "个"),
                      initials, full, name),
                 )
-                found = conn.execute(
-                    "SELECT id FROM products WHERE TRIM(name)=? AND deleted_at IS NULL",
-                    (name,),
-                ).fetchone()
-                product_id = int(found["id"])
                 result.added += 1
             else:
                 continue
-            qty = str(row.payload.get("quantity") or "").strip()
-            cost_cents = row.payload.get("cost_cents")
-            if qty and cost_cents is not None:
-                pending_inits.append((product_id, {"quantity": qty, "cost_cents": int(cost_cents), "line": row.line_number}))
-
-    # B-6：期初初始化各自独立事务；用「批次号+行号」作幂等键，重复确认不重复初始化。
-    for product_id, info in pending_inits:
-        request_key = f"import-{preview.batch_id}-{info['line']}"
-        try:
-            initialize_product(
-                product_id,
-                info["quantity"],
-                str(Decimal(int(info["cost_cents"])) / Decimal(100)),
-                date.today().isoformat(),
-                "批量导入期初",
-                request_key,
-                confirm_zero=False,
-            )
-        except ValueError as exc:
-            init_errors.append(f"第{info['line']}行：商品已建档，但期初初始化失败（{exc}）")
 
     with get_db() as conn:
         products, suggestions, truncated, todo_count = _product_list_context(conn)
@@ -299,7 +256,6 @@ def import_products_confirm():
         sort="",
         todo_count=todo_count,
         import_result=result,
-        import_init_errors=init_errors,
         **_backup_hint(),
     )
 
@@ -345,7 +301,7 @@ def product_suggestions():
 def create_product_view():
     try:
         initials, full = build_pinyin_fields(request.form["name"])
-        create_product(request.form["name"], request.form["unit"], (request.form.get("pinyin_initials", "") or initials), pinyin_full=(request.form.get("pinyin_full", "") or full), safety_stock=request.form.get("safety_stock", "0"), brand=request.form.get("brand", ""))
+        create_product(request.form["name"], request.form["unit"], (request.form.get("pinyin_initials", "") or initials), pinyin_full=(request.form.get("pinyin_full", "") or full), brand=request.form.get("brand", ""))
     except (InvalidOperation, KeyError, TypeError, ValueError) as exc:
         message = str(exc) if isinstance(exc, ValueError) and str(exc) else "新增商品失败，请检查填写内容"
         with get_db() as conn:
@@ -358,11 +314,9 @@ def edit_product(product_id: int):
     return _render_product_edit(product_id)
 
 
-def _render_product_edit(product_id: int, *, error: str = "", inventory_message: str = "", status_code: int = 200):
+def _render_product_edit(product_id: int, *, error: str = "", notice: str = "", status_code: int = 200):
     with get_db() as conn:
         product = conn.execute("SELECT * FROM products WHERE id=? AND deleted_at IS NULL", (product_id,)).fetchone()
-        inventory_state = conn.execute("SELECT * FROM product_inventory_state WHERE product_id=?", (product_id,)).fetchone()
-        initialization = conn.execute("SELECT * FROM inventory_initializations WHERE product_id=?", (product_id,)).fetchone()
         # 客户专属价（2026-10-15）：售价唯一来源 = 开单学习出的客户专属价，所以编辑页要能一眼看到
         # 「这个商品现在对哪些客户是什么价」——用户原话「点进商品后要能看到该客户的专属价」。
         customer_prices = conn.execute(
@@ -377,22 +331,15 @@ def _render_product_edit(product_id: int, *, error: str = "", inventory_message:
         ).fetchall()
     if product is None:
         return not_found("商品不存在，可能已被删除或从未存在。", back_url=url_for("products.list_products"))
-    inventory_status = project_inventory_status(
-        enabled=inventory_state["enabled"] if inventory_state else False,
-        quantity_3dp=inventory_state["quantity_3dp"] if inventory_state else None,
-        safety_stock_3dp=product["safety_stock_3dp"] if product else 0,
-    )
+    # v15（决策 ②/③/⑦）：库存状态、期初与安全库存全部下线，编辑页只剩档案与客户专属价。
     return render_template(
         "products/edit.html",
         product=product,
         cents_to_yuan=cents_to_yuan,
         micro_to_yuan=micro_to_yuan,
-        inventory_state=inventory_state,
-        inventory_status=inventory_status,
-        initialization=initialization,
         customer_prices=customer_prices,
         error=error,
-        inventory_message=inventory_message,
+        notice=notice,
     ), status_code
 
 
@@ -442,7 +389,7 @@ def upload_product_image(product_id: int):
                 old_file.unlink()
     except ValueError as exc:
         return _render_product_edit(product_id, error=str(exc), status_code=400)
-    return _render_product_edit(product_id, inventory_message="商品图片已更新")
+    return _render_product_edit(product_id, notice="商品图片已更新")
 
 
 @products_bp.get("/<int:product_id>/image")
@@ -460,45 +407,14 @@ def product_image(product_id: int):
 @products_bp.post("/<int:product_id>/edit")
 def update_product(product_id: int):
     try:
-        update_product_record(product_id, request.form["name"], request.form["unit"], safety_stock=request.form.get("safety_stock", "0"), brand=request.form.get("brand", ""))
+        update_product_record(product_id, request.form["name"], request.form["unit"], brand=request.form.get("brand", ""))
     except (InvalidOperation, KeyError, TypeError, ValueError) as exc:
         message = str(exc) if isinstance(exc, ValueError) and str(exc) else "保存失败，请检查填写内容"
         return _render_product_edit(product_id, error=message, status_code=400)
     return redirect(url_for("products.list_products"))
 
 
-@products_bp.post("/<int:product_id>/inventory/initialize")
-def initialize_product_inventory(product_id: int):
-    try:
-        initialize_product(
-            product_id,
-            request.form.get("quantity", ""),
-            request.form.get("unit_cost", ""),
-            request.form.get("business_date", ""),
-            request.form.get("source", "系统上线期初"),
-            request.form.get("request_key", "") or f"web-init-{product_id}-{request.form.get('business_date', '')}-{request.form.get('quantity', '')}",
-            confirm_zero=request.form.get("confirm_zero") == "1",
-            cost_source=request.form.get("cost_source", "known"),
-            total_cost=request.form.get("total_cost", ""),
-        )
-    except ValueError as exc:
-        return _render_product_edit(product_id, error=str(exc), status_code=400)
-    return _render_product_edit(product_id, inventory_message="期初库存已启用")
-
-
-@products_bp.post("/<int:product_id>/inventory/revise")
-def revise_product_inventory(product_id: int):
-    try:
-        revise_initialization(
-            product_id,
-            request.form.get("quantity", ""),
-            request.form.get("unit_cost", ""),
-            request.form.get("reason", ""),
-            request.form.get("expected_version", type=int),
-        )
-    except (TypeError, ValueError) as exc:
-        return _render_product_edit(product_id, error=str(exc), status_code=400)
-    return _render_product_edit(product_id, inventory_message="期初库存已修订")
+# v15（决策 ②/③/⑦）：库存期初的启用/修订入口已删除（`/inventory/initialize`、`/inventory/revise`）。
 
 @products_bp.post("/bulk_delete")
 def bulk_delete_products():

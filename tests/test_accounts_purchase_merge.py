@@ -1,7 +1,7 @@
 """账款项：拿货/退拿货并入客户视图与单据类型筛选。"""
 from erp.db import get_db, init_db
 from erp.services import accounting
-from erp.services.inventory import create_purchase_order, initialize_product
+from erp.services.purchases import create_purchase_order
 from erp.services import purchase_returns
 
 
@@ -9,7 +9,7 @@ def _seed():
     init_db()
     cid = accounting.create_customer("并入拿货客户")
     pid = accounting.create_product("并入商品T1", "个")
-    initialize_product(pid, "20", "10", "2026-10-01", "INTERNAL-INIT", "ledger-merge-init")
+
     accounting.create_order_from_typed_rows(
         cid, "MD202610010001",
         [{"product_id": pid, "product_name": "并入商品T1", "unit": "个",

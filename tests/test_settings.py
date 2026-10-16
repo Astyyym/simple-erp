@@ -8,7 +8,6 @@ from erp import config as config_module
 from erp.config import load_config, migrate_data_root, data_root, save_config
 from erp.db import get_db, init_db
 from erp.services.accounting import create_customer, create_order_from_typed_rows, create_product
-from erp.services.inventory import initialize_product
 
 
 def test_settings_page_renders_and_nav_link():
@@ -338,7 +337,7 @@ def test_settings_print_samples_never_read_business_data():
     """
     init_db()
     product = create_product("真实商品名称哨兵", "个")
-    initialize_product(product, "10", "5", "2026-10-01", "期初", "settings-sample-sentinel")
+
     customer = create_customer("真实客户名称哨兵")
     create_order_from_typed_rows(
         customer,

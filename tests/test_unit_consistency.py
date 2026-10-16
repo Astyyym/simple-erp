@@ -14,7 +14,6 @@ from erp.services.accounting import (
     create_order_from_typed_rows,
     update_order_from_typed_rows,
 )
-from erp.services.inventory import initialize_product
 
 
 def _seed(product_name="缺陷A商品", unit="个", price=5000):
@@ -104,25 +103,42 @@ def test_update_order_from_typed_rows_also_honors_submitted_unit():
     assert product["unit"] == "台"
 
 
-def test_product_archive_unit_change_does_not_break_inventory():
-    """改单位不做任何数量/成本换算（§4.6）：库存数量与成本逐行不变。"""
-    cid, pid = _seed("库存不变商品", "个", 5000)
-    initialize_product(pid, "10", "100", "2026-10-01", "期初", "p4-unit-init")
+def test_product_archive_unit_change_rescales_nothing():
+    """改单位只改 unit 字段，不做任何数量/金额换算（§4.6）。
+
+    旧断言读已删除的库存状态表的数量/成本两列——
+    库存与成本系统已整体删除（2026-10-16 决策 ②/③），改为钉住仍然成立的那条：
+    换单位（重编辑）只改 unit，明细的数量、单价、小计逐行不变，档案单位同步。
+    """
+    cid, pid = _seed("换单位商品", "个", 5000)
+
+    order_id = create_order_from_typed_rows(
+        cid, "MD202610130040",
+        [{"product_id": str(pid), "product_name": "换单位商品", "unit": "个",
+          "unit_price_yuan": "50", "quantity": "2"}],
+        status="saved", order_date="2026-10-13",
+    )
     with get_db() as conn:
         before = conn.execute(
-            "SELECT quantity_3dp, cost_total_micro FROM product_inventory_state WHERE product_id=?",
-            (pid,),
+            "SELECT unit, quantity, unit_price_cents, subtotal_cents FROM order_items WHERE order_id=?",
+            (order_id,),
         ).fetchone()
-    create_order_from_typed_rows(
-        cid, "MD202610130040",
-        [{"product_id": str(pid), "product_name": "库存不变商品", "unit": "箱",
-          "unit_price_yuan": "50", "quantity": "1"}],
-        status="draft", order_date="2026-10-13",
+
+    update_order_from_typed_rows(
+        order_id, cid, "MD202610130040",
+        [{"product_id": str(pid), "product_name": "换单位商品", "unit": "箱",
+          "unit_price_yuan": "50", "quantity": "2"}],
+        status="saved", order_date="2026-10-13",
     )
     with get_db() as conn:
         after = conn.execute(
-            "SELECT quantity_3dp, cost_total_micro FROM product_inventory_state WHERE product_id=?",
-            (pid,),
+            "SELECT unit, quantity, unit_price_cents, subtotal_cents FROM order_items WHERE order_id=?",
+            (order_id,),
         ).fetchone()
-    assert before["quantity_3dp"] == after["quantity_3dp"]
-    assert before["cost_total_micro"] == after["cost_total_micro"]
+        product_unit = conn.execute("SELECT unit FROM products WHERE id=?", (pid,)).fetchone()["unit"]
+
+    assert after["unit"] == "箱" and before["unit"] == "个", "只有单位变了"
+    assert after["quantity"] == before["quantity"]
+    assert after["unit_price_cents"] == before["unit_price_cents"]
+    assert after["subtotal_cents"] == before["subtotal_cents"]
+    assert product_unit == "箱", "换单位同步商品档案"

@@ -2,100 +2,67 @@
 import pytest
 from erp.db import init_db, get_db
 from erp.services.accounting import create_customer, create_product, create_order_from_typed_rows, void_order
-from erp.services.inventory import initialize_product, create_purchase_order, void_purchase_order
+from erp.services.purchases import create_purchase_order, void_purchase_order
 
 
 def seed(quantity='3', price='10'):
     init_db()
     cid = create_customer('退拿货虚构往来')
     pid = create_product('退拿货虚构商品' 'S', '米')
-    initialize_product(pid, '0', '0', '2026-10-02', '虚构', 'c2-init', confirm_zero=True)
+
     source = create_purchase_order('NH202610020001', '2026-10-02', [{'product_id': pid, 'quantity': quantity, 'unit_cost_yuan': price}], customer_id=cid, request_key='c2-source')
     with get_db() as conn:
         iid = conn.execute('SELECT id FROM purchase_order_items WHERE purchase_order_id=?', (source['order_id'],)).fetchone()[0]
     return cid, pid, source['order_id'], iid
 
 
-def stock(pid):
-    with get_db() as conn:
-        state = tuple(conn.execute('SELECT quantity_3dp,cost_total_micro FROM product_inventory_state WHERE product_id=?', (pid,)).fetchone())
-        sums = tuple(conn.execute('SELECT SUM(quantity_delta_3dp),SUM(cost_delta_micro) FROM inventory_postings WHERE product_id=?', (pid,)).fetchone())
-        assert state == sums
-        return state
-
-
-@pytest.mark.parametrize('later', ['purchase', 'sale'])
-def test_purchase_can_void_after_later_economic_event_was_voided(later):
-    cid, pid, source, iid = seed()
-    if later == 'purchase':
-        second = create_purchase_order('NH202610020002', '2026-10-02', [{'product_id': pid, 'quantity': '1', 'unit_cost_yuan': '20'}], customer_id=cid, request_key='c2-second')
-        void_purchase_order(second['order_id'], '更正后单')
-    else:
-        sale = create_order_from_typed_rows(cid, 'MD202610020001', [{'product_id': pid, 'product_name': '退拿货虚构商品' 'S', 'unit': '米', 'quantity': '1', 'unit_price_yuan': '20'}], status='saved', order_date='2026-10-02', request_key='c2-sale')
-        void_order(sale, '更正后单')
-    void_purchase_order(source, '更正前单')
-    assert stock(pid) == (0, 0)
-
-
-def test_formal_partial_return_uses_source_amount_and_current_stock_cost():
+def test_formal_partial_return_uses_source_amount_and_binds_source_row():
     from erp.services import purchase_returns as service
     cid, pid, source, iid = seed()
     create_purchase_order('NH202610020002', '2026-10-02', [{'product_id': pid, 'quantity': '1', 'unit_cost_yuan': '30'}], customer_id=cid, request_key='c2-current-cost')
     result = service.create(customer_id=cid, source_order_id=source, business_date='2026-10-02', items=[{'source_item_id': iid, 'quantity': '1'}], request_key='c2-return', status='saved', notes='虚构备注')
     assert result['total_amount_cents'] == 1000
     assert result['order_no'] == 'NH202610020003'  # seed 与本次拿货单占用 0001、0002
-    assert stock(pid) == (3000, 45000000)
     with get_db() as conn:
         row = conn.execute('SELECT * FROM purchase_return_items WHERE purchase_return_id=?', (result['order_id'],)).fetchone()
         assert row['source_item_id'] == iid
-        assert row['cost_total_micro'] == 15000000
         assert row['subtotal_cents'] == 1000
         assert conn.execute('PRAGMA foreign_key_check').fetchall() == []
 
 
-def test_draft_edit_current_rows_posts_atomically_and_locks_economics():
+def test_draft_edit_current_rows_is_idempotent_and_notes_edit_keeps_rows():
     from erp.services import purchase_returns as service
     cid, pid, source, iid = seed()
     args = dict(customer_id=cid, source_order_id=source, business_date='2026-10-02', items=[{'source_item_id':iid,'quantity':'1'}], request_key='draft-retry', status='draft', notes='初稿')
     result = service.create(**args)
-    assert stock(pid) == (3000, 30000000)
     changed = service.update_draft(result['order_id'], expected_version=0, customer_id=cid, source_order_id=source, items=[{'source_item_id':iid,'quantity':'2'}], notes='当前输入', status='saved')
     assert changed['version'] == 1
-    assert stock(pid) == (1000, 10000000)
     assert service.create(**args)['order_id'] == result['order_id']
     with get_db() as conn:
         stable = conn.execute('SELECT id FROM purchase_return_items').fetchone()[0]
     service.edit_notes(result['order_id'], '只改备注', expected_version=1)
     with get_db() as conn:
         assert conn.execute('SELECT id FROM purchase_return_items').fetchone()[0] == stable
-    with pytest.raises(ValueError, match='锁定'):
-        service.update_draft(result['order_id'], expected_version=2, customer_id=cid, source_order_id=source, items=[{'source_item_id':iid,'quantity':'1'}])
     with pytest.raises(ValueError, match='版本'):
         service.edit_notes(result['order_id'], '过期', expected_version=1)
 
 
-def test_void_return_releases_quota_then_source_void_and_restore_visibility_only():
+def test_void_return_requires_reason_and_restore_only_changes_visibility():
     from erp.services import purchase_returns as service
     cid, pid, source, iid = seed()
     args = dict(customer_id=cid, source_order_id=source, business_date='2026-10-02', items=[{'source_item_id':iid,'quantity':'1'}], request_key='void-return')
     result = service.create(**args)
-    with pytest.raises(ValueError):
-        void_purchase_order(source, '存在后续退拿货')
     with pytest.raises(ValueError, match='原因'):
         service.void(result['order_id'], '', expected_version=0)
     service.void(result['order_id'], '错单更正', expected_version=0)
-    assert stock(pid) == (3000, 30000000)
-    void_purchase_order(source, '源单更正')
-    assert stock(pid) == (0, 0)
+    # 作废后原行可退数量释放，允许重新开一张退拿货单。
+    again = service.create(customer_id=cid, source_order_id=source, business_date='2026-10-02', items=[{'source_item_id':iid,'quantity':'1'}], request_key='void-return-again')
+    assert again['total_amount_cents'] == result['total_amount_cents']
     service.delete(result['order_id'], expected_version=1)
     service.restore(result['order_id'], expected_version=2)
     with get_db() as conn:
-        order = conn.execute('SELECT * FROM purchase_return_orders').fetchone()
-        assert order['status'] == 'void' and order['posted_once'] == 1 and order['deleted_at'] is None
-        original = conn.execute("SELECT quantity_delta_3dp,cost_delta_micro FROM inventory_postings WHERE source_type='purchase_return'").fetchone()
-        reverse = conn.execute("SELECT quantity_delta_3dp,cost_delta_micro FROM inventory_postings WHERE source_type='purchase_return_void'").fetchone()
-        assert tuple(reverse) == tuple(-v for v in original)
-    assert stock(pid) == (0, 0)
+        order = conn.execute('SELECT * FROM purchase_return_orders WHERE id=?', (result['order_id'],)).fetchone()
+        assert order['status'] == 'void' and order['deleted_at'] is None
 
 
 def test_seven_day_cleanup_removes_expired_recycled_sale():
@@ -147,11 +114,9 @@ def test_draft_finalize_rechecks_live_quota_and_absorbs_amount_tail():
     assert first['total_amount_cents'] == 1
     final = service.finalize(draft['order_id'],expected_version=0)
     assert final['total_amount_cents'] == 0
-    assert stock(pid) == (0,0)
     second_draft = service.create(**base,request_key='tail-exhausted',status='draft')
     with pytest.raises(ValueError,match='可退'):
         service.finalize(second_draft['order_id'],expected_version=0)
-    assert stock(pid) == (0,0)
 
 
 def test_amplified_quantity_is_friendly_rejection_without_partial_write():
@@ -159,7 +124,6 @@ def test_amplified_quantity_is_friendly_rejection_without_partial_write():
     cid,pid,source,iid = seed()
     with pytest.raises(ValueError,match='范围'):
         service.create(customer_id=cid,source_order_id=source,business_date='2026-10-02',items=[{'source_item_id':iid,'quantity':'1e100000'}],request_key='overflow')
-    assert stock(pid) == (3000,30000000)
     with get_db() as conn:
         assert conn.execute('SELECT COUNT(*) FROM purchase_return_orders').fetchone()[0] == 0
 
@@ -210,12 +174,10 @@ def test_typed_entry_http_current_input_save_detail_and_object_isolation():
     assert 'id="productCatalog"'.encode() in page.data
     draft=client.post('/purchases/return/create',data={'customer_id':cid,'business_date':'2026-10-02','product_id':pid,'quantity':'1','unit_price_yuan':'10.00','request_key':'http-return','status':'draft','notes':'页面草稿'})
     assert draft.status_code==302 and '/purchases/return/' in draft.location
-    assert stock(pid)==(3000,30000000)
     with get_db() as conn:
         oid=conn.execute('SELECT id FROM purchase_return_orders').fetchone()[0]
     saved=client.post(f'/purchases/return/{oid}/edit',data={'customer_id':cid,'product_id':pid,'quantity':'2','unit_price_yuan':'10.00','version':'0','status':'saved','notes':'当前输入','business_date':'2000-01-01'})
     assert saved.status_code==302
-    assert stock(pid)==(1000,10000000)
     detail=client.get(saved.location)
     assert detail.status_code==200 and '本店退给对方'.encode() in detail.data
     assert '手工开单'.encode() in detail.data
@@ -241,7 +203,6 @@ def test_http_lifecycle_list_typed_keys_recycle_and_restore():
     page = client.get('/recycle/')
     assert f'/recycle/purchase_return/{oid}/restore'.encode() in page.data
     assert client.post(f'/recycle/purchase_return/{oid}/restore',data={'version':'4'}).status_code == 302
-    assert stock(pid) == (3000,30000000)
     with get_db() as conn:
         assert conn.execute('SELECT status,notes,version FROM purchase_return_orders').fetchone()[:] == ('void','详情备注',5)
 
@@ -275,14 +236,12 @@ def test_purged_draft_number_is_never_reused():
     assert second['order_no']=='NH202610020003'
 
 
-@pytest.mark.parametrize('mode',['same_key','different_keys','quota','stock'])
-def test_two_real_threads_serialize_keys_numbers_quota_and_stock(mode):
+@pytest.mark.parametrize('mode',['same_key','different_keys','quota'])
+def test_two_real_threads_serialize_keys_numbers_and_quota(mode):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier
     from erp.services import purchase_returns as service
     cid,pid,source,iid=seed()
-    if mode == 'stock':
-        create_order_from_typed_rows(cid,'MD202610020001',[{'product_id':pid,'product_name':'退拿货虚构商品' 'S','unit':'米','quantity':'2','unit_price_yuan':'20'}],status='saved',order_date='2026-10-02',request_key='race-sale')
     barrier=Barrier(2)
     def work(n):
         barrier.wait()
@@ -299,33 +258,27 @@ def test_two_real_threads_serialize_keys_numbers_quota_and_stock(mode):
         assert {r['order_no'] for r in successes}=={'NH202610020002','NH202610020003'}
     else:
         assert len(successes)==1 and len([r for r in results if isinstance(r,str)])==1
-    stock(pid)
     with get_db() as conn:
         assert conn.execute('PRAGMA foreign_key_check').fetchall()==[]
 
 
-def test_multi_line_shortage_rolls_back_earlier_line_and_number():
+def test_multi_line_over_quota_rolls_back_earlier_line_and_number():
     from erp.services import purchase_returns as service
     cid,pid,source,iid=seed()
     second=create_product('缺货行虚构商品' 'Z','个')
-    initialize_product(second,'0','0','2026-10-02','虚构','second-init',confirm_zero=True)
-    source2=create_purchase_order('NH202610020002','2026-10-02',[{'product_id':pid,'quantity':'1','unit_cost_yuan':'0'},{'product_id':second,'quantity':'1','unit_cost_yuan':'0'}],customer_id=cid,request_key='multi-source')['order_id']
-    sale=create_order_from_typed_rows(cid,'MD202610020001',[{'product_id':second,'product_name':'缺货行虚构商品' 'Z','unit':'个','quantity':'1','unit_price_yuan':'1'}],status='saved',order_date='2026-10-02',request_key='deplete')
+
+    source2=create_purchase_order('NH202610020002','2026-10-02',[{'product_id':pid,'quantity':'1','unit_cost_yuan':'10'},{'product_id':second,'quantity':'1','unit_cost_yuan':'10'}],customer_id=cid,request_key='multi-source')['order_id']
     with get_db() as conn:
         ids=[r[0] for r in conn.execute('SELECT id FROM purchase_order_items WHERE purchase_order_id=? ORDER BY id',(source2,))]
-    before=stock(pid)
-    with pytest.raises(ValueError,match='库存不足'):
-        service.create(customer_id=cid,source_order_id=source2,business_date='2026-10-02',items=[{'source_item_id':i,'quantity':'1'} for i in ids],request_key='shortage')
-    assert stock(pid)==before and stock(second)==(0,0)
+    # 第二行超过原行剩余可退数量 → 整笔回滚：不留单据，也不占 NH 号。
+    with pytest.raises(ValueError,match='可退'):
+        service.create(customer_id=cid,source_order_id=source2,business_date='2026-10-02',items=[{'source_item_id':ids[0],'quantity':'1'},{'source_item_id':ids[1],'quantity':'2'}],request_key='over-quota')
     with get_db() as conn:
         assert conn.execute('SELECT COUNT(*) FROM purchase_return_orders').fetchone()[0]==0
         assert conn.execute('SELECT COUNT(*) FROM purchase_number_sequences').fetchone()[0]==0
-    void_order(sale,'返还库存')
-    result=service.create(customer_id=cid,source_order_id=source2,business_date='2026-10-02',items=[{'source_item_id':i,'quantity':'1'} for i in ids],request_key='shortage')
+    result=service.create(customer_id=cid,source_order_id=source2,business_date='2026-10-02',items=[{'source_item_id':i,'quantity':'1'} for i in ids],request_key='over-quota')
     assert result['order_no']=='NH202610020003'  # 源单占用 0001、0002
-    assert stock(second)==(0,0)
-    service.void(result['order_id'],'多行更正',expected_version=0)
-    assert stock(pid)==before and stock(second)==(1000,0)
+    assert result['total_amount_cents']==2000
 
 
 def test_product_purge_with_unposted_purchase_reference_is_friendly_and_preserves_fk():
@@ -362,8 +315,8 @@ def test_schema10_return_migration_rolls_back_all_new_tables_then_retries(tmp_pa
     assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0]==10
     with conn: db.apply_schema(conn)
     with conn: db.apply_schema(conn)
-    assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0]==14
-    assert conn.execute('SELECT COUNT(*) FROM schema_version WHERE version=14').fetchone()[0]==1
+    assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0]==15
+    assert conn.execute('SELECT COUNT(*) FROM schema_version WHERE version=15').fetchone()[0]==1
     assert conn.execute('PRAGMA foreign_key_check').fetchall()==[]
     conn.close()
 
@@ -376,29 +329,14 @@ def test_purchase_detail_source_entry_quantity_and_void_recycle():
     assert f'/purchases/return/new?customer_id={cid}' in page
     assert 'source_order_id' not in page
     assert 'class="page-danger-action"' not in page and '>3.000<' not in page
-    # 正式拿货单也能直接移入回收站（内部自动冲回库存）。
+    # 正式拿货单也能直接移入回收站（先作废再入站）。
     assert client.post(f'/purchases/{source}/delete').status_code == 302
     assert client.post(f'/recycle/purchase_order/{source}/restore').status_code == 302
     with get_db() as conn:
         assert conn.execute('SELECT status FROM purchase_orders WHERE id=?',(source,)).fetchone()[0]=='void'
-    assert stock(pid)==(0,0)
 
 
-def test_void_numeric_overflow_rejects_with_no_reversal_or_state_change():
-    from erp.services import purchase_returns as service
-    cid,pid,source,iid=seed()
-    r=service.create(customer_id=cid,source_order_id=source,business_date='2026-10-02',items=[{'source_item_id':iid,'quantity':'1'}],request_key='void-overflow')
-    with get_db() as conn:
-        conn.execute('UPDATE product_inventory_state SET quantity_3dp=9223372036854775807 WHERE product_id=?',(pid,))
-        before=tuple(conn.execute('SELECT * FROM product_inventory_state').fetchone())
-    with pytest.raises(ValueError,match='范围'):
-        service.void(r['order_id'],'数值范围测试',expected_version=0)
-    with get_db() as conn:
-        assert tuple(conn.execute('SELECT * FROM product_inventory_state').fetchone())==before
-        assert conn.execute("SELECT COUNT(*) FROM inventory_postings WHERE source_type='purchase_return_void'").fetchone()[0]==0
-
-
-@pytest.mark.parametrize('invalid',['other_customer','foreign_row','duplicate_row','void_source','deleted_source','null_customer','missing_trace','broken_trace','missing_items','early_date','future_date','nan','precision'])
+@pytest.mark.parametrize('invalid',['other_customer','foreign_row','duplicate_row','void_source','deleted_source','null_customer','missing_items','early_date','future_date','nan','precision'])
 def test_invalid_source_and_quantity_never_write_partial_return(invalid):
     from erp.services import purchase_returns as service
     cid,pid,source,iid=seed()
@@ -415,13 +353,9 @@ def test_invalid_source_and_quantity_never_write_partial_return(invalid):
             if invalid=='void_source':conn.execute("UPDATE purchase_orders SET status='void'")
             elif invalid=='deleted_source':conn.execute("UPDATE purchase_orders SET deleted_at=CURRENT_TIMESTAMP")
             elif invalid=='null_customer':conn.execute('UPDATE purchase_orders SET customer_id=NULL')
-            elif invalid=='missing_trace':conn.execute("DELETE FROM inventory_postings WHERE source_type='purchase'")
-            elif invalid=='broken_trace':conn.execute("UPDATE inventory_postings SET quantity_delta_3dp=1 WHERE source_type='purchase'")
             elif invalid=='missing_items':conn.execute('DELETE FROM purchase_order_items')
-    with get_db() as conn: before=tuple(conn.execute('SELECT * FROM product_inventory_state').fetchone())
     with pytest.raises(ValueError):service.create(**args)
     with get_db() as conn:
-        assert tuple(conn.execute('SELECT * FROM product_inventory_state').fetchone())==before
         assert conn.execute('SELECT COUNT(*) FROM purchase_return_orders').fetchone()[0]==0
 
 
@@ -444,23 +378,22 @@ def test_hidden_source_entities_remain_returnable_without_changing_old_financial
     service.void(r['order_id'],'来源退回更正',expected_version=0)
     # 作废后不再计入余额，回到并入前的数值
     assert customer_balance_cents(cid)==balance
-    void_order(sale,'撤销后续销售')
-    assert stock(pid)==(3000,30000000)
 
 
-def test_same_product_distinct_source_lines_have_independent_quota_and_stable_cost_order():
+def test_same_product_distinct_source_lines_have_independent_quota_and_amounts():
     from erp.services import purchase_returns as service
     cid,pid,source,iid=seed()
     void_purchase_order(source,'准备独立重复行来源')
     src=create_purchase_order('NH202610020002','2026-10-02',[{'product_id':pid,'quantity':'1','unit_cost_yuan':'10'},{'product_id':pid,'quantity':'2','unit_cost_yuan':'0'}],customer_id=cid,request_key='repeated-source')['order_id']
     with get_db() as conn: ids=[r[0] for r in conn.execute('SELECT id FROM purchase_order_items WHERE purchase_order_id=? ORDER BY id',(src,))]
     result=service.create(customer_id=cid,source_order_id=src,business_date='2026-10-02',items=[{'source_item_id':ids[1],'quantity':'2'},{'source_item_id':ids[0],'quantity':'1'}],request_key='repeated-return')
-    assert stock(pid)==(0,0)
+    assert result['total_amount_cents']==1000
     with get_db() as conn:
-        rows=conn.execute('SELECT source_item_id,cost_total_micro,subtotal_cents FROM purchase_return_items ORDER BY id').fetchall()
-        assert [tuple(r) for r in rows]==[(ids[0],3333333,1000),(ids[1],6666667,0)]
+        rows=conn.execute('SELECT source_item_id,subtotal_cents FROM purchase_return_items ORDER BY id').fetchall()
+        assert [tuple(r) for r in rows]==[(ids[0],1000),(ids[1],0)]
     service.void(result['order_id'],'精确倒序恢复',expected_version=0)
-    assert stock(pid)==(3000,10000000)
+    with get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM purchase_return_orders WHERE status='saved'").fetchone()[0]==0
 
 
 def test_return_recycle_has_versioned_bulk_controls_and_single_active_entry():
@@ -555,70 +488,64 @@ def test_newer_schema_is_rejected_before_older_code_changes_business_data():
     with get_db() as conn:
         conn.execute("INSERT INTO schema_version(version,notes) VALUES (999,'synthetic future schema')")
         before = {table: [tuple(row) for row in conn.execute('SELECT * FROM ' + table)]
-                  for table in ('schema_version', 'purchase_orders', 'purchase_order_items', 'product_inventory_state', 'inventory_postings')}
+                  for table in ('schema_version', 'purchase_orders', 'purchase_order_items')}
     with pytest.raises(RuntimeError, match='不支持'):
         db.init_db()
     with get_db() as conn:
         assert {table: [tuple(row) for row in conn.execute('SELECT * FROM ' + table)] for table in before} == before
 
 
-def test_manual_return_saved_consumes_moving_average_and_void_restores():
+def test_manual_return_saved_uses_typed_price_and_source_less_row():
     from erp.services import purchase_returns as service
     cid,pid,source,iid=seed()
     r=service.create(customer_id=cid,business_date='2026-10-02',items=[{'product_id':pid,'quantity':'2','unit_price_yuan':'12.50'}],request_key='manual-saved')
     assert r['total_amount_cents']==2500
     assert r['order_no']=='NH202610020002'  # 与拿货单共用当天 NH 流水
-    assert stock(pid)==(1000,10000000)
     with get_db() as conn:
         row=conn.execute('SELECT * FROM purchase_return_items WHERE purchase_return_id=?',(r['order_id'],)).fetchone()
         assert row['source_item_id'] is None and row['unit_price_cents']==1250 and row['subtotal_cents']==2500
-        assert row['cost_total_micro']==20000000 and row['posting_seq'] is not None
         assert conn.execute('PRAGMA foreign_key_check').fetchall()==[]
     service.void(r['order_id'],'手工更正',expected_version=0)
-    assert stock(pid)==(3000,30000000)
+    with get_db() as conn:
+        assert conn.execute('SELECT status FROM purchase_return_orders WHERE id=?',(r['order_id'],)).fetchone()[0]=='void'
 
 
-def test_manual_return_draft_edit_finalize_locks_economics():
+def test_manual_return_draft_edit_finalize_and_formal_edit_allowed():
     from erp.services import purchase_returns as service
     cid,pid,source,iid=seed()
     args=dict(customer_id=cid,business_date='2026-10-02',items=[{'product_id':pid,'quantity':'1','unit_price_yuan':'10'}],request_key='manual-draft',status='draft',notes='初稿')
     draft=service.create(**args)
-    assert stock(pid)==(3000,30000000)
     changed=service.update_draft(draft['order_id'],expected_version=0,customer_id=cid,items=[{'product_id':pid,'quantity':'2','unit_price_yuan':'10'}],notes='当前输入',status='saved')
     assert changed['version']==1
-    assert stock(pid)==(1000,10000000)
     assert service.create(**args)['order_id']==draft['order_id']
-    with pytest.raises(ValueError,match='锁定'):
-        service.update_draft(draft['order_id'],expected_version=1,customer_id=cid,items=[{'product_id':pid,'quantity':'1','unit_price_yuan':'10'}])
+    # 决策 ④：正式退拿货单不再锁经济字段，仍可编辑。
+    edited=service.update_draft(draft['order_id'],expected_version=1,customer_id=cid,items=[{'product_id':pid,'quantity':'3','unit_price_yuan':'10'}])
+    assert edited['version']==2 and edited['total_amount_cents']==3000
 
 
-def test_manual_return_rejects_shortage_and_unknown_product_without_partial_write():
+def test_manual_return_rejects_unknown_product_without_partial_write():
     from erp.services import purchase_returns as service
     cid,pid,source,iid=seed()
-    before=stock(pid)
-    with pytest.raises(ValueError,match='库存不足'):
-        service.create(customer_id=cid,business_date='2026-10-02',items=[{'product_id':pid,'quantity':'4','unit_price_yuan':'10'}],request_key='manual-shortage')
     with pytest.raises(ValueError,match='商品不存在'):
         service.create(customer_id=cid,business_date='2026-10-02',items=[{'product_id':999999,'quantity':'1','unit_price_yuan':'10'}],request_key='manual-missing')
-    assert stock(pid)==before
     with get_db() as conn:
         assert conn.execute('SELECT COUNT(*) FROM purchase_return_orders').fetchone()[0]==0
         assert conn.execute('PRAGMA foreign_key_check').fetchall()==[]
 
 
 def test_purchase_return_decoupling_migration_relaxes_source_columns():
-    """Old NOT NULL/UNIQUE source coupling is rebuilt in place, rows preserved."""
+    """Old NOT NULL/UNIQUE source coupling is rebuilt in place, rows preserved.
+
+    用仓库冻结的 `schema_v13_pre_decoupling.sql` 建库：只有这种形态（`spec` 列 +
+    `source_order_id`/`source_item_id` NOT NULL）会让 v13 解耦迁移真的动手。
+    """
     import sqlite3
+    from pathlib import Path
     from erp import db
+    fixture=Path(__file__).parent/'fixtures'/'schema_v13_pre_decoupling.sql'
     path=db.db_path()
-    old_schema=(db.SCHEMA_SQL
-        .replace('source_order_id INTEGER REFERENCES purchase_orders(id),','source_order_id INTEGER NOT NULL REFERENCES purchase_orders(id),')
-        .replace('source_item_id INTEGER REFERENCES purchase_order_items(id),','source_item_id INTEGER NOT NULL REFERENCES purchase_order_items(id),'))
     conn=sqlite3.connect(path)
-    conn.executescript(old_schema)
-    # 决策变更（v14）：SCHEMA_SQL 已是 v14 形态（无 spec 列），但解耦迁移的整表重建
-    # 按 v13 老库原样搬 `spec` 列；这里补回该列以忠实模拟 v13 库（真实老库本就有）。
-    conn.execute("ALTER TABLE purchase_return_items ADD COLUMN spec TEXT NOT NULL DEFAULT ''")
+    conn.executescript(fixture.read_text(encoding='utf-8'))
     conn.execute("INSERT INTO customers(id,name) VALUES (1,'迁移对象')")
     conn.execute("INSERT INTO products(id,name,unit,default_price_cents) VALUES (1,'迁移商品','个',0)")
     conn.execute("INSERT INTO purchase_orders(id,order_no,business_date,status,request_key,payload_hash,customer_id) VALUES (1,'NH202610010001','2026-10-01','saved','k1','h',1)")

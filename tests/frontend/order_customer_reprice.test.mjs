@@ -74,12 +74,10 @@ test('销售/退货页：换客户按新客户重写已命中档案的行，原�
   });
 
   const repriced = [];
-  // `repriceRowsForCustomer` 引用页面级 `sourceTraceOnly`（切片之外），沙箱里补上。
   const context = vm.createContext({
     document: { querySelectorAll: () => [makeTr('normal'), makeTr('sourceApplied'), makeTr('blank')] },
     productCatalog: [{ id: 11, name: '软密封闸阀 DN100', unit: '台' }],
     Number, String,
-    sourceTraceOnly: false,
     refineProductRow: (tr, product) => { repriced.push(product); },
   });
   vm.runInContext(code, context);
@@ -91,7 +89,10 @@ test('销售/退货页：换客户按新客户重写已命中档案的行，原�
   assert.equal(repriced[0].name, '软密封闸阀 DN100', '重取价用的查询串应来自商品档案规范名');
 });
 
-test('原单「仅追溯」关联时，带入行也随客户重取价（成本齐备时不重算）', () => {
+test('原单带入行始终用原成交价，不再有「缺成本才随客户重取价」的分支', () => {
+  // v15（2026-10-16）：成本链下线后，原单关联只剩「可退额度 + 追溯」，
+  // 「成本不齐 → 带入行随客户重取价」这条二分语义随之取消：带入行一律保留原成交价。
+  assert.equal(salesPage.includes('sourceTraceOnly'), false, 'sourceTraceOnly 分支已随成本链删除');
   const code = slice(salesPage, 'function repriceRowsForCustomer(', '\nErpOrderEntry.onCounterpartyChanged(', 'repriceRowsForCustomer');
   const rows = {
     sourceApplied: { '.product-id': { value: '11' }, '.picker-name-input': { value: '软密封闸阀DN100' }, '.source-item-id': { value: '77' } },
@@ -104,12 +105,11 @@ test('原单「仅追溯」关联时，带入行也随客户重取价（成本�
     document: { querySelectorAll: () => [makeTr('sourceApplied')] },
     productCatalog: [{ id: 11, name: '软密封闸阀 DN100' }],
     Number, String,
-    sourceTraceOnly: true,   // 来源单缺成本 → 只作追溯，带入行允许随客户重取价
     refineProductRow: (tr, product) => { repriced.push(product); },
   });
   vm.runInContext(code, context);
   vm.runInContext('repriceRowsForCustomer()', context);
-  assert.equal(repriced.length, 1, '仅追溯关联时，带入行也应随客户重取价');
+  assert.equal(repriced.length, 0, '原单带入行保留原成交价，不随客户重取价');
 });
 
 test('销售/退货页把往来对象变化接到重取价，且共享 JS 版本已提升', () => {

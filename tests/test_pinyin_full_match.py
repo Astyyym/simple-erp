@@ -21,7 +21,7 @@ from erp.services.accounting import (
     create_product,
     update_product_record,
 )
-from erp.services.inventory import create_purchase_order, initialize_product
+from erp.services.purchases import create_purchase_order
 from erp.utils.pinyin import normalize_name_query, pinyin_full
 
 
@@ -159,7 +159,7 @@ def test_purchase_source_candidates_match_customer_full_pinyin():
     customer_id = create_customer("星辰宾馆")
     product_id = create_product("拿货候选商品", "个")
     # 正式拿货单要求商品已启用库存。
-    initialize_product(product_id, "10", "10", "2026-10-01", "期初", "pinyin-source-init")
+
     create_purchase_order(
         "NH202610140001", "2026-10-14",
         [{"product_id": product_id, "quantity": "1", "unit_cost_yuan": "10"}],
@@ -174,7 +174,7 @@ def test_return_source_candidates_match_customer_full_pinyin():
     init_db()
     customer_id = create_customer("星辰宾馆")
     product_id = create_product("退货候选商品", "个")
-    initialize_product(product_id, "10", "10", "2026-10-01", "期初", "pinyin-return-init")
+
     create_order_from_typed_rows(
         customer_id,
         "MD202610140002",

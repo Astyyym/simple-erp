@@ -3,19 +3,9 @@ from datetime import date
 from decimal import Decimal
 from erp.db import get_db
 from erp.utils.order_numbering import next_nh_order_no
-from erp.services.inventory import (_scaled_quantity, _date_value, _payload_hash,
-    _purchase_customer_id, _outbound_cost_micro, _average_cost_micro, _price_cents,
-    _subtotal_cents, post_typed_purchase_return)
+from erp.services.purchases import (_scaled_quantity, _date_value, _payload_hash,
+    _purchase_customer_id, _price_cents, _subtotal_cents, _decimal)
 from erp.utils.audit import log_action
-
-
-def _checked_average(qty, cost):
-    if not 0 <= qty <= 9223372036854775807 or not 0 <= cost <= 9223372036854775807:
-        raise ValueError('库存数量或成本超出支持范围')
-    average = _average_cost_micro(qty,cost)
-    if average is not None and average > 9223372036854775807:
-        raise ValueError('库存参考成本超出支持范围')
-    return average
 
 
 def _result(order):
@@ -33,11 +23,6 @@ def _source(conn, customer_id, source_order_id):
     rows = conn.execute('SELECT * FROM purchase_order_items WHERE purchase_order_id=? ORDER BY id', (source_order_id,)).fetchall()
     if not rows or sum(row['subtotal_cents'] for row in rows) != source['total_amount_cents']:
         raise ValueError('原拿货明细不完整')
-    for n, row in enumerate(rows, 1):
-        key = str(source_order_id) if len(rows) == 1 else f'{source_order_id}:{n}'
-        posting = conn.execute("SELECT * FROM inventory_postings WHERE source_type='purchase' AND source_id=? AND product_id=?", (key, row['product_id'])).fetchone()
-        if posting is None or posting['quantity_delta_3dp'] != row['quantity_3dp'] or posting['cost_delta_micro'] < 0:
-            raise ValueError('历史拿货缺可靠库存来源流水，当前路径不支持')
     return source, {row['id']: row for row in rows}
 
 
@@ -52,7 +37,6 @@ def _prepare(items):
     prepared = []
     for raw in items:
         iid = _purchase_customer_id(raw.get('source_item_id'))
-        from erp.services.inventory import _decimal
         quantity = _decimal(raw.get('quantity'), '数量')
         if quantity > Decimal('9223372036854775.807'):
             raise ValueError('数量超出支持范围')
@@ -73,7 +57,6 @@ def _prepare_typed(items):
     """Validate decoupled manual rows: 商品 + 数量 + 手输单价（+ 可选单位）。"""
     if not items:
         raise ValueError('退拿货至少需要一行商品')
-    from erp.services.inventory import _decimal
     prepared = []
     for raw in items:
         try:
@@ -114,23 +97,23 @@ def _typed_total(rows):
     return sum(_subtotal_cents(row['quantity_3dp'], row['unit_price_cents']) for row in rows)
 
 
-def _write_typed_items(conn, order_id, rows, business_date, *, post):
+def _write_typed_items(conn, order_id, rows, business_date):
+    """写入手输（解耦）退拿货明细。
+
+    v15 起不再有成本快照与库存流水（用户决策 ②/③）：明细只存名称/单位/数量/单价/小计，
+    不再有 `unit_cost_micro` / `cost_total_micro` / `posting_seq`。
+    """
     for row in rows:
         if conn.execute('SELECT 1 FROM products WHERE id=? AND deleted_at IS NULL', (row['product_id'],)).fetchone() is None:
             raise ValueError('商品不存在或已删除')
-    snapshots = (
-        post_typed_purchase_return(conn, order_id, [{'product_id': r['product_id'], 'quantity_3dp': r['quantity_3dp']} for r in rows], business_date)
-        if post else [{'unit_cost_micro': None, 'cost_total_micro': None, 'posting_seq': None} for _ in rows]
-    )
-    for row, snapshot in zip(rows, snapshots):
+    for row in rows:
         product = conn.execute('SELECT name, unit FROM products WHERE id=?', (row['product_id'],)).fetchone()
         # 手工退拿货无源单：提交空单位回落商品档案单位；不回写 products.unit。
         row_unit = str(row.get('unit') or '').strip() or str(product['unit'] or '')
         conn.execute(
-            '''INSERT INTO purchase_return_items(purchase_return_id,source_item_id,product_id,product_name,unit,quantity_3dp,unit_price_cents,subtotal_cents,unit_cost_micro,cost_total_micro,posting_seq) VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
+            '''INSERT INTO purchase_return_items(purchase_return_id,source_item_id,product_id,product_name,unit,quantity_3dp,unit_price_cents,subtotal_cents) VALUES (?,?,?,?,?,?,?,?)''',
             (order_id, None, row['product_id'], product['name'], row_unit,
-             row['quantity_3dp'], row['unit_price_cents'], _subtotal_cents(row['quantity_3dp'], row['unit_price_cents']),
-             snapshot['unit_cost_micro'], snapshot['cost_total_micro'], snapshot['posting_seq']),
+             row['quantity_3dp'], row['unit_price_cents'], _subtotal_cents(row['quantity_3dp'], row['unit_price_cents'])),
         )
 
 
@@ -145,9 +128,6 @@ def _allocations(conn, customer_id, source_order_id, business_date, prepared, *,
         original = rows.get(item['source_item_id'])
         if original is None:
             raise ValueError('原行不属于所选原拿货单')
-        init = conn.execute('SELECT business_date FROM inventory_initializations WHERE product_id=?', (original['product_id'],)).fetchone()
-        if init is None or business_date < init['business_date']:
-            raise ValueError('商品未启用或日期早于商品期初')
         prior = conn.execute("""SELECT COALESCE(SUM(i.quantity_3dp),0),COALESCE(SUM(i.subtotal_cents),0)
             FROM purchase_return_items i JOIN purchase_return_orders o ON o.id=i.purchase_return_id
             WHERE i.source_item_id=? AND o.status='saved' AND o.deleted_at IS NULL""", (original['id'],)).fetchone()
@@ -161,31 +141,18 @@ def _allocations(conn, customer_id, source_order_id, business_date, prepared, *,
     return source, result
 
 
-def _write_items(conn, order_id, rows, business_date, *, post):
+def _write_items(conn, order_id, rows, business_date):
+    """写入源绑定（有原拿货单）退拿货明细。v15 起不再有成本快照与库存流水。"""
     for row in rows:
-        cost = avg = seq = None
-        if post:
-            state = conn.execute('SELECT * FROM product_inventory_state WHERE product_id=? AND enabled=1', (row['product_id'],)).fetchone()
-            if state is None:
-                raise ValueError('商品尚未启用库存')
-            cost = _outbound_cost_micro(row['quantity_3dp'], state['quantity_3dp'], state['cost_total_micro'])
-            avg = state['avg_cost_micro']
-            qty = state['quantity_3dp'] - row['quantity_3dp']
-            total = state['cost_total_micro'] - cost
-            new_average = _checked_average(qty,total)
-            cur = conn.execute("INSERT INTO inventory_postings(product_id,source_type,source_id,quantity_delta_3dp,cost_delta_micro,business_date) VALUES (?,'purchase_return',?,?,?,?)", (row['product_id'], f"{order_id}:{row['source_item_id']}", -row['quantity_3dp'], -cost, business_date))
-            seq = cur.lastrowid
-            conn.execute('UPDATE product_inventory_state SET quantity_3dp=?,cost_total_micro=?,avg_cost_micro=?,last_posting_seq=?,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE product_id=?', (qty,total,new_average,seq,row['product_id']))
-            conn.execute('UPDATE inventory_initializations SET locked=1 WHERE product_id=?', (row['product_id'],))
-        conn.execute('''INSERT INTO purchase_return_items(purchase_return_id,source_item_id,product_id,product_name,unit,quantity_3dp,unit_price_cents,subtotal_cents,unit_cost_micro,cost_total_micro,posting_seq) VALUES (?,?,?,?,?,?,?,?,?,?,?)''', (order_id,row['source_item_id'],row['product_id'],row['product_name'],row['unit'],row['quantity_3dp'],row['unit_cost_cents'],row['subtotal_cents'],avg,cost,seq))
+        conn.execute('''INSERT INTO purchase_return_items(purchase_return_id,source_item_id,product_id,product_name,unit,quantity_3dp,unit_price_cents,subtotal_cents) VALUES (?,?,?,?,?,?,?,?)''', (order_id,row['source_item_id'],row['product_id'],row['product_name'],row['unit'],row['quantity_3dp'],row['unit_cost_cents'],row['subtotal_cents']))
 
 
 def create(*, customer_id, business_date, items, request_key, status='saved', notes='', source_order_id=None):
     """Create a draft/saved purchase return.
 
-    Decoupled manual rows (no ``source_order_id``) accept 商品 + 数量 + 手输单价 and
-    consume inventory at the current moving-average cost; passing a
+    Decoupled manual rows (no ``source_order_id``) accept 商品 + 数量 + 手输单价; passing a
     ``source_order_id`` keeps the legacy source-bound path for old data.
+    v15 起两种路径都不再消耗库存、不再产生成本（用户决策 ②/③）。
     """
     customer_id = _purchase_customer_id(customer_id)
     business_date = _date_value(business_date)
@@ -226,12 +193,12 @@ def create(*, customer_id, business_date, items, request_key, status='saved', no
             total_amount = sum(r['subtotal_cents'] for r in rows)
         # 拿货/退拿货共用同一天 NH 流水（取号时会让过历史 TN 流水，旧单号不重写）。
         order_no = next_nh_order_no(conn, business_date)
-        cur = conn.execute('''INSERT INTO purchase_return_orders(customer_id,customer_name,source_order_id,order_no,business_date,total_amount_cents,status,notes,request_key,creation_payload_hash,posted_once) VALUES (?,?,?,?,?,?,?,?,?,?,?)''', (customer_id,customer_name,trace_source_id,order_no,business_date,total_amount,status,notes,request_key,digest,int(status=='saved')))
+        cur = conn.execute('''INSERT INTO purchase_return_orders(customer_id,customer_name,source_order_id,order_no,business_date,total_amount_cents,status,notes,request_key,creation_payload_hash) VALUES (?,?,?,?,?,?,?,?,?,?)''', (customer_id,customer_name,trace_source_id,order_no,business_date,total_amount,status,notes,request_key,digest))
         order_id = cur.lastrowid
         if decoupled:
-            _write_typed_items(conn,order_id,prepared,business_date,post=status=='saved')
+            _write_typed_items(conn,order_id,prepared,business_date)
         else:
-            _write_items(conn,order_id,rows,business_date,post=status=='saved')
+            _write_items(conn,order_id,rows,business_date)
         log_action('create_purchase_return','purchase_return',order_id,'新增退拿货 '+order_no,conn=conn)
         return _result(conn.execute('SELECT * FROM purchase_return_orders WHERE id=?',(order_id,)).fetchone())
 
@@ -253,21 +220,20 @@ def _version(value):
 
 
 def _update_draft(conn, order, customer_id, source_order_id, prepared, notes, status):
-    if order['status'] != 'draft' or order['posted_once']:
-        raise ValueError('正式退拿货经济字段已锁定')
+    # 2026-10-16（决策 ④）：正式单编辑锁全撤——`posted_once` 列已随 v15 删除，
+    # 「正式退拿货经济字段已锁定」不再是规则。只剩状态合法性校验。
     if status not in {'draft','saved'}:
         raise ValueError('状态无效')
     source, rows = _allocations(conn, customer_id, source_order_id, order['business_date'], prepared,draft=status=='draft')
     conn.execute('DELETE FROM purchase_return_items WHERE purchase_return_id=?', (order['id'],))
-    _write_items(conn, order['id'], rows, order['business_date'], post=status=='saved')
-    conn.execute('UPDATE purchase_return_orders SET customer_id=?,customer_name=?,source_order_id=?,total_amount_cents=?,notes=?,status=?,posted_once=?,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?', (customer_id, source['customer_name'],source_order_id,sum(r['subtotal_cents'] for r in rows),(notes or '').strip(),status,int(status=='saved'),order['id']))
+    _write_items(conn, order['id'], rows, order['business_date'])
+    conn.execute('UPDATE purchase_return_orders SET customer_id=?,customer_name=?,source_order_id=?,total_amount_cents=?,notes=?,status=?,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?', (customer_id, source['customer_name'],source_order_id,sum(r['subtotal_cents'] for r in rows),(notes or '').strip(),status,order['id']))
     log_action('update_purchase_return','purchase_return',order['id'],'保存退拿货当前输入 '+status,conn=conn)
     return _result(conn.execute('SELECT * FROM purchase_return_orders WHERE id=?',(order['id'],)).fetchone())
 
 
 def _update_draft_typed(conn, order, customer_id, prepared, notes, status):
-    if order['status'] != 'draft' or order['posted_once']:
-        raise ValueError('正式退拿货经济字段已锁定')
+    # 同上（决策 ④）：正式单不再锁编辑。
     if status not in {'draft','saved'}:
         raise ValueError('状态无效')
     if not prepared:
@@ -276,8 +242,8 @@ def _update_draft_typed(conn, order, customer_id, prepared, notes, status):
     if customer is None:
         raise ValueError('往来对象不存在')
     conn.execute('DELETE FROM purchase_return_items WHERE purchase_return_id=?', (order['id'],))
-    _write_typed_items(conn, order['id'], prepared, order['business_date'], post=status=='saved')
-    conn.execute('UPDATE purchase_return_orders SET customer_id=?,customer_name=?,source_order_id=NULL,total_amount_cents=?,notes=?,status=?,posted_once=?,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?', (customer_id,customer['name'],_typed_total(prepared),(notes or '').strip(),status,int(status=='saved'),order['id']))
+    _write_typed_items(conn, order['id'], prepared, order['business_date'])
+    conn.execute('UPDATE purchase_return_orders SET customer_id=?,customer_name=?,source_order_id=NULL,total_amount_cents=?,notes=?,status=?,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?', (customer_id,customer['name'],_typed_total(prepared),(notes or '').strip(),status,order['id']))
     log_action('update_purchase_return','purchase_return',order['id'],'保存退拿货当前输入 '+status,conn=conn)
     return _result(conn.execute('SELECT * FROM purchase_return_orders WHERE id=?',(order['id'],)).fetchone())
 
@@ -328,21 +294,7 @@ def void(order_id, reason, *, expected_version):
         order = _locked_order(conn,order_id,expected_version)
         if order['status'] != 'saved':
             raise ValueError('只有正式退拿货可以作废')
-        rows = conn.execute('SELECT p.* FROM purchase_return_items i JOIN inventory_postings p ON p.posting_seq=i.posting_seq WHERE i.purchase_return_id=? ORDER BY p.posting_seq DESC',(order_id,)).fetchall()
-        count = conn.execute('SELECT COUNT(*) FROM purchase_return_items WHERE purchase_return_id=?',(order_id,)).fetchone()[0]
-        if not rows or len(rows) != count:
-            raise ValueError('退拿货库存流水不完整')
-        # 「必须是该商品最后一笔库存业务」的旧限制已按用户决策移除（2026-10-07）。
-        # 下面每条流水自身的类型/方向校验保留，那是真实性校验而非顺序限制。
-        for row in rows:
-            if row['source_type'] != 'purchase_return' or row['quantity_delta_3dp'] >= 0 or row['cost_delta_micro'] > 0:
-                raise ValueError('退拿货原流水无效')
-            state = conn.execute('SELECT * FROM product_inventory_state WHERE product_id=?',(row['product_id'],)).fetchone()
-            qty = state['quantity_3dp'] - row['quantity_delta_3dp']
-            cost = state['cost_total_micro'] - row['cost_delta_micro']
-            average = _checked_average(qty,cost)
-            cur = conn.execute("INSERT INTO inventory_postings(product_id,source_type,source_id,quantity_delta_3dp,cost_delta_micro,business_date) VALUES (?,'purchase_return_void',?,?,?,?)",(row['product_id'],row['source_id']+':void',-row['quantity_delta_3dp'],-row['cost_delta_micro'],order['business_date']))
-            conn.execute('UPDATE product_inventory_state SET quantity_3dp=?,cost_total_micro=?,avg_cost_micro=?,last_posting_seq=?,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE product_id=?',(qty,cost,average,cur.lastrowid,row['product_id']))
+        # v15（决策 ②/③）：作废不再冲回库存流水——库存系统已删除，只剩状态与原因。
         conn.execute("UPDATE purchase_return_orders SET status='void',void_reason=?,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?",(reason,order_id))
         log_action('void_purchase_return','purchase_return',order_id,reason,conn=conn)
         return _result(conn.execute('SELECT * FROM purchase_return_orders WHERE id=?',(order_id,)).fetchone())
@@ -386,8 +338,8 @@ def recycle_batch(ids, versions, *, action):
 def void_then_delete(order_id, *, expected_version, reason='列表删除（自动冲回）'):
     """Delete a 退拿货 from the list, voiding it first when it is live.
 
-    ``void`` reverses the outbound postings (conservation-checked); ``delete`` then
-    moves the document to the recycle bin. Errors from either step propagate.
+    v15 起作废不再冲回库存流水（库存系统已删除），这条路径只剩「正式单不能直接删」的
+    状态机要求；两步的错误都照常抛出。
     """
     with get_db() as conn:
         order = conn.execute('SELECT status,version,deleted_at FROM purchase_return_orders WHERE id=?',(order_id,)).fetchone()

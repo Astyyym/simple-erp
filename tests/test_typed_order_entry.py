@@ -18,8 +18,9 @@ def test_typed_order_rows_create_product_dictionary_and_snapshot_editable_fields
         item = conn.execute("SELECT * FROM order_items WHERE order_id=?", (order_id,)).fetchone()
     assert product is not None
     assert product["unit"] == "个"
-    # 决策变更（2026-10-15）：档案不再保存售价（列仍在、值恒 0），售价唯一来源 = 客户专属价。
-    assert product["default_price_cents"] == 0
+    # 决策变更（2026-10-15）：档案不再保存售价，售价唯一来源 = 客户专属价（见下）。
+    # 2026-10-16（决策 ③/schema v15）：档案里的价格列本身也已随迁移物理删除，
+    # 因此这里不再能（也不必）断言档案价，改由下面的客户专属价断言守住售价口径。
     with get_db() as conn:
         learned = conn.execute(
             "SELECT price_cents FROM customer_prices WHERE customer_id=? AND product_id=?",
@@ -41,8 +42,7 @@ def test_typed_order_row_reuses_existing_product_and_allows_unit_price_override(
         last_item = conn.execute("SELECT * FROM order_items ORDER BY id DESC LIMIT 1").fetchone()
     assert len(products) == 1
     assert products[0]["unit"] == "箱"
-    # 档案价恒 0；第二单的 45 元覆盖为新的客户专属价。
-    assert products[0]["default_price_cents"] == 0
+    # 档案不保存售价（列已随 schema v15 删除）；第二单的 45 元覆盖为新的客户专属价。
     with get_db() as conn:
         customer_price = conn.execute("SELECT price_cents FROM customer_prices WHERE customer_id=? AND product_id=?", (customer_id, products[0]["id"])).fetchone()
     assert customer_price["price_cents"] == 4500

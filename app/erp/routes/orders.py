@@ -5,7 +5,6 @@ import re
 import uuid
 from erp.db import get_db
 from erp.services.accounting import create_order_from_typed_rows, create_return_order_from_source, delete_order, mark_order_printed, update_return_draft_from_source, update_order_from_typed_rows, void_order
-from erp.services.cost_backfill import backfill_order_costs
 from erp.utils.exporting import (
     export_filename,
     order_line_export_headers,
@@ -267,9 +266,8 @@ def list_orders():
     type_filter = set(order_types)
     # E2：状态多选筛选（空=全部）。销售/退货四态，拿货/退拿货三态（无 printed）。
     status_filter = {s for s in request.args.getlist("status") if s in {"draft", "saved", "printed", "void"}}
-    # 发现路径：只看缺成本销售单（`cost=missing`）。缺成本 = 正式销售单里有成本为空的行。
-    # 语义写死：筛选开启时非销售分支固定 1=0（拿货/退拿货没有成本概念）。
-    cost_missing = request.args.get("cost", "").strip() == "missing"
+    # v15（决策 ②/③）：原先的「只看缺成本销售单」（`cost=missing`）筛选已删除——
+    # 成本链整体下线，不再有「缺成本」这个概念。
 
     with get_db() as conn:
         scope, customer_row, dashboard_notice, matched_names = _resolve_customer_scope(conn, customer_q)
@@ -323,16 +321,7 @@ def list_orders():
         purchase_condition = "1=1" if (not type_filter or "purchase" in type_filter) else "1=0"
         purchase_return_condition = "1=1" if (not type_filter or "purchase_return" in type_filter) else "1=0"
 
-        # 缺成本筛选：销售分支要求存在成本为空的行；非销售分支固定 1=0（无成本概念）。
-        has_missing_cost_expr = (
-            "EXISTS(SELECT 1 FROM order_items oi WHERE oi.order_id=o.id "
-            "AND (oi.unit_cost_micro IS NULL OR oi.cost_total_micro IS NULL))"
-        )
-        if cost_missing:
-            sale_condition += f" AND {has_missing_cost_expr}"
-            return_condition += " AND 1=0"
-            purchase_condition += " AND 1=0"
-            purchase_return_condition += " AND 1=0"
+        # 缺成本筛选已随成本链删除（v15）。
 
         # E2：状态筛选按各表 status 直接匹配（销售/退货四态；拿货/退拿货无 printed，勾了也不匹配）。
         if status_filter:
@@ -380,30 +369,22 @@ def list_orders():
         # orders stores no name snapshot: join customers for display and filtering.
         union_sql = f"""
             SELECT o.id, o.order_no, o.customer_id, COALESCE(c.name, '') AS customer_name,
-                   o.order_date AS business_date, o.order_type, o.total_amount_cents, o.status,
-                   {_postings_expr(('sale', 'return'), 'o.id')} AS has_postings,
-                   ({has_missing_cost_expr}) AS has_missing_cost
-              FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
-             WHERE {order_where} AND o.order_type='sale' AND {sale_condition}
+                   o.order_date AS business_date, o.order_type, o.total_amount_cents, o.status
+             FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
+            WHERE {order_where} AND o.order_type='sale' AND {sale_condition}
             UNION ALL
             SELECT o.id, o.order_no, o.customer_id, COALESCE(c.name, '') AS customer_name,
-                   o.order_date AS business_date, o.order_type, o.total_amount_cents, o.status,
-                   {_postings_expr(('sale', 'return'), 'o.id')} AS has_postings,
-                   0 AS has_missing_cost
-              FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
-             WHERE {order_where} AND o.order_type='return' AND {return_condition}
+                   o.order_date AS business_date, o.order_type, o.total_amount_cents, o.status
+             FROM orders o LEFT JOIN customers c ON c.id = o.customer_id
+            WHERE {order_where} AND o.order_type='return' AND {return_condition}
             UNION ALL
             SELECT id, order_no, customer_id, customer_name, business_date,
-                   'purchase' AS order_type, total_amount_cents, status,
-                   {_postings_expr(('purchase',), 'id')} AS has_postings,
-                   0 AS has_missing_cost
-              FROM purchase_orders WHERE {purchase_where} AND {purchase_condition}
+                   'purchase' AS order_type, total_amount_cents, status
+             FROM purchase_orders WHERE {purchase_where} AND {purchase_condition}
             UNION ALL
             SELECT id, order_no, customer_id, customer_name, business_date,
-                   'purchase_return' AS order_type, total_amount_cents, status,
-                   {_postings_expr(('purchase_return',), 'id')} AS has_postings,
-                   0 AS has_missing_cost
-              FROM purchase_return_orders WHERE {purchase_return_where} AND {purchase_return_condition}
+                   'purchase_return' AS order_type, total_amount_cents, status
+             FROM purchase_return_orders WHERE {purchase_return_where} AND {purchase_return_condition}
         """
         union_params = [*order_params, *order_params, *purchase_params, *purchase_return_params]
         total_order_count = int(conn.execute(
@@ -418,11 +399,7 @@ def list_orders():
             f"SELECT * FROM ({union_sql}) ORDER BY business_date DESC, order_type, id DESC LIMIT ? OFFSET ?",
             [*union_params, page_size, offset],
         ).fetchall()
-        backfilled_order_ids = {
-            int(row["order_id"]) for row in conn.execute(
-                "SELECT DISTINCT order_id FROM order_items WHERE cost_source='backfill'"
-            ).fetchall()
-        }
+        backfilled_order_ids = set()  # v15：补录功能下线，保留空集以便模板沿用同一份上下文。
         documents = [
             dict(row) | {
                 "type_label": {"sale": "销售单", "return": "退货单", "purchase": "拿货单", "purchase_return": "退拿货单"}[row["order_type"]],
@@ -435,18 +412,11 @@ def list_orders():
                 }.get(row["status"], "bg-secondary"),
                 # 全部单据都可勾选删除：正式单据删除时由后端先自动冲回（作废）再进回收站。
                 "deletable": True,
-                # 发现路径：缺成本的正式销售单在列表里挂「缺成本」徽标，提示可去补录。
-                "has_missing_cost": bool(row["has_missing_cost"]) and row["order_type"] == "sale",
                 # B1：不可编辑的记录也渲染「编辑」按钮，但置灰 + title 说明原因。
                 # 直接隐藏会让用户以为功能缺失；禁用态保留了「这里本来能改」的信息。
-                "editable": _document_editable(
-                    row["order_type"], row["status"], bool(row["has_postings"]),
-                    int(row["id"]) in backfilled_order_ids,
-                ),
-                "edit_block_reason": _document_edit_block_reason(
-                    row["order_type"], row["status"], bool(row["has_postings"]),
-                    int(row["id"]) in backfilled_order_ids,
-                ),
+                # 2026-10-16（决策 ④）：只剩「已作废」不可编辑。
+                "editable": _document_editable(row["order_type"], row["status"]),
+                "edit_block_reason": _document_edit_block_reason(row["order_type"], row["status"]),
                 "detail_url": {
                     "sale": f"/orders/{row['id']}", "return": f"/orders/{row['id']}",
                     "purchase": f"/purchases/{row['id']}", "purchase_return": f"/purchases/return/{row['id']}",
@@ -529,9 +499,7 @@ def list_orders():
             customer_q=customer_q,
             order_types=type_filter,
             order_statuses=status_filter,
-            cost_missing=cost_missing,
         ),
-        cost_missing=cost_missing,
         cents_to_yuan=cents_to_yuan,
     )
 
@@ -704,9 +672,7 @@ def new_return_order():
 def _today_history(conn, today: str) -> list[dict]:
     rows = conn.execute(
         """SELECT o.id, o.order_no, o.order_date, o.order_type, o.status,
-                  o.total_amount_cents, COALESCE(c.name, '（未知客户）') AS customer_name,
-                  EXISTS(SELECT 1 FROM inventory_postings p WHERE p.source_type IN ('sale','return')
-                         AND (p.source_id=CAST(o.id AS TEXT) OR p.source_id LIKE CAST(o.id AS TEXT) || ':%')) AS has_postings
+                  o.total_amount_cents, COALESCE(c.name, '（未知客户）') AS customer_name
            FROM orders o LEFT JOIN customers c ON c.id=o.customer_id
            WHERE o.order_date=? AND o.deleted_at IS NULL
              AND o.status IN ('saved', 'printed')
@@ -716,8 +682,8 @@ def _today_history(conn, today: str) -> list[dict]:
     ).fetchall()
     return [
         {**dict(row), "amount_display": cents_to_yuan(row["total_amount_cents"]),
-         "editable": _document_editable(row["order_type"], row["status"], bool(row["has_postings"]), _has_backfill_cost(conn, row["id"])),
-         "edit_block_reason": _document_edit_block_reason(row["order_type"], row["status"], bool(row["has_postings"]), _has_backfill_cost(conn, row["id"]))}
+         "editable": _document_editable(row["order_type"], row["status"]),
+         "edit_block_reason": _document_edit_block_reason(row["order_type"], row["status"])}
         for row in rows
     ]
 
@@ -749,39 +715,32 @@ def _linked_rows_from_form() -> list[dict]:
     ]
 
 
-# 退货来源单「成本是否齐备」的**唯一口径**（2026-10-15）：
-#   有明细、且每一行都带 unit_cost_micro + cost_total_micro，才能走来源分摊路径
-#   （逐行关联 + 可退额度 + 按原单成本回冲）。候选标注、保存分流、重编辑分流三处共用，
-#   任何一处各写各的都会漂移成「候选说可选、保存却硬拒」或反之。
-RETURN_SOURCE_COST_READY_SQL = (
-    "EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id=o.id) "
-    "AND NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id=o.id "
-    "AND (oi.unit_cost_micro IS NULL OR oi.cost_total_micro IS NULL))"
-)
+# 退货来源单能否走「逐行关联 + 可退额度」的**唯一口径**（2026-10-16 决策 ②/③ 后）：
+#   有明细即可逐行绑定（原先还要求「每一行都带成本快照」，那是成本分摊的前置条件，
+#   成本链删除后逐行关联只剩追溯与可退额度控制）。
+#   候选标注、保存分流、重编辑分流三处共用，任何一处各写各的都会漂移成
+#   「候选说可选、保存却硬拒」或反之。
+RETURN_SOURCE_ROW_BINDABLE_SQL = "EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id=o.id)"
 
 
-def _source_order_cost_ready(conn, source_order_id: int) -> bool:
-    """来源销售单能否走来源分摊（成本齐备）。单条判定与候选列表同一 SQL 口径。"""
+def _source_order_row_bindable(conn, source_order_id: int) -> bool:
+    """来源销售单能否走「逐行关联 + 可退额度」。单条判定与候选列表同一 SQL 口径。
+
+    2026-10-16（决策 ②/③）：原先还要求「每一行都带成本快照」，那是成本分摊的前置条件；
+    成本链已删除，逐行关联现在**只用于追溯与可退额度控制**，所以有明细即可绑定。
+    """
     row = conn.execute(
-        f"SELECT ({RETURN_SOURCE_COST_READY_SQL}) AS cost_ready FROM orders o WHERE o.id=?",
+        f"SELECT ({RETURN_SOURCE_ROW_BINDABLE_SQL}) AS row_bindable FROM orders o WHERE o.id=?",
         (source_order_id,),
     ).fetchone()
-    return bool(row and row["cost_ready"])
+    return bool(row and row["row_bindable"])
 
 
-def _return_source_candidates(conn, query: str = "") -> tuple[list[dict], int]:
-    """退货来源候选：`(候选销售单, 明细不全带成本的张数)`。
+def _return_source_candidates(conn, query: str = "") -> list[dict]:
+    """退货来源候选：全部有效销售单都可选（2026-10-15 起就已是这个口径）。
 
-    **2026-10-15 口径变更（用户决策）**：原先候选只列「明细带成本快照」的销售单，
-    缺成本的整单不进候选、只报张数。但自 2026-10-13 起原单关联已降级为
-    「只作参考 / 追溯、不改变计价」，一个纯追溯功能被成本分摊的前置条件挡在门外，
-    门店实际表现为「想给旧单留个关联线索却选不了」。
-
-    现在：
-      - 全部有效销售单都进候选；
-      - 每张带 `cost_ready`（明细是否**全部**带成本）：True 才能走来源分摊路径
-        （逐行关联 + 可退额度 + 按原成本回冲库存）；False 只做追溯，保存走手输路径；
-      - `missing_cost_count` 改为统计候选内 `cost_ready` 为 False 的张数，供页面提示。
+    原单关联只作**参考 / 追溯**，不改变计价。v15 起逐行关联不再需要成本齐备，
+    `row_bindable` 只是「有没有明细可绑」——没有明细的单只能记单号。
     """
     q = (query or "").strip()
     where = ("o.order_type='sale' AND o.status IN ('saved', 'printed') AND o.deleted_at IS NULL "
@@ -791,24 +750,19 @@ def _return_source_candidates(conn, query: str = "") -> tuple[list[dict], int]:
         where += f" AND (o.order_no LIKE ? OR {name_match_clause('c.')})"
         params.append(name_like_pattern(q))
         params.extend(name_match_params(q))
-    # 逐行成本判定：有明细、且每一行都带 unit_cost_micro + cost_total_micro 才算 cost_ready。
-    # 「至少有一行有成本」不够——来源分摊路径要求**所选项**都有成本，部分有成本的单
-    # 走分摊仍会被后端硬拒，那又是一条死路。
     rows = conn.execute(
         f"""
         SELECT o.id, o.order_no, o.order_date, o.customer_id, c.name AS customer_name,
                o.total_amount_cents,
-               ({RETURN_SOURCE_COST_READY_SQL}) AS cost_ready
+               ({RETURN_SOURCE_ROW_BINDABLE_SQL}) AS row_bindable
         FROM orders o JOIN customers c ON c.id=o.customer_id
         WHERE {where}
-        ORDER BY cost_ready DESC, o.order_date DESC, o.id DESC
+        ORDER BY row_bindable DESC, o.order_date DESC, o.id DESC
         LIMIT ?
         """,
         (*params, RETURN_SOURCE_LIMIT),
     ).fetchall()
-    results = [dict(row) for row in rows]
-    missing_cost_count = sum(1 for row in results if not row["cost_ready"])
-    return results, int(missing_cost_count)
+    return [dict(row) for row in rows]
 
 
 @orders_bp.get("/api/today_history")
@@ -823,18 +777,16 @@ def api_today_history():
 def api_return_sources():
     """退货来源候选列表：点击输入框即列最近单据，输入按单号/客户名/拼音过滤。
 
-    `cost_ready=False` 的单**照样返回**（2026-10-15）：关联它只做追溯，不能逐行分摊成本；
-    页面据此标注「无成本，仅追溯」，保存时走手输退货路径。
+    `row_bindable=False` 的单**照样返回**：关联它只能记单号（原单没有明细可逐行绑定）。
     """
     with get_db() as conn:
-        rows, missing_cost_count = _return_source_candidates(conn, request.args.get("q", ""))
+        rows = _return_source_candidates(conn, request.args.get("q", ""))
     return jsonify({
         "orders": [
-            {**row, "cost_ready": bool(row["cost_ready"]),
+            {**row, "row_bindable": bool(row["row_bindable"]),
              "amount_display": cents_to_yuan(row["total_amount_cents"])}
             for row in rows
         ],
-        "missing_cost_count": missing_cost_count,
     })
 
 
@@ -845,7 +797,7 @@ def api_return_source(source_order_id: int):
             f"""
             SELECT o.id, o.order_no, o.order_date, o.customer_id, c.name AS customer_name,
                    o.total_amount_cents,
-                   ({RETURN_SOURCE_COST_READY_SQL}) AS cost_ready
+                   ({RETURN_SOURCE_ROW_BINDABLE_SQL}) AS row_bindable
             FROM orders o JOIN customers c ON c.id=o.customer_id
             WHERE o.id=? AND o.order_type='sale' AND o.status IN ('saved', 'printed')
               AND o.deleted_at IS NULL
@@ -892,12 +844,8 @@ def api_return_source(source_order_id: int):
             "returned_quantity": format(returned_quantity, "f"),
             "available_quantity": format(available, "f"),
             "unit_price": cents_to_yuan(item["unit_price_cents"]),
-            "cost_available": item["unit_cost_micro"] is not None and item["cost_total_micro"] is not None,
-            "unit_cost": micro_to_yuan(int((Decimal(int(item["cost_total_micro"])) / original_quantity).quantize(Decimal("1"), rounding=ROUND_HALF_UP)), precision=6) if item["cost_total_micro"] is not None and original_quantity > 0 else None,
         })
-    # `cost_ready` 必须转成真布尔：sqlite3 返回 0/1，前端按 `=== false` 判「仅追溯」会失效，
-    # 于是给缺成本的原单写出「按原单成本回冲」这种错误承诺（2026-10-15 真实浏览器实测抓到）。
-    return jsonify({"source": {**dict(source), "cost_ready": bool(source["cost_ready"])},
+    return jsonify({"source": {**dict(source), "row_bindable": bool(source["row_bindable"])},
                     "items": payload_items})
 
 
@@ -1054,20 +1002,15 @@ def _create_order_view(order_type: str):
             return error_response("退货来源销售单无效，请重新选择。", title="订单未保存",
                                   back_url=url_for("orders.new_return_order"))
     # 2026-10-13：原单关联只作**参考 / 追溯**。只有「每一行都关联了原单明细」时才走
-    # 来源分摊路径（可退额度 + 成本快照）；只要有手输行，就按普通手输退货保存 ——
+    # 逐行关联路径（可退额度控制）；只要有手输行，就按普通手输退货保存 ——
     # 既不会因为"新增行没关联"被拒，也不会把手输行悄悄丢掉（原实现只保留有关联的行）。
-    #
-    # 2026-10-15：来源单成本不齐时**也强制走手输路径**。候选现在会列出缺成本的旧单
-    # （标注「无成本，仅追溯」），若仍按逐行关联去分摊，`_prepare_return_items` 会以
-    # 「原销售明细缺少可靠成本」整单拒掉 —— 用户看到的就又是「能选不能存」。
-    # 手输路径同样把 `source_order_id` 记在单上，追溯信息不丢；库存照旧回冲，
-    # 成本按当前移动平均（与手工退货同一口径）。
+    # v15（决策 ②/③）：逐行关联不再要求原单成本齐备，只剩可退额度与追溯。
     linked_rows = _linked_rows_from_form() if source_order_id is not None else []
-    source_cost_ready = False
+    source_row_bindable = False
     if source_order_id is not None:
         with get_db() as conn:
-            source_cost_ready = _source_order_cost_ready(conn, source_order_id)
-    if (order_type == "return" and source_order_id is not None and source_cost_ready
+            source_row_bindable = _source_order_row_bindable(conn, source_order_id)
+    if (order_type == "return" and source_order_id is not None and source_row_bindable
             and _all_rows_linked(linked_rows)):
         if not linked_rows:
             return error_response("退货至少选择一行并填写数量。", title="订单未保存",
@@ -1089,7 +1032,7 @@ def _create_order_view(order_type: str):
         return error_response(str(exc), title="订单未保存", back_url=url_for("orders.new_order"))
     try:
         # 2026-10-13：原单关联只作**参考 / 追溯**——只有「每一行都关联了原单明细」时才走
-        # 来源分摊路径（可退额度 + 成本快照）；只要有手输行，就按普通手输退货保存，
+        # 逐行关联路径（可退额度 + 追溯）；只要有手输行，就按普通手输退货保存，
         # 单据上仍记住原单号。此前只要有原单就强制逐行关联，新增行一保存就被拒。
         if order_type == "return" and source_order_id_text and _all_rows_linked(rows):
             created_id = create_return_order_from_source(
@@ -1152,151 +1095,31 @@ def _load_sale_document(conn, order_id: int):
     ).fetchone()
 
 
-def _postings_expr(source_types: tuple[str, ...], id_ref: str) -> str:
-    """生成「该单据是否有库存流水」的 EXISTS 子查询（复用 update_order_from_typed_rows 的 source_id 口径）。"""
-    types = ", ".join(f"'{t}'" for t in source_types)
-    return (
-        f"EXISTS(SELECT 1 FROM inventory_postings p WHERE p.source_type IN ({types}) "
-        f"AND (p.source_id=CAST({id_ref} AS TEXT) OR p.source_id LIKE CAST({id_ref} AS TEXT) || ':%'))"
-    )
-
-
-def _document_editable(order_type: str, status: str, has_postings: bool, has_backfill: bool = False) -> bool:
+def _document_editable(order_type: str, status: str) -> bool:
     """列表/详情/当天历史统一的「可重编辑」口径。
 
-    销售/退货：未作废且无库存流水才可改（与 update_order_from_typed_rows 的过账校验一致；
-    无库存商品的无流水单仍可编辑，不要按 status 一刀切）。拿货/退拿货：只有草稿可改。
-    `has_backfill`：已人工补录历史成本的单禁止重编辑——重编辑会重建明细行、无声清掉补录数据。
+    2026-10-16（用户决策 ④）：**所有单据（含正式单）都可重编辑**，只剩「已作废不能再改」。
+    原先的三种锁——已过账锁（`inventory_postings`）、人工补录成本锁、正式拿货/退拿货锁
+    ——都随库存与成本系统删除而消失。
     """
-    if has_backfill:
-        return False
-    if order_type in ("sale", "return"):
-        return status != "void" and not has_postings
-    return status == "draft"
+    return status != "void"
 
 
-def _document_edit_block_reason(order_type: str, status: str, has_postings: bool, has_backfill: bool = False) -> str:
+def _document_edit_block_reason(order_type: str, status: str) -> str:
     """不可编辑时的原因文案；可编辑时返回空串。
 
     与 `_document_editable` 同一口径。列表/详情把「编辑」按钮始终渲染出来，
     不可编辑时显示为禁用态并用这段文案说明为什么点不了——比直接隐藏按钮更好，
     用户不会以为「这个功能没了」。
     """
-    if _document_editable(order_type, status, has_postings, has_backfill):
+    if _document_editable(order_type, status):
         return ""
-    if has_backfill:
-        return "该单据已人工补录历史成本，重编辑会清除补录数据；如需更正请作废后重开。"
-    if status == "void":
-        return "已作废单据不能编辑，只能查看。"
-    if order_type in ("sale", "return"):
-        return "该单据库存已过账，经济字段不能再改；如需更正请先作废，再重新开单。"
-    return "正式拿货单/退拿货单经济字段已锁定，只能查看。"
+    return "已作废单据不能编辑，只能查看。"
 
 
-def _has_backfill_cost(conn, order_id: int) -> bool:
-    """该单据是否含人工补录成本行（`cost_source='backfill'`）。"""
-    return conn.execute(
-        "SELECT 1 FROM order_items WHERE order_id=? AND cost_source='backfill' LIMIT 1",
-        (order_id,),
-    ).fetchone() is not None
-
-
-def _has_stock_postings(conn, order_id: int) -> bool:
-    """销售/退货是否已有库存流水；有流水即不可再改经济字段（与 update_order_from_typed_rows 同口径）。"""
-    return conn.execute(
-        "SELECT 1 FROM inventory_postings WHERE source_type IN ('sale','return') AND (source_id=? OR source_id LIKE ?) LIMIT 1",
-        (str(order_id), f"{order_id}:%"),
-    ).fetchone() is not None
-
-
-def _backfill_form_rows(items) -> list[dict]:
-    """补录页每行的展示态：真实快照行只读，无成本/补录行可填。"""
-    rows = []
-    for item in items:
-        source = (item["cost_source"] or "")
-        editable_row = item["cost_total_micro"] is None or source == "backfill"
-        rows.append({
-            "id": int(item["id"]),
-            "product_name": item["product_name"],
-            "unit": item["unit"],
-            "quantity": item["quantity"],
-            "subtotal_cents": int(item["subtotal_cents"]),
-            "unit_cost_micro": item["unit_cost_micro"],
-            "cost_total_micro": item["cost_total_micro"],
-            "backfilled": source == "backfill",
-            "editable": editable_row,
-        })
-    return rows
-
-
-def _backfill_guard(order):
-    """补录入口准入（GET/POST 共用）。返回中文错误串或 None。"""
-    if order["order_type"] != "sale":
-        return "人工补录成本目前只支持销售单。"
-    if order["status"] == "void":
-        return "已作废单据不能补录成本。"
-    if order["status"] not in ("saved", "printed"):
-        return "草稿单不需要补录成本，直接重编辑即可。"
-    return None
-
-
-@orders_bp.get("/<int:order_id>/cost_backfill")
-def cost_backfill_page(order_id: int):
-    with get_db() as conn:
-        order = _load_sale_document(conn, order_id)
-        if order is None:
-            return not_found("单据不存在，可能已被移入回收站或从未存在。",
-                             back_url=url_for("orders.list_orders"))
-        blocked = _backfill_guard(order)
-        if blocked:
-            return error_response(blocked, title="无法补录历史成本",
-                                  back_url=url_for("orders.view_order", order_id=order_id))
-        items = conn.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id", (order_id,)).fetchall()
-        has_live_return = conn.execute(
-            """SELECT 1 FROM orders r WHERE r.source_order_id=? AND r.order_type='return'
-               AND r.status IN ('saved','printed') AND r.deleted_at IS NULL LIMIT 1""",
-            (order_id,),
-        ).fetchone() is not None
-    rows = _backfill_form_rows(items)
-    return render_template(
-        "orders/cost_backfill.html",
-        order=order,
-        rows=rows,
-        has_live_return=has_live_return,
-        has_editable_row=any(row["editable"] for row in rows),
-        cents_to_yuan=cents_to_yuan,
-        micro_to_yuan=micro_to_yuan,
-    )
-
-
-@orders_bp.post("/<int:order_id>/cost_backfill")
-def cost_backfill_submit(order_id: int):
-    with get_db() as conn:
-        order = _load_sale_document(conn, order_id)
-        if order is None:
-            return not_found("单据不存在，可能已被移入回收站或从未存在。",
-                             back_url=url_for("orders.list_orders"))
-        blocked = _backfill_guard(order)
-        if blocked:
-            return error_response(blocked, title="无法补录历史成本",
-                                  back_url=url_for("orders.view_order", order_id=order_id))
-        item_ids = [int(row["id"]) for row in conn.execute(
-            "SELECT id FROM order_items WHERE order_id=? ORDER BY id", (order_id,)
-        ).fetchall()]
-
-    entries = []
-    for item_id in item_ids:
-        unit_cost = request.form.get(f"unit_cost_{item_id}", "")
-        total_cost = request.form.get(f"total_cost_{item_id}", "")
-        if str(unit_cost).strip() == "" and str(total_cost).strip() == "":
-            continue
-        entries.append({"item_id": item_id, "unit_cost": unit_cost, "total_cost": total_cost})
-    try:
-        backfill_order_costs(order_id, entries, request.form.get("reason", ""))
-    except ValueError as exc:
-        return error_response(str(exc), title="无法补录历史成本",
-                              back_url=url_for("orders.view_order", order_id=order_id))
-    return redirect(url_for("orders.view_order", order_id=order_id, backfilled=1))
+# v15（决策 ②/③/④）：`_postings_expr` / `_has_stock_postings` / `_has_backfill_cost` /
+# `_backfill_form_rows` / `_backfill_guard` 与 `/cost_backfill` 路由全部删除——
+# 库存流水表与成本快照列都已不存在，历史成本补录功能整体下线。
 
 
 @orders_bp.get("/<int:order_id>")
@@ -1310,30 +1133,10 @@ def view_order(order_id: int):
         source_order_available = bool(order["source_order_id"]) and conn.execute(
             "SELECT 1 FROM orders WHERE id=? AND deleted_at IS NULL", (order["source_order_id"],)
         ).fetchone() is not None
-        editable = _document_editable(
-            order["order_type"], order["status"], _has_stock_postings(conn, order_id),
-            _has_backfill_cost(conn, order_id),
-        )
-        edit_block_reason = _document_edit_block_reason(
-            order["order_type"], order["status"], _has_stock_postings(conn, order_id),
-            _has_backfill_cost(conn, order_id),
-        ) if not editable else ""
-        has_backfill_cost = _has_backfill_cost(conn, order_id)
-        backfillable = (
-            order["order_type"] == "sale"
-            and order["status"] in ("saved", "printed")
-            and any(item["cost_total_micro"] is None or (item["cost_source"] or "") == "backfill"
-                    for item in items)
-        )
-    known_cost = bool(items) and all(item["cost_total_micro"] is not None for item in items)
-    if known_cost:
-        cost_micro = sum(int(item["cost_total_micro"]) for item in items)
-        cost_cents = int((Decimal(cost_micro) / Decimal("10000")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-        signed_cost_cents = -cost_cents if order["order_type"] == "return" else cost_cents
-        profit_cents = int(order["total_amount_cents"]) - signed_cost_cents
-    else:
-        profit_cents = None
-    return render_template("orders/detail.html", order=order, items=items, profit_cents=profit_cents, source_order_available=source_order_available, editable=editable, edit_block_reason=edit_block_reason, backfillable=backfillable, has_backfill_cost=has_backfill_cost, backfilled=request.args.get("backfilled") == "1", cents_to_yuan=cents_to_yuan, micro_to_yuan=micro_to_yuan)
+        editable = _document_editable(order["order_type"], order["status"])
+        edit_block_reason = _document_edit_block_reason(order["order_type"], order["status"]) if not editable else ""
+    # v15（决策 ②/③）：成本/毛利润、补录入口与其状态全部下线，详情页只展示单据与金额。
+    return render_template("orders/detail.html", order=order, items=items, source_order_available=source_order_available, editable=editable, edit_block_reason=edit_block_reason, cents_to_yuan=cents_to_yuan, micro_to_yuan=micro_to_yuan)
 
 
 @orders_bp.get("/<int:order_id>/edit")
@@ -1348,17 +1151,8 @@ def edit_order(order_id: int):
         if order["status"] == "void":
             return error_response("已作废单据不能重编辑，只能回看。", title="无法重编辑",
                                   back_url=url_for("orders.view_order", order_id=order_id))
-        if _has_backfill_cost(conn, order_id):
-            return error_response(
-                "该单据已人工补录历史成本，重编辑会清除补录数据；如需更正请作废后重开。",
-                title="无法重编辑", back_url=url_for("orders.view_order", order_id=order_id),
-            )
-        if _has_stock_postings(conn, order_id):
-            return error_response("该单据库存已过账，经济字段不能再改。请用「回看」核对，或作废后重新开单。",
-                                  title="无法重编辑", back_url=url_for("orders.view_order", order_id=order_id))
-        if order["source_order_id"] is not None and order["status"] != "draft":
-            return error_response("正式退货单经济字段已锁定，请在详情页修改备注。", title="无法重编辑",
-                                  back_url=url_for("orders.view_order", order_id=order_id))
+        # 2026-10-16（决策 ④）：补录锁、已过账锁、正式退货单锁全部撤除——
+        # 只有「已作废」不能重编辑。
     return render_template("orders/new.html", order=order, items=items, products=products, product_catalog=_product_catalog(products), today=date.today().isoformat(), order_type=order["order_type"] if "order_type" in order.keys() else "sale", cents_to_yuan=cents_to_yuan, micro_to_yuan=micro_to_yuan, unit_options=unit_options())
 
 
@@ -1374,28 +1168,18 @@ def update_order_view(order_id: int):
     if existing["status"] == "void":
         return error_response("已作废订单不能重编辑。", title="无法重编辑",
                               back_url=url_for("orders.view_order", order_id=order_id))
-    with get_db() as conn:
-        if _has_backfill_cost(conn, order_id):
-            return error_response(
-                "该单据已人工补录历史成本，重编辑会清除补录数据；如需更正请作废后重开。",
-                title="无法重编辑", back_url=url_for("orders.view_order", order_id=order_id),
-            )
     status = request.form.get("status", "saved").strip()
     if status not in {"draft", "saved", "printed"}:
         return error_response("订单状态无效，请选择“草稿”“正式保存”或“已打印”。", title="无法重编辑",
                               back_url=url_for("orders.view_order", order_id=order_id))
-    # 来源单成本齐备时，退货草稿重编辑仍走「逐行关联 + 来源分摊」（可退额度、按原成本回冲）；
-    # 成本不齐（2026-10-15 起这类单也允许关联，只做追溯）时必须走手输更新路径 —— 否则
-    # `_prepare_return_items` 会以「退货必须选择原销售明细 / 缺少可靠成本」把草稿锁成死路。
-    # `source_order_id` 已在单上，手输路径的 UPDATE 不改这一列，追溯信息保留。
-    source_cost_ready = False
+    # 原单有明细时走「逐行关联」（可退额度控制）；没有明细时只能记单号，走手输路径。
+    # 两条路径的 UPDATE 都不改 `source_order_id`，追溯信息保留。
+    source_row_bindable = False
     if existing["source_order_id"] is not None:
         with get_db() as conn:
-            source_cost_ready = _source_order_cost_ready(conn, int(existing["source_order_id"]))
-    if existing["source_order_id"] is not None and source_cost_ready:
-        if existing["status"] != "draft":
-            return error_response("正式退货单经济字段已锁定，请在详情页修改备注。", title="无法重编辑",
-                                  back_url=url_for("orders.view_order", order_id=order_id))
+            source_row_bindable = _source_order_row_bindable(conn, int(existing["source_order_id"]))
+    if existing["source_order_id"] is not None and source_row_bindable:
+        # 2026-10-16（决策 ④）：正式退货单编辑锁已撤，正式单与草稿走同一条路径。
         source_item_ids = request.form.getlist("source_item_id")
         quantities = request.form.getlist("quantity")
         units = request.form.getlist("unit")
@@ -1476,19 +1260,18 @@ def api_products():
         rows = conn.execute(
             f"""
             SELECT p.id, p.name, p.unit,
-                   cp.price_cents AS customer_price_cents,
-                   s.avg_cost_micro, s.enabled, s.quantity_3dp
+                   cp.price_cents AS customer_price_cents
             FROM products p
             LEFT JOIN customer_prices cp ON cp.product_id=p.id AND cp.customer_id=?
-            LEFT JOIN product_inventory_state s ON s.product_id=p.id
             WHERE p.deleted_at IS NULL AND {name_match_clause('p.')}
             ORDER BY CASE WHEN cp.price_cents IS NULL THEN 1 ELSE 0 END, p.usage_count DESC, p.name
             LIMIT 20
             """,
             (customer_id, *name_match_params(q)),
         ).fetchall()
+    # v15（决策 ②/③）：目录不再带库存启用状态与移动平均成本（两者都已下线）。
     return jsonify([
-        {"id": row["id"], "name": row["name"], "unit": row["unit"], "unit_price": cents_to_yuan(row["customer_price_cents"]) if row["customer_price_cents"] is not None else None, "customer_price": cents_to_yuan(row["customer_price_cents"]) if row["customer_price_cents"] is not None else None, "is_customer_price": row["customer_price_cents"] is not None, "cost_available": bool(row["enabled"] and row["avg_cost_micro"] is not None and row["quantity_3dp"]), "unit_cost": micro_to_yuan(row["avg_cost_micro"], precision=6) if row["enabled"] and row["avg_cost_micro"] is not None and row["quantity_3dp"] else None}
+        {"id": row["id"], "name": row["name"], "unit": row["unit"], "unit_price": cents_to_yuan(row["customer_price_cents"]) if row["customer_price_cents"] is not None else None, "customer_price": cents_to_yuan(row["customer_price_cents"]) if row["customer_price_cents"] is not None else None, "is_customer_price": row["customer_price_cents"] is not None}
         for row in rows
     ])
 
@@ -1539,7 +1322,7 @@ def bulk_delete_orders():
     stock negative) is reported back instead of being skipped silently.
     """
     from erp.services.accounting import AUTO_REVERSE_REASON, void_then_delete_order
-    from erp.services.inventory import void_then_delete_purchase_order
+    from erp.services.purchases import void_then_delete_purchase_order
     from erp.services import purchase_returns as return_service
 
     raw_ids = request.form.getlist("ids")

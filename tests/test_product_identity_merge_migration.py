@@ -88,7 +88,7 @@ def build_v13_database(*, with_conflict=False):
         if with_conflict:
             # 「闸阀」+型号 DN50 与已存在的「闸阀DN50」合并后撞名。
             conn.execute(
-                "INSERT INTO products (name, spec, unit, default_price_cents) VALUES ('闸阀DN50', '', '个', 100)"
+                "INSERT INTO products (name, spec, unit) VALUES ('闸阀DN50', '', '个')"
             )
     return customer_id
 
@@ -104,7 +104,11 @@ def snapshot():
             "columns": {table: _columns(conn, table) for table in SPEC_TABLES},
         }
         for table in ("inventory_postings", "product_inventory_state", "inventory_initializations"):
-            data[table] = [tuple(row) for row in conn.execute(f"SELECT * FROM {table}")]
+            # v15 起这三张表已不存在；快照对缺失表留空，比较时另行断言（见测试体）。
+            if table in {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}:
+                data[table] = [tuple(row) for row in conn.execute(f"SELECT * FROM {table}")]
+            else:
+                data[table] = None
     return data
 
 
@@ -132,7 +136,7 @@ def test_init_db_merges_spec_into_name_and_drops_the_column():
         assert "spec" not in index_sql
         assert "TRIM(name)" in index_sql
         version = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
-        assert version == CURRENT_SCHEMA_VERSION == 14
+        assert version == CURRENT_SCHEMA_VERSION == 15
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
 
     after = snapshot()
@@ -140,8 +144,9 @@ def test_init_db_merges_spec_into_name_and_drops_the_column():
     assert len(after["order_items"]) == len(before["order_items"])
     assert [row[0] for row in after["orders_amounts"]] == [row[0] for row in before["orders_amounts"]]
     assert [row[1:] for row in after["orders_amounts"]] == [row[1:] for row in before["orders_amounts"]]
+    # v15 决策变更：库存三表已被物理删除（迁移本身见 tests/test_drop_inventory_migration.py）。
     for table in ("inventory_postings", "product_inventory_state", "inventory_initializations"):
-        assert after[table] == before[table], table
+        assert after[table] is None, table
     assert after["products"] != before["products"]  # 名称确实变了
 
 

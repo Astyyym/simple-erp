@@ -12,7 +12,7 @@ import pytest
 
 from erp.db import get_db, init_db
 from erp.services.accounting import create_customer, create_product
-from erp.services.inventory import create_purchase_order, initialize_product
+from erp.services.purchases import create_purchase_order
 from erp.services import purchase_returns
 
 
@@ -20,7 +20,7 @@ def _seed(product_name="拿货单位商品", unit="个", price=2000):
     init_db()
     cid = create_customer("拿货单位对象")
     pid = create_product(product_name, unit)
-    initialize_product(pid, "100", "200", "2026-10-01", "期初", "p4-purchase-init")
+
     return cid, pid
 
 
@@ -52,23 +52,20 @@ def test_purchase_empty_unit_falls_back_to_archive():
     assert item["unit"] == "套"
 
 
-def test_purchase_custom_unit_does_not_change_inventory_amounts():
-    """§4.6：拿货改单位不做任何数量/成本换算，库存逐行不变。"""
-    cid, pid = _seed("拿货库存不变商品", "个", 2000)
+def test_purchase_custom_unit_does_not_change_line_amounts():
+    """§4.6：拿货改单位不做任何数量/金额换算。"""
+    cid, pid = _seed("拿货单价单位商品", "个", 2000)
     create_purchase_order(
         "NH202610130003", "2026-10-13",
         [{"product_id": pid, "quantity": "5", "unit_cost_yuan": "20", "unit": "箱"}],
         customer_id=cid, request_key="p4-purchase-unit-3", status="saved",
     )
     with get_db() as conn:
-        state = conn.execute(
-            "SELECT quantity_3dp, cost_total_micro FROM product_inventory_state WHERE product_id=?",
-            (pid,),
+        item = conn.execute(
+            "SELECT unit, quantity_3dp, unit_cost_cents, subtotal_cents FROM purchase_order_items ORDER BY id DESC LIMIT 1"
         ).fetchone()
-    # 期初 100个 × 200元 = 20000元；拿货 5 × 20元 = 100元 → 数量 105、成本 20100元
-    # 关键：改单位「箱」不做任何换算（数量增量就是 5，不是 5×换算系数）
-    assert state["quantity_3dp"] == 105 * 1000
-    assert state["cost_total_micro"] == 20100 * 1_000_000
+    # 单位「箱」只作为本单明细标签，数量 5 与金额 5×20=100 元逐字不变（无换算系数）。
+    assert tuple(item) == ("箱", 5000, 2000, 10000)
 
 
 def test_purchase_return_source_bound_keeps_source_unit_and_allows_override():

@@ -15,7 +15,7 @@ import pytest
 from erp import create_app
 from erp.db import init_db
 from erp.services.accounting import create_customer, create_order_from_typed_rows
-from erp.services.inventory import create_purchase_order
+from erp.services.purchases import create_purchase_order
 
 # 动作列/操作区里不允许再出现的旧叫法。
 RETIRED_WORDS = ("回看", "重编辑", "查看PDF", "编辑草稿")
@@ -29,7 +29,7 @@ def _client():
 def _seed_documents():
     """造出四类单据，让列表与详情页都能渲染出操作按钮。"""
     from erp.services.accounting import create_product, delete_order
-    from erp.services.inventory import initialize_product
+
 
     app = create_app()
     client = app.test_client()
@@ -44,7 +44,7 @@ def _seed_documents():
     )
     # 拿货单要求商品已启用库存。
     stock_pid = create_product("标签统一库存商品T1", "个")
-    initialize_product(stock_pid, "10", "10", "2026-10-01", "系统上线期初", "label-unify-init", confirm_zero=False)
+
     purchase = create_purchase_order(
         "NH202610100001", "2026-10-10",
         [{"product_id": stock_pid, "quantity": "1", "unit_cost_yuan": "10"}],

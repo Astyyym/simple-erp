@@ -1,9 +1,9 @@
 """列表删除正式单据 = 自动冲回（作废）+ 软删除的行为回归。
 
 设计契约（用户已确认）：入口与文案按「正式单据可直接删除」实现，但底下的守恒机制必须保留——
-正式单据被删除前先走 ``void_order`` / ``void_purchase_order`` / ``purchase_returns.void`` 反向过账，
-再软删除进回收站。本文件验证冲回后库存与账款回到删除前的数值，且拒绝场景会以可见错误返回，
-不会静默跳过。
+正式单据被删除前先走 ``void_order`` / ``void_purchase_order`` / ``purchase_returns.void`` 作废，
+再软删除进回收站。v15（2026-10-16 决策 ②/③）库存系统已删除，作废不再反向过账库存；
+本文件改为验证「作废状态机 + 账款回到删除前的数值 + 不静默跳过任何一张单据」这三点。
 """
 import pytest
 
@@ -17,22 +17,13 @@ from erp.services.accounting import (
     customer_balance_cents,
 )
 from erp.services import purchase_returns
-from erp.services.inventory import create_purchase_order, initialize_product
+from erp.services.purchases import create_purchase_order
 
 
 def _product(name="自动冲回商品", spec="AR"):
     product_id = create_product((name) + (spec), "个")
-    initialize_product(product_id, "10", "10", "2026-10-01", "系统上线期初", f"ar-init-{spec}", confirm_zero=False)
+
     return product_id
-
-
-def _stock(product_id):
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT quantity_3dp, cost_total_micro FROM product_inventory_state WHERE product_id=?",
-            (product_id,),
-        ).fetchone()
-    return (int(row["quantity_3dp"]), int(row["cost_total_micro"]))
 
 
 def _order_row(order_id):
@@ -42,7 +33,7 @@ def _order_row(order_id):
         ).fetchone()
 
 
-def test_saved_sale_delete_reverses_stock_and_balance_then_soft_deletes():
+def test_saved_sale_delete_voids_and_reverses_balance_then_soft_deletes():
     init_db()
     product_id = _product(spec="AR-SALE")
     customer_id = create_customer("自动冲回销售客户")
@@ -54,10 +45,7 @@ def test_saved_sale_delete_reverses_stock_and_balance_then_soft_deletes():
         status="saved",
         order_date="2026-10-07",
     )
-    after_sale = _stock(product_id)
-    after_sale_balance = customer_balance_cents(customer_id)
-    assert after_sale == (7000, 70_000_000)
-    assert after_sale_balance == 9000
+    assert customer_balance_cents(customer_id) == 9000  # 3 × 30 元
 
     response = create_app().test_client().post(f"/orders/{order_id}/delete")
     assert response.status_code == 302
@@ -66,12 +54,11 @@ def test_saved_sale_delete_reverses_stock_and_balance_then_soft_deletes():
     assert row["status"] == "void"
     assert row["void_reason"] == AUTO_REVERSE_REASON
     assert row["deleted_at"] and row["delete_reason"] == AUTO_REVERSE_REASON
-    # 库存与账款回到删除前（= 该销售单不存在时的数值）。
-    assert _stock(product_id) == (10000, 100_000_000)
+    # 账款回到删除前（= 该销售单不存在时的数值）：作废后不再计入余额。
     assert customer_balance_cents(customer_id) == 0
 
 
-def test_saved_purchase_delete_reverses_stock_and_soft_deletes():
+def test_saved_purchase_delete_voids_and_reverses_balance_then_soft_deletes():
     init_db()
     product_id = _product(spec="AR-PUR")
     customer_id = create_customer("自动冲回拿货对象")
@@ -83,7 +70,7 @@ def test_saved_purchase_delete_reverses_stock_and_soft_deletes():
         request_key="ar-purchase-1",
     )
     purchase_id = purchase["order_id"]
-    assert _stock(product_id) == (15000, 160_000_000)
+    balance_after_purchase = customer_balance_cents(customer_id)  # 拿货减少对账余额
 
     response = create_app().test_client().post(f"/purchases/{purchase_id}/delete")
     assert response.status_code == 302
@@ -93,10 +80,12 @@ def test_saved_purchase_delete_reverses_stock_and_soft_deletes():
             "SELECT status, void_reason, deleted_at FROM purchase_orders WHERE id=?", (purchase_id,)
         ).fetchone()
     assert row["status"] == "void" and row["void_reason"] == AUTO_REVERSE_REASON and row["deleted_at"]
-    assert _stock(product_id) == (10000, 100_000_000)
+    # 作废后这张拿货单不再影响余额（回到「没这张单」的值）。
+    assert balance_after_purchase != 0
+    assert customer_balance_cents(customer_id) == 0
 
 
-def test_saved_purchase_return_delete_reverses_outbound_postings():
+def test_saved_purchase_return_delete_voids_and_soft_deletes():
     init_db()
     product_id = _product(spec="AR-RET")
     customer_id = create_customer("自动冲回退拿货对象")
@@ -111,6 +100,7 @@ def test_saved_purchase_return_delete_reverses_outbound_postings():
         source_item_id = conn.execute(
             "SELECT id FROM purchase_order_items WHERE purchase_order_id=?", (purchase["order_id"],)
         ).fetchone()[0]
+    balance_before_return = customer_balance_cents(customer_id)
     returned = purchase_returns.create(
         customer_id=customer_id,
         source_order_id=purchase["order_id"],
@@ -119,7 +109,8 @@ def test_saved_purchase_return_delete_reverses_outbound_postings():
         request_key="ar-return-1",
     )
     return_id = returned["order_id"]
-    assert _stock(product_id) == (13000, 130_000_000)
+    balance_with_return = customer_balance_cents(customer_id)
+    assert balance_with_return != balance_before_return, "退拿货单要影响对账余额"
 
     response = create_app().test_client().post(
         f"/purchases/return/{return_id}/delete", data={"version": str(returned["version"])}
@@ -131,10 +122,11 @@ def test_saved_purchase_return_delete_reverses_outbound_postings():
             "SELECT status, void_reason, deleted_at FROM purchase_return_orders WHERE id=?", (return_id,)
         ).fetchone()
     assert row["status"] == "void" and row["deleted_at"]
-    assert _stock(product_id) == (14000, 140_000_000)
+    # 作废的退拿货单不再计入余额：回到「这笔退货不存在」时的值（源拿货单本身的影响保留）。
+    assert customer_balance_cents(customer_id) == balance_before_return
 
 
-def test_bulk_delete_mixes_all_four_types_and_stays_conserved():
+def test_bulk_delete_mixes_types_and_keeps_recycle_bin_and_balance_consistent():
     init_db()
     sale_product = _product(name="批量销售商品", spec="AR-B1")
     purchase_product = _product(name="批量拿货商品", spec="AR-B2")
@@ -169,7 +161,6 @@ def test_bulk_delete_mixes_all_four_types_and_stays_conserved():
     assert response.status_code == 302
 
     assert _order_row(sale_id)["status"] == "void"
-    assert _stock(sale_product) == (10000, 100_000_000)
     with get_db() as conn:
         purchase_row = conn.execute(
             "SELECT status, deleted_at FROM purchase_orders WHERE id=?", (purchase["order_id"],)
@@ -178,8 +169,7 @@ def test_bulk_delete_mixes_all_four_types_and_stays_conserved():
             "SELECT status, void_reason, deleted_at FROM orders WHERE id=?", (draft_id,)
         ).fetchone()
     assert purchase_row["status"] == "void" and purchase_row["deleted_at"]
-    assert _stock(purchase_product) == (10000, 100_000_000)
-    # 草稿没有过账：直接进回收站，不写自动冲回原因。
+    # 草稿不是正式单：直接进回收站，不写自动冲回原因。
     assert draft_row["status"] == "draft" and draft_row["void_reason"] in (None, "") and draft_row["deleted_at"]
     assert customer_balance_cents(customer_id) == 0
 
@@ -189,11 +179,12 @@ def test_bulk_delete_mixes_all_four_types_and_stays_conserved():
         assert order_no in recycle_html, order_no
 
 
-def test_delete_allows_non_last_inventory_posting_and_reverses_what_it_can():
-    """2026-10-07 用户决策：非末笔也允许删除。
+def test_delete_saved_sale_reverses_only_its_own_balance_and_keeps_others():
+    """删除一张正式销售单：只回冲它自己的账款影响，同商品上的其它单据一律不动。
 
-    反向过账后库存数量、销售金额、账款余额精确回到删除前的正确值；只有移动均价会漂
-    （移动加权平均固有性质，成本不进对外打印）。这里锁定「数量/账款精确、均价可能漂」这一契约。
+    旧用例的前提是「库存按序过账、删除非末笔单要按序反向冲回，移动均价可能漂」——
+    库存系统与成本链已整体删除（2026-10-16 决策 ②/③），改为钉住仍然成立的那部分：
+    作废+软删除后账款精确回到「这笔销售不存在」时的值，同商品的拿货单状态不受影响。
     """
     init_db()
     product_id = _product(spec="AR-LAST")
@@ -215,20 +206,29 @@ def test_delete_allows_non_last_inventory_posting_and_reverses_what_it_can():
         request_key="ar-last-purchase",
     )
     balance_after_sale = customer_balance_cents(customer_id)
-    qty_after_sale = _stock(product_id)[0]
+    with get_db() as conn:
+        purchase_before = conn.execute(
+            "SELECT status, deleted_at FROM purchase_orders WHERE order_no='NH202610070401'"
+        ).fetchone()
+    assert purchase_before["status"] == "saved" and purchase_before["deleted_at"] is None
 
     response = create_app().test_client().post(f"/orders/{sale_id}/delete")
     assert response.status_code == 302
 
     row = _order_row(sale_id)
     assert row["status"] == "void" and row["deleted_at"] is not None
-    # 数量与账款必须精确回到「这笔销售不存在」时的值。
-    assert _stock(product_id)[0] == qty_after_sale + 1000
+    # 账款必须精确回到「这笔销售不存在」时的值（只回冲这张单的 3000 分）。
     assert customer_balance_cents(customer_id) == balance_after_sale - 3000
+    # 同一商品上的拿货单完全不受影响。
+    with get_db() as conn:
+        purchase_after = conn.execute(
+            "SELECT status, deleted_at FROM purchase_orders WHERE order_no='NH202610070401'"
+        ).fetchone()
+    assert purchase_after["status"] == "saved" and purchase_after["deleted_at"] is None
 
 
 def test_bulk_delete_mixes_reversible_and_draft_rows_without_skipping_any():
-    """批量删除里正式单据与非末笔单据都照常处理，草稿直接进回收站，没有任何行被静默跳过。"""
+    """批量删除里正式单据与草稿都照常处理，草稿直接进回收站，没有任何行被静默跳过。"""
     init_db()
     product_id = _product(spec="AR-MIX")
     customer_id = create_customer("批量失败客户")

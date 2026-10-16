@@ -10,16 +10,15 @@ import pytest
 from erp import create_app
 from erp.db import get_db, init_db
 from erp.services.accounting import create_customer, create_product
-from erp.services.inventory import create_purchase_order, initialize_product
+from erp.services.purchases import create_purchase_order
 from erp.services import purchase_returns
-
 
 
 def seed(quantity='3', price='12.34', unit='米', return_quantity='0.25'):
     init_db()
     cid = create_customer('虚构采购卖方', opening_balance_cents=12345)
     pid = create_product('虚构采购商品' 'C3-B', unit)
-    initialize_product(pid, '0', '0', '2026-10-03', '虚构期初', 'c3-print-init', confirm_zero=True)
+
     purchase = create_purchase_order('NH202610030001', '2026-10-03',
         [{'product_id': pid, 'quantity': quantity, 'unit_cost_yuan': price}],
         customer_id=cid, request_key='c3-print-source', source_notes='INTERNAL_SOURCE_SENTINEL')
@@ -85,7 +84,9 @@ def test_purchase_template_receives_only_explicit_public_dictionaries(monkeypatc
         'print_offset_x_mm', 'print_offset_y_mm', 'print_scale',
         'print_order_phone', 'print_order_address', 'print_main_business', 'print_maker_name',
     }
-    assert not any(word in repr(captured) for word in ('INTERNAL_', 'SALES_ONLY_', 'unit_cost_micro', 'cost_total_micro', 'posting_seq', 'source_item_id'))
+    # 决策变更（v15）：明细投影仍固定为五个公开键；已删的成本列名不再出现在投影里，
+    # 因此这条负向断言只保留仍然存在的内部字段与哨兵。
+    assert not any(word in repr(captured) for word in ('INTERNAL_', 'SALES_ONLY_', 'source_item_id'))
 
 
 @pytest.mark.parametrize('is_return', [False, True])
@@ -95,7 +96,6 @@ def test_purchase_pdf_excludes_internal_sentinels_and_sales_only_legal_text(tmp_
     with get_db() as conn:
         conn.execute("UPDATE products SET notes='INTERNAL_PRODUCT_SENTINEL', image_path='INTERNAL_IMAGE_SENTINEL' WHERE id=?", (pid,))
         conn.execute("UPDATE customers SET notes='INTERNAL_CUSTOMER_SENTINEL', phone='INTERNAL_PHONE_SENTINEL', address='INTERNAL_ADDRESS_SENTINEL' WHERE id=?", (cid,))
-        conn.execute('UPDATE purchase_return_items SET unit_cost_micro=987654321000, cost_total_micro=987654321000')
         conn.execute("UPDATE customers SET name='NEW_NAME_MUST_NOT_REPLACE_SNAPSHOT' WHERE id=?", (cid,))
         conn.execute("UPDATE products SET name='NEW_PRODUCT_MUST_NOT_REPLACE_SNAPSHOT' WHERE id=?", (pid,))
     cfg = load_config()
@@ -107,7 +107,7 @@ def test_purchase_pdf_excludes_internal_sentinels_and_sales_only_legal_text(tmp_
     assert response.status_code == 200
     text = pdf_text(response.data, tmp_path)
     assert '虚构采购卖方' in text and '虚构采购商品' in text
-    for private in ('INTERNAL_', 'SALES_ONLY_', '987654.32', 'NEW_NAME_', 'NEW_PRODUCT_', '本销售单', '收货人', '移动成本', '库存', '利润'):
+    for private in ('INTERNAL_', 'SALES_ONLY_', 'NEW_NAME_', 'NEW_PRODUCT_', '本销售单', '收货人', '移动成本', '库存', '利润'):
         assert private not in text
     assert '对方确认' in text
 
@@ -156,7 +156,7 @@ def test_invalid_purchase_print_is_friendly_read_only_rejection(is_return, inval
 
 def business_facts():
     tables = ('purchase_orders', 'purchase_order_items', 'purchase_return_orders', 'purchase_return_items',
-              'products', 'customers', 'product_inventory_state', 'inventory_postings',
+              'products', 'customers',
               'orders', 'order_items', 'customer_prices', 'payments', 'adjustments')
     with get_db() as conn:
         return {table: [tuple(row) for row in conn.execute(f'SELECT * FROM {table} ORDER BY rowid')] for table in tables}

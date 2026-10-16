@@ -1,10 +1,6 @@
-"""Display cents without rounding the cost used by inventory or order previews."""
+"""Display micro-yuan money values at two visible decimal places without rounding the payload."""
 import pytest
 
-from erp import create_app
-from erp.db import get_db
-from erp.services.accounting import create_customer, create_product, create_order_from_typed_rows
-from erp.services.inventory import initialize_product
 from erp.utils.money import micro_to_yuan
 
 
@@ -14,35 +10,3 @@ from erp.utils.money import micro_to_yuan
 ])
 def test_internal_micro_cost_formats_as_two_visible_decimal_places(micro, expected):
     assert micro_to_yuan(micro) == expected
-
-
-def test_two_decimal_display_keeps_exact_cost_payload_and_historical_snapshot():
-    app = create_app()
-    product_id = create_product("小数成本验收商品S1", "个")
-    customer_id = create_customer("小数成本验收往来")
-    initialize_product(product_id, "15", "11.333333", "2026-10-01", "测试期初", "money-display-init")
-    sale_id = create_order_from_typed_rows(
-        customer_id, "MD202610010950",
-        [{"product_id": product_id, "product_name": "小数成本验收商品S1", "unit": "个", "quantity": "3", "unit_price_yuan": "20"}],
-        status="saved", order_date="2026-10-01",
-    )
-    with get_db() as conn:
-        before = tuple(conn.execute("SELECT quantity_3dp,cost_total_micro,avg_cost_micro FROM product_inventory_state WHERE product_id=?", (product_id,)).fetchone())
-        cost_snapshot = tuple(conn.execute("SELECT unit_cost_micro,cost_total_micro FROM order_items WHERE order_id=?", (sale_id,)).fetchone())
-    client = app.test_client()
-    product = client.get("/orders/api/products", query_string={"q": "小数成本验收商品"}).get_json()[0]
-    assert product["unit_cost"] == "11.333333"
-    return_item = client.get(f"/orders/api/return_sources/{sale_id}").get_json()["items"][0]
-    assert return_item["unit_cost"] == "11.333333"
-    # 该销售单已过账 → 编辑入口按 Batch B 拦截（不再渲染注定提交失败的表单）；
-    # 精确成本改由「回看」页与库存快照验证，仍要求六位精度不被四舍五入。
-    edit_response = client.get(f"/orders/{sale_id}/edit")
-    assert edit_response.status_code == 400
-    assert "过账" in edit_response.get_data(as_text=True)
-    detail_html = client.get(f"/orders/{sale_id}").get_data(as_text=True)
-    assert "11.33" in detail_html
-    with get_db() as conn:
-        after = tuple(conn.execute("SELECT quantity_3dp,cost_total_micro,avg_cost_micro FROM product_inventory_state WHERE product_id=?", (product_id,)).fetchone())
-        after_snapshot = tuple(conn.execute("SELECT unit_cost_micro,cost_total_micro FROM order_items WHERE order_id=?", (sale_id,)).fetchone())
-    assert after == before
-    assert after_snapshot == cost_snapshot == (11_333_333, 33_999_999)

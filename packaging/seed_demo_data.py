@@ -6,20 +6,19 @@
 安全边界（硬约束）：
 - 只写入 ``--data-root`` 指定的数据根；落库前先把解析结果读回核对，不猜路径。
 - 目标库已存在时拒绝执行（``--force`` 才先删旧库），防止两份数据混成一锅。
-- 全部通过**真实服务层**创建（不裸插 SQL），库存守恒 / 成本快照 / 单号流水
-  与真实开单完全一致；生成结束跑守恒与完整性校验，不达标即非零退出。
+- 全部通过**真实服务层**创建（不裸插 SQL）：单号流水、金额口径、作废与回收站
+  状态机都与真实开单完全一致；生成结束跑单据数与数据库完整性校验，不达标即非零退出。
 
-覆盖场景：
-- 销售单：正式 / 已打印 / 草稿（含重编辑后定稿）/ 零建档先卖（缺成本 → 人工
-  补录）/ 选中已有商品（客户价）/ 12~20 行大单（打印分联）/ 三位小数数量 /
+覆盖场景（2026-10-16 schema v15：商品档案只保留名称 / 品牌 / 单位）：
+- 销售单：正式 / 已打印 / 草稿（含重编辑后定稿）/ 手输商品名（首次出现即自动建档）/
+  选中已有商品（客户专属价）/ 12~20 行大单（打印分联）/ 三位小数数量 /
   作废 / 回收站删除与恢复
 - 退货单：逐行关联原单（部分退 / 全额退 / 多行 / 跨月退）/ 手输 + 原单追溯
   （v3.11.0 路径）/ 草稿（含编辑定稿）/ 作废
-- 拿货单：正式多行补货 / 草稿（含定稿）/ 作废（库存回冲）/ 零期初商品补货
-- 退拿货单：手输（移动均价出库）/ 关联原拿货单追溯 / 旧版逐行绑定 / 草稿
-  （含定稿）/ 作废 / 回收站删除与恢复
-- 期初：已知成本 / 估算成本 / 零期初确认 / 总金额反推 / 期初修订
-- 账款：多方式收款（含作废）/ 账务调整（含作废）/ 期初欠款客户
+- 拿货单：正式多行补货 / 草稿（含定稿）/ 作废 / 回收站
+- 退拿货单：手输单价 / 关联原拿货单追溯 / 旧版逐行绑定 / 草稿（含定稿）/
+  作废 / 回收站删除与恢复
+- 账款：多方式收款（含作废）/ 账务调整（含作废）/ 期初余额客户
 - 对账：多客户 / 多区间 / 多类型筛选的快照与选择
 
 用法：
@@ -52,7 +51,7 @@ def day(offset: int) -> str:
 
 
 def q3(value) -> int:
-    """业务数量 → 3 位小数整数（与库存层同一精度）。"""
+    """业务数量 → 3 位小数整数（与单据明细同一精度）。"""
     return int((Decimal(str(value).strip()) * 1000).to_integral_value())
 
 
@@ -78,58 +77,53 @@ def money(price: float) -> str:
 class ProductSpec:
     name: str
     unit: str
-    price: str                 # 默认售价（元）
+    price: str                 # 脚本内部定价参数（元）：只用于生成单据金额与客户专属价
     brand: str
-    init_qty: int | None       # 期初数量；None = 不启用库存
-    init_cost: str | None      # 期初单位成本（元）
-    safety: int | None         # 安全库存
-    kind: str                  # known / estimated / zero / total / none
 
 
 CATALOG: list[ProductSpec] = [
-    # —— 启用库存：已知成本期初 ——
-    ProductSpec("干粉灭火器4kg", "具", "56.00", "桂安", 80, "38.50", 20, "known"),
-    ProductSpec("干粉灭火器3kg", "具", "46.00", "桂安", 60, "31.00", 15, "known"),
-    ProductSpec("干粉灭火器2kg", "具", "38.00", "浙安", 50, "25.00", 30, "known"),
-    ProductSpec("推车式干粉灭火器35kg", "台", "680.00", "浙安", 12, "520.00", 3, "known"),
-    ProductSpec("二氧化碳灭火器5kg", "具", "210.00", "金枪", 15, "158.00", None, "known"),
-    ProductSpec("水基灭火器2L", "具", "88.00", "金枪", 20, "62.00", None, "known"),
-    ProductSpec("消防水带8-65-20m", "米", "12.50", "神龙", 400, "8.60", None, "known"),
-    ProductSpec("消防水带10-65-25m", "米", "15.00", "神龙", 300, "10.20", None, "known"),
-    ProductSpec("消防水带13-65-20m", "米", "18.00", "神龙", 200, "12.50", None, "known"),
-    ProductSpec("水枪接口DC50", "个", "22.00", "", 120, "13.50", 20, "known"),
-    ProductSpec("内扣式接口KD65", "个", "26.00", "", 100, "16.00", None, "known"),
-    ProductSpec("消防水枪QZ3.5/7.5", "支", "95.00", "神龙", 30, "68.00", None, "known"),
-    ProductSpec("软密封闸阀DN100", "台", "420.00", "远大", 25, "310.00", None, "known"),
-    ProductSpec("软密封闸阀DN150", "台", "650.00", "远大", 15, "480.00", 5, "known"),
-    ProductSpec("蝶阀DN80", "台", "260.00", "远大", 20, "185.00", None, "known"),
-    ProductSpec("蝶阀DN150", "台", "520.00", "远大", 12, "390.00", None, "known"),
-    ProductSpec("止回阀DN100", "台", "180.00", "远大", 30, "125.00", 10, "known"),
-    ProductSpec("Y型过滤器DN50", "个", "75.00", "", 40, "48.00", None, "known"),
-    ProductSpec("减压阀DN65", "个", "130.00", "", 25, "88.00", None, "known"),
-    ProductSpec("信号蝶阀DN100", "台", "480.00", "远大", 10, "360.00", None, "known"),
-    ProductSpec("独立式感烟探测器", "只", "45.00", "北大青鸟", 8, "28.00", 3, "known"),
-    ProductSpec("手动火灾报警按钮", "只", "38.00", "北大青鸟", 25, "24.00", None, "known"),
-    ProductSpec("声光报警器", "只", "65.00", "北大青鸟", 18, "42.00", None, "known"),
-    ProductSpec("消防应急照明灯3W", "套", "55.00", "敏华", 35, "36.00", None, "known"),
-    # —— 启用库存：特殊成本来源 ——
-    ProductSpec("消火栓箱800×650×240", "套", "580.00", "金枪", 0, "0.00", None, "zero"),
-    ProductSpec("灭火器箱4kg×2", "个", "120.00", "", 6, "78.00", None, "estimated"),
-    ProductSpec("消防水带卷盘25m", "卷", "320.00", "神龙", 5, None, None, "total"),
-    ProductSpec("阻火包250型", "块", "9.50", "", 200, "5.80", 50, "estimated"),
-    # —— 不启用库存：零建档 / 先卖后补场景的现实载体 ——
-    ProductSpec("钢结构防火涂料20kg", "kg", "26.00", "洛科", None, None, None, "none"),
-    ProductSpec("防火堵料有机高分子5kg", "kg", "18.00", "", None, None, None, "none"),
-    ProductSpec("消防喷头68度下垂型", "只", "12.00", "川安", None, None, None, "none"),
-    ProductSpec("防毒面具过滤式", "具", "35.00", "梅思安", None, None, None, "none"),
-    ProductSpec("消防腰带", "条", "45.00", "", None, None, None, "none"),
-    ProductSpec("灭火毯1m×1m", "块", "58.00", "", None, None, None, "none"),
-    ProductSpec("消防斧", "把", "42.00", "", None, None, None, "none"),
-    ProductSpec("通风机轴流式FT35-11", "台", "850.00", "上风", None, None, None, "none"),
-    ProductSpec("消防井盖DN700", "套", "320.00", "", None, None, None, "none"),
-    ProductSpec("消防桶", "只", "28.00", "", None, None, None, "none"),
-    ProductSpec("沙箱1立方米", "个", "180.00", "", None, None, None, "none"),
-    ProductSpec("疏散指示标志灯", "套", "42.00", "敏华", None, None, None, "none"),
+    # —— 常规在售：热销件与常用件 ——
+    ProductSpec("干粉灭火器4kg", "具", "56.00", "桂安"),
+    ProductSpec("干粉灭火器3kg", "具", "46.00", "桂安"),
+    ProductSpec("干粉灭火器2kg", "具", "38.00", "浙安"),
+    ProductSpec("推车式干粉灭火器35kg", "台", "680.00", "浙安"),
+    ProductSpec("二氧化碳灭火器5kg", "具", "210.00", "金枪"),
+    ProductSpec("水基灭火器2L", "具", "88.00", "金枪"),
+    ProductSpec("消防水带8-65-20m", "米", "12.50", "神龙"),
+    ProductSpec("消防水带10-65-25m", "米", "15.00", "神龙"),
+    ProductSpec("消防水带13-65-20m", "米", "18.00", "神龙"),
+    ProductSpec("水枪接口DC50", "个", "22.00", ""),
+    ProductSpec("内扣式接口KD65", "个", "26.00", ""),
+    ProductSpec("消防水枪QZ3.5/7.5", "支", "95.00", "神龙"),
+    ProductSpec("软密封闸阀DN100", "台", "420.00", "远大"),
+    ProductSpec("软密封闸阀DN150", "台", "650.00", "远大"),
+    ProductSpec("蝶阀DN80", "台", "260.00", "远大"),
+    ProductSpec("蝶阀DN150", "台", "520.00", "远大"),
+    ProductSpec("止回阀DN100", "台", "180.00", "远大"),
+    ProductSpec("Y型过滤器DN50", "个", "75.00", ""),
+    ProductSpec("减压阀DN65", "个", "130.00", ""),
+    ProductSpec("信号蝶阀DN100", "台", "480.00", "远大"),
+    ProductSpec("独立式感烟探测器", "只", "45.00", "北大青鸟"),
+    ProductSpec("手动火灾报警按钮", "只", "38.00", "北大青鸟"),
+    ProductSpec("声光报警器", "只", "65.00", "北大青鸟"),
+    ProductSpec("消防应急照明灯3W", "套", "55.00", "敏华"),
+    # —— 备件 / 冷门件：含从未销售过的品名，以及手输商品名场景的载体 ——
+    ProductSpec("消火栓箱800×650×240", "套", "580.00", "金枪"),
+    ProductSpec("灭火器箱4kg×2", "个", "120.00", ""),
+    ProductSpec("消防水带卷盘25m", "卷", "320.00", "神龙"),
+    ProductSpec("阻火包250型", "块", "9.50", ""),
+    ProductSpec("钢结构防火涂料20kg", "kg", "26.00", "洛科"),
+    ProductSpec("防火堵料有机高分子5kg", "kg", "18.00", ""),
+    ProductSpec("消防喷头68度下垂型", "只", "12.00", "川安"),
+    ProductSpec("防毒面具过滤式", "具", "35.00", "梅思安"),
+    ProductSpec("消防腰带", "条", "45.00", ""),
+    ProductSpec("灭火毯1m×1m", "块", "58.00", ""),
+    ProductSpec("消防斧", "把", "42.00", ""),
+    ProductSpec("通风机轴流式FT35-11", "台", "850.00", "上风"),
+    ProductSpec("消防井盖DN700", "套", "320.00", ""),
+    ProductSpec("消防桶", "只", "28.00", ""),
+    ProductSpec("沙箱1立方米", "个", "180.00", ""),
+    ProductSpec("疏散指示标志灯", "套", "42.00", "敏华"),
 ]
 
 # 从未销售过的启用商品（喂「未销售」排行）
@@ -138,6 +132,12 @@ NEVER_SOLD = {"消防水枪QZ3.5/7.5", "减压阀DN65", "声光报警器", "消�
 HOT = {"干粉灭火器4kg": 6, "干粉灭火器3kg": 4, "消防水带8-65-20m": 4, "水枪接口DC50": 3}
 # 零建档自动建档：只存在于订单里的新商品名
 AUTO_PRODUCT_NAMES = ["消防铲2号", "地下式消防水泵接合器", "LED吸顶声光控灯"]
+# 手输商品名场景的载体（原先的「不启用库存」品名）：手输路径 + 非热销品名
+TYPED_ONLY_PRODUCTS = {
+    "钢结构防火涂料20kg", "防火堵料有机高分子5kg", "消防喷头68度下垂型", "防毒面具过滤式",
+    "消防腰带", "灭火毯1m×1m", "消防斧", "通风机轴流式FT35-11", "消防井盖DN700",
+    "消防桶", "沙箱1立方米", "疏散指示标志灯",
+}
 # 客户专属价（设置页/开单取价覆盖）
 CUSTOMER_PRICE_PAIRS = [
     ("宏伟消防工程店", "干粉灭火器4kg", "52.00"),
@@ -204,7 +204,6 @@ class DemoDataBuilder:
         self.products: dict[int, ProductSpec] = {}      # pid -> spec
         self.product_by_name: dict[str, int] = {}
         self.customers: dict[int, tuple] = {}           # cid -> (name, phone, address, opening)
-        self.stock: dict[int, int] = {}                 # pid -> 可用数量(3dp)
         self.sale_items: dict[int, dict] = {}           # order_item_id -> 源信息
         self.purchase_items: dict[int, dict] = {}       # purchase_item_id -> 源信息
         self.dead_orders: set[int] = set()              # 作废/软删除的销售单（不可再作退货来源）
@@ -231,13 +230,11 @@ class DemoDataBuilder:
     def _pick_customer(self) -> int:
         return self.rng.choice(list(self.customers))
 
-    def _pick_stocked(self, min_units: int = 1, exclude: frozenset = frozenset()) -> int | None:
-        """按热销权重选一个有足够库存的启用商品。"""
+    def _pick_product(self, exclude: frozenset = frozenset()) -> int | None:
+        """按热销权重挑一个商品（排除「从未销售过」的品名与本次已用过的）。"""
         pool: list[tuple[int, int]] = []
         for pid, spec in self.products.items():
-            if spec.kind == "none" or spec.name in NEVER_SOLD or pid in exclude:
-                continue
-            if self.stock.get(pid, 0) < min_units * 1000:
+            if spec.name in NEVER_SOLD or pid in exclude:
                 continue
             pool.append((pid, HOT.get(spec.name, 1)))
         if not pool:
@@ -247,8 +244,8 @@ class DemoDataBuilder:
         return self.rng.choices(pids, weights=weights, k=1)[0]
 
     def _pick_purchasable(self) -> int:
-        """拿货候选：任何启用库存的商品（含零期初，拿货正是补货路径）。"""
-        pool = [pid for pid, spec in self.products.items() if spec.kind != "none"]
+        """拿货候选：任何已建档商品（拿货本身就是备货路径，不区分品名冷热）。"""
+        pool = list(self.products)
         return self.rng.choice(pool)
 
     def _return_day(self, source_date: str, min_gap: int = 0) -> str:
@@ -261,49 +258,6 @@ class DemoDataBuilder:
         offset = self.rng.randint(0, span) if span > 0 else 0
         return (earliest + timedelta(days=offset)).isoformat()
 
-    # ---------- 库存影响跟踪（以库为真，按单据明细回读） ----------
-
-    def _apply_order_stock(self, order_id: int, reverse: bool = False) -> None:
-        """把一张销售/退货单的库存影响叠加进跟踪表。"""
-        from erp.db import get_db
-        with get_db() as conn:
-            order = conn.execute("SELECT order_type FROM orders WHERE id=?", (order_id,)).fetchone()
-            rows = conn.execute(
-                "SELECT product_id, quantity FROM order_items WHERE order_id=?", (order_id,)
-            ).fetchall()
-        sign = 1 if order["order_type"] == "return" else -1
-        if reverse:
-            sign = -sign
-        for row in rows:
-            pid = int(row["product_id"])
-            if pid in self.stock:
-                self.stock[pid] += sign * q3(row["quantity"])
-
-    def _apply_purchase_stock(self, order_id: int, reverse: bool = False) -> None:
-        from erp.db import get_db
-        with get_db() as conn:
-            rows = conn.execute(
-                "SELECT product_id, quantity_3dp FROM purchase_order_items WHERE purchase_order_id=?",
-                (order_id,),
-            ).fetchall()
-        sign = -1 if reverse else 1
-        for row in rows:
-            pid = int(row["product_id"])
-            if pid in self.stock:
-                self.stock[pid] += sign * int(row["quantity_3dp"])
-
-    def _apply_purchase_return_stock(self, order_id: int, reverse: bool = False) -> None:
-        from erp.db import get_db
-        with get_db() as conn:
-            rows = conn.execute(
-                "SELECT product_id, quantity_3dp FROM purchase_return_items WHERE purchase_return_id=?",
-                (order_id,),
-            ).fetchall()
-        sign = 1 if reverse else -1
-        for row in rows:
-            pid = int(row["product_id"])
-            if pid in self.stock:
-                self.stock[pid] += sign * int(row["quantity_3dp"])
 
     def _version(self, table: str, order_id: int) -> int:
         from erp.db import get_db
@@ -322,10 +276,7 @@ class DemoDataBuilder:
         for spec in CATALOG:
             # 2026-10-15 默认价下线：建档不再写档案价。`spec.price` 降级为**脚本内部定价参数**
             # （只用于生成单据金额与客户专属价），不再进商品档案。
-            pid = accounting.create_product(
-                spec.name, spec.unit,
-                safety_stock=spec.safety, brand=spec.brand or None,
-            )
+            pid = accounting.create_product(spec.name, spec.unit, brand=spec.brand or None)
             self.products[pid] = spec
             self.product_by_name[spec.name] = pid
         self.bump("products", len(CATALOG))
@@ -335,43 +286,6 @@ class DemoDataBuilder:
             pid = self.product_by_name[prod_name]
             accounting.set_customer_price(cid, pid, cents(price))
         self.bump("customer_prices", len(CUSTOMER_PRICE_PAIRS))
-
-    # ---------- Phase 3：期初库存 ----------
-
-    def build_inventory(self) -> None:
-        from erp.services.inventory import initialize_product, revise_initialization
-        from erp.db import get_db
-        for pid, spec in self.products.items():
-            if spec.kind == "none":
-                continue
-            init_day = day(self.rng.randint(185, 195))
-            if spec.kind == "zero":
-                initialize_product(pid, "0", "0", init_day, "期初建档（零库存确认）",
-                                   uuid.uuid4().hex, confirm_zero=True, cost_source="zero")
-                self.stock[pid] = 0
-            elif spec.kind == "total":
-                # C-2：按总金额反推单位成本
-                initialize_product(pid, spec.init_qty, "0", init_day, "期初建档（总金额反推）",
-                                   uuid.uuid4().hex, total_cost="1200.00")
-                self.stock[pid] = spec.init_qty * 1000
-            else:
-                initialize_product(pid, spec.init_qty, spec.init_cost, init_day, "期初建档",
-                                   uuid.uuid4().hex, cost_source=spec.kind)
-                self.stock[pid] = spec.init_qty * 1000
-            self.bump(f"init_{spec.kind}")
-        # 期初修订（盘点修正）：必须赶在首笔库存业务之前
-        for name, new_qty, new_cost, reason in [
-            ("阻火包250型", 180, "5.60", "盘点修正：实盘比期初少 20 块"),
-            ("灭火器箱4kg×2", 8, "78.00", "盘点修正：补充遗漏 2 个"),
-        ]:
-            pid = self.product_by_name[name]
-            with get_db() as conn:
-                state = conn.execute(
-                    "SELECT version FROM product_inventory_state WHERE product_id=?", (pid,)
-                ).fetchone()
-            revise_initialization(pid, new_qty, new_cost, reason, int(state["version"]))
-            self.stock[pid] = new_qty * 1000
-            self.bump("init_revisions")
 
     # ---------- Phase 4：拿货单 ----------
 
@@ -384,7 +298,7 @@ class DemoDataBuilder:
                 qty = self.rng.choice([50, 80, 100, 120, 150, 200])
             else:
                 qty = self.rng.randint(5, 30)
-            base = Decimal(spec.init_cost or spec.price)
+            base = Decimal(spec.price)
             cost = float(base * Decimal(str(self.rng.uniform(0.95, 1.12))))
             row = {"product_id": pid, "quantity": qty, "unit_cost_yuan": money(round(cost, 2))}
             if self.rng.random() < 0.25:
@@ -410,7 +324,7 @@ class DemoDataBuilder:
             }
 
     def build_purchases(self) -> None:
-        from erp.services.inventory import (
+        from erp.services.purchases import (
             create_purchase_order, finalize_purchase_order, void_purchase_order,
             delete_purchase_order,
         )
@@ -427,7 +341,6 @@ class DemoDataBuilder:
                 source_notes=self.rng.choice(PURCHASE_NOTES), status="saved",
             )
             oid = int(result["order_id"])
-            self._apply_purchase_stock(oid)
             self._record_purchase_items(oid, cid)
             saved.append(oid)
             self.bump("purchase_saved")
@@ -445,20 +358,18 @@ class DemoDataBuilder:
             self.bump("purchase_draft")
         for oid in drafts[:2]:
             finalize_purchase_order(oid)
-            self._apply_purchase_stock(oid)
             self._record_purchase_items(oid, self._purchase_customer_of(oid))
             self.bump("purchase_finalized")
-        # 作废 4 张正式单（库存回冲）
+        # 作废 4 张正式单
         voided = 0
         for oid in list(saved):
             if voided >= 4:
                 break
             try:
-                void_purchase_order(oid, "演示：货源取消，作废回冲库存")
+                void_purchase_order(oid, "演示：货源取消，作废")
             except ValueError as exc:
                 self.warnings.append(f"拿货作废跳过 {oid}: {exc}")
                 continue
-            self._apply_purchase_stock(oid, reverse=True)
             voided += 1
             self.bump("purchase_void")
         # 作废单的明细移出可退池
@@ -492,25 +403,20 @@ class DemoDataBuilder:
         n_legacy = 2
         n_draft = 4
         drafts: list[int] = []
-        # 手输退拿货（移动均价出库）
+        # 手输退拿货（商品 + 手输单价，无源单）
         for _ in range(n_typed):
             d = day(self.rng.randint(5, 175))
-            pid = self._pick_stocked(min_units=1)
-            if pid is None:
-                continue
+            pid = self._pick_purchasable()
             spec = self.products[pid]
-            qty = min(self.rng.randint(1, 6), self.stock[pid] // 1000)
-            if qty <= 0:
-                continue
-            base = Decimal(spec.init_cost or spec.price)
+            qty = self.rng.randint(1, 6)
+            base = Decimal(spec.price)
             price = float(base * Decimal(str(self.rng.uniform(0.95, 1.1))))
-            result = pr.create(
+            pr.create(
                 customer_id=self._pick_customer(), business_date=d,
                 items=[{"product_id": pid, "quantity": qty, "unit_price_yuan": money(round(price, 2))}],
                 request_key=uuid.uuid4().hex, status="saved",
                 notes=self.rng.choice(RETURN_NOTES),
             )
-            self._apply_purchase_return_stock(int(result["order_id"]))
             self.bump("pr_typed")
         # 关联原拿货单（v3.11.0：只作追溯，手输路径）
         trace_done = 0
@@ -521,8 +427,6 @@ class DemoDataBuilder:
                 break
             item = self.rng.choice(list(self.purchase_items.values()))
             pid = item["product_id"]
-            if self.stock.get(pid, 0) < 1000:
-                continue
             # 找该商品 + 该往来对象的源拿货单（追溯字段要求同对象）
             from erp.db import get_db
             with get_db() as conn:
@@ -533,20 +437,17 @@ class DemoDataBuilder:
                 ).fetchone()
             if src is None:
                 continue
-            qty = min(self.stock[pid] // 1000, self.rng.randint(1, 4))
-            if qty <= 0:
-                continue
+            qty = self.rng.randint(1, 4)
             spec = self.products[pid]
-            base = Decimal(spec.init_cost or spec.price)
+            base = Decimal(spec.price)
             price = float(base * Decimal(str(self.rng.uniform(0.95, 1.1))))
             d = day(self.rng.randint(5, 160))
-            result = pr.create(
+            pr.create(
                 customer_id=item["customer_id"], business_date=d,
                 items=[{"product_id": pid, "quantity": qty, "unit_price_yuan": money(round(price, 2))}],
                 request_key=uuid.uuid4().hex, status="saved",
                 notes="演示：关联原拿货单（仅追溯）", source_order_id=int(src["id"]),
             )
-            self._apply_purchase_return_stock(int(result["order_id"]))
             trace_done += 1
             self.bump("pr_trace")
         # 旧版逐行绑定路径（source_item_id 全绑）
@@ -558,9 +459,6 @@ class DemoDataBuilder:
             if not candidates:
                 break
             item = self.rng.choice(candidates)
-            pid = item["product_id"]
-            if self.stock.get(pid, 0) < 2000:
-                continue
             from erp.db import get_db
             with get_db() as conn:
                 row = conn.execute(
@@ -572,7 +470,7 @@ class DemoDataBuilder:
                 ).fetchone()
             if src is None:
                 continue
-            qty = min(item["remaining"] // 1000, self.stock[pid] // 1000, self.rng.randint(1, 3))
+            qty = min(item["remaining"] // 1000, self.rng.randint(1, 3))
             if qty <= 0:
                 continue
             # 旧版路径要求退拿货日期不早于原拿货单
@@ -581,7 +479,7 @@ class DemoDataBuilder:
             span = max(0, (latest - src_day).days)
             d = (src_day + timedelta(days=self.rng.randint(0, span))).isoformat()
             try:
-                result = pr.create(
+                pr.create(
                     customer_id=int(src["customer_id"]), business_date=d,
                     items=[{"source_item_id": item["item_id"], "quantity": qty}],
                     request_key=uuid.uuid4().hex, status="saved",
@@ -592,23 +490,20 @@ class DemoDataBuilder:
             except ValueError as exc:
                 self.warnings.append(f"旧版退拿货跳过: {exc}")
                 continue
-            self._apply_purchase_return_stock(int(result["order_id"]))
             item["remaining"] -= qty * 1000
             legacy_done += 1
             self.bump("pr_legacy")
         # 草稿：1 张随后定稿，1 张删除后恢复，2 张保持草稿
         for i in range(n_draft):
             d = day(self.rng.randint(8, 160))
-            pid = self._pick_stocked(min_units=1)
-            if pid is None:
-                continue
+            pid = self._pick_purchasable()
             spec = self.products[pid]
-            base = Decimal(spec.init_cost or spec.price)
+            base = Decimal(spec.price)
             price = float(base * Decimal(str(self.rng.uniform(0.95, 1.1))))
             result = pr.create(
                 customer_id=self._pick_customer(), business_date=d,
                 items=[{"product_id": pid,
-                        "quantity": min(self.rng.randint(1, 4), self.stock[pid] // 1000),
+                        "quantity": self.rng.randint(1, 4),
                         "unit_price_yuan": money(round(price, 2))}],
                 request_key=uuid.uuid4().hex, status="draft",
                 notes="演示：退拿货草稿",
@@ -617,7 +512,6 @@ class DemoDataBuilder:
             self.bump("pr_draft")
         if drafts:
             pr.finalize(drafts[0], expected_version=self._version("purchase_return_orders", drafts[0]))
-            self._apply_purchase_return_stock(drafts[0])
             self.bump("pr_finalized")
             # 草稿[1]：删除后恢复（覆盖「恢复」路径）
             pr.delete(drafts[1], expected_version=self._version("purchase_return_orders", drafts[1]),
@@ -642,12 +536,11 @@ class DemoDataBuilder:
             if voided >= 2:
                 break
             try:
-                pr.void(oid, "演示：货源换回，作废回冲库存",
+                pr.void(oid, "演示：货源换回，作废",
                         expected_version=self._version("purchase_return_orders", oid))
             except ValueError as exc:
                 self.warnings.append(f"退拿货作废跳过 {oid}: {exc}")
                 continue
-            self._apply_purchase_return_stock(oid, reverse=True)
             voided += 1
             self.bump("pr_void")
 
@@ -660,27 +553,17 @@ class DemoDataBuilder:
         for i in range(n):
             if decimal:
                 pool = [p for p, s in self.products.items()
-                        if s.unit == "米" and s.kind != "none" and p not in used
-                        and self.stock.get(p, 0) > 0]
+                        if s.unit == "米" and p not in used]
                 if not pool:
                     break
                 pid = self.rng.choice(pool)
-                want = min(q3(self.rng.choice(["12.5", "25.5", "8.25", "15.75", "40", "33.5"])),
-                           self.stock[pid])
-                if want <= 0:
-                    break
+                want = q3(self.rng.choice(["12.5", "25.5", "8.25", "15.75", "40", "33.5"]))
                 qty_text = str(Decimal(want) / 1000)
             else:
                 want = self.rng.randint(1, 3) if big else self.rng.randint(1, 10)
-                pid = self._pick_stocked(min_units=want, exclude=frozenset(used))
+                pid = self._pick_product(exclude=frozenset(used))
                 if pid is None:
-                    # 没有商品吃得下这个数量：退而求其次取 1 件的
-                    pid = self._pick_stocked(min_units=1, exclude=frozenset(used))
-                    if pid is None:
-                        break
-                    want = min(want, self.stock[pid] // 1000)
-                    if want <= 0:
-                        break
+                    break
                 qty_text = str(want)
             used.add(pid)
             spec = self.products[pid]
@@ -695,18 +578,16 @@ class DemoDataBuilder:
         return rows
 
     def _record_sale_items(self, order_id: int) -> None:
+        """登记该销售单的明细，供后续退货单逐行关联原单使用。"""
         from erp.db import get_db
         with get_db() as conn:
             order = conn.execute(
                 "SELECT customer_id, order_date FROM orders WHERE id=?", (order_id,)
             ).fetchone()
             rows = conn.execute(
-                "SELECT id, product_id, quantity, unit_cost_micro, cost_total_micro "
-                "FROM order_items WHERE order_id=?", (order_id,)
+                "SELECT id, product_id, quantity FROM order_items WHERE order_id=?", (order_id,)
             ).fetchall()
         for row in rows:
-            if row["cost_total_micro"] is None:
-                continue     # 缺成本行不能作为关联退货来源
             self.sale_items[int(row["id"])] = {
                 "order_id": order_id,
                 "product_id": int(row["product_id"]),
@@ -719,16 +600,15 @@ class DemoDataBuilder:
     def build_sales(self) -> None:
         from erp.services import accounting
         n_saved = self.plan["sale"] - 8        # 8 张草稿
-        n_zero = 7                            # 零建档先卖
-        n_picker = 6                          # 选中已有商品（客户价 4 + 常规 2）
+        n_typed = 7                           # 手输商品名（含订单里首次出现的新名称自动建档）
+        n_picker = 6                          # 选中已有商品（客户专属价 4 + 常规 2）
         n_big = 4
         n_decimal = 2
-        n_plain = n_saved - n_zero - n_picker - n_big - n_decimal
+        n_plain = n_saved - n_typed - n_picker - n_big - n_decimal
         saved_ids: list[int] = []
         draft_ids: list[int] = []
-        zero_ids: list[int] = []
 
-        # 普通正式单（手输路径，启用库存商品，带成本快照）
+        # 普通正式单（手输路径，商品来自演示目录）
         for _ in range(n_plain):
             d = day(self.rng.randint(0, 165))
             cid = self._pick_customer()
@@ -738,12 +618,11 @@ class DemoDataBuilder:
                 status="saved", order_date=d, notes=self.rng.choice(SALE_NOTES),
                 request_key=uuid.uuid4().hex,
             )
-            self._apply_order_stock(oid)
             self._record_sale_items(oid)
             saved_ids.append(oid)
             self.bump("sale_saved")
 
-        # 选中已有商品路径（客户价 + 空单位回落）
+        # 选中已有商品路径（客户专属价 + 空单位回落）
         pair_iter = iter(CUSTOMER_PRICE_PAIRS)
         for i in range(n_picker):
             d = day(self.rng.randint(0, 165))
@@ -759,9 +638,7 @@ class DemoDataBuilder:
                 cid = next(c for c, v in self.customers.items() if v[0] == cust_name)
                 pid = self.product_by_name[prod_name]
                 spec = self.products[pid]
-                qty = min(self.rng.randint(2, 8), self.stock.get(pid, 0) // 1000)
-                if qty <= 0:
-                    continue
+                qty = self.rng.randint(2, 8)
                 rows = [{"product_id": pid, "product_name": prod_name, "unit": spec.unit,
                          "unit_price_yuan": price, "quantity": str(qty)}]
             oid = accounting.create_order_from_typed_rows(
@@ -769,18 +646,16 @@ class DemoDataBuilder:
                 status="saved", order_date=d, notes="演示：选中已有商品开单",
                 request_key=uuid.uuid4().hex,
             )
-            self._apply_order_stock(oid)
             self._record_sale_items(oid)
             saved_ids.append(oid)
             self.bump("sale_picker")
 
-        # 零建档 / 先卖后补（缺成本 → 后续人工补录）
-        for i in range(n_zero):
+        # 手输商品名：已建档的非热销品名 + 订单里首次出现的全新名称（自动建档留痕）
+        for i in range(n_typed):
             d = day(self.rng.randint(2, 160))
             cid = self._pick_customer()
             if i < 4:
-                # 已存在但未启用库存的商品
-                spec = self.rng.choice([s for s in CATALOG if s.kind == "none"])
+                spec = self.rng.choice([s for s in CATALOG if s.name in TYPED_ONLY_PRODUCTS])
                 rows = [{"product_name": spec.name, "unit": spec.unit,
                          "unit_price_yuan": money(round(float(Decimal(spec.price) * Decimal("1.02")), 2)),
                          "quantity": str(self.rng.randint(1, 12))}]
@@ -792,11 +667,12 @@ class DemoDataBuilder:
                          "quantity": str(self.rng.randint(1, 6))}]
             oid = accounting.create_order_from_typed_rows(
                 customer_id=cid, order_no=self._next_md(d), rows=rows,
-                status="saved", order_date=d, notes="演示：零建档先卖，后补成本",
+                status="saved", order_date=d, notes="演示：手输商品名开单",
                 request_key=uuid.uuid4().hex,
             )
-            zero_ids.append(oid)
-            self.bump("sale_zero_cost")
+            self._record_sale_items(oid)
+            saved_ids.append(oid)
+            self.bump("sale_typed")
 
         # 12~20 行大单（打印分联场景）
         for _ in range(n_big):
@@ -810,7 +686,6 @@ class DemoDataBuilder:
                 status="saved", order_date=d, notes="演示：大单（多联打印）",
                 request_key=uuid.uuid4().hex,
             )
-            self._apply_order_stock(oid)
             self._record_sale_items(oid)
             saved_ids.append(oid)
             self.bump("sale_big")
@@ -827,7 +702,6 @@ class DemoDataBuilder:
                 status="saved", order_date=d, notes="演示：按米计价（三位小数）",
                 request_key=uuid.uuid4().hex,
             )
-            self._apply_order_stock(oid)
             self._record_sale_items(oid)
             saved_ids.append(oid)
             self.bump("sale_decimal_qty")
@@ -858,7 +732,7 @@ class DemoDataBuilder:
                 order_date=original["order_date"], notes="演示：草稿重编辑后定稿",
                 expected_version=version,
             )
-            self._apply_order_stock(oid)
+            self._record_sale_items(oid)
             saved_ids.append(oid)
             self.bump("sale_reedited")
 
@@ -876,12 +750,11 @@ class DemoDataBuilder:
             if oid in referenced:
                 continue
             try:
-                accounting.void_order(oid, "演示：客户整单取消，作废回冲库存",
+                accounting.void_order(oid, "演示：客户整单取消，作废",
                                       expected_version=self._version("orders", oid))
             except ValueError as exc:
                 self.warnings.append(f"销售作废跳过 {oid}: {exc}")
                 continue
-            self._apply_order_stock(oid, reverse=True)
             self.dead_orders.add(oid)
             voided += 1
             self.bump("sale_void")
@@ -898,24 +771,10 @@ class DemoDataBuilder:
                 continue
             if any(item["order_id"] == oid and item["returned"] > 0 for item in self.sale_items.values()):
                 continue
-            accounting.void_then_delete_order(oid, "演示：正式单列表删除（自动冲回）")
-            self._apply_order_stock(oid, reverse=True)
+            accounting.void_then_delete_order(oid, "演示：正式单列表删除（自动作废后删除）")
             self.dead_orders.add(oid)
             self.bump("sale_deleted")
             break
-
-        # 3 张零建档单人工补录历史成本
-        from erp.services.cost_backfill import backfill_order_costs
-        from erp.db import get_db
-        for oid in zero_ids[:3]:
-            with get_db() as conn:
-                items = conn.execute(
-                    "SELECT id, quantity FROM order_items WHERE order_id=?", (oid,)
-                ).fetchall()
-            entries = [{"item_id": int(r["id"]),
-                        "unit_cost": money(round(self.rng.uniform(8, 60), 2))} for r in items]
-            backfill_order_costs(oid, entries, "演示：补录历史销售成本")
-            self.bump("backfill_items", len(entries))
 
     # ---------- Phase 7：退货单 ----------
 
@@ -934,6 +793,7 @@ class DemoDataBuilder:
                 candidates = [
                     (iid, item) for iid, item in self.sale_items.items()
                     if item["returned"] < item["qty"] and item["order_id"] not in self.dead_orders
+                    and (kind == "full" or item["qty"] - item["returned"] >= 1000)
                 ]
                 if not candidates:
                     break
@@ -949,6 +809,7 @@ class DemoDataBuilder:
                         (j, other) for j, other in self.sale_items.items()
                         if other["order_id"] == item["order_id"]
                         and other["returned"] < other["qty"] and j != iid
+                        and other["qty"] - other["returned"] >= 1000
                     ]
                     rows = [{"source_item_id": iid, "quantity": _qty_text(qty_3dp)}]
                     for j, other in same_order[: self.rng.randint(1, 2)]:
@@ -976,7 +837,6 @@ class DemoDataBuilder:
                 except ValueError as exc:
                     self.warnings.append(f"关联退货跳过: {exc}")
                     continue
-                self._apply_order_stock(oid)
                 for row in rows:
                     self.sale_items[int(row["source_item_id"])]["returned"] += q3(row["quantity"])
                 done += 1
@@ -996,7 +856,7 @@ class DemoDataBuilder:
             cid = src_item["customer_id"]
             source_date = src_item["order_date"]
             d = self._return_day(source_date, min_gap=1)
-            pid = self._pick_stocked(min_units=1)
+            pid = self._pick_product()
             if pid is None:
                 pid = src_item["product_id"]
             spec = self.products[pid]
@@ -1014,7 +874,6 @@ class DemoDataBuilder:
             except ValueError as exc:
                 self.warnings.append(f"手输退货跳过: {exc}")
                 continue
-            self._apply_order_stock(oid)
             typed_done += 1
             self.bump("return_typed")
 
@@ -1023,6 +882,7 @@ class DemoDataBuilder:
         candidates = [
             (iid, item) for iid, item in self.sale_items.items()
             if item["returned"] < item["qty"] and item["order_id"] not in self.dead_orders
+            and item["qty"] - item["returned"] >= 1000
         ]
         if candidates:
             iid, item = self.rng.choice(candidates)
@@ -1043,13 +903,12 @@ class DemoDataBuilder:
                 status="saved", order_date=d, notes="演示：退货草稿编辑后定稿",
                 expected_version=self._version("orders", oid),
             )
-            self._apply_order_stock(oid)
             self.sale_items[iid]["returned"] += q3(qty)
             self.bump("return_draft_finalized")
         for _ in range(2):
             d = day(self.rng.randint(1, 150))
             cid = self._pick_customer()
-            pid = self._pick_stocked(min_units=1)
+            pid = self._pick_product()
             if pid is None:
                 continue
             spec = self.products[pid]
@@ -1083,12 +942,11 @@ class DemoDataBuilder:
             if voided >= 2:
                 break
             try:
-                accounting.void_order(oid, "演示：退货协商取消，作废回冲库存",
+                accounting.void_order(oid, "演示：退货协商取消，作废",
                                       expected_version=self._version("orders", oid))
             except ValueError as exc:
                 self.warnings.append(f"退货作废跳过 {oid}: {exc}")
                 continue
-            self._apply_order_stock(oid, reverse=True)
             voided += 1
             self.bump("return_void")
 
@@ -1207,27 +1065,42 @@ class DemoDataBuilder:
                                 ("purchase", purchases), ("purchase_return", prs)):
                 if actual != self.plan[key]:
                     problems.append(f"{key} 数量 {actual} != 计划 {self.plan[key]}")
-            # 库存守恒：过账流水之和必须等于当前状态
-            rows = conn.execute(
-                """
-                SELECT s.product_id, s.quantity_3dp, s.cost_total_micro,
-                       COALESCE(SUM(p.quantity_delta_3dp), 0) AS pq,
-                       COALESCE(SUM(p.cost_delta_micro), 0) AS pc
-                FROM product_inventory_state s
-                LEFT JOIN inventory_postings p ON p.product_id = s.product_id
-                GROUP BY s.product_id
-                """
-            ).fetchall()
-            for row in rows:
-                if int(row["quantity_3dp"]) != int(row["pq"]) or int(row["cost_total_micro"]) != int(row["pc"]):
-                    problems.append(f"库存不守恒: 商品 {row['product_id']}")
-            # 跟踪表与库一致
-            for pid, qty in self.stock.items():
-                state = conn.execute(
-                    "SELECT quantity_3dp FROM product_inventory_state WHERE product_id=?", (pid,)
-                ).fetchone()
-                if state is None or int(state["quantity_3dp"]) != qty:
-                    problems.append(f"库存跟踪不一致: 商品 {pid}")
+            # 金额守恒：单头金额必须等于明细小计之和（退货单按负号口径）
+            for label, order_table, item_table, fk, cond in (
+                ("销售/退货单", "orders", "order_items", "order_id",
+                 "o.total_amount_cents != CASE WHEN o.order_type='return' "
+                 "THEN -COALESCE(i.s, 0) ELSE COALESCE(i.s, 0) END"),
+                ("拿货单", "purchase_orders", "purchase_order_items", "purchase_order_id",
+                 "o.total_amount_cents != COALESCE(i.s, 0)"),
+                ("退拿货单", "purchase_return_orders", "purchase_return_items", "purchase_return_id",
+                 "o.total_amount_cents != COALESCE(i.s, 0)"),
+            ):
+                drift = conn.execute(
+                    f"""
+                    SELECT o.id FROM {order_table} o
+                    LEFT JOIN (
+                        SELECT {fk} AS f, SUM(subtotal_cents) AS s FROM {item_table} GROUP BY {fk}
+                    ) i ON i.f = o.id
+                    WHERE {cond}
+                    """
+                ).fetchall()
+                for row in drift:
+                    problems.append(f"{label}金额与明细小计不一致: 单 {row['id']}")
+            # 金额方向：销售单不为负、退货单不为正（账款口径）
+            signs = {
+                row["order_type"]: row for row in conn.execute(
+                    "SELECT order_type, MIN(total_amount_cents) lo, MAX(total_amount_cents) hi "
+                    "FROM orders GROUP BY order_type"
+                ).fetchall()
+            }
+            if "sale" in signs and int(signs["sale"]["lo"]) < 0:
+                problems.append("销售单金额出现负数")
+            if "return" in signs and int(signs["return"]["hi"]) > 0:
+                problems.append("退货单金额出现正数")
+            # 外键与完整性
+            fk_violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+            if fk_violations:
+                problems.append(f"外键校验发现 {len(fk_violations)} 条违规")
             # 场景覆盖硬指标
             coverage = {
                 "sale_void": conn.execute(
@@ -1251,28 +1124,36 @@ class DemoDataBuilder:
                 "recycled_prs": conn.execute(
                     "SELECT COUNT(*) c FROM purchase_return_orders WHERE deleted_at IS NOT NULL"
                 ).fetchone()["c"],
+                "printed_orders": conn.execute(
+                    "SELECT COUNT(*) c FROM orders WHERE status='printed'"
+                ).fetchone()["c"],
                 "linked_returns": conn.execute(
                     "SELECT COUNT(*) c FROM orders WHERE order_type='return' AND source_order_id IS NOT NULL"
                 ).fetchone()["c"],
-                "missing_cost_sales": conn.execute(
-                    "SELECT COUNT(DISTINCT order_id) c FROM order_items oi JOIN orders o ON o.id=oi.order_id "
-                    "WHERE o.order_type='sale' AND o.status IN ('saved','printed') AND oi.cost_total_micro IS NULL"
+                "bound_return_items": conn.execute(
+                    "SELECT COUNT(*) c FROM order_items WHERE source_item_id IS NOT NULL"
                 ).fetchone()["c"],
-                "backfilled_items": conn.execute(
-                    "SELECT COUNT(*) c FROM order_items WHERE cost_source='backfill'"
-                ).fetchone()["c"],
+                "customers": conn.execute("SELECT COUNT(*) c FROM customers").fetchone()["c"],
+                "products": conn.execute("SELECT COUNT(*) c FROM products").fetchone()["c"],
+                "customer_prices": conn.execute("SELECT COUNT(*) c FROM customer_prices").fetchone()["c"],
                 "payments": conn.execute("SELECT COUNT(*) c FROM payments").fetchone()["c"],
+                "payments_void": conn.execute(
+                    "SELECT COUNT(*) c FROM payments WHERE status='void'"
+                ).fetchone()["c"],
                 "adjustments": conn.execute("SELECT COUNT(*) c FROM adjustments").fetchone()["c"],
+                "adjustments_void": conn.execute(
+                    "SELECT COUNT(*) c FROM adjustments WHERE status='void'"
+                ).fetchone()["c"],
                 "snapshots": conn.execute("SELECT COUNT(*) c FROM reconciliation_snapshots").fetchone()["c"],
                 "audit_logs": conn.execute("SELECT COUNT(*) c FROM audit_logs").fetchone()["c"],
-                "postings": conn.execute("SELECT COUNT(*) c FROM inventory_postings").fetchone()["c"],
             }
             required = {
                 "sale_void": 1, "return_void": 1, "purchase_void": 1, "pr_void": 1,
                 "recycled_orders": 2, "recycled_purchases": 1, "recycled_prs": 1,
-                "linked_returns": 20, "missing_cost_sales": 3, "backfilled_items": 3,
-                "payments": 15, "adjustments": 6, "snapshots": 4, "audit_logs": 100,
-                "postings": 50,
+                "printed_orders": 8, "linked_returns": 20, "bound_return_items": 25,
+                "customers": 28, "products": 40, "customer_prices": 3,
+                "payments": 15, "payments_void": 1, "adjustments": 6, "adjustments_void": 1,
+                "snapshots": 4, "audit_logs": 100,
             }
             for key, minimum in required.items():
                 if coverage[key] < minimum:
@@ -1334,26 +1215,24 @@ def write_notes(package_root: Path, manifest: dict) -> Path:
         "· 工作台：今日净额 / 销售退货笔数 / 最近业务",
         "· 开单（销售 / 退货 / 拿货 / 退拿货）：客户、商品、单位候选全部来自演示数据；",
         "  退货单「原销售单」输入框可检索到演示销售单，选中后可一键带入商品行",
-        "· 单据管理：四类单据混合筛选、分页、类型多选、「只看缺成本」筛选",
-        "· 基础资料：28 个往来对象、40 个商品（含未启用库存 / 安全库存 / 品牌）",
-        "· 商品列表：当前库存 / 移动平均成本 / 库存金额 / 库存状态（告急、缺货）",
-        "· 数据分析：约半年流水热力图、利润与成本诊断、产品排行、往来对账",
+        "· 单据管理：四类单据混合筛选、分页、类型多选、作废与回收站",
+        "· 基础资料：28 个往来对象、40 个商品（含品牌与单位）",
+        "· 数据分析：约半年流水热力图、四类流水口径、产品排行、往来对账",
         "· 账款：客户余额、收款 / 调整流水、汇总 PDF",
         "· 回收站：作废与删除的单据、草稿回收与恢复",
         "",
         "场景覆盖（按实际生成结果）",
         "-" * 44,
-        f"· 销售单 {docs['sale']} 笔：正式 / 已打印 / 草稿 / 重编辑定稿 / 大单多联 / 按米三位小数 /",
-        f"  零建档缺成本 / 作废 {cov['sale_void']} 笔 / 回收站删除恢复",
+        f"· 销售单 {docs['sale']} 笔：正式 / 已打印 {cov['printed_orders']} 笔 / 草稿 / 重编辑定稿 /",
+        f"  大单多联 / 按米三位小数 / 手输商品名 / 作废 {cov['sale_void']} 笔 / 回收站删除恢复",
         f"· 退货单 {docs['return']} 笔：逐行关联原单（部分退 / 全额退 / 多行 / 跨月退）、",
         f"  手输 + 原单追溯、草稿编辑定稿、作废 {cov['return_void']} 笔",
-        f"· 拿货单 {docs['purchase']} 笔：正式补货 / 草稿定稿 / 作废回冲 {cov['purchase_void']} 笔 / 回收站",
-        f"· 退拿货单 {docs['purchase_return']} 笔：手输移动均价出库 / 关联原拿货单追溯 / 旧版逐行绑定 /",
+        f"· 拿货单 {docs['purchase']} 笔：正式补货 / 草稿定稿 / 作废 {cov['purchase_void']} 笔 / 回收站",
+        f"· 退拿货单 {docs['purchase_return']} 笔：手输单价 / 关联原拿货单追溯 / 旧版逐行绑定 /",
         f"  草稿定稿与恢复 / 作废 {cov['pr_void']} 笔",
-        "· 期初：已知成本 / 估算成本 / 零期初确认 / 总金额反推 / 盘点修订",
-        f"· 账款：收款 {cov['payments']} 笔（多方式，含作废）、调整 {cov['adjustments']} 笔（含作废）",
-        f"· 对账快照 {cov['snapshots']} 份；缺成本销售单 {cov['missing_cost_sales']} 张、",
-        f"  人工补录成本 {cov['backfilled_items']} 行；审计日志 {cov['audit_logs']} 条",
+        f"· 账款：收款 {cov['payments']} 笔（多方式，含作废 {cov['payments_void']} 笔）、",
+        f"  调整 {cov['adjustments']} 笔（含作废 {cov['adjustments_void']} 笔）",
+        f"· 对账快照 {cov['snapshots']} 份；审计日志 {cov['audit_logs']} 条",
         "",
         "重置方式",
         "-" * 44,
@@ -1406,7 +1285,6 @@ def main(argv: list[str] | None = None) -> int:
     init_db()
     builder = DemoDataBuilder(root, documents=args.documents, seed=args.seed)
     builder.build_master_data()
-    builder.build_inventory()
     builder.build_purchases()
     builder.build_purchase_returns()
     builder.build_sales()

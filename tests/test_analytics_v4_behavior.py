@@ -97,49 +97,6 @@ def test_removed_spec_parameter_is_ignored_not_rejected():
     assert contexts[-1]["result"]["summary"]["net_sales_amount_cents"] == 1000
 
 
-def test_historical_cost_micro_is_aggregated_before_rounding_in_every_projection():
-    init_db()
-    customer = create_customer("微元历史对象")
-    product = create_product("历史商品", "个")
-    first = legacy_sale(customer, product, "MD202509010001", "2025-09-01", price="1")
-    second = legacy_sale(customer, product, "MD202509010002", "2025-09-01", price="1")
-    with get_db() as conn:
-        conn.execute("UPDATE order_items SET cost_total_micro=5000 WHERE order_id IN (?,?)", (first, second))
-    result = summarize_analytics(customer_id=customer)
-    row = result["product_rows"][0]
-    assert row["net_cost_cents"] == 1
-    assert row["net_cost_micro"] == 10000
-    assert row["gross_profit_cents"] == 199
-    assert result["summary"]["net_cost_cents"] == 1
-    assert result["summary"]["gross_profit_cents"] == 199
-    assert result["heatmap"][0]["net_cost_micro"] == 10000
-    assert result["heatmap"][0]["net_cost_cents"] == 1
-    assert result["heatmap"][0]["has_transactions"] is True
-
-
-def test_partial_historical_cost_coverage_is_explicit_not_zero_or_full_profit():
-    init_db()
-    customer = create_customer("部分成本对象")
-    product = create_product("历史商品", "个")
-    known = legacy_sale(customer, product, "MD202509010001", "2025-09-01", price="1")
-    legacy_sale(customer, product, "MD202509030001", "2025-09-03", price="2")
-    with get_db() as conn:
-        conn.execute("UPDATE order_items SET cost_total_micro=5000 WHERE order_id=?", (known,))
-    result = summarize_analytics(start_date="2025-09-01", end_date="2025-09-03", customer_id=customer)
-    summary = result["summary"]
-    assert summary["cost_complete"] is False
-    assert summary["gross_profit_cents"] is None and summary["gross_margin_rate"] is None
-    assert summary["known_line_count"] == 1 and summary["unknown_line_count"] == 1
-    assert summary["known_net_sales_cents"] == 100 and summary["unknown_net_sales_cents"] == 200
-    assert summary["known_gross_profit_cents"] == 100
-    from decimal import Decimal
-    assert summary["known_gross_margin_rate"] == Decimal("0.995")
-    assert result["product_rows"][0]["sales_line_count"] == 2
-    assert result["heatmap"][2]["cost_complete"] is False
-    assert result["heatmap"][2]["unknown_net_sales_cents"] == 200
-    assert result["heatmap"][1]["has_transactions"] is False
-
-
 def test_unfilled_model_sentinel_and_model_dimension_are_removed():
     """决策变更（v14）：型号筛选整条删除 —— `__unfilled__`「未填写型号」哨兵随之消失。
 
@@ -180,14 +137,14 @@ def sale_for_product(customer, product, no, day, quantity="1", price="10"):
 
 def test_quantity_rankings_keep_one_all_product_chart_and_classify_real_sales():
     """数量榜只按数量排序、全品类同一张榜；不再按单位分组。"""
-    from erp.services.inventory import initialize_product
+
     from erp.services.accounting import create_return_order_from_source
     init_db()
     customer = create_customer("完整排行对象")
     ids = []
     for index in range(13):
         product = create_product(f"排行计件{index:02}", "个")
-        initialize_product(product, "100", "0", "2025-01-01", "虚构", f"rank-{index}")
+
         sale_for_product(customer, product, f"MD20250901{index+1:04}", "2025-09-01", quantity=str(index+1))
         ids.append(product)
     meter = create_product("排行计量", "米")
@@ -198,7 +155,7 @@ def test_quantity_rankings_keep_one_all_product_chart_and_classify_real_sales():
     too_new = create_product("期末后建档", "个")
     inactive = create_product("停用未销售", "个")
     returned = create_product("全部退回", "个")
-    initialize_product(returned, "10", "1", "2025-01-01", "虚构", "rank-return")
+
     source = sale_for_product(customer, returned, "MD202509010103", "2025-09-01", quantity="2")
     with get_db() as conn:
         source_item = conn.execute("SELECT id FROM order_items WHERE order_id=?", (source,)).fetchone()[0]
@@ -227,15 +184,13 @@ def test_quantity_rankings_keep_one_all_product_chart_and_classify_real_sales():
 
 
 def test_formal_v4_layout_renders_every_month_inside_the_applied_scope():
-    from urllib.parse import parse_qs, urlsplit
-    from test_readonly_cost_display import RenderedHTML
     init_db()
     customer = create_customer("跨年完整范围对象")
     product = create_product("历史商品", "个")
     legacy_sale(customer, product, "MD202401010001", "2024-01-01")
     legacy_sale(customer, product, "MD202610010001", "2026-10-01")
     app = create_app()
-    query = {"start_date": "2024-01-01", "end_date": "2026-10-01", "customer_id": customer, "product_name": "历史商品", "sort": "profit", "tab": "health"}
+    query = {"start_date": "2024-01-01", "end_date": "2026-10-01", "customer_id": customer, "product_name": "历史商品", "sort": "amount", "tab": "rank"}
     with rendered(app) as contexts:
         response = app.test_client().get("/analytics/", query_string=query)
     assert response.status_code == 200
@@ -247,19 +202,26 @@ def test_formal_v4_layout_renders_every_month_inside_the_applied_scope():
     assert view["calendars"][0]["month"] == "2024-01" and view["calendars"][-1]["month"] == "2026-10"
     assert view["heatmap"] == result["heatmap"]
     assert result["heatmap"][-1]["date"] == "2026-10-01"
-    assert view["tab"] == "health" and view["sort"] == "profit"
+    assert view["tab"] == "rank" and view["sort"] == "amount"
     html = response.get_data(as_text=True)
     ids = ["analyticsFilters", "analysisMetrics", "layeredAnalysis", "productAnalysis"]
     assert [html.index(f'id="{element}"') for element in ids] == sorted(html.index(f'id="{element}"') for element in ids)
-    assert all(f'id="{element}"' in html for element in ("heatTab", "rankTab", "healthTab", "inventoryAlert"))
-    assert "已知部分净成本" in html and "未覆盖净销售额" in html
-    assert "历史净成本" in html and "当前库存金额" in html
+    assert all(f'id="{element}"' in html for element in ("heatTab", "rankTab"))
+    # 决策 ②/③：成本诊断页签、成本覆盖说明与库存告急锚点整块下线，页面只剩热力图与产品排行。
+    assert 'id="healthTab"' not in html and 'id="inventoryAlert"' not in html
+    assert "成本诊断" not in html and "毛利润" not in html and "净成本" not in html
     # 数据分析页不再提供"进入往来对账"入口（改由账款管理的单据类型筛选承担）
     assert 'id="reconEntry"' not in html and 'id="openRecon"' not in html
 
 
+def _database_snapshot():
+    """只读快照：证明分析页 GET 不写库（原先借用的库存测试助手已随库存系统删除）。"""
+    with get_db() as conn:
+        tables = [row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")]
+        return {table: [tuple(row) for row in conn.execute(f'SELECT * FROM "{table}" ORDER BY 1')] for table in tables}
+
+
 def test_ranking_size_selector_replaces_pagination_and_keeps_aggregate_scope():
-    from test_product_inventory_status_display import business_snapshot
     init_db()
     customer=create_customer("排行分页对象")
     ids=[]
@@ -270,9 +232,9 @@ def test_ranking_size_selector_replaces_pagination_and_keeps_aggregate_scope():
         ids.append(pid)
     app=create_app()
     client=app.test_client()
-    before=business_snapshot()
+    before=_database_snapshot()
     # 合并后名称唯一、无法再用基名一次选中整个系列，故改为只按客户筛选（13 个商品即全部）。
-    query={"start_date":"", "end_date":"", "customer_id":customer, "product_name":"", "tab":"rank", "sort":"profit", "rank_key":"hot_sales"}
+    query={"start_date":"", "end_date":"", "customer_id":customer, "product_name":"", "tab":"rank", "sort":"amount", "rank_key":"hot_sales"}
     with rendered(app) as contexts:
         response=client.get('/analytics/',query_string=query)
     assert response.status_code==200
@@ -296,10 +258,10 @@ def test_ranking_size_selector_replaces_pagination_and_keeps_aggregate_scope():
         assert context['result']['summary']['net_sales_amount_cents']==sum(range(1,14))*1000
         assert len(context['view']['product_rows'])==13
         assert context['filters']['start_date']==context['filters']['end_date']==''
-        assert context['view']['sort']=='profit' and context['view']['tab']=='rank'
+        assert context['view']['sort']=='amount' and context['view']['tab']=='rank'
     # 非法的每组条数被拒绝
     assert client.get('/analytics/',query_string={**query,'rank_size':'7'}).status_code==400
-    assert business_snapshot()==before
+    assert _database_snapshot()==before
 
 
 def test_removed_heat_year_parameter_is_ignored_not_rejected():
@@ -358,56 +320,6 @@ def test_analytics_filter_card_uses_aligned_grid_and_split_order_type_block():
     assert ".erp-analytics .analytics-filters" not in css
 
 
-def test_cost_view_switches_between_stack_and_ring_with_correct_semantics():
-    """成本覆盖/毛利构成：堆叠条 ↔ 环形切换；环形段数与份额对应真实构成。"""
-    from pathlib import Path
-    from erp.services.analytics import summarize_analytics
-
-    init_db()
-    customer = create_customer("环形视图对象")
-    product = create_product("历史商品", "个")
-    # 一行有历史成本、一行没有 → 覆盖 < 100%，两段都非零。
-    known = legacy_sale(customer, product, "MD202509010001", "2025-09-01", price="10")
-    legacy_sale(customer, product, "MD202509020001", "2025-09-02", price="20")
-    with get_db() as conn:
-        conn.execute("UPDATE order_items SET cost_total_micro=100000 WHERE order_id=?", (known,))
-    window = {"start_date": "2025-09-01", "end_date": "2025-09-02", "customer_id": customer}
-    result = summarize_analytics(**window)
-    assert result["summary"]["known_net_sales_cents"] == 1000
-    assert result["summary"]["unknown_net_sales_cents"] == 2000
-
-    app = create_app()
-    client = app.test_client()
-    bar = client.get("/analytics/", query_string={**window, "tab": "health", "cost_view": "bar"}).get_data(as_text=True)
-    ring = client.get("/analytics/", query_string={**window, "tab": "health", "cost_view": "ring"}).get_data(as_text=True)
-
-    # 两种视图都在页面上，默认（bar）显示堆叠条、隐藏环形。
-    assert 'data-cost-view="bar"' in bar and 'data-cost-view="ring"' in bar
-    assert 'id="costViewBar"' in bar and 'id="costViewRing"' in bar
-    assert "hidden" not in bar.split('<div class="cost-charts" data-cost-view="bar"', 1)[1].split('>', 1)[0]
-    assert "hidden" in bar.split('<div class="cost-charts cost-charts-ring"', 1)[1].split('>', 1)[0]
-    # 切到 ring：环形可见、堆叠条隐藏。
-    assert "hidden" in ring.split('<div class="cost-charts" data-cost-view="bar"', 1)[1].split('>', 1)[0]
-    assert "hidden" not in ring.split('<div class="cost-charts cost-charts-ring"', 1)[1].split('>', 1)[0]
-    # 环形段：覆盖（已知成本 / 未覆盖），份额与真实金额一致（1000/3000、2000/3000）。
-    coverage = ring.split('cost-charts-ring', 1)[1].split('cost-charts-ring', 1)[0]
-    assert 'data-seg-label="已知成本"' in coverage and 'data-seg-label="未覆盖"' in coverage
-    assert 'data-seg-percent="33.3"' in coverage and 'data-seg-percent="66.7"' in coverage
-    # 悬停数值浮标贴在环外缘（不再进圆心）；圆心恒显示总量。
-    assert 'class="cost-ring-tip' in coverage and 'class="cost-ring-center"' in coverage
-    assert '净销售额' in coverage
-    # 命中层与视觉层解耦：透明命中弧负责鼠标判定（永不移动），避免段外扩导致抖动。
-    assert 'class="cost-ring-hit"' in coverage
-    tip_pointer = (Path(__file__).resolve().parents[1] / "app" / "erp" / "static" / "analytics-v4.css").read_text(encoding="utf-8")
-    assert ".cost-ring-seg{pointer-events:none" in tip_pointer and ".cost-ring-hit{pointer-events:stroke" in tip_pointer
-    # 环形从 12 时起顺时针：首段 dashoffset 为负（沿顺时针推进）；扫描动画存在。
-    assert 'stroke-dashoffset="-' in coverage
-    css = (Path(__file__).resolve().parents[1] / "app" / "erp" / "static" / "analytics-v4.css").read_text(encoding="utf-8")
-    assert "costsweep" in css and "stroke-linecap:round" in css
-    # 非法的 cost_view 被拒绝。
-    assert client.get("/analytics/", query_string={**window, "cost_view": "pie"}).status_code == 400
-
-
 def test_bar_growth_animation_is_wired_to_tab_switch_and_keeps_constant_speed():
     """条形统计图竖向生长：切页签 / 就地换图都播，速度恒定（时长=柱高/速度）。"""
     from pathlib import Path
@@ -421,51 +333,20 @@ def test_bar_growth_animation_is_wired_to_tab_switch_and_keeps_constant_speed():
     assert "@keyframes barlabel{from{transform:translate(-50%,var(--bar-rise,0))}to{transform:translate(-50%,0)}}" in css
     assert ".is-growing .rank-bar-fill{animation:bargrow var(--bar-dur" in css
     assert ".is-growing .rank-bar-value{animation:barlabel var(--bar-dur" in css
-    # 横向堆叠条用 clip-path 展开，不能 scaleX（会压扁条内文字）。
-    assert "@keyframes stackgrow{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}" in css
-    assert "scaleX" not in css.split("stackgrow", 1)[1].split("}", 1)[0]
     # reduced-motion 关闭生长。
     assert "@media(prefers-reduced-motion:reduce)" in css and ".erp-analytics .is-growing .rank-bar-fill" in css
     # 匀速口径：时长 = 柱高 / 恒定速度；触发点在 JS（就地刷新整块替换后按需重播）。
-    assert "export const BAR_GROW_SPEED_PX_S" in js and "export const STACK_GROW_SPEED_PX_S" in js
+    assert "export const BAR_GROW_SPEED_PX_S" in js
     assert "heights.map(height => Math.max(0, Number(height) || 0) / speed)" in js
     assert "chart.classList.add('is-growing')" in js
     assert "prefersReducedMotion" in js
-    # 触发点一：切页签到 产品排行 / 成本诊断（点已选中的页签不重播）。
-    assert "key === 'rank' || key === 'health'" in js, "切到 产品排行/成本诊断 要生长"
+    # 触发点一：切页签到 产品排行（点已选中的页签不重播）；成本诊断页签已删除。
+    assert "key === 'rank'" in js, "切到 产品排行 要生长"
     assert "wasSelected" in js, "点已选中的页签不应重播"
-    # 触发点二：任何就地换图（换榜 / 换每组显示 / 点显示 / 成本视图切换）都重播生长。
+    # 触发点二：任何就地换图（换榜 / 换每组显示 / 点显示）都重播生长。
     assert "growActivePanel()" in js and "applyViewChange" in js
     assert "activeTabKey" in js, "就地刷新后按当前页签决定播哪块"
     # 后端与模板没有引入生长相关参数：柱高仍是模板内联的 bar_height_px。
     template = (root / "app" / "erp" / "templates" / "analytics" / "index.html").read_text(encoding="utf-8")
     assert 'style="height:{{row.bar_height_px}}px"' in template
     assert 'style="bottom:{{row.bar_height_px}}px"' in template
-
-
-def test_cost_missing_source_is_vertical_columns_not_horizontal_rows():
-    """成本缺失来源由横向条形改为竖向柱（与产品排行同一形态）。"""
-    from erp.routes.analytics import _cost_diagnostics
-    from erp.services.analytics import summarize_analytics
-
-    init_db()
-    customer = create_customer("缺失竖向对象")
-    product = create_product("历史商品", "个")
-    legacy_sale(customer, product, "MD202509010001", "2025-09-01", price="10")
-    # 无历史成本 → 进入缺失来源。
-    result = summarize_analytics(start_date="2025-09-01", end_date="2025-09-01", customer_id=customer)
-    assert result["product_rows"][0]["unknown_net_sales_cents"] == 1000
-
-    diag = _cost_diagnostics(result)
-    assert diag["missing"], "应有一条缺失来源"
-    top = diag["missing"][0]
-    assert top["bar_height_px"] == 190.0, "最高柱应与产品排行同高"
-    assert "bar_percent" in top
-
-    html = create_app().test_client().get(
-        "/analytics/", query_string={"start_date": "2025-09-01", "end_date": "2025-09-01", "customer_id": customer, "tab": "health"}
-    ).get_data(as_text=True)
-    assert "cost-missing-columns" in html
-    assert 'class="rank-column negative"' in html
-    # 旧的横向行容器不应再出现在成本缺失来源中
-    assert "rank-bars" not in html

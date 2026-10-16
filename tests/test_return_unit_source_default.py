@@ -8,7 +8,6 @@ from erp.services.accounting import (
     create_customer, create_product, create_order_from_typed_rows,
     create_return_order_from_source,
 )
-from erp.services.inventory import initialize_product
 
 
 def _seed():
@@ -16,7 +15,7 @@ def _seed():
     cid = create_customer("退货单位客户")
     pid = create_product("退货单位商品", "个")
     # 退货要求源销售明细有可靠成本 → 商品必须先启用库存（期初入库）。
-    initialize_product(pid, "100", "50", "2026-10-01", "期初", "p4-ret-init")
+
     return cid, pid
 
 

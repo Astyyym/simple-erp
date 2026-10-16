@@ -232,16 +232,6 @@ def create_app() -> Flask:
                 LIMIT 5
                 """
             ).fetchall()
-            inventory_alert_count = conn.execute(
-                """
-                SELECT COUNT(*) AS count
-                FROM products AS p
-                JOIN product_inventory_state AS s ON s.product_id = p.id
-                WHERE p.deleted_at IS NULL
-                  AND s.enabled = 1
-                  AND s.quantity_3dp <= p.safety_stock_3dp
-                """
-            ).fetchone()["count"]
         recent_orders = []
         for row in recent_rows:
             order = dict(row)
@@ -260,7 +250,6 @@ def create_app() -> Flask:
             today_sales_count=metrics["sales_count"],
             today_returns_count=metrics["returns_count"],
             recent_orders=recent_orders,
-            inventory_alert_count=inventory_alert_count,
             cents_to_yuan=cents_to_yuan,
         )
 

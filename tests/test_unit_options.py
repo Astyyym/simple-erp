@@ -5,7 +5,7 @@
 """
 from erp.db import get_db, init_db
 from erp.services.accounting import create_customer, create_product, create_order_from_typed_rows
-from erp.services.inventory import create_purchase_order, initialize_product
+from erp.services.purchases import create_purchase_order
 from erp.services.units import DEFAULT_UNITS, unit_options
 
 
@@ -22,7 +22,7 @@ def test_unit_options_collects_from_all_four_tables():
     init_db()
     cid = create_customer("候选池客户")
     pid = create_product("候选池商品", "箱")
-    initialize_product(pid, "10", "20", "2026-10-01", "期初", "p4-units-init")
+
 
     # products.unit = 箱（已由 create_product 写入）
     # order_items.unit = 台（销售单提交）

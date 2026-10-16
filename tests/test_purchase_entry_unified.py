@@ -5,14 +5,14 @@ from datetime import date
 from erp import create_app
 from erp.db import get_db, init_db
 from erp.services.accounting import create_customer, create_product
-from erp.services.inventory import create_purchase_order, initialize_product
+from erp.services.purchases import create_purchase_order
 
 
 def _seed():
     init_db()
     cid = create_customer("统一页虚构对象")
     pid = create_product("统一页商品U1", "个")
-    initialize_product(pid, "10", "10", "2026-10-02", "期初", "unified-init")
+
     return cid, pid
 
 
@@ -62,17 +62,20 @@ def test_purchase_create_autocreates_new_object_with_real_product():
     assert order["customer_id"] == created["id"]
 
 
-def test_purchase_pages_have_unified_columns_and_readonly_cost():
+def test_purchase_pages_have_unified_columns_without_cost_column():
+    """统一七列明细：序号/产品名称/单位/数量/单价/金额/操作；成本列已随库存系统删除。"""
     init_db()
     client = create_app().test_client()
-    headers = ("序号", "产品名称", "单位", "数量", "单价(元)", "金额", "成本(元)", "操作")
+    headers = ("序号", "产品名称", "单位", "数量", "单价(元)", "金额", "操作")
     for path in ("/purchases/new", "/purchases/return/new"):
         html = client.get(path).get_data(as_text=True)
         for header in headers:
             assert header in html, (path, header)
-        assert 'class="readonly-total unit-cost-display"' in html
+        assert "成本(元)" not in html, path
         assert 'class="readonly-total line-total"' in html
-        assert not re.search(r'<input\b[^>]*name="(?:unit_cost_micro|avg_cost|cost_total)', html)
+        cost_inputs = set(re.findall(r'<input\b[^>]*name="([^"]*cost[^"]*)"', html))
+        # 唯一的价类输入是人工填写的拿货单价；内部成本列已随库存系统删除，不得再以输入框回归。
+        assert cost_inputs <= {"unit_cost_yuan"}, (path, cost_inputs)
 
 
 def test_entry_pages_have_order_no_status_and_today_history():
@@ -158,8 +161,8 @@ def test_purchase_entry_has_no_price_quick_button():
 
     演进：旧实现借用 `/orders/api/products?customer_id=…`，而那里 `customer_id` 的语义是**客户**，
     拿货页同名字段存的是**供应商**（两者共用 `customers` 档案）→ 页面会把「这家客户当初
-    买多少钱」当成拿货单价候选；随后改成内嵌商品目录的 `default_price_cents` 做参考按钮；
-    默认价下线后档案已无售价，这个按钮整体删除（行尾只读成本列仍给当前移动平均成本）。
+    买多少钱」当成拿货单价候选；随后改成内嵌商品目录的档案默认价做参考按钮；默认价与
+    成本列都已随库存系统下线（决策 ②/③），该按钮整体删除，单价只能人工填写。
     """
     init_db()
     client = create_app().test_client()

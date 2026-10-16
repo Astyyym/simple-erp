@@ -19,7 +19,7 @@ Flask + SQLite，可选 Windows PyWebView 桌面壳，**只在 Windows 运行**�
 ## 相关文档
 
 - 产品需求与实现基线：`docs/需求/消防器材店ERP系统-需求文档.md`
-- 业务契约（库存/成本/对账）：`docs/需求/库存成本与对账业务契约.md`
+- 业务契约（拿货/对账）：`docs/需求/拿货与对账业务契约.md`（原名「库存、成本与客户对账业务契约」，2026-10-16 因库存成本链整体删除而改名收缩）
 - 项目技能：`skills/simple-business-erp-development/`
 
 ## 已确认的业务口径（长期）
@@ -29,5 +29,12 @@ Flask + SQLite，可选 Windows PyWebView 桌面壳，**只在 Windows 运行**�
   没有则单价**留空**手输。手输价 **> 0** 就写为该客户对该商品的专属价（0 元不学）；
   换客户时按新客户重取，新客户没有专属价就**清空**（不保留上一个客户的价）。
   依据：`开发短计划/2026-10-15_商品售价来源收敛与专属价查看_执行计划.md`。
-  `products.default_price_cents` 列仍保留（不删列 = 不写迁移），值恒 0、代码不再读。
+- **无库存、无成本**（2026-10-16 用户决策，schema v15 物理删除）：
+  库存三表（`inventory_postings` / `inventory_initializations` / `product_inventory_state`）与 9 个成本/期初/安全库存列
+  （`order_items` 三列、`products.default_price_cents` 与 `safety_stock_3dp`、`purchase_return_items` 三列、
+  `purchase_return_orders.posted_once`）已删除。**老库升级不可逆**：不能再用 v3.15.0 及更早程序打开 v15 库，
+  回退只能靠迁移前自动生成的整库备份。
+  四类单据除「已作废」外都可编辑（编辑锁全撤）；拿货/退拿货保留为纯流水单据（单据、NH 单号、打印、
+  对账并入、账款抵扣、回收站、当天历史照旧）；导入不再接受「期初数量 / 期初成本」列，含这两列的文件整表报「表头错误」。
+  依据：`开发短计划/2026-10-16_删除库存系统_执行计划.md`。
 - 商品管理列表「专属价」列是查看入口，「编辑」按钮文案为「查看详情」；编辑页有「客户专属价」卡片。
