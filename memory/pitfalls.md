@@ -32,6 +32,18 @@
 ## 发布提交要用显式 pathspec
 
 工作区常驻「前序会话/用户自己的未提交批次」（`.gitignore`、几个 `.bat`、未跟踪的 `memory/`、
-已 staged 的 68 个 `开发短计划/` 删除）。`git commit -a` 会把它们一起卷进发布提交；
-一律 `git commit -- <明确路径…>`，并在提交后核对 `git status` 里那批仍然原样留着。
+已 staged 的短计划删除）。`git commit -a` 会把它们一起卷进发布提交；发布提交一律
+`git commit -- <明确路径…>`，并在提交后核对 `git status` 里那批仍然原样留着。
+
+**但已 staged 的删除不吃 pathspec（本机实测）**：`git commit -- 开发短计划` 只带走了该目录下
+**被修改**的那个文件，68 个 staged 删除一个都没进提交，而且提交后 index 里那批删除也消失了
+（`git diff --cached` 变空、HEAD 里文件还在）。删除类改动一律单独走
+`git rm -r --cached <目录>` + **不带 pathspec** 的 `git commit`（此时 index 里只有这一批），
+提交后用 `git -c core.quotepath=false ls-tree -r HEAD --name-only | grep -c "<目录>/"` 复核为 0。
+
+## .gitignore 不会停止跟踪
+
+`.gitignore` 只对**未跟踪**文件生效。已入库的文件加了 ignore 规则照样留在仓库里、照样会被发布；
+必须 `git rm -r --cached <路径>` 显式移出索引（本地文件保留）再提交。
+核对：`git ls-files <路径>` 与 `git ls-tree -r HEAD` 都应为空。
 
