@@ -44,18 +44,18 @@
 </style>
 
 <h2>回收站</h2>
-<p class="text-muted">删除后的记录进入回收站，保留 7 天后启动系统时自动清理。也可以在这里确认删除。</p>
+<p data-ui-hint class="text-muted">删除后的记录进入回收站，保留 7 天后启动系统时自动清理。也可以在这里确认删除。</p>
 <div class="recycle-topbar">
   <form method="post" action="/recycle/empty" onsubmit="return confirm('确认清空回收站吗？这里能清的记录会被永久删除，无法恢复；有账务的客户与有活单据引用的记录会保留并列出原因。')">
     <button class="btn btn-danger">清空回收站</button>
   </form>
-  <span class="recycle-topbar-hint">清空会永久删除能清掉的记录；清不掉的会列出原因，不会被静默跳过。</span>
+  <span data-ui-hint class="recycle-topbar-hint">清空会永久删除能清掉的记录；清不掉的会列出原因，不会被静默跳过。</span>
 </div>
 
 <div class="recycle-layout">
 <section class="recycle-card" data-recycle-section data-recycle-checkbox="recycle_ids" data-recycle-form="recycleBulkForm">
 <h3>单据 <span class="recycle-count" id="recycleDocumentCount">{{ documents|length }}</span></h3>
-<p class="recycle-hint">销售、退货、拿货、退拿货的删除记录。恢复对所有类型可用；确认删除会把明细一起清掉。有未删除单据引用它时会保留并说明原因。</p>
+<p data-ui-hint class="recycle-hint">销售、退货、拿货、退拿货的删除记录。恢复对所有类型可用；确认删除会把明细一起清掉。有未删除单据引用它时会保留并说明原因。</p>
 <div class="recycle-type-row" role="group" aria-label="回收站单据类型筛选">
   <label class="form-label">单据类型</label>
   <div class="recycle-type-options">
@@ -112,7 +112,7 @@
 <div class="recycle-side">
 <section class="recycle-card" data-recycle-section data-recycle-checkbox="product_ids" data-recycle-form="recycleProductForm">
 <h3>商品 <span class="recycle-count">{{ products|length }}</span></h3>
-<p class="recycle-hint">历史单据会保留商品名称快照。没有未删除单据引用时即可确认删除。</p>
+<p data-ui-hint class="recycle-hint">历史单据会保留商品名称快照。没有未删除单据引用时即可确认删除。</p>
 <div class="recycle-actions">
   <button class="btn btn-success" type="button" data-recycle-submit="restore" data-recycle-message="确认恢复选中的商品吗？">恢复选中</button>
   <button class="btn btn-danger" type="button" data-recycle-submit="purge" data-recycle-message="确认彻底删除选中的商品吗？">确认删除选中</button>
@@ -123,7 +123,7 @@
 
 <section class="recycle-card" data-recycle-section data-recycle-checkbox="customer_ids" data-recycle-form="recycleCustomerForm">
 <h3>客户 <span class="recycle-count">{{ customers|length }}</span></h3>
-<p class="recycle-hint">有历史账务的客户不会被物理删除。</p>
+<p data-ui-hint class="recycle-hint">有历史账务的客户不会被物理删除。</p>
 <div class="recycle-actions">
   <button class="btn btn-success" type="button" data-recycle-submit="restore" data-recycle-message="确认恢复选中的客户吗？">恢复选中</button>
   <button class="btn btn-danger" type="button" data-recycle-submit="purge" data-recycle-message="确认彻底删除选中的客户吗？有历史账务的客户不会被物理删除。">确认删除选中</button>

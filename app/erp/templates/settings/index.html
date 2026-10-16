@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>设置</h2>
-<p class="text-muted mb-3">保存后页面自动更新；有未保存修改时切换页面，会询问是否先保存。</p>
+<p data-ui-hint class="text-muted mb-3">保存后页面自动更新；有未保存修改时切换页面，会询问是否先保存。</p>
 
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% if messages %}
@@ -65,12 +65,23 @@
           <strong>业务工作台 · 今日销售单</strong>
         </div>
       </div>
+      <div class="col-md-6">
+        <label class="form-label">界面说明文字</label>
+        <label class="form-check">
+          <input class="form-check-input" type="checkbox" name="ui_show_hints" value="1" {% if config.get('ui_show_hints', True) %}checked{% endif %}>
+          <span class="form-check-label">显示页面上的提示与说明小字</span>
+        </label>
+        <p data-ui-hint class="text-muted small mb-0">
+          关掉后隐藏各页面的提示/说明/注意类小字（含本页各区块的说明），
+          危险操作警告、状态与数据文字不受影响。
+        </p>
+      </div>
     </div>
   </section>
 
   <section class="settings-card settings-card-wide" id="printInfoSection">
     <h3>打印单信息</h3>
-    <p class="text-muted small">版式位置固定：在对应文本框填写内容即可出现在打印单对应位置。副标题「销售清单」不可改。</p>
+    <p data-ui-hint class="text-muted small">版式位置固定：在对应文本框填写内容即可出现在打印单对应位置。副标题「销售清单」不可改。</p>
     {% if print_info_missing %}
     <div class="alert alert-warning py-2" role="alert">
       <strong>打印件上会留空白：</strong>还没填 {{ print_info_missing | join('、') }}。
@@ -107,7 +118,7 @@
 
   <section class="settings-card settings-card-wide">
     <h3>打印位置校准</h3>
-    <p class="text-muted small">
+    <p data-ui-hint class="text-muted small">
       打印分两套纸型，不要混用：<strong>销售单 / 退货单 / 拿货单 / 退拿货单</strong> 走
       <strong>241mm 两侧走纸孔连续纸</strong>（PDF 逻辑页 215.9×139.7mm，页内左右各留 7.3mm 版心）；
       <strong>客户货款汇总 / 往来交易对账单</strong> 走
@@ -148,7 +159,7 @@
 
   <section class="settings-card settings-card-wide" id="printLayoutPreviewSection">
     <h3>打印版面预览</h3>
-    <p class="text-muted small">
+    <p data-ui-hint class="text-muted small">
       三个版面都用固定示例数据渲染，不含任何真实单据。
     </p>
     <div class="table-responsive">
@@ -192,7 +203,7 @@
 
 <section class="settings-card mt-4" id="printInfoPromptSection">
   <h3>打印信息提示</h3>
-  <p class="text-muted small mb-2">
+  <p data-ui-hint class="text-muted small mb-2">
     工作台会在「订货电话 / 订货地址」为空时提示一次。补全后提示自动消失；不想再看到可以关掉。
   </p>
   <form method="post" action="{{ url_for('settings.dismiss_print_info_prompt' if not config.print_info_prompt_dismissed else 'settings.restore_print_info_prompt') }}">
@@ -208,7 +219,7 @@
 
 <section class="settings-card mt-4">
   <h3>数据存储位置</h3>
-  <p class="text-muted small">业务数据在数据根目录下的 <code>data/erp.db</code> 等文件夹。路径记忆在本机 LocalAppData，不跟程序安装包走。</p>
+  <p data-ui-hint class="text-muted small">业务数据在数据根目录下的 <code>data/erp.db</code> 等文件夹。路径记忆在本机 LocalAppData，不跟程序安装包走。</p>
   <dl class="settings-dl">
     <dt>当前数据目录</dt>
     <dd><code>{{ data_root_path }}</code></dd>
@@ -224,7 +235,7 @@
       <button type="button" class="btn btn-outline-secondary" id="settingsBrowseFolder" {% if not is_desktop %}title="请在桌面版 EXE 中使用系统选夹，或直接粘贴路径"{% endif %}>浏览文件夹…</button>
       <button type="submit" class="btn btn-warning">一键迁移并切换</button>
     </div>
-    <p class="text-muted small mt-2 mb-0">
+    <p data-ui-hint class="text-muted small mt-2 mb-0">
       {% if is_desktop %}
       点击「浏览文件夹」可打开系统选夹；也可粘贴资源管理器地址栏路径。
       {% else %}
@@ -237,7 +248,7 @@
 
 <section class="settings-card settings-card-wide mt-4" id="backupSection">
   <h3>备份与恢复</h3>
-  <p class="text-muted small">
+  <p data-ui-hint class="text-muted small">
     备份会把 <code>erp.db</code>、商品图片与旧账存档打包成一个 zip，保存在数据目录的 <code>backups/</code> 下。
     <strong>备份与数据放在同一块盘上等于没有备份</strong>，请定期用「另存到…」把备份复制到 U 盘或另一块盘。
     超过 {{ backup_retention_days }} 天的旧备份会在下次备份时自动清理。
@@ -248,12 +259,16 @@
 
   {% if backups %}
   <table class="table align-middle">
-    <thead><tr><th>备份时间</th><th>大小</th><th>原因</th><th>操作</th></tr></thead>
+    <thead><tr><th>备份时间</th><th>大小</th><th>数据库版本</th><th>原因</th><th>操作</th></tr></thead>
     <tbody>
     {% for b in backups %}
       <tr>
         <td>{{ b.created_at_display }}</td>
         <td>{{ b.size_display }}</td>
+        <td>
+          {{ b.schema_version_display }}
+          {% if b.is_legacy %}<span class="badge bg-warning text-dark">旧版结构</span>{% endif %}
+        </td>
         <td>{{ b.reason }}</td>
         <td>
           <form method="post" action="{{ url_for('settings.backup_copy') }}" class="d-flex flex-wrap gap-2 mb-2">
@@ -261,8 +276,14 @@
             <input class="form-control form-control-sm" style="max-width:240px" name="destination_dir" placeholder="另存目录，例如 D:\备份">
             <button type="submit" class="btn btn-sm btn-outline-secondary">另存到…</button>
           </form>
+          {% if b.is_legacy %}
+          <p class="text-danger small mb-2">
+            旧版结构备份：恢复后重新打开程序会自动升级到当前版本（v15），
+            <strong>库存与成本数据将被永久删除、无法回退</strong>。
+          </p>
+          {% endif %}
           <form method="post" action="{{ url_for('settings.backup_restore') }}" class="d-flex flex-wrap gap-2 align-items-center"
-                onsubmit="return confirm('将用这份备份覆盖当前数据库。恢复前会自动备份当前库。确定继续？');">
+                onsubmit="return confirm('{% if b.is_legacy %}这份备份是{{ b.schema_version_display }}旧版结构：恢复并重开程序后会自动升级到 v15，库存与成本数据将被永久删除、无法回退。{% endif %}将用这份备份覆盖当前数据库。恢复前会自动备份当前库。确定继续？');">
             <input type="hidden" name="backup_name" value="{{ b.name }}">
             <input class="form-control form-control-sm" style="max-width:120px" name="confirm_text" placeholder="输入 恢复">
             <label class="form-check form-check-inline mb-0">
@@ -277,17 +298,17 @@
     </tbody>
   </table>
   {% else %}
-  <p class="text-muted small mb-0">还没有任何备份。迁移旧数据前，请先点上面的「立即备份」。</p>
+  <p data-ui-hint class="text-muted small mb-0">还没有任何备份。迁移旧数据前，请先点上面的「立即备份」。</p>
   {% endif %}
 </section>
 
 <section class="settings-card settings-card-wide mt-4" id="purgeSection">
   <h3>清空所有数据</h3>
-  <p class="text-muted small">
+  <p data-ui-hint class="text-muted small">
     把系统恢复到「刚装好、还没录任何单」的状态：<strong>清空所有单据、客户与商品资料、账款数据</strong>，
     并把公司名、打印信息、界面主题等设置恢复出厂默认。
   </p>
-  <p class="text-muted small mb-2">
+  <p data-ui-hint class="text-muted small mb-2">
     <strong>不会删除</strong>：<code>backups/</code> 备份包、<code>legacy_archive/</code> 旧账留底存档、数据目录位置记忆。
     清空前会<strong>自动创建一份备份</strong>（可在上方「备份与恢复」里找回），同一天已打出的纸质单号也会保留高位，新单不会撞号。
   </p>
@@ -303,7 +324,7 @@
 
 <section class="settings-card settings-card-wide mt-4" id="legacyArchiveSection">
   <h3>旧账留底存档</h3>
-  <p class="text-muted small">
+  <p data-ui-hint class="text-muted small">
     把旧软件导出的欠款清单（客户 / 单号 / 日期 / 金额等）<strong>原样保存为文件</strong>到数据目录的 <code>legacy_archive/</code>。
     <strong>此存档只作留底凭证，不参与账款计算</strong>——旧软件口径与本系统不同，硬塞进去只会污染账款。
     客户来问「这 5000 怎么来的」时，人工翻档核对。
@@ -336,7 +357,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="text-muted small mb-0">还没有存档。迁移时若有旧欠款明细，可存这里留底。</p>
+  <p data-ui-hint class="text-muted small mb-0">还没有存档。迁移时若有旧欠款明细，可存这里留底。</p>
   {% endif %}
 </section>
 

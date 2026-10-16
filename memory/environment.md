@@ -6,6 +6,12 @@
 - 源码开发：`.venv\Scripts\python.exe app\app.py`；测试 `.venv\Scripts\python.exe -m pytest tests\ -q`
 - 打包 venv：`.venv-win\Scripts\python.exe -m pytest tests\ -q`
 
+## 本机数据根（先搞清哪个库在跑）
+
+- 本机**正式运行库**是 `C:\Users\czk\Documents\简单ERP数据\data\erp.db`（冻结/桌面版默认位置，由 `%LOCALAPPDATA%\简单ERP\data_location.json` 记住），该库已是 schema v15。
+- 项目根 `data/` 只是 2026-07 源码开发遗留的 v2 老库（13 客户 / 17 商品 / 21 单），**不是运行库**；2026-10-16 已归档为 `backups/legacy-v2-erp-20260714.db`（`backups/` 在 .gitignore 内，不随仓库发布），项目根 `data/` 现为空。
+- 先确认再动手：`.venv\Scripts\python.exe -c "import sys;sys.path.insert(0,'app');from erp import db;print(db.db_path())"`。
+
 ## PDF / 打印验证的本地边界
 
 - 本机 `pdftotext` 是 **Xpdf 4.00**：只有 `-layout` / `-raw` / `-table`，**没有 `-bbox`**。

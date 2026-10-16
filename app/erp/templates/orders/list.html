@@ -64,7 +64,7 @@
           <button type="button" class="btn btn-outline-secondary" data-type-none="1">清空</button>
         </div>
       </div>
-      <div class="form-text filter-type-hint">不勾选=全部；销售与退货共用同一天流水号，拿货与退拿货共用同一天 NH 流水。</div>
+      <div data-ui-hint class="form-text filter-type-hint">不勾选=全部；销售与退货共用同一天流水号，拿货与退拿货共用同一天 NH 流水。</div>
     </div>
     <div class="filter-field-type">
       <div class="filter-type-row" role="group" aria-label="单据状态筛选">
@@ -79,7 +79,7 @@
           <button type="button" class="btn btn-outline-secondary" data-status-none="1">清空</button>
         </div>
       </div>
-      <div class="form-text filter-type-hint">不勾选=全部状态。拿货与退拿货没有「已打印」状态。</div>
+      <div data-ui-hint class="form-text filter-type-hint">不勾选=全部状态。拿货与退拿货没有「已打印」状态。</div>
     </div>
   </div>
   {% if filter_chips %}
@@ -99,9 +99,9 @@
       <a id="exportReturnsExcelBtn" class="btn btn-outline-success" href="/orders/export/returns.xlsx">导出退货单Excel</a>
     </div>
   </div>
-  <div class="filter-hint">切换时间模式仅调整日期输入项；点击「筛选」后更新下方结果。</div>
+  <div data-ui-hint class="filter-hint">切换时间模式仅调整日期输入项；点击「筛选」后更新下方结果。</div>
   {% if summary_hint %}
-  <div class="filter-hint" id="summaryExportHint">{{ summary_hint }}</div>
+  <div data-ui-hint class="filter-hint" id="summaryExportHint">{{ summary_hint }}</div>
   {% endif %}
   {% if dashboard_notice %}
   <div class="alert alert-warning mb-0" role="status">{{ dashboard_notice }}{% if matched_customer_names %}（匹配：{{ matched_customer_names|join('、') }}）{% endif %}</div>
@@ -147,7 +147,7 @@
   {% endfor %}
   </tbody>
 </table>
-<div class="small text-muted mb-2">共 {{total_order_count}} 条单据；勾选后可删除。正式单据会先自动作废并冲回账款，再移入回收站；有生效历史的单据会保留追溯。</div>
+<div data-ui-hint class="small text-muted mb-2">共 {{total_order_count}} 条单据；勾选后可删除。正式单据会先自动作废并冲回账款，再移入回收站；有生效历史的单据会保留追溯。</div>
 <div class="orders-pagination d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3 mb-4" aria-label="单据分页">
   <div class="small text-muted" id="ordersRangeCount">
     显示 <strong>{{range_start}}–{{range_end}}</strong> 条，共 <strong>{{total_order_count}}</strong> 条

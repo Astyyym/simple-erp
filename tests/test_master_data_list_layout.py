@@ -152,7 +152,9 @@ def test_view_options_row_keeps_cap_and_chips_together_on_both_pages():
 
 
 def _legend(html: str) -> str:
-    match = re.search(r'<p class="list-legend">(.*?)</p>', html, re.S)
+    # v15 后说明段统一带 data-ui-hint 属性（设置页「界面说明文字」开关），
+    # 属性出现在 class 之前，故不能用 `<p class="list-legend">` 这种严格前缀。
+    match = re.search(r'<p[^>]*class="list-legend"[^>]*>(.*?)</p>', html, re.S)
     assert match, "两页都应有常驻图例 .list-legend"
     return match.group(1)
 
@@ -174,7 +176,7 @@ def test_legend_is_permanent_so_switching_filters_moves_nothing():
         # 图例必须落在动作条**之外**（动作条整块会被就地替换，图例跟着换会白抖一次）。
         bar_id = "productsViewBar" if path.startswith("/products") else "customersViewBar"
         assert todo.index(f'id="{bar_id}"') < todo.index('class="list-legend"'), path
-        before_legend = todo.split('<p class="list-legend"', 1)[0].rstrip()
+        before_legend = re.split(r'<p[^>]*class="list-legend"', todo, 1)[0].rstrip()
         assert before_legend.endswith("</div>\n</div>"), f"{path} 图例应在动作条（chip 组 + 动作条）闭合之后"
     # 商品页的旧口径（型号为空）不许回流。
     assert "型号为空" not in _html("/products/?quality=todo")

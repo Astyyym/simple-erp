@@ -178,7 +178,7 @@ def import_products():
 
 @products_bp.post("/import/confirm")
 def import_products_confirm():
-    """B-4/B-6：第二段——服务端二次校验后落库；带期初的行独立事务初始化。"""
+    """B-4/B-6：第二段——服务端二次校验后落库（v15 起没有期初初始化步骤）。"""
     raw = request.form.get("preview_json", "")
     same_name = request.form.get("same_name", "skip")
     try:

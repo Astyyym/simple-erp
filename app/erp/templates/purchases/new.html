@@ -53,7 +53,7 @@
 </style>
 
 <div class="order-workspace" id="purchaseWorkspace"><div class="order-entry-area"><div class="order-heading page-header">
-  <div><h2>{{ '编辑拿货草稿' if is_edit else '新建拿货单' }}</h2><p>正式保存后只登记单据流水，不影响客户价和客户账款。</p></div>
+  <div><h2>{{ '编辑拿货草稿' if is_edit else '新建拿货单' }}</h2><p data-ui-hint>正式保存后只登记单据流水，不影响客户价和客户账款。</p></div>
   <div class="page-actions"><a class="btn btn-outline-secondary page-return" href="/orders/">返回单据管理</a></div>
 </div>
 {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
@@ -66,17 +66,17 @@
       <label class="form-label">往来对象（本单卖方）</label>
       <input class="form-control form-control-lg" id="customer_name" name="customer_name" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="customer_suggestions" aria-haspopup="listbox" aria-label="往来对象，可用上下箭头选择建议" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="输入一个字即可匹配对象" value="{{ selected_customer_name|default('') }}" required>
       <div class="suggest-list d-none" id="customer_suggestions" role="listbox" aria-label="对象建议"></div>
-      <div class="form-text">与客户资料共用同一档案；可直接输入新对象，保存时自动建档。</div>
+      <div data-ui-hint class="form-text">与客户资料共用同一档案；可直接输入新对象，保存时自动建档。</div>
     </div>
     <div class="col-3">
       <label class="form-label">拿货日期</label>
       <input class="form-control form-control-lg" id="purchaseDate" name="business_date" type="date" autocomplete="off" value="{{ order.business_date if is_edit else today }}" required {% if is_edit %}readonly{% endif %}>
-      <div class="form-text">{{ '编辑保留原单号和原日期' if is_edit else '默认当天，可改；改后单号会按该日重算' }}</div>
+      <div data-ui-hint class="form-text">{{ '编辑保留原单号和原日期' if is_edit else '默认当天，可改；改后单号会按该日重算' }}</div>
     </div>
     <div class="col-3">
       <label class="form-label">单号</label>
       <input class="form-control form-control-lg" id="orderNoInput" name="order_no" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" value="{{ order.order_no if is_edit else order_no }}" required readonly>
-      <div class="form-text">{{ '编辑保持原单号' if is_edit else '系统按 NH+所选日期+流水 自动生成' }}</div>
+      <div data-ui-hint class="form-text">{{ '编辑保持原单号' if is_edit else '系统按 NH+所选日期+流水 自动生成' }}</div>
     </div>
     <div class="col-2">
       <label class="form-label">状态</label>
@@ -91,7 +91,7 @@
 
   <section class="order-details-card" id="purchaseDetailsCard" aria-labelledby="purchaseDetailsTitle">
   <h3 class="section-title" id="purchaseDetailsTitle">拿货明细</h3>
-  <p class="text-muted small mb-2" id="purchaseZeroSetupHint">
+  <p data-ui-hint class="text-muted small mb-2" id="purchaseZeroSetupHint">
     新商品需先到「商品管理」页建档后才能用于拿货单。
   </p>
   <div class="order-table-scroll"><table class="table table-bordered order-table" id="purchaseTable">
@@ -143,7 +143,7 @@
 {% if not is_edit %}
 <section class="today-history" aria-labelledby="todayHistoryTitle">
   <h3 id="todayHistoryTitle">当天历史开单</h3>
-  <p class="small text-muted mb-3" id="todayHistoryDate">业务日期 · {{today}}（与录入、修改时间无关）</p>
+  <p data-ui-hint class="small text-muted mb-3" id="todayHistoryDate">业务日期 · {{today}}（与录入、修改时间无关）</p>
   <div class="table-responsive">
     <table class="table table-hover align-middle">
       <thead><tr><th>单号</th><th>对象</th><th>类型</th><th>金额</th><th>状态</th><th>操作</th></tr></thead>

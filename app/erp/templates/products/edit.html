@@ -44,7 +44,7 @@
             </div>
           </div>
           <div class="card-foot">
-            {% if missing_keys %}<span class="text-muted small">补全后会自动退出「待补全」筛选。</span>{% endif %}
+            {% if missing_keys %}<span data-ui-hint class="text-muted small">补全后会自动退出「待补全」筛选。</span>{% endif %}
             <button class="btn btn-primary">保存</button>
           </div>
         </form>
@@ -76,7 +76,7 @@
           </table>
         </div>
         {% else %}
-        <p class="field-hint" style="margin:0">暂无客户专属价。开单时手输单价（大于 0）后，系统会自动记为该客户对这个商品的专属价，下次开单自动带出。</p>
+        <p data-ui-hint class="field-hint" style="margin:0">暂无客户专属价。开单时手输单价（大于 0）后，系统会自动记为该客户对这个商品的专属价，下次开单自动带出。</p>
         {% endif %}
       </div>
     </section>
@@ -91,7 +91,7 @@
           <input class="form-control" type="file" name="image" accept="image/jpeg,image/png" required>
           <button class="btn btn-outline-secondary">上传/替换图片</button>
         </form>
-        <p class="field-hint">系统会重新编码并保存到数据目录。</p>
+        <p data-ui-hint class="field-hint">系统会重新编码并保存到数据目录。</p>
       </div>
     </section>
   </div>

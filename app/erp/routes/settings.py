@@ -19,7 +19,7 @@ from erp.config import (
     normalize_slip_size,
     save_config,
 )
-from erp.db import init_db
+from erp.db import CURRENT_SCHEMA_VERSION, init_db
 from erp.utils.backup import (
     RestoreError,
     backup_dir,
@@ -27,6 +27,7 @@ from erp.utils.backup import (
     create_backup,
     inspect_backup,
     list_backups,
+    read_backup_schema_version,
     restore_backup,
 )
 from erp.utils.money import cents_to_yuan
@@ -119,6 +120,9 @@ def save_settings():
             "print_maker_name": (form.get("print_maker_name") or "").strip(),
             "print_receiver_label": (form.get("print_receiver_label") or "").strip(),
         }
+        # 界面说明文字开关：复选框未勾选时浏览器根本不提交该字段，所以不能像
+        # print_offset_* 那样只在「字段在场」时更新——这里按「在场即开、缺席即关」解析。
+        updates["ui_show_hints"] = form.get("ui_show_hints") in ("1", "on", "true")
         # Only touch calibration when the settings form actually posts these fields.
         # Older POSTs / partial tests must not wipe live printer offsets back to 0.
         if "print_offset_x_mm" in form:
@@ -387,11 +391,19 @@ def backup_restore():
         result = restore_backup(source, include_config=include_config)
         stamp = info.get("created_at_display", source.name)
         note = "（含配置文件）" if result["config_restored"] else "（未改动配置文件）"
-        flash(
+        message = (
             f"已从备份恢复{note}：{stamp}。恢复前已自动备份当前数据库，"
-            "请完全退出程序后重新打开，确保所有页面读取新数据。",
-            "success",
+            "请完全退出程序后重新打开，确保所有页面读取新数据。"
         )
+        # 旧版结构备份：重开后 init_db 会执行不可逆升级（v15 物理删表删列），必须说清。
+        backup_version = read_backup_schema_version(source)
+        if backup_version is None or backup_version < CURRENT_SCHEMA_VERSION:
+            shown = f"v{backup_version}" if backup_version else "更早版本"
+            message += (
+                f" 注意：这份备份是 {shown} 旧版结构，重新打开程序时会自动升级到 "
+                f"v{CURRENT_SCHEMA_VERSION}，库存与成本数据将被永久删除、无法回退。"
+            )
+        flash(message, "success")
     except RestoreError as exc:
         flash(f"恢复失败：{exc}", "danger")
     except Exception as exc:  # noqa: BLE001

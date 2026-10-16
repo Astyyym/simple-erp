@@ -65,7 +65,7 @@
   <section class="print-info-notice" id="printInfoNotice" aria-label="打印信息待补全">
     <div class="print-info-notice-body">
       <h2>打印单上还有空白</h2>
-      <p>
+      <p data-ui-hint>
         还没填<strong>{{ print_info_missing | join('、') }}</strong>，打印销售单时这两处会留空。
         在「系统设置 → 打印单信息」填一次，之后每张单都会带上。
       </p>
@@ -87,17 +87,17 @@
       <article class="metric-card net-card">
         <div class="metric-head"><span>今日净业务额</span><span class="metric-period">今日</span></div>
         <p class="metric-value" id="netAmount">¥{{ cents_to_yuan(today_net_amount_cents) }}</p>
-        <p class="metric-help">按单据日期统计；销售为正，退货为负</p>
+        <p data-ui-hint class="metric-help">按单据日期统计；销售为正，退货为负</p>
       </article>
       <article class="metric-card">
         <div class="metric-head"><span>销售单</span><span class="metric-period">今日</span></div>
         <p class="metric-value count" id="salesCount">{{ today_sales_count }} 笔</p>
-        <p class="metric-help">正式保存或已打印</p>
+        <p data-ui-hint class="metric-help">正式保存或已打印</p>
       </article>
       <article class="metric-card">
         <div class="metric-head"><span>退货单</span><span class="metric-period">今日</span></div>
         <p class="metric-value count" id="returnsCount">{{ today_returns_count }} 笔</p>
-        <p class="metric-help">正式保存或已打印</p>
+        <p data-ui-hint class="metric-help">正式保存或已打印</p>
       </article>
     </section>
     <aside class="quick-actions" id="dashboardQuickActions" aria-labelledby="quickActionsTitle">

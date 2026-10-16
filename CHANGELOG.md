@@ -2,6 +2,13 @@
 
 > 各版本条目按当时发布口径保留。v0.8.0 永久免登录已经取代早期版本中记录的本机登录门；历史凭据不在更新记录中保存。
 
+## v4.1.0 - 恢复旧版备份的代价提示与界面说明文字开关（2026-10-16，本地打包；未推送、未建 Release）
+
+- **备份与恢复：恢复旧版备份前先看见代价。**备份列表新增「数据库版本」列——读备份包内 `erp.db` 的 `schema_version`（`utils/backup.py` 新增 `read_backup_schema_version()`，读不出按旧版处理）；版本低于当前的标「旧版结构」，并在**行内红字 + 恢复确认框 + 恢复成功提示**三处说明：恢复并重开程序会自动升级到当前版本，**库存与成本数据将被永久删除、无法回退**（v15 升级不可逆，回退只能靠迁移前自动生成的整库备份）。
+- **设置页「显示」新增「界面说明文字」开关**（配置项 `ui_show_hints`，默认开启）：关掉后隐藏各页面的提示 / 说明 / 注意类小字。实现为 `base.html` 的 `<html data-ui-hints="on|off">` + 一条 `html[data-ui-hints="off"] [data-ui-hint]{display:none!important}`，模板里 76 处说明段**逐处显式**标记 `data-ui-hint`（不按 class 一刀切：`text-muted small` 这批 class 里混着导入原因、更新时间戳等数据单元格）。**不纳入**：危险操作警告（「此操作不可撤销」、旧版备份警告）、状态与数据文字（计数 / 金额 / 日期 / 当前状态）、空态提示、`placeholder`、按钮与弹窗正文。设置页复选框未勾选时浏览器不提交该字段，服务端按「在场即开、缺席即关」解析。
+- **v15 删除库存链后的清空 / 备份 / 导入同步核对**：实测确认清空清单已不含库存三表（表已物理删除）、备份是整库文件级快照（与表结构无关）、商品导入已不接受「期初数量 / 期初成本」两列；仅修掉一处过时 docstring（`routes/products.py` 导入确认函数不再写「带期初的行独立事务初始化」）。
+- **验证**：全量 `pytest tests/ -q` = **942 passed / 1 skipped / 0 failed**（`ERP_PORT=5099`，412s）；前端 `node --test tests/frontend/*.test.mjs` = **fail 0**；新增 `tests/test_ui_hints_toggle.py`（4 项）与 `tests/test_backup_restore.py` 的 4 项备份库版本用例。真实浏览器验收（headless Chrome 同源 iframe 读 `getComputedStyle`，隔离实例）：关掉开关后开单页 **5/5**、设置页 **14/14**、回收站 **5/5** 标记元素 `display:none`，打开开关时 0 隐藏；同一页危险警告 `danger_hidden=0`（关掉开关也始终可见）。
+- 顺带：出厂模板 `packaging/default_config.json` 补 `ui_show_hints` 键（键值必须与 `CONFIG_DEFAULTS` 一致）；`tests/test_master_data_list_layout.py` 的图例断言改为容忍属性插在 `class` 之前（**改断言不删测试**）。文档同步：需求文档「系统设置」行补开关口径，新增项目 reference `skills/simple-business-erp-development/references/ui-hint-visibility-toggle.md` 并挂进 references 索引。
 ## v4.0.0 - 库存与成本链整体移除（schema v15 物理删表删列）（2026-10-16，本地打包；未推送、未打 tag、未建 Release）
 
 - **用户决策（2026-10-16 逐项拍板 8 条）**：① 拿货 / 退拿货**保留为纯流水单据**（单据、打印、`NH` 单号、对账并入、账款抵扣、回收站、当天历史全部照旧；不再动库存、不再产生成本）；② **成本 / 利润链全删**（计价引擎、成本快照写入、毛利润/毛利率、成本诊断、历史成本补录、毛利润排行、开单页成本列与毛利润预览全部下线）；③ **物理删表删列 + 写迁移（schema 14 → 15）**，老库不可逆、不能回退到 v3.15.0 程序（用户已知并接受，回退只能靠迁移前自动生成的整库备份）；④ **单据编辑锁全部放开**——已过账锁、补录锁、正式拿货/退拿货锁全撤，四类单据除「已作废」外都可编辑；⑤ 绿色版演示数据**维持 200 条、重做组成**，去库存/成本内容、保持「打开即用」；⑥ 导入**硬删**「期初数量 / 期初成本」列（含这两列的旧文件整表报「表头错误」）；⑦ 商品**安全库存** UI 与代码一并删除、列随 v15 迁移删除；⑧ `designs/simple-erp-inventory-analytics/` 整目录及引用它的 2 个前端测试一并退休。同日第二轮补充定案：`products.default_price_cents` 与 `purchase_return_orders.posted_once` **均删**。

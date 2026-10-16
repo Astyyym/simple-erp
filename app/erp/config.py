@@ -68,6 +68,9 @@ CONFIG_DEFAULTS: dict[str, Any] = {
     "ui_theme": "light",  # light | dark | system
     "ui_scale": "100",  # 100 | 125 | 150
     "ui_font_weight": "standard",  # standard | medium | strong (UI only)
+    # 界面说明文字总开关：关掉后带 data-ui-hint 的提示/说明类小字整体隐藏
+    # （危险操作警告、状态与数据不在此列）。默认开启，保持原有界面。
+    "ui_show_hints": True,
     "print_order_phone": "",
     "print_order_address": "",
     "print_main_business": "软密封闸阀，蝶阀，铜芯硬密封（国，韩标）过滤器，止回阀等消防闸门",

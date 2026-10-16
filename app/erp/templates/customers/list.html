@@ -33,7 +33,7 @@
         </select>
         <button class="btn btn-primary text-nowrap">预检并导入</button>
       </form>
-      <p class="list-import-hint">支持.xlsx/.csv，最大5MB；列：客户名称/电话/地址/期初余额（元）/备注；旧单列表头仍兼容。<strong>电话、地址可留空：留空的行照样导入，并在列表里标记为「待补全」</strong>；模板第二个 sheet「填写说明」有同一份规则。期初填**未结欠款**（正数=客户欠我）。</p>
+      <p data-ui-hint class="list-import-hint">支持.xlsx/.csv，最大5MB；列：客户名称/电话/地址/期初余额（元）/备注；旧单列表头仍兼容。<strong>电话、地址可留空：留空的行照样导入，并在列表里标记为「待补全」</strong>；模板第二个 sheet「填写说明」有同一份规则。期初填**未结欠款**（正数=客户欠我）。</p>
     </details>
     <!-- 2026-10-14 第二轮（用户要求）：新增放在「批量导入」右侧，两页同构。 -->
     <details class="list-create-panel" {% if create_open %}open{% endif %}>
@@ -82,7 +82,7 @@
     {% endif %}
   </div>
 </div>
-<p class="list-legend">「待补全」= 开单或批量导入时建的客户档案，电话与地址都为空（导入可留空），补齐后自动移出本筛选；「按拼音排序」按名称拼音排，可与筛选、搜索叠加。</p>
+<p data-ui-hint class="list-legend">「待补全」= 开单或批量导入时建的客户档案，电话与地址都为空（导入可留空），补齐后自动移出本筛选；「按拼音排序」按名称拼音排，可与筛选、搜索叠加。</p>
 <section id="customersResults" data-refresh-fragment>
 {% if truncated %}<div class="alert alert-warning py-2 mb-2" role="status"><strong>列表已截断</strong>（仅显示前 200 条）。迁移后客户可能很多，请用上方搜索缩小范围，**不要据此认为数据丢失**。</div>{% endif %}
 <form id="bulkCustomersForm" method="post" action="/customers/bulk_delete"></form>

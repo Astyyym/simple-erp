@@ -19,6 +19,7 @@
 | [product-identity-single-name.md](./product-identity-single-name.md) | **v14 商品身份 = 单一名称**：`spec` 四列已删、迁移三步（预检中止 → 自动备份 → 四表重建）、导入不再接受「型号」列、同类改动的测试适配经验 |
 | [name-search-and-pinyin-matching.md](./name-search-and-pinyin-matching.md) | 名称检索统一走 `utils/pinyin.py` 的三个 helper；**检索串必须先归一**（输入法隔音符号 `xiao'fang`、空格、全角）；只输分隔符不能退化成 `LIKE '%%'`；派生列写入/回填与已知边界 |
 | [erp-ui-redesign.md](./erp-ui-redesign.md) | UI 改版约束与视觉回归检查 |
+| [ui-hint-visibility-toggle.md](./ui-hint-visibility-toggle.md) | 界面说明文字开关（`data-ui-hint` + `html[data-ui-hints]` 一条 CSS）：受控范围、必须可见的边界（危险警告/状态/数据/空态/placeholder）、加标记后的断言写法 |
 | [purchase-return-decoupling.md](./purchase-return-decoupling.md) | 四类开单解耦、商品选择器（v14 起单框：销售/退货手输、拿货/退拿货下拉）、手工退拿货与 schema13 迁移；NH 共用日流水取号 |
 | [analytics-visualization.md](./analytics-visualization.md) | 数据分析页月历热力图、四类流水口径、产品排行与条形生长动画（v15 起不再有成本诊断层） |
 

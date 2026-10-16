@@ -21,6 +21,7 @@
   "ui_theme": "light",
   "ui_scale": "100",
   "ui_font_weight": "standard",
+  "ui_show_hints": true,
   "print_order_phone": "",
   "print_order_address": "",
   "print_main_business": "软密封闸阀，蝶阀，铜芯硬密封（国，韩标）过滤器，止回阀等消防闸门",

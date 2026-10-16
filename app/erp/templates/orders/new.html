@@ -61,7 +61,7 @@
 </style>
 
 <div class="order-workspace" id="orderWorkspace"><div class="order-entry-area"><div class="order-heading page-header">
-  <div><h2>{{ ('编辑退货单' if is_return else '编辑销售单') if is_edit else ('新建退货单' if is_return else '新建销售单') }}</h2><p>{{ '登记客户退回商品，金额将冲减应收账款。' if is_return else '按行录入商品，完成后保存并打开打印单。' }}</p></div>
+  <div><h2>{{ ('编辑退货单' if is_return else '编辑销售单') if is_edit else ('新建退货单' if is_return else '新建销售单') }}</h2><p data-ui-hint>{{ '登记客户退回商品，金额将冲减应收账款。' if is_return else '按行录入商品，完成后保存并打开打印单。' }}</p></div>
   <div class="page-actions"><a class="btn btn-outline-secondary page-return" href="/orders/">返回单据管理</a></div>
 </div>
 <form method="post" action="{{ '/orders/' ~ order.id ~ '/edit' if is_edit else ('/orders/return/create' if is_return else '/orders/create') }}" id="orderForm" autocomplete="off">
@@ -80,7 +80,7 @@
       </div>
       <button type="button" class="btn btn-outline-secondary btn-sm" id="returnSourceClear">清除关联</button>
     </div>
-    <div class="form-text">点击输入框列出最近销售单；选中后先在下方显示原单预览，再把商品行带入明细；改选只需再点一次输入框。带入后仍可自由加行、改数量与单价。保存时会在单据上留下原单关联（只做追溯，不改变计价规则）。</div>
+    <div data-ui-hint class="form-text">点击输入框列出最近销售单；选中后先在下方显示原单预览，再把商品行带入明细；改选只需再点一次输入框。带入后仍可自由加行、改数量与单价。保存时会在单据上留下原单关联（只做追溯，不改变计价规则）。</div>
     <div class="form-text d-none" id="returnSourceMissingHint"></div>
   </div>
   <section class="source-preview d-none" id="sourcePreview" aria-live="polite" aria-labelledby="sourcePreviewTitle">
@@ -94,7 +94,7 @@
     </table></div>
     <div class="source-preview-actions">
       <button type="button" class="btn btn-sm btn-outline-primary" id="sourcePreviewApply">按预览带入商品行</button>
-      <span class="form-text" id="sourcePreviewHint">带入后仍可自由修改。</span>
+      <span data-ui-hint class="form-text" id="sourcePreviewHint">带入后仍可自由修改。</span>
     </div>
   </section>
   {% endif %}
@@ -107,12 +107,12 @@
     <div class="col-3">
       <label class="form-label">{{ '退货日期' if is_return else '销售日期' }}</label>
       <input class="form-control form-control-lg" id="orderDateInput" type="date" name="order_date" autocomplete="off" value="{{order.order_date if is_edit else today}}" required {% if is_edit %}readonly{% endif %}>
-      <div class="form-text">{{ '编辑不可改日期' if is_edit else '默认当天，可改；改后单号会按该日重算' }}</div>
+      <div data-ui-hint class="form-text">{{ '编辑不可改日期' if is_edit else '默认当天，可改；改后单号会按该日重算' }}</div>
     </div>
     <div class="col-3">
       <label class="form-label">单号</label>
       <input class="form-control form-control-lg" id="orderNoInput" name="order_no" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" value="{{order.order_no if is_edit else order_no}}" required readonly>
-      <div class="form-text">{{ '编辑保持原单号' if is_edit else '系统按 MD+所选日期+流水 自动生成' }}</div>
+      <div data-ui-hint class="form-text">{{ '编辑保持原单号' if is_edit else '系统按 MD+所选日期+流水 自动生成' }}</div>
     </div>
     <div class="col-2">
       <label class="form-label">状态</label>
@@ -129,7 +129,7 @@
 
   <section class="order-details-card" id="orderDetailsCard" aria-labelledby="orderDetailsTitle">
   <h3 class="section-title" id="orderDetailsTitle">{{ '退货信息' if is_return else '订单信息' }}</h3>
-  <p class="text-muted small mb-2">
+  <p data-ui-hint class="text-muted small mb-2">
     商品名称可直接手输：命中已有商品会自动带出单位/单价；没有匹配则会新建商品档案（型号请直接写进名称，如 闸阀DN50）。
   </p>
   <div class="order-table-scroll"><table class="table table-bordered order-table" id="orderTable">
@@ -182,7 +182,7 @@
 {% if not is_edit %}
 <section class="today-history" aria-labelledby="todayHistoryTitle">
   <h3 id="todayHistoryTitle">当天历史开单</h3>
-  <p class="small text-muted mb-3" id="todayHistoryDate">业务日期 · {{today}}（与录入、修改时间无关）</p>
+  <p data-ui-hint class="small text-muted mb-3" id="todayHistoryDate">业务日期 · {{today}}（与录入、修改时间无关）</p>
   <div class="table-responsive">
     <table class="table table-hover align-middle">
       <thead><tr><th>单号</th><th>客户</th><th>类型</th><th>金额</th><th>状态</th><th>操作</th></tr></thead>

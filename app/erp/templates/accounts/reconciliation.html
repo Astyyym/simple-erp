@@ -6,7 +6,7 @@
   .recon-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}.recon-toolbar strong{font-variant-numeric:tabular-nums}.recon-toolbar .actions{display:flex;gap:8px}.recon-table input{width:16px;height:16px}.return-row{color:var(--erp-danger)}.empty-state{padding:20px;text-align:center;color:var(--erp-muted);border:1px dashed var(--erp-border)}
   @media(max-width:800px){.recon-filters{grid-template-columns:1fr 1fr}.recon-filters .recon-actions{grid-column:1/-1}.recon-toolbar{align-items:flex-start;flex-direction:column}.recon-toolbar .actions{width:100%;flex-wrap:wrap}}
 </style>
-<header class="page-header recon-head"><div><h1>往来对账</h1><p>销售、客户退货、拿货、退拿货按完整单据核对；默认选中完整结果集，打印不等于收款或结算。</p></div><div class="page-actions"><a class="btn btn-secondary page-return" href="{{ recon_back_url }}">{{ recon_back_label }}</a></div></header>
+<header class="page-header recon-head"><div><h1>往来对账</h1><p data-ui-hint>销售、客户退货、拿货、退拿货按完整单据核对；默认选中完整结果集，打印不等于收款或结算。</p></div><div class="page-actions"><a class="btn btn-secondary page-return" href="{{ recon_back_url }}">{{ recon_back_label }}</a></div></header>
 {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
 <form class="recon-filters" method="get" data-inplace action="{{ url_for('accounts.reconciliation') }}">
   <div><label class="form-label" for="reconCustomer">往来对象</label><select class="form-select" id="reconCustomer" name="customer_id" required><option value="">请选择往来对象</option>{% for customer in customers %}<option value="{{ customer['id'] }}" {{ 'selected' if customer_id == customer['id'] else '' }}>{{ customer['name'] }}</option>{% endfor %}</select></div>
@@ -17,7 +17,7 @@
 </form>
 {% if snapshot %}
 
-<p class="text-muted" data-refresh-fragment id="reconHint">更换对象、日期或类型后请重新查询，将重置为全结果默认选中。{% if snapshot['scope_version'] == 1 %}当前为旧版销售/客户退货快照；“全部”不包含拿货，重新查询才使用四类范围。{% endif %}</p>
+<p data-ui-hint class="text-muted" data-refresh-fragment id="reconHint">更换对象、日期或类型后请重新查询，将重置为全结果默认选中。{% if snapshot['scope_version'] == 1 %}当前为旧版销售/客户退货快照；“全部”不包含拿货，重新查询才使用四类范围。{% endif %}</p>
 {% if snapshot['unbound_purchase_count'] %}<div class="alert alert-warning" data-refresh-fragment id="reconUnbound">本日期范围另有 {{ snapshot['unbound_purchase_count'] }} 笔有效历史拿货未关联往来对象，未纳入对账；请人工确认，不从备注推断。</div>{% endif %}
 <div id="reconMessage" role="alert" class="alert alert-warning" hidden></div>
 <section class="recon-panel" data-refresh-fragment id="reconPanel" data-snapshot-url="{{ return_url }}" aria-labelledby="reconResultTitle">

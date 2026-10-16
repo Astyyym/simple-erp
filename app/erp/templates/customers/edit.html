@@ -50,11 +50,11 @@
           <div>
             <label class="form-label" for="customerOpening">期初余额(元)</label>
             <input class="form-control" id="customerOpening" name="opening_balance" value="{{cents_to_yuan(customer.opening_balance_cents)}}">
-            <p class="field-hint">迁移时把旧软件的未结欠款落在这里；之后的变动由单据与收款产生。</p>
+            <p data-ui-hint class="field-hint">迁移时把旧软件的未结欠款落在这里；之后的变动由单据与收款产生。</p>
           </div>
         </div>
         <div class="card-foot">
-          {% if needs_completion %}<span class="text-muted small">补上电话或地址后，这份档案会自动退出「待补全」。</span>{% endif %}
+          {% if needs_completion %}<span data-ui-hint class="text-muted small">补上电话或地址后，这份档案会自动退出「待补全」。</span>{% endif %}
           <button class="btn btn-primary">保存</button>
         </div>
       </div>

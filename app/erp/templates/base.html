@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN" data-ui-theme="{{ ui_theme or 'light' }}" data-ui-scale="{{ ui_scale or '100' }}" data-ui-font-weight="{{ ui_font_weight or 'standard' }}" data-desktop="{{ '1' if is_desktop else '0' }}">
+<html lang="zh-CN" data-ui-theme="{{ ui_theme or 'light' }}" data-ui-scale="{{ ui_scale or '100' }}" data-ui-font-weight="{{ ui_font_weight or 'standard' }}" data-ui-hints="{{ 'on' if ui_show_hints else 'off' }}" data-desktop="{{ '1' if is_desktop else '0' }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -52,6 +52,9 @@
     html[data-ui-scale="150"]{--erp-scale:1.5}
     html[data-ui-font-weight="medium"]{--erp-font-stroke-width:.15px}
     html[data-ui-font-weight="strong"]{--erp-font-stroke-width:.30px}
+    /* 界面说明文字总开关（设置页「显示」→ 界面说明文字）：关掉后隐藏带 data-ui-hint 的
+       提示/说明段。危险操作警告、状态与数据单元格不带该属性，始终可见。 */
+    html[data-ui-hints="off"] [data-ui-hint]{display:none!important}
     html[data-ui-theme="dark"]{
       --erp-primary:#3b82f6;--erp-primary-hover:#60a5fa;--erp-primary-soft:#1e293b;
       --erp-ink:#e8eef9;--erp-muted:#9aa8c0;--erp-border:#2b3648;--erp-border-strong:#3d4b63;

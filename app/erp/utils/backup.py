@@ -112,6 +112,8 @@ def list_backups() -> list[dict]:
         except ValueError:
             continue
         size_bytes = path.stat().st_size
+        # 备份包里的库结构版本：恢复旧版备份会触发不可逆升级，界面必须提前提示。
+        schema_version = read_backup_schema_version(path)
         entries.append(
             {
                 "name": path.name,
@@ -121,10 +123,49 @@ def list_backups() -> list[dict]:
                 "created_at_display": created_at.strftime("%Y-%m-%d %H:%M:%S"),
                 "size_bytes": size_bytes,
                 "size_display": _human_size(size_bytes),
+                "schema_version": schema_version,
+                "schema_version_display": f"v{schema_version}" if schema_version else "未知",
+                "is_legacy": schema_version is None or schema_version < db_module.CURRENT_SCHEMA_VERSION,
             }
         )
     entries.sort(key=lambda item: item["created_at"], reverse=True)
     return entries
+
+
+def _database_schema_version(db_file: Path) -> int | None:
+    """Read `MAX(version)` from a database file read-only; None when absent/unreadable."""
+    try:
+        conn = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return None
+    try:
+        row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
+    except sqlite3.Error:
+        # 老库没有 schema_version 表（或库损坏）——按「未知/旧版」处理，由界面提示。
+        return None
+    finally:
+        conn.close()
+    return int(row[0]) if row and row[0] is not None else None
+
+
+def read_backup_schema_version(zip_path: Path | str) -> int | None:
+    """备份包内 `erp.db` 的 schema 版本；读不出返回 None（过老或损坏）。
+
+    恢复界面靠它判断「这份备份是旧版结构」：恢复旧版库后，程序下次启动会执行
+    **不可逆**的 v15 升级（物理删表删列），必须提前告知用户。
+    """
+    path = Path(zip_path)
+    try:
+        with zipfile.ZipFile(path) as zf:
+            if "erp.db" not in zf.namelist():
+                return None
+            with tempfile.TemporaryDirectory(prefix="backup_schema_") as tmp:
+                staged = Path(tmp) / "erp.db"
+                with zf.open("erp.db") as source, staged.open("wb") as target:
+                    shutil.copyfileobj(source, target)
+                return _database_schema_version(staged)
+    except (zipfile.BadZipFile, OSError, KeyError):
+        return None
 
 
 def _human_size(num_bytes: int) -> str:

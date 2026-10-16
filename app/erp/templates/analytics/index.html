@@ -4,7 +4,7 @@
 <section class="erp-analytics" data-scope-url="{{ view_url() }}">
 
 <div class="analytics-head">
-  <div><h1>数据分析中心</h1><p class="help">按业务日期查看销售 − 客户退货；只统计数量与金额。</p></div>
+  <div><h1>数据分析中心</h1><p data-ui-hint class="help">按业务日期查看销售 − 客户退货；只统计数量与金额。</p></div>
 </div>
 {% if error %}<div class="alert alert-danger" id="analyticsError" data-refresh-fragment role="alert">{{ error }} 筛选未生效，请修正输入后重新查询。<div id="invalidScopeInputs" style="overflow-wrap:anywhere">原始条件：日期 {{filters.start_date or '不限'}} 至 {{filters.end_date or '不限'}}；往来对象 ID {{filters.customer_id or '全部'}}；商品 {{filters.product_name or '全部'}}。</div></div>{% endif %}
 <form id="analyticsFilters" class="filter-card" method="get" data-inplace action="{{ url_for('analytics.analytics_center') }}" autocomplete="off">
@@ -52,7 +52,7 @@
           <button type="button" class="btn btn-outline-secondary analytics-type-none" data-type-none="1">清空</button>
         </div>
       </div>
-      <div class="form-text filter-type-hint">不勾选=四类全部；净销售额与产品排行只算销售 + 退货，拿货/退拿货只影响流水热力图与下方「单据流水」。</div>
+      <div data-ui-hint class="form-text filter-type-hint">不勾选=四类全部；净销售额与产品排行只算销售 + 退货，拿货/退拿货只影响流水热力图与下方「单据流水」。</div>
     </div>
   </div>
   {% if filter_chips %}
@@ -91,7 +91,7 @@
 </section>
 {% set flow = result['flow_totals'] %}
 <section id="documentFlow" class="analytics-panel" data-analytics-fragment aria-label="单据流水">
-  <div class="section-heading"><div><h2>单据流水</h2><p class="help">按当前时间范围与订单类型筛选统计；拿货与退拿货只在这里和流水热力图生效，不参与净销售额与产品排行。</p></div></div>
+  <div class="section-heading"><div><h2>单据流水</h2><p data-ui-hint class="help">按当前时间范围与订单类型筛选统计；拿货与退拿货只在这里和流水热力图生效，不参与净销售额与产品排行。</p></div></div>
   <div class="analytics-flow-grid">
     <div class="analytics-card"><div class="label">拿货金额</div><div class="value">¥{{ cents_to_yuan(flow['purchase_amount_cents']) }}</div><div class="flow-meta">{{ flow['purchase_count'] }} 张拿货单</div></div>
     <div class="analytics-card"><div class="label">退拿货金额</div><div class="value">¥{{ cents_to_yuan(flow['purchase_return_amount_cents']) }}</div><div class="flow-meta">{{ flow['purchase_return_count'] }} 张退拿货单</div></div>
@@ -103,8 +103,8 @@
 <section id="layeredAnalysis" class="analytics-panel" data-analytics-fragment aria-label="分层分析">
   <div class="analysis-tabs" role="tablist" aria-label="辅助分析">{% for key,title in [('heat','流水热力图'),('rank','产品排行')] %}<button id="{{key}}Tab" type="button" role="tab" class="analysis-tab" data-tab="{{key}}" aria-selected="{{'true' if view.tab == key else 'false'}}" aria-controls="{{key}}Panel" tabindex="{{0 if view.tab == key else -1}}">{{title}}</button>{% endfor %}</div>
   <section id="heatPanel" role="tabpanel" aria-labelledby="heatTab" {% if view.tab != 'heat' %}hidden{% endif %}>
-    <div class="section-heading"><div><h2 id="heatmapTitle">流水热力图</h2><p class="help">按当前时间范围与筛选条件渲染每个月的日历；格子只显示日期与颜色深浅，颜色按当天流水净额（销售+、退货−、拿货−、退拿货+）。悬停或点击日期查看当天数据。</p></div><form class="inline-field" method="get" data-view-form>{{view_fields('heat')}}<input type="hidden" name="sort" value="{{view.sort}}"><label for="heatMetric">指标</label><select id="heatMetric" name="metric" class="form-select"><option value="amount" {{'selected' if filters.metric == 'amount' else ''}}>流水净额</option><option value="quantity" {{'selected' if filters.metric == 'quantity' else ''}} {{'disabled' if not result.summary.quantity_comparable else ''}}>净销售数量</option></select><button class="btn btn-outline-secondary">显示</button></form></div>
-    {% if not result.summary.quantity_comparable %}<p class="help">数量不可合计：当前范围包含不同单位，显示流水净额；按同单位商品筛选后可切换数量。</p>{% endif %}
+    <div class="section-heading"><div><h2 id="heatmapTitle">流水热力图</h2><p data-ui-hint class="help">按当前时间范围与筛选条件渲染每个月的日历；格子只显示日期与颜色深浅，颜色按当天流水净额（销售+、退货−、拿货−、退拿货+）。悬停或点击日期查看当天数据。</p></div><form class="inline-field" method="get" data-view-form>{{view_fields('heat')}}<input type="hidden" name="sort" value="{{view.sort}}"><label for="heatMetric">指标</label><select id="heatMetric" name="metric" class="form-select"><option value="amount" {{'selected' if filters.metric == 'amount' else ''}}>流水净额</option><option value="quantity" {{'selected' if filters.metric == 'quantity' else ''}} {{'disabled' if not result.summary.quantity_comparable else ''}}>净销售数量</option></select><button class="btn btn-outline-secondary">显示</button></form></div>
+    {% if not result.summary.quantity_comparable %}<p data-ui-hint class="help">数量不可合计：当前范围包含不同单位，显示流水净额；按同单位商品筛选后可切换数量。</p>{% endif %}
     <div class="heat-layout"><div>{% if view.calendars %}<div id="heatGrid" class="heat-calendars">
       <div class="heat-legend" aria-hidden="true"><span class="help">浅</span>{% for level in [0,1,2,3,4] %}<i class="heat-swatch level-{{level}}"></i>{% endfor %}<span class="help">深</span><span class="help heat-legend-negative">负值</span></div>
       {% for month in view.calendars %}<section class="month-calendar" data-month="{{month.month}}">
@@ -119,7 +119,7 @@
     <aside id="heatDetail" class="heat-detail" aria-live="polite">{% if view.day_detail %}{% set cell=view.day_detail %}<h3 class="h6">{{cell.date}}</h3><p class="help">{{'有交易' if cell.has_transactions else '无交易'}}；当天数据不改变上方完整范围。</p><div class="detail-list"><div class="detail-line"><span>流水净额</span><strong>¥{{cents_to_yuan(cell.flow_net_cents)}}</strong></div><div class="detail-line"><span>销售额</span><strong>¥{{cents_to_yuan(cell.sales_amount_cents)}}</strong></div><div class="detail-line"><span>退货额</span><strong>¥{{cents_to_yuan(cell.returns_amount_cents)}}</strong></div><div class="detail-line"><span>净销售额</span><strong>¥{{cents_to_yuan(cell.net_amount_cents)}}</strong></div></div>{% else %}选择日期查看流水净额、销售与退货。{% endif %}</aside></div>
   </section>
   <section id="rankPanel" role="tabpanel" aria-labelledby="rankTab" {% if view.tab != 'rank' %}hidden{% endif %}>
-    <div class="section-heading"><div><h2>产品排行</h2><p class="help">柱高按同一榜内最大值等比缩放，柱顶显示实际数值（带单位）；数量榜按数量排序，全品类同一张榜，不按单位分组。</p></div><form class="inline-field" id="rankingForm" method="get" data-view-form>{{view_fields('rank')}}<input type="hidden" name="sort" value="{{view.sort}}"><label for="rankingMode">排行</label><select id="rankingMode" name="rank_key" class="form-select">{% for key,title in [('hot_sales','热销商品'),('low_sales','低销量商品'),('net_returns','退货抵销 / 净退货'),('unsold','未销售商品')] %}<option value="{{key}}" {{'selected' if view.rank_key == key else ''}}>{{title}}</option>{% endfor %}</select><label for="rankingSize">每组显示</label><select id="rankingSize" name="rank_size" class="form-select">{% for value,title in [('10','前 10 项'),('20','前 20 项'),('50','前 50 项'),('all','全部')] %}<option value="{{value}}" {{'selected' if view.rank_size == value else ''}}>{{title}}</option>{% endfor %}</select><button class="btn btn-outline-secondary" type="submit">显示</button></form></div>
+    <div class="section-heading"><div><h2>产品排行</h2><p data-ui-hint class="help">柱高按同一榜内最大值等比缩放，柱顶显示实际数值（带单位）；数量榜按数量排序，全品类同一张榜，不按单位分组。</p></div><form class="inline-field" id="rankingForm" method="get" data-view-form>{{view_fields('rank')}}<input type="hidden" name="sort" value="{{view.sort}}"><label for="rankingMode">排行</label><select id="rankingMode" name="rank_key" class="form-select">{% for key,title in [('hot_sales','热销商品'),('low_sales','低销量商品'),('net_returns','退货抵销 / 净退货'),('unsold','未销售商品')] %}<option value="{{key}}" {{'selected' if view.rank_key == key else ''}}>{{title}}</option>{% endfor %}</select><label for="rankingSize">每组显示</label><select id="rankingSize" name="rank_size" class="form-select">{% for value,title in [('10','前 10 项'),('20','前 20 项'),('50','前 50 项'),('all','全部')] %}<option value="{{value}}" {{'selected' if view.rank_size == value else ''}}>{{title}}</option>{% endfor %}</select><button class="btn btn-outline-secondary" type="submit">显示</button></form></div>
     {% for key,title in [('hot_sales','热销商品'),('low_sales','低销量商品'),('net_returns','退货抵销 / 净退货'),('unsold','未销售商品')] %}<section data-rank-kind="{{key}}" {% if key != view.rank_key %}hidden{% endif %}>
     {% for group in view.rank_groups[key] %}<article class="ranking-card" data-rank-unit="{{group.unit_key}}"><h3>{{title}}</h3>
       <div class="rank-columns" role="list">{% for row in group.rows %}<div class="rank-column {{'negative' if row.is_negative else ''}}" role="listitem" data-product-id="{{row.product_id}}"><span class="rank-bar-track"><span class="rank-bar-fill" style="height:{{row.bar_height_px}}px"></span><span class="rank-bar-value" style="bottom:{{row.bar_height_px}}px">{{row.value_text}}</span></span><span class="rank-bar-label" title="{{row.label}}">{{row.label}}</span></div>{% else %}<div class="empty-state">暂无数据</div>{% endfor %}</div>

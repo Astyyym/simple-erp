@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+import tempfile
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -13,15 +15,17 @@ import pytest
 
 from erp import config as config_module
 from erp.config import data_root, load_config, save_config
-from erp.db import get_db, init_db
+from erp.db import CURRENT_SCHEMA_VERSION, get_db, init_db
 from erp.services.accounting import create_customer, create_order_from_typed_rows
 from erp.utils.backup import (
     RestoreError,
+    backup_dir,
     copy_backup_to,
     create_backup,
     inspect_backup,
     list_backups,
     prune_old_backups,
+    read_backup_schema_version,
     restore_backup,
 )
 
@@ -298,3 +302,90 @@ def test_master_data_lists_warn_when_no_backup_exists():
     html_after = client.get("/customers/").get_data(as_text=True)
     assert "尚未创建任何备份" not in html_after
     assert "迁移旧数据" not in html_after
+
+
+def _make_legacy_backup_zip(version: int = 14) -> str:
+    """造一份「旧版结构」备份包（真实 v14 结构，只含 erp.db），返回备份文件名。"""
+    sql = (Path(__file__).parent / "fixtures" / "schema_v14_full.sql").read_text(encoding="utf-8")
+    with tempfile.TemporaryDirectory(prefix="legacy_backup_") as tmp:
+        db_file = Path(tmp) / "erp.db"
+        conn = sqlite3.connect(db_file)
+        conn.executescript(sql)
+        conn.execute("DELETE FROM schema_version")
+        conn.execute("INSERT INTO schema_version(version, notes) VALUES (?, 'synthetic legacy')", (version,))
+        conn.commit()
+        conn.close()
+        name = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}_legacy_v{version}.zip"
+        target = backup_dir() / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.write(db_file, arcname="erp.db")
+    return name
+
+
+def test_list_backups_reports_schema_version_and_flags_legacy():
+    """恢复界面必须能分辨备份的库结构：当前版本不提示，旧版结构打标记。
+
+    背景（schema v15）：恢复旧版备份后，程序下次启动会执行**不可逆**升级
+    （物理删掉库存表与成本列），所以在恢复前就得让用户看见。
+    """
+    init_db()
+    create_backup("current")
+    current = next(e for e in list_backups() if e["reason"] == "current")
+    assert current["schema_version"] == CURRENT_SCHEMA_VERSION
+    assert current["is_legacy"] is False
+    assert current["schema_version_display"] == f"v{CURRENT_SCHEMA_VERSION}"
+
+    name = _make_legacy_backup_zip(14)
+    legacy = next(e for e in list_backups() if e["name"] == name)
+    assert read_backup_schema_version(legacy["path"]) == 14
+    assert legacy["schema_version"] == 14
+    assert legacy["schema_version_display"] == "v14"
+    assert legacy["is_legacy"] is True
+
+
+def test_settings_page_warns_before_restoring_a_legacy_backup():
+    init_db()
+    _make_legacy_backup_zip(14)
+    from erp import create_app
+
+    client = create_app().test_client()
+    html = client.get("/settings/").get_data(as_text=True)
+    assert "数据库版本" in html
+    assert "v14" in html
+    assert "旧版结构" in html
+    assert "库存与成本数据将被永久删除" in html
+
+
+def test_restoring_a_legacy_backup_warns_about_irreversible_upgrade():
+    init_db()
+    name = _make_legacy_backup_zip(14)
+    from erp import create_app
+
+    client = create_app().test_client()
+    restored = client.post(
+        "/settings/backup/restore",
+        data={"backup_name": name, "confirm_text": "恢复"},
+        follow_redirects=True,
+    )
+    text = restored.get_data(as_text=True)
+    assert "已从备份恢复" in text
+    assert "会自动升级到 v15" in text
+    assert "无法回退" in text
+
+
+def test_restoring_a_current_backup_has_no_upgrade_warning():
+    """当前版本的备份不该被误报成旧版结构。"""
+    init_db()
+    create_backup("current")
+    name = next(e for e in list_backups() if e["reason"] == "current")["name"]
+    from erp import create_app
+
+    client = create_app().test_client()
+    restored = client.post(
+        "/settings/backup/restore",
+        data={"backup_name": name, "confirm_text": "恢复"},
+        follow_redirects=True,
+    )
+    assert "已从备份恢复" in restored.get_data(as_text=True)
+    assert "会自动升级到" not in restored.get_data(as_text=True)

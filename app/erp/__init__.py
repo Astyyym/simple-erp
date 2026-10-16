@@ -112,6 +112,7 @@ def create_app() -> Flask:
             "ui_theme": cfg_now.get("ui_theme", "light"),
             "ui_scale": cfg_now.get("ui_scale", "100"),
             "ui_font_weight": cfg_now.get("ui_font_weight", "standard"),
+            "ui_show_hints": bool(cfg_now.get("ui_show_hints", True)),
             "current_user": current_username(),
             "is_desktop": is_desktop_shell(),
             # Permanent no-login product default.
