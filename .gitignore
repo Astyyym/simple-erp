@@ -32,6 +32,13 @@ dist/
 build/
 *.spec.bak
 
+# Project process records - private working notes, not part of the public product.
+# 这些是逐次执行过程记录（短计划、阶段状态、排障笔记），只留本地/私有仓库，不公开。
+开发短计划/
+task_plan.md
+findings.md
+progress.md
+
 # Local temp / probe files
 temp_*.py
 temp_*.ps1
