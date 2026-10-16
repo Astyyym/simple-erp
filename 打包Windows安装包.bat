@@ -67,6 +67,11 @@ rem 先清掉上一轮产物目录：PyInstaller --noconfirm 只清自己的输出目录，
 rem 残留的 demo_data 会让第 5 步的 seed 以「目标库已存在」拒绝执行。
 if exist "%CLEANDIR%" rmdir /s /q "%CLEANDIR%"
 if exist "%GREENDIR%" rmdir /s /q "%GREENDIR%"
+rem 回收旧版本的构建树：每个版本都会在 build\ 下留 clean/cleanwork/local 三份（约 193MB），
+rem 旧版本产物已按「只保留当前版本」清出 dist，其构建树不再被任何脚本引用。
+for /d %%D in (build\clean-*) do if /i not "%%~nxD"=="clean-%APPVER%" rmdir /s /q "%%~D"
+for /d %%D in (build\cleanwork-*) do if /i not "%%~nxD"=="cleanwork-%APPVER%" rmdir /s /q "%%~D"
+for /d %%D in (build\local-*) do if /i not "%%~nxD"=="local-%APPVER%" rmdir /s /q "%%~D"
 
 echo.
 echo [1/5] 正在构建「交付用」one-folder 产物（正常入口）：%CLEANAPP%
