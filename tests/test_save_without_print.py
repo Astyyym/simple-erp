@@ -18,7 +18,7 @@ from erp.services.inventory import initialize_product
 
 
 def _seed_product(spec="C", price=2000):
-    pid = create_product("保存打印商品" + spec, "个", price)
+    pid = create_product("保存打印商品" + spec, "个")
     initialize_product(pid, "10", "10", "2026-10-01", "系统上线期初", f"batchc-{spec}", confirm_zero=False)
     return pid
 

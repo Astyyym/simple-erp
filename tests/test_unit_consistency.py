@@ -19,7 +19,7 @@ from erp.services.inventory import initialize_product
 
 def _seed(product_name="缺陷A商品", unit="个", price=5000):
     init_db()
-    pid = create_product(product_name, unit, price)
+    pid = create_product(product_name, unit)
     cid = create_customer("缺陷A客户")
     return cid, pid
 

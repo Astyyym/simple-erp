@@ -320,8 +320,10 @@ class DemoDataBuilder:
             self.customers[cid] = (name, phone, address, opening)
         self.bump("customers", len(CUSTOMERS))
         for spec in CATALOG:
+            # 2026-10-15 默认价下线：建档不再写档案价。`spec.price` 降级为**脚本内部定价参数**
+            # （只用于生成单据金额与客户专属价），不再进商品档案。
             pid = accounting.create_product(
-                spec.name, spec.unit, cents(spec.price),
+                spec.name, spec.unit,
                 safety_stock=spec.safety, brand=spec.brand or None,
             )
             self.products[pid] = spec

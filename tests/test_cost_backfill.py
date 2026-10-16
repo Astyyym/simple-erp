@@ -23,7 +23,7 @@ def _seed_sale_without_cost(*, order_no="MD202610110001", name="缺成本商品"
                             price="100", quantity="2", order_date="2026-10-11"):
     """零建档路径：商品没有库存状态行 → 销售时不写成本快照（NULL）。"""
     init_db()
-    product_id = create_product((name) + (spec), "个", 1000)
+    product_id = create_product((name) + (spec), "个")
     customer_id = create_customer(f"{name}客户")
     order_id = create_order_from_typed_rows(
         customer_id,
@@ -165,7 +165,7 @@ def test_backfill_refuses_to_overwrite_real_sale_snapshot():
     from erp.services.cost_backfill import backfill_order_costs
 
     init_db()
-    product_id = create_product("真实快照商品A", "个", 1000)
+    product_id = create_product("真实快照商品A", "个")
     customer_id = create_customer("真实快照客户")
     initialize_product(product_id, "10", "10", "2026-10-01", "期初", "bf-init-1")
     order_id = create_order_from_typed_rows(
@@ -233,7 +233,7 @@ def test_backfill_rejects_non_sale_order_and_uneditable_states():
     from erp.services.cost_backfill import backfill_order_costs
 
     init_db()
-    product_id = create_product("状态保护商品A", "个", 1000)
+    product_id = create_product("状态保护商品A", "个")
     customer_id = create_customer("状态保护客户")
 
     draft_id = create_order_from_typed_rows(

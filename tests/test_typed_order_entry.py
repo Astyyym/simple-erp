@@ -18,7 +18,14 @@ def test_typed_order_rows_create_product_dictionary_and_snapshot_editable_fields
         item = conn.execute("SELECT * FROM order_items WHERE order_id=?", (order_id,)).fetchone()
     assert product is not None
     assert product["unit"] == "个"
-    assert product["default_price_cents"] == 5000
+    # 决策变更（2026-10-15）：档案不再保存售价（列仍在、值恒 0），售价唯一来源 = 客户专属价。
+    assert product["default_price_cents"] == 0
+    with get_db() as conn:
+        learned = conn.execute(
+            "SELECT price_cents FROM customer_prices WHERE customer_id=? AND product_id=?",
+            (customer_id, product["id"]),
+        ).fetchone()
+    assert learned["price_cents"] == 5000
     assert item["product_name"] == "A商品"
     assert item["unit"] == "个"
     assert item["unit_price_cents"] == 5000
@@ -34,7 +41,8 @@ def test_typed_order_row_reuses_existing_product_and_allows_unit_price_override(
         last_item = conn.execute("SELECT * FROM order_items ORDER BY id DESC LIMIT 1").fetchone()
     assert len(products) == 1
     assert products[0]["unit"] == "箱"
-    assert products[0]["default_price_cents"] == 5000
+    # 档案价恒 0；第二单的 45 元覆盖为新的客户专属价。
+    assert products[0]["default_price_cents"] == 0
     with get_db() as conn:
         customer_price = conn.execute("SELECT price_cents FROM customer_prices WHERE customer_id=? AND product_id=?", (customer_id, products[0]["id"])).fetchone()
     assert customer_price["price_cents"] == 4500

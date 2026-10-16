@@ -12,7 +12,7 @@ from tests.pdf_test_utils import assert_a4_portrait_pdf, assert_continuous_paper
 def _saved_order(order_type="sale"):
     init_db()
     customer_id = create_customer("Phase4客户")
-    product_id = create_product("Phase4商品S-1", "个", 2000)
+    product_id = create_product("Phase4商品S-1", "个")
     order_id = create_order_from_typed_rows(
         customer_id,
         f"P4-{'RETURN' if order_type == 'return' else 'SALE'}",

@@ -26,7 +26,7 @@ def legacy_sale(customer, product, no, day, quantity="1", price="10"):
 def test_explicit_empty_dates_route_keeps_open_scope_and_prior_month_sales():
     init_db()
     customer = create_customer("虚构往来")
-    product = create_product("历史商品", "个", 1000)
+    product = create_product("历史商品", "个")
     legacy_sale(customer, product, "MD202509010001", "2025-09-01")
     app = create_app()
     with rendered(app) as contexts:
@@ -43,7 +43,7 @@ def test_explicit_empty_dates_route_keeps_open_scope_and_prior_month_sales():
 def test_single_open_date_heatmap_uses_observed_boundary_not_one_day():
     init_db()
     customer = create_customer("单边日期对象")
-    product = create_product("历史商品", "个", 1000)
+    product = create_product("历史商品", "个")
     legacy_sale(customer, product, "MD202509010001", "2025-09-01")
     legacy_sale(customer, product, "MD202509030001", "2025-09-03")
     for query in ({"start_date": "2025-08-31"}, {"end_date": "2025-09-04"}):
@@ -64,7 +64,7 @@ import pytest
 def test_invalid_route_scope_retains_inputs_without_fallback_results(bad):
     init_db()
     customer = create_customer("错误筛选对象")
-    product = create_product("历史商品", "个", 1000)
+    product = create_product("历史商品", "个")
     legacy_sale(customer, product, "MD202610010001", "2026-10-01")
     query = {"start_date": "", "end_date": "", "customer_id": str(customer), "product_name": "历史商品", **bad}
     app = create_app()
@@ -85,7 +85,7 @@ def test_removed_spec_parameter_is_ignored_not_rejected():
     """
     init_db()
     customer = create_customer("忽略型号对象")
-    product = create_product("历史商品", "个", 1000)
+    product = create_product("历史商品", "个")
     legacy_sale(customer, product, "MD202610010001", "2026-10-01")
     app = create_app()
     with rendered(app) as contexts:
@@ -100,7 +100,7 @@ def test_removed_spec_parameter_is_ignored_not_rejected():
 def test_historical_cost_micro_is_aggregated_before_rounding_in_every_projection():
     init_db()
     customer = create_customer("微元历史对象")
-    product = create_product("历史商品", "个", 100)
+    product = create_product("历史商品", "个")
     first = legacy_sale(customer, product, "MD202509010001", "2025-09-01", price="1")
     second = legacy_sale(customer, product, "MD202509010002", "2025-09-01", price="1")
     with get_db() as conn:
@@ -120,7 +120,7 @@ def test_historical_cost_micro_is_aggregated_before_rounding_in_every_projection
 def test_partial_historical_cost_coverage_is_explicit_not_zero_or_full_profit():
     init_db()
     customer = create_customer("部分成本对象")
-    product = create_product("历史商品", "个", 100)
+    product = create_product("历史商品", "个")
     known = legacy_sale(customer, product, "MD202509010001", "2025-09-01", price="1")
     legacy_sale(customer, product, "MD202509030001", "2025-09-03", price="2")
     with get_db() as conn:
@@ -149,8 +149,8 @@ def test_unfilled_model_sentinel_and_model_dimension_are_removed():
     """
     init_db()
     customer = create_customer("型号与对象留存")
-    blank = create_product("历史商品", "个", 1000)
-    model = create_product("历史商品Q1", "个", 1000)
+    blank = create_product("历史商品", "个")
+    model = create_product("历史商品Q1", "个")
     legacy_sale(customer, blank, "MD202509010001", "2025-09-01")
     create_order_from_typed_rows(customer, "MD202509010002", [{"product_id": model, "product_name": "历史商品Q1", "unit": "个", "quantity": "1", "unit_price_yuan": "20"}], status="saved", order_date="2025-09-01")
     app = create_app()
@@ -186,18 +186,18 @@ def test_quantity_rankings_keep_one_all_product_chart_and_classify_real_sales():
     customer = create_customer("完整排行对象")
     ids = []
     for index in range(13):
-        product = create_product(f"排行计件{index:02}", "个", 1000)
+        product = create_product(f"排行计件{index:02}", "个")
         initialize_product(product, "100", "0", "2025-01-01", "虚构", f"rank-{index}")
         sale_for_product(customer, product, f"MD20250901{index+1:04}", "2025-09-01", quantity=str(index+1))
         ids.append(product)
-    meter = create_product("排行计量", "米", 1000)
+    meter = create_product("排行计量", "米")
     sale_for_product(customer, meter, "MD202509010101", "2025-09-01", quantity="100")
-    free = create_product("零价实际销售", "个", 0)
+    free = create_product("零价实际销售", "个")
     sale_for_product(customer, free, "MD202509010102", "2025-09-01", price="0")
-    unsold = create_product("期末前未销售", "个", 0)
-    too_new = create_product("期末后建档", "个", 0)
-    inactive = create_product("停用未销售", "个", 0)
-    returned = create_product("全部退回", "个", 1000)
+    unsold = create_product("期末前未销售", "个")
+    too_new = create_product("期末后建档", "个")
+    inactive = create_product("停用未销售", "个")
+    returned = create_product("全部退回", "个")
     initialize_product(returned, "10", "1", "2025-01-01", "虚构", "rank-return")
     source = sale_for_product(customer, returned, "MD202509010103", "2025-09-01", quantity="2")
     with get_db() as conn:
@@ -231,7 +231,7 @@ def test_formal_v4_layout_renders_every_month_inside_the_applied_scope():
     from test_readonly_cost_display import RenderedHTML
     init_db()
     customer = create_customer("跨年完整范围对象")
-    product = create_product("历史商品", "个", 1000)
+    product = create_product("历史商品", "个")
     legacy_sale(customer, product, "MD202401010001", "2024-01-01")
     legacy_sale(customer, product, "MD202610010001", "2026-10-01")
     app = create_app()
@@ -265,7 +265,7 @@ def test_ranking_size_selector_replaces_pagination_and_keeps_aggregate_scope():
     ids=[]
     for index in range(13):
         # 决策变更（v14）：商品身份=单一名称 —— 旧 (名称'分页商品', 型号=index) 合并为「分页商品0…12」。
-        pid=create_product(f"分页商品{index}","个",1000)
+        pid=create_product(f"分页商品{index}","个")
         sale_for_product(customer,pid,f"MD20250901{index+1:04}","2025-09-01",quantity=str(index+1))
         ids.append(pid)
     app=create_app()
@@ -365,7 +365,7 @@ def test_cost_view_switches_between_stack_and_ring_with_correct_semantics():
 
     init_db()
     customer = create_customer("环形视图对象")
-    product = create_product("历史商品", "个", 100)
+    product = create_product("历史商品", "个")
     # 一行有历史成本、一行没有 → 覆盖 < 100%，两段都非零。
     known = legacy_sale(customer, product, "MD202509010001", "2025-09-01", price="10")
     legacy_sale(customer, product, "MD202509020001", "2025-09-02", price="20")
@@ -450,7 +450,7 @@ def test_cost_missing_source_is_vertical_columns_not_horizontal_rows():
 
     init_db()
     customer = create_customer("缺失竖向对象")
-    product = create_product("历史商品", "个", 100)
+    product = create_product("历史商品", "个")
     legacy_sale(customer, product, "MD202509010001", "2025-09-01", price="10")
     # 无历史成本 → 进入缺失来源。
     result = summarize_analytics(start_date="2025-09-01", end_date="2025-09-01", customer_id=customer)

@@ -56,7 +56,7 @@ def next_return_no(conn, business_date: str) -> str:
 def _products():
     with get_db() as conn:
         return conn.execute(
-            """SELECT p.id, p.name, p.unit, p.default_price_cents
+            """SELECT p.id, p.name, p.unit
                       , COALESCE(s.enabled, 0) AS inventory_enabled
                       , s.avg_cost_micro, s.quantity_3dp
                FROM products AS p LEFT JOIN product_inventory_state AS s ON s.product_id=p.id
@@ -67,9 +67,10 @@ def _products():
 def _purchase_catalog(products) -> list[dict]:
     """Compact product list for the entry-page picker, plus current moving-average cost.
 
-    `default_price_cents`（2026-10-15）：拿货/退拿货页的「常规价」快捷按钮改用这份内嵌目录，
-    不再借用 `/orders/api/products?customer_id=…`。那个接口的 `customer_id` 语义是**客户**，
-    而拿货页同名字段存的是**供应商**，借过来会把「这家客户当初买多少钱」显示成拿货单价的候选。
+    拿货 / 退拿货页的单价是**入库成本**，与售价无关。2026-10-15 起商品档案已不再保存售价
+    （售价唯一来源 = 开单学习出的客户专属价），所以这里既不带档案价、也不带客户价
+    —— 早前借 `/orders/api/products?customer_id=…` 是错的：那个参数语义是**客户**，
+    而拿货页同名字段存的是**供应商**（客户与供应商共用 `customers` 档案）。
     """
     catalog = []
     for p in products:
@@ -77,7 +78,6 @@ def _purchase_catalog(products) -> list[dict]:
         cost_available = bool(enabled and p["avg_cost_micro"] is not None and p["quantity_3dp"])
         catalog.append({
             "id": int(p["id"]), "name": p["name"], "unit": p["unit"],
-            "default_price_cents": int(p["default_price_cents"] or 0),
             "inventory_enabled": enabled,
             "cost_available": cost_available,
             "unit_cost": micro_to_yuan(p["avg_cost_micro"], precision=6) if cost_available else None,
@@ -599,7 +599,7 @@ def api_products():
     q = (request.args.get('q') or '').strip()
     with get_db() as conn:
         rows = conn.execute(
-            f"""SELECT p.id, p.name, p.unit, p.default_price_cents
+            f"""SELECT p.id, p.name, p.unit
                       , COALESCE(s.enabled, 0) AS inventory_enabled
                       , s.avg_cost_micro, s.quantity_3dp
                FROM products AS p LEFT JOIN product_inventory_state AS s ON s.product_id=p.id

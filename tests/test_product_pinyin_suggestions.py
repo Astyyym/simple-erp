@@ -16,8 +16,8 @@ from erp.utils.pinyin import pinyin_initials
 
 def _seed_products():
     init_db()
-    create_product("闸阀DN50", "个", 5000, pinyin_initials("闸阀"))
-    create_product("灭火器4kg", "个", 5000, pinyin_initials("灭火器"))
+    create_product("闸阀DN50", "个", pinyin_initials("闸阀"))
+    create_product("灭火器4kg", "个", pinyin_initials("灭火器"))
 
 
 def test_product_list_suggestions_match_pinyin():

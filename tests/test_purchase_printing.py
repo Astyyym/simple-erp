@@ -18,7 +18,7 @@ from erp.services import purchase_returns
 def seed(quantity='3', price='12.34', unit='米', return_quantity='0.25'):
     init_db()
     cid = create_customer('虚构采购卖方', opening_balance_cents=12345)
-    pid = create_product('虚构采购商品' 'C3-B', unit, 2000)
+    pid = create_product('虚构采购商品' 'C3-B', unit)
     initialize_product(pid, '0', '0', '2026-10-03', '虚构期初', 'c3-print-init', confirm_zero=True)
     purchase = create_purchase_order('NH202610030001', '2026-10-03',
         [{'product_id': pid, 'quantity': quantity, 'unit_cost_yuan': price}],

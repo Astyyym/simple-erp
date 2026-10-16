@@ -16,6 +16,9 @@ import vm from 'node:vm';
 const shared = fs.readFileSync(new URL('../../app/erp/static/order-entry-common.js', import.meta.url), 'utf8');
 const salesPage = fs.readFileSync(new URL('../../app/erp/templates/orders/new.html', import.meta.url), 'utf8');
 
+/* 2026-10-15 默认价下线后的取价口径（本文件相关断言随之改写）：
+   单价只认**该客户的专属价**；没有专属价就留空手输，不再回落任何档案价。 */
+
 function slice(source, from, to, label) {
   const start = source.indexOf(from);
   const end = source.indexOf(to, start + from.length);
@@ -74,7 +77,7 @@ test('销售/退货页：换客户按新客户重写已命中档案的行，原�
   // `repriceRowsForCustomer` 引用页面级 `sourceTraceOnly`（切片之外），沙箱里补上。
   const context = vm.createContext({
     document: { querySelectorAll: () => [makeTr('normal'), makeTr('sourceApplied'), makeTr('blank')] },
-    productCatalog: [{ id: 11, name: '软密封闸阀 DN100', unit: '台', default_price_cents: 420000 }],
+    productCatalog: [{ id: 11, name: '软密封闸阀 DN100', unit: '台' }],
     Number, String,
     sourceTraceOnly: false,
     refineProductRow: (tr, product) => { repriced.push(product); },
@@ -115,11 +118,14 @@ test('销售/退货页把往来对象变化接到重取价，且共享 JS 版本
   assert.match(salesPage, /order-entry-common\.js[^"]*\?v=3/, '共享 JS 改了却仍带旧版本号，浏览器/WebView2 会用缓存旧文件');
 });
 
-test('拿货/退拿货页的单价候选不再借用客户价接口', () => {
+test('拿货/退拿货页不再有任何售价取价（客户价或档案价）', () => {
   ['purchases/new.html', 'purchases/return_new.html'].forEach(file => {
     const source = fs.readFileSync(new URL(`../../app/erp/templates/${file}`, import.meta.url), 'utf8');
     assert.ok(!source.includes('/orders/api/products'), `${file}：仍借用客户价接口取拿货单价`);
     assert.ok(!source.includes('is_customer_price'), `${file}：拿货单价仍出现客户价分支`);
-    assert.ok(source.includes('default_price_cents'), `${file}：常规价应改用内嵌商品目录的档案价`);
+    // 2026-10-15：档案已无售价，「常规价」参考按钮整体删除。
+    assert.ok(!source.includes('default_price_cents'), `${file}：仍在读档案售价`);
+    assert.ok(!source.includes('price-quick'), `${file}：仍渲染「常规价」快捷按钮`);
+    assert.ok(!source.includes('常规价'), `${file}：仍出现「常规价」文案`);
   });
 });

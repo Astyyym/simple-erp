@@ -25,7 +25,7 @@ def _seed():
     """一张销售单 + 一张退货单 + 一张拿货单 + 一张退拿货单，都挂同一个客户。"""
     init_db()
     customer_id = create_customer("流水展开虚构客户")
-    product_id = create_product("流水展开虚构商品", "个", 3000)
+    product_id = create_product("流水展开虚构商品", "个")
     initialize_product(product_id, "20", "20", "2026-10-01", "期初", "ledger-expand-init")
 
     sale_id = create_order_from_typed_rows(

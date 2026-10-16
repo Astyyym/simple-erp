@@ -96,7 +96,7 @@ def test_auto_created_customer_from_purchase_order_gets_pinyin():
     from erp.services.inventory import initialize_product
 
     init_db()
-    product_id = create_product("拿货拼音商品", "个", 2000)
+    product_id = create_product("拿货拼音商品", "个")
     initialize_product(product_id, "10", "10", "2026-10-02", "期初", "pinyin-init")
     client = create_app().test_client()
     client.post(

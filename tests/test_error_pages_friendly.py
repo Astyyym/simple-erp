@@ -19,7 +19,7 @@ from erp.utils.errors import error_response
 
 
 def _product(spec="A", price=2000):
-    pid = create_product("错误页商品" + spec, "个", price)
+    pid = create_product("错误页商品" + spec, "个")
     initialize_product(pid, "10", "10", "2026-10-01", "系统上线期初", f"err-page-{spec}", confirm_zero=False)
     return pid
 
@@ -141,15 +141,20 @@ def test_invalid_customer_opening_balance_is_friendly_400():
 
 
 def test_invalid_product_price_is_friendly_400():
+    """商品建档的数字校验仍给友好 400。
+
+    决策变更（2026-10-15）：默认价下线（不再是档案字段），改用仍在校验的
+    「安全库存」触发同一类错误。
+    """
     init_db()
     client = create_app().test_client()
     response = client.post("/products/create", data={
-        "name": "坏价格商品", "unit": "个", "default_price": "abc", "safety_stock": "0",
+        "name": "坏库存商品", "unit": "个", "safety_stock": "abc",
     })
     assert response.status_code == 400
     assert "有效数字" in response.get_data(as_text=True)
     with get_db() as conn:
-        assert conn.execute("SELECT COUNT(*) FROM products WHERE name='坏价格商品'").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM products WHERE name='坏库存商品'").fetchone()[0] == 0
 
 
 def test_negative_payment_is_friendly_400_not_500():

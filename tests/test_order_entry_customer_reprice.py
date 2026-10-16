@@ -9,11 +9,11 @@ from erp.services.accounting import (
 
 
 def _seed_two_customers():
-    """商品默认价 100；甲成交 80，乙成交 85（同一商品、不同客户）。"""
+    """同一商品、不同客户：甲成交 80，乙成交 85（售价唯一来源 = 开单学习出的客户专属价）。"""
     init_db()
     first = create_customer("甲消防工程")
     second = create_customer("乙物业公司")
-    product_id = create_product("干粉灭火器4kg", "具", 10000)
+    product_id = create_product("干粉灭火器4kg", "具")
     create_order_from_typed_rows(
         first, "MD-A",
         [{"product_name": "干粉灭火器4kg", "unit": "具", "unit_price_yuan": "80", "quantity": "1"}],
@@ -27,28 +27,35 @@ def _seed_two_customers():
     return first, second, product_id
 
 
-def test_products_api_prices_by_customer_and_falls_back_to_default():
+def test_products_api_prices_by_customer_and_leaves_blank_without_one():
+    """取价口径（2026-10-15）：单价只认**该客户的专属价**；没有专属价时给 null（页面留空手输）。
+
+    旧契约是 `COALESCE(客户价, 档案默认价)` 并把档案价作为「常规价」一起下发；
+    默认价下线后档案已无售价，接口只可能给出「客户专属价」或「无价」。
+    """
     first, second, _ = _seed_two_customers()
     client = create_app().test_client()
     cases = {
-        first: ("80.00", "100.00", "80.00", True),
-        second: ("85.00", "100.00", "85.00", True),
-        0: ("100.00", "100.00", None, False),
+        first: ("80.00", True),
+        second: ("85.00", True),
+        0: (None, False),
     }
-    for customer_id, (unit, regular, customer_price, is_customer) in cases.items():
+    for customer_id, (unit, is_customer) in cases.items():
         data = client.get(f"/orders/api/products?q=干粉&customer_id={customer_id}").get_json()
         assert data[0]["unit_price"] == unit, customer_id
-        assert data[0]["regular_price"] == regular, customer_id
-        assert data[0]["customer_price"] == customer_price, customer_id
+        assert data[0]["customer_price"] == unit, customer_id
         assert data[0]["is_customer_price"] is is_customer, customer_id
+        assert "regular_price" not in data[0], "档案已无售价，不应再下发「常规价」"
 
 
-def test_purchase_products_api_exposes_regular_price_without_customer_price():
-    """拿货页商品接口给档案常规价，不给客户价（2026-10-15：供应商 ≠ 客户）。"""
+def test_purchase_products_api_exposes_no_sale_price_at_all():
+    """拿货页商品接口不给售价、也不给客户价（2026-10-15：供应商 ≠ 客户；档案已无售价）。"""
     _seed_two_customers()
     client = create_app().test_client()
     data = client.get("/purchases/api/products?q=干粉").get_json()
-    assert data[0]["default_price_cents"] == 10000
+    assert data[0]["unit"] == "具"
+    assert "default_price_cents" not in data[0]
+    assert "unit_price" not in data[0]
     assert "customer_price" not in data[0]
     assert "is_customer_price" not in data[0]
 

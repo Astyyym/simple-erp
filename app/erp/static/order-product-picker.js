@@ -16,7 +16,7 @@
   function norm(s) { return String(s == null ? '' : s).trim(); }
 
   // row: a <tr>/container holding one .picker-name select.
-  // catalog: [{id, name, unit, default_price_cents, inventory_enabled}]
+  // catalog: [{id, name, unit, inventory_enabled}]（2026-10-15 起目录不再带售价字段）
   // onPick: the chosen product object, or null when the placeholder is selected.
   function mountRow(row, catalog, onPick) {
     var nameSel = row.querySelector('.picker-name');

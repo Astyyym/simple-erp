@@ -25,7 +25,7 @@ def _client():
 def test_purchase_detail_returns_to_document_management():
     client = _client()
     cid = create_customer("E5客户")
-    pid = create_product("E5商品", "个", 1000)
+    pid = create_product("E5商品", "个")
     # 用草稿拿货单：无需先启用库存；详情页返回按钮与状态无关。
     purchase = create_purchase_order(
         "NH202610010001", "2026-10-01",
@@ -51,20 +51,22 @@ def test_topbar_status_point_uses_health_endpoint():
 def test_list_amounts_show_yuan_symbol():
     client = _client()
     cid = create_customer("E9客户")
-    create_product("E9商品", "个", 1234)
+    create_product("E9商品", "个")
     create_order_from_typed_rows(
         cid, "MD202610010001",
         [{"product_name": "E9商品", "unit": "个", "unit_price_yuan": "10", "quantity": "1"}],
         status="saved", order_date="2026-10-01",
     )
     assert "¥" in client.get("/orders/").get_data(as_text=True)
-    assert "¥" in client.get("/products/").get_data(as_text=True)
     assert "¥" in client.get("/customers/").get_data(as_text=True)
-    # 回收站金额列同样带 ¥：先软删一条商品让列表非空。
+    # 决策变更（2026-10-15）：商品列表不再有价格列（售价不是档案字段）→ 该页已无 ¥ 金额，
+    # 这条断言随之删除；商品侧的金额（移动平均成本 / 库存金额）另由库存相关用例覆盖。
+    # 回收站金额列同样带 ¥：软删商品/客户让列表非空，再软删一张单据让单据金额列非空。
     from erp.db import get_db
     with get_db() as conn:
         conn.execute("UPDATE products SET deleted_at=CURRENT_TIMESTAMP WHERE name='E9商品'")
         conn.execute("UPDATE customers SET deleted_at=CURRENT_TIMESTAMP WHERE name='E9客户'")
+        conn.execute("UPDATE orders SET deleted_at=CURRENT_TIMESTAMP WHERE deleted_at IS NULL")
     recycle_html = client.get("/recycle/").get_data(as_text=True)
     assert "¥" in recycle_html
 
@@ -119,10 +121,10 @@ def test_truncation_hints_render_on_product_and_customer_lists():
     cid = None
     client = _client()
     for i in range(205):
-        # 决策变更（v14）：create_product 签名收窄为 (name, unit, default_price_cents,
-        # pinyin_initials="", ...)，原「型号」直接并进名称。
+        # 决策变更（2026-10-15）：create_product 签名收窄为 (name, unit, pinyin_initials="", ...)
+        # —— 默认价下线，第 3 个位置参数改成拼音首字母；「型号」早已并进名称。
         name = f"E4商品{i:03d}S{i:03d}"
-        _cp(name, "个", 1000, build(name))
+        _cp(name, "个", build(name))
     html = client.get("/products/").get_data(as_text=True)
     # Batch B（B-9）：截断提示强化，并明确「不要据此认为数据丢失」。
     assert "列表已截断" in html and "仅显示前 200 条" in html

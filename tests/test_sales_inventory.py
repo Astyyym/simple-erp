@@ -11,7 +11,7 @@ from erp.services.inventory import create_purchase_order, initialize_product
 
 def _enabled_product():
     init_db()
-    product_id = create_product("销售成本商品S1", "个", 3000)
+    product_id = create_product("销售成本商品S1", "个")
     initialize_product(product_id, "10", "10", "2026-10-01", "系统上线期初", "sale-init-001")
     return product_id
 

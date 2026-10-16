@@ -111,7 +111,7 @@ def test_distinct_names_are_distinct_products():
 
 def test_edit_page_roundtrips_name_into_picker_input():
     client = _client()
-    pid = create_product("回填商品DN25", "个", 1000)
+    pid = create_product("回填商品DN25", "个")
     with get_db() as conn:
         cid = conn.execute("INSERT INTO customers(name) VALUES ('回填客户')").lastrowid
     client.post("/orders/create", data={

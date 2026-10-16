@@ -8,7 +8,7 @@ from erp.services.inventory import initialize_product, create_purchase_order, vo
 def seed(quantity='3', price='10'):
     init_db()
     cid = create_customer('退拿货虚构往来')
-    pid = create_product('退拿货虚构商品' 'S', '米', 2000)
+    pid = create_product('退拿货虚构商品' 'S', '米')
     initialize_product(pid, '0', '0', '2026-10-02', '虚构', 'c2-init', confirm_zero=True)
     source = create_purchase_order('NH202610020001', '2026-10-02', [{'product_id': pid, 'quantity': quantity, 'unit_cost_yuan': price}], customer_id=cid, request_key='c2-source')
     with get_db() as conn:
@@ -307,7 +307,7 @@ def test_two_real_threads_serialize_keys_numbers_quota_and_stock(mode):
 def test_multi_line_shortage_rolls_back_earlier_line_and_number():
     from erp.services import purchase_returns as service
     cid,pid,source,iid=seed()
-    second=create_product('缺货行虚构商品' 'Z','个',100)
+    second=create_product('缺货行虚构商品' 'Z','个')
     initialize_product(second,'0','0','2026-10-02','虚构','second-init',confirm_zero=True)
     source2=create_purchase_order('NH202610020002','2026-10-02',[{'product_id':pid,'quantity':'1','unit_cost_yuan':'0'},{'product_id':second,'quantity':'1','unit_cost_yuan':'0'}],customer_id=cid,request_key='multi-source')['order_id']
     sale=create_order_from_typed_rows(cid,'MD202610020001',[{'product_id':second,'product_name':'缺货行虚构商品' 'Z','unit':'个','quantity':'1','unit_price_yuan':'1'}],status='saved',order_date='2026-10-02',request_key='deplete')
@@ -332,7 +332,7 @@ def test_product_purge_with_unposted_purchase_reference_is_friendly_and_preserve
     from erp import create_app
     from erp.db import purge_expired_recycle_bin
     init_db()
-    cid=create_customer('草稿保护虚构对象');pid=create_product('草稿引用商品','个',0)
+    cid=create_customer('草稿保护虚构对象');pid=create_product('草稿引用商品','个')
     create_purchase_order('NH202610020001','2026-10-02',[{'product_id':pid,'quantity':'1','unit_cost_yuan':'0'}],customer_id=cid,request_key='unposted-source',status='draft')
     client=create_app().test_client()
     with get_db() as conn:

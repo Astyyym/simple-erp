@@ -30,7 +30,7 @@ def test_all_four_entry_pages_use_typeable_product_picker():
 def test_purchase_product_api_lists_only_archived_products():
     """联想接口只返回已建档商品，按名称/拼音匹配；未建档的名称不会出现在候选里。"""
     client = _client()
-    pid = create_product("联想用闸阀DN50", "个", 1000)
+    pid = create_product("联想用闸阀DN50", "个")
     data = client.get("/purchases/api/products?q=闸阀").get_json()
     assert [row["name"] for row in data] == ["联想用闸阀DN50"]
     assert data[0]["id"] == pid

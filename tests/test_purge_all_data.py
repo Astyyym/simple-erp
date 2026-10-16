@@ -174,7 +174,7 @@ def test_purge_keeps_nh_high_water_for_same_day_purchase_numbers():
     from erp.utils.order_numbering import next_nh_order_no
 
     customer_id = create_customer("清空采购方")
-    product_id = create_product("清空采购商品C", "个", 1000)
+    product_id = create_product("清空采购商品C", "个")
     initialize_product(product_id, "0", "0", "2026-10-11", "清空期初", "purge-init", confirm_zero=True)
     create_purchase_order(
         "NH202610110003", "2026-10-11",

@@ -21,7 +21,7 @@ def test_order_entry_exposes_readonly_cost_column_not_submitted_cost_input():
 
 def test_reedit_initial_cost_uses_historical_snapshot_after_purchase_changes_average():
     init_db()
-    product_id = create_product("成本列商品4kg", "个", 2500)
+    product_id = create_product("成本列商品4kg", "个")
     customer_id = create_customer("成本列往来对象")
     initialize_product(product_id, "10", "10", "2026-10-01", "期初", "cost-col-init")
     sale_id = create_order_from_typed_rows(

@@ -13,7 +13,7 @@ from erp.services.reconciliation import create_reconciliation_snapshot, get_reco
 
 def test_phase7_complete_inventory_to_reconciliation_path_keeps_contract_values():
     init_db()
-    product_id = create_product("Phase7灭火器4kg", "个", 2000, safety_stock="2")
+    product_id = create_product("Phase7灭火器4kg", "个", safety_stock="2")
     customer_id = create_customer("Phase7验收客户")
     initialize_product(product_id, "10", "10", "2026-10-01", "Phase 7 期初", "phase7-e2e-init")
 

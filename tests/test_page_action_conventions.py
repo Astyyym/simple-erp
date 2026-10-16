@@ -57,7 +57,7 @@ def pages():
         [{"product_name": "页面测试商品", "unit": "个", "quantity": "1", "unit_price_yuan": "20"}],
         status="saved", order_date="2026-10-02",
     )
-    product_id = create_product("页面草稿商品测试", "个", 2000)
+    product_id = create_product("页面草稿商品测试", "个")
     purchase = create_purchase_order(
         "NH202610020901", "2026-10-02",
         [{"product_id": product_id, "quantity": "1", "unit_cost_yuan": "10"}],
@@ -71,24 +71,20 @@ def pages():
     ("order", "/orders/"),
     ("purchase", "/orders/"),
     ("customer", "/customers/"),
-    ("prices", "/customers/"),
     ("reconciliation", "/accounts/"),
 ])
 def test_secondary_return_is_last_title_action(pages, page, return_href):
     client, customer_id, order_id, purchase_id = pages
     paths = {
         "order": f"/orders/{order_id}", "purchase": f"/purchases/{purchase_id}",
-        "customer": f"/customers/{customer_id}/edit", "prices": f"/customers/{customer_id}/prices",
+        "customer": f"/customers/{customer_id}/edit",
         "reconciliation": "/accounts/reconciliation",
     }
-    if page == "prices":
-        # This retained template currently has no registered HTTP route.
-        with client.application.test_request_context(paths[page]):
-            html = render_template("customers/prices.html", customer={"name": "测试客户"}, products=[])
-    else:
-        response = client.get(paths[page])
-        assert response.status_code == 200
-        html = response.get_data(as_text=True)
+    # 2026-10-15：`customers/prices.html` 死模板已删除（全仓无路由渲染它），
+    # 原来那条「无路由也要符合动作约定」的用例随之移除。
+    response = client.get(paths[page])
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
     dom = Elements(html)
     returns = dom.by_class("page-return")
     assert len(returns) == 1, "secondary page must expose one shared return action"

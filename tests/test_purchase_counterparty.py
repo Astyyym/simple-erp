@@ -13,7 +13,7 @@ from erp.services.inventory import create_purchase_order, initialize_product, fi
 def _seed():
     db.init_db()
     customer_id = create_customer('双向测试对象', opening_balance_cents=12345)
-    product_id = create_product('C1测试商品' '4kg', '个', 2000)
+    product_id = create_product('C1测试商品' '4kg', '个')
     initialize_product(product_id, '10', '10', '2026-10-01', '测试期初', 'c1-init')
     return customer_id, product_id
 
@@ -269,7 +269,7 @@ def test_hidden_counterparty_blocks_new_business_but_preserves_history(disabled)
 def test_failed_draft_edit_keeps_original_object_rows_and_inventory():
     cid, pid = _seed()
     other = create_customer('失败不得替换对象')
-    unknown = create_product('未启用测试商品' 'x','个',100)
+    unknown = create_product('未启用测试商品' 'x','个')
     draft = create_purchase_order('NH202610010910','2026-10-01',[{'product_id':pid,'quantity':'1','unit_cost_yuan':'14'}],customer_id=cid,request_key='c1-failed-edit',status='draft')
     with db.get_db() as conn:
         before = tuple(conn.execute('SELECT * FROM purchase_orders').fetchone())

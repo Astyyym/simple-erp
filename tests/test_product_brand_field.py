@@ -96,17 +96,17 @@ def test_brand_column_migration_is_idempotent_and_keeps_legacy_rows_blank():
 
 def test_brand_is_not_part_of_the_business_identity_key():
     init_db()
-    first = create_product("阀门DN20", "个", 1000, brand="沪工")
+    first = create_product("阀门DN20", "个", brand="沪工")
     assert _brand_of(first) == "沪工"
     # 品牌不进唯一键：同名同型号换品牌仍是同一件商品，必须被唯一约束挡住。
     try:
-        create_product("阀门DN20", "个", 1000, brand="远大")
+        create_product("阀门DN20", "个", brand="远大")
     except ValueError as exc:
         assert "已存在" in str(exc)
     else:
         raise AssertionError("品牌不得参与业务唯一键，同名同型号应被拒绝")
     # 同名不同型号可以各带品牌。
-    second = create_product("阀门DN25", "个", 1000, brand="远大")
+    second = create_product("阀门DN25", "个", brand="远大")
     assert _brand_of(second) == "远大"
 
 
@@ -115,25 +115,25 @@ def test_brand_is_not_part_of_the_business_identity_key():
 def test_blank_brand_is_stored_as_null_not_empty_string():
     init_db()
     for value in ("", "   ", None):
-        pid = create_product(f"空品牌{value!r}", "个", 100, brand=value)
+        pid = create_product(f"空品牌{value!r}", "个", brand=value)
         assert _brand_of(pid) is None
 
 
 def test_update_product_sets_and_clears_brand_but_omitted_brand_is_preserved():
     init_db()
-    pid = create_product("编辑品牌商品S1", "个", 2000, brand="沪工")
+    pid = create_product("编辑品牌商品S1", "个", brand="沪工")
 
     # 显式传品牌 → 覆盖
-    update_product_record(pid, "编辑品牌商品S1", "个", 2000, brand="远大")
+    update_product_record(pid, "编辑品牌商品S1", "个", brand="远大")
     assert _brand_of(pid) == "远大"
 
     # 显式传空 → 清空（用户主动删掉品牌）
-    update_product_record(pid, "编辑品牌商品S1", "个", 2000, brand="")
+    update_product_record(pid, "编辑品牌商品S1", "个", brand="")
     assert _brand_of(pid) is None
 
     # 不传 brand（旧调用点/局部更新）→ 保持原值，不误清
-    update_product_record(pid, "编辑品牌商品S1", "个", 2000, brand="沪工")
-    update_product_record(pid, "编辑品牌商品S1", "个", 2100)
+    update_product_record(pid, "编辑品牌商品S1", "个", brand="沪工")
+    update_product_record(pid, "编辑品牌商品S1", "个")
     assert _brand_of(pid) == "沪工"
 
 
@@ -145,8 +145,9 @@ def test_product_import_template_has_optional_brand_column():
     assert response.status_code == 200
     sheet = load_workbook(io.BytesIO(response.data), read_only=True).active
     # 决策变更（v14）：模板不再有「型号」列，品牌仍是可选列（紧随商品名称）。
+    # 决策变更（2026-10-15）：默认价下线，模板不再有「默认价」列。
     assert list(next(sheet.iter_rows(values_only=True))) == [
-        "商品名称", "品牌", "单位", "默认价", "期初数量", "期初成本（元）", "备注"
+        "商品名称", "品牌", "单位", "期初数量", "期初成本（元）", "备注"
     ]
 
 
@@ -188,8 +189,9 @@ def test_product_import_still_accepts_pre_brand_header():
 
 def test_product_import_update_branch_can_fill_brand():
     init_db()
-    create_product("补品牌商品S1", "个", 500)
+    create_product("补品牌商品S1", "个")
     # 决策变更（v14）：身份 = 名称，型号写进名称；表头不再含「型号」列。
+    # 决策变更（2026-10-15）：价格列已下线（导入不再写档案价）。
     csv = "商品名称,品牌,单位,默认价,期初数量,期初成本（元）,备注\n补品牌商品S1,沪工,个,600,,\n".encode("utf-8-sig")
     client = create_app().test_client()
     preview = _upload(client, "/products/import", "p.csv", csv, same_name="update")
@@ -198,14 +200,15 @@ def test_product_import_update_branch_can_fill_brand():
     with get_db() as conn:
         row = conn.execute("SELECT brand, default_price_cents FROM products WHERE name='补品牌商品S1'").fetchone()
     assert row["brand"] == "沪工"
-    assert row["default_price_cents"] == 60000
+    # 更新分支同样不再写价格（列仍在、值恒 0）。
+    assert row["default_price_cents"] == 0
 
 
 # --------------------------- 页面与导出 ---------------------------
 
 def test_product_pages_show_optional_brand_controls_and_value():
     init_db()
-    pid = create_product("页面品牌商品S1", "个", 2000, brand="沪工")
+    pid = create_product("页面品牌商品S1", "个", brand="沪工")
     client = create_app().test_client()
 
     list_html = client.get("/products/").get_data(as_text=True)
@@ -226,7 +229,7 @@ def test_product_pages_show_optional_brand_controls_and_value():
 
 def test_product_export_includes_brand_column():
     init_db()
-    create_product("导出品牌商品S1", "个", 1234, brand="沪工")
+    create_product("导出品牌商品S1", "个", brand="沪工")
     client = create_app().test_client()
     response = client.get("/products/export.xlsx")
     assert response.status_code == 200

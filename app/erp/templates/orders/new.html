@@ -39,8 +39,6 @@
   .unit-suggestions .suggest-item[aria-disabled="true"] { display: none; }
   .price-cell { padding: 4px !important; }
   .price-cell input { border: 0; width: 100%; padding: 4px 6px; background: transparent; }
-  .regular-price-option { display: none; margin: 3px 6px 4px; font-size: 12px; color: var(--erp-primary); cursor: pointer; user-select: none; }
-  .regular-price-option input { width: auto; min-height: auto; margin-right: 3px; }
   .today-history{margin-top:24px;padding:18px;background:var(--erp-glass-bg);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);box-shadow:var(--erp-glass-shadow)}
   .today-history h3{font-size:18px;margin:0 0 4px}
   .today-history .table-responsive{overflow-x:auto;overflow-y:hidden}
@@ -144,7 +142,7 @@
         <td class="product-picker"><div class="picker-row"><input type="hidden" name="product_id" class="product-id" value="{{item.product_id if item else ''}}"><input type="hidden" name="source_item_id" class="source-item-id" value="{{item.source_item_id or ''}}"><input type="hidden" name="product_name" class="product-name" value="{{item.product_name if item else ''}}"><div class="suggest-wrap product-suggest-wrap"><input class="form-control form-control-sm picker-name-input" autocomplete="off" aria-label="第 {{loop.index}} 行产品名称" placeholder="输入或选择商品名" value="{{item.product_name if item else ''}}"><div class="suggest-list d-none product-suggestions" role="listbox" aria-label="商品建议"></div></div></div></td>
         <td><div class="unit-cell suggest-wrap"><input name="unit" class="unit form-control form-control-sm" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="单位" aria-label="第 {{loop.index}} 行单位" aria-expanded="false" data-unit-options="{{ (unit_options or ['个','套','件'])|join('|') }}" value="{{item.unit if item else ''}}"><div class="suggest-list d-none unit-suggestions" role="listbox" aria-label="单位建议"></div></div></td>
         <td><input name="quantity" class="quantity" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0" value="{{item.quantity if item else ''}}"></td>
-        <td class="price-cell"><input name="unit_price" class="unit-price" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.00" value="{{cents_to_yuan(item.unit_price_cents) if item else ''}}"><label class="regular-price-option"><input type="checkbox" class="regular-price-check">常规价 <span class="regular-price-text"></span></label></td>
+        <td class="price-cell"><input name="unit_price" class="unit-price" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.00" value="{{cents_to_yuan(item.unit_price_cents) if item else ''}}"></td>
         <td><div class="readonly-total line-total">0.00</div></td>
         <td><div class="readonly-total unit-cost-display" aria-label="只读成本">{{ micro_to_yuan(item.unit_cost_micro) if item and item.unit_cost_micro is not none else ('成本未知' if item else '未选择商品') }}</div></td>
         <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="clearRow(this)">清空</button></td>
@@ -257,8 +255,6 @@ function clearRow(btn) {
   tr.querySelectorAll('input').forEach(i => i.value = '');
   delete tr.dataset.unitCost;
   if (tr.__picker) tr.__picker.reset();
-  const regularOption = tr.querySelector('.regular-price-option');
-  if (regularOption) regularOption.style.display = 'none';
   recalc();
 }
 function clearAllRows() {
@@ -280,14 +276,10 @@ function clearAllRows() {
   firstRow.querySelectorAll('input').forEach(input => {
     input.value = '';
     if (input.type === 'checkbox') input.checked = false;
-    delete input.dataset.price;
-    delete input.dataset.customerPrice;
   });
   if (firstRow.__picker) firstRow.__picker.reset();
   delete firstRow.dataset.unitCost;
   firstRow.querySelector('.line-total').textContent = '0.00';
-  const regularOption = firstRow.querySelector('.regular-price-option');
-  if (regularOption) regularOption.style.display = 'none';
   document.querySelectorAll('.suggest-list').forEach(box => box.classList.add('d-none'));
   recalc();
   syncRowToolState();
@@ -299,8 +291,6 @@ function addRow() {
   tr.querySelectorAll('input').forEach(i => i.value = '');
   delete tr.dataset.unitCost;
   tr.querySelector('.line-total').textContent = '0.00';
-  const regularOption = tr.querySelector('.regular-price-option');
-  if (regularOption) regularOption.style.display = 'none';
   tbody.appendChild(tr);
   bindRow(tr);
   refreshSlipNotices();
@@ -379,14 +369,6 @@ bindAutocomplete(
 const productCatalog = JSON.parse(document.getElementById('productCatalog').textContent || '[]');
 // v14/Phase 3 S2：商品名建议改用自有 popover（原生 datalist 在 WebView2 不渲染、也不支持拼音）。
 let productSuggestSeq = 0;
-function hideRegularPriceOption(regularOption, regularCheck, regularText) {
-  if (!regularOption) return;
-  regularText.textContent = '';
-  regularCheck.dataset.price = '';
-  regularCheck.dataset.customerPrice = '';
-  regularCheck.checked = false;
-  regularOption.style.display = 'none';
-}
 const repriceSeq = new WeakMap();
 async function refineProductRow(tr, product) {
   // 换客户会一次重算多行、也会连续换客户；旧响应不能覆盖新结果（同商品跨客户价不同时尤其明显）。
@@ -402,21 +384,11 @@ async function refineProductRow(tr, product) {
   // A stale response must not overwrite a row that already moved to another product.
   if (!match || String(tr.querySelector('.product-id').value) !== String(product.id)) return;
   const priceInput = tr.querySelector('.unit-price');
-  const regularOption = tr.querySelector('.regular-price-option');
-  const regularCheck = tr.querySelector('.regular-price-check');
-  const regularText = tr.querySelector('.regular-price-text');
-  priceInput.value = match.unit_price || priceInput.value;
+  // 售价唯一来源 = 该客户的专属价（2026-10-15）：有专属价就带出，**没有就留空**。
+  // 旧版这里写 `|| priceInput.value`，会把上一个客户的价或档案价留在行上。
+  priceInput.value = match.unit_price || '';
   if (match.cost_available && match.unit_cost) tr.dataset.unitCost = match.unit_cost;
   else delete tr.dataset.unitCost;
-  if (match.is_customer_price && match.regular_price) {
-    regularText.textContent = match.regular_price + '元';
-    regularCheck.dataset.price = match.regular_price;
-    regularCheck.dataset.customerPrice = match.unit_price;
-    regularCheck.checked = false;
-    regularOption.style.display = 'block';
-  } else {
-    hideRegularPriceOption(regularOption, regularCheck, regularText);
-  }
   recalc();
 }
 function bindRow(tr) {
@@ -427,27 +399,12 @@ function bindRow(tr) {
   const productIdField = tr.querySelector('.product-id');
   const productNameField = tr.querySelector('.product-name');
   const priceInput = tr.querySelector('.unit-price');
-  const regularOption = tr.querySelector('.regular-price-option');
-  const regularCheck = tr.querySelector('.regular-price-check');
-  const regularText = tr.querySelector('.regular-price-text');
-  if (regularCheck) {
-    regularCheck.addEventListener('change', () => {
-      if (regularCheck.checked && regularCheck.dataset.price) {
-        priceInput.value = regularCheck.dataset.price;
-        recalc();
-      } else if (!regularCheck.checked && regularCheck.dataset.customerPrice) {
-        priceInput.value = regularCheck.dataset.customerPrice;
-        recalc();
-      }
-    });
-  }
   // v14/Phase 3 S2：行状态更新抽成命名函数，供「手输精确命中」与「联想点选」共用。
   function applyProductToRow(product) {
     if (!product) {
       // 未命中已有商品：保留纯文本，交给后端自动建档；单位/价格按当前输入保留。
       productIdField.value = '';
       delete tr.dataset.unitCost;
-      hideRegularPriceOption(regularOption, regularCheck, regularText);
       recalc();
       return;
     }
@@ -457,9 +414,10 @@ function bindRow(tr) {
     // 抛 ReferenceError 会连带跳过「关闭候选浮层 / 写单价 / recalc / refineProductRow」，
     // 用户看到的就是「点选后下拉不关、单位与单价不带入」。
     if (unitInput) unitInput.value = product.unit || '';
-    priceInput.value = (Number(product.default_price_cents || 0) / 100).toFixed(2);
+    // 点选商品只带单位：单价按**当前客户**的专属价取（refineProductRow 异步回填），
+    // 没有专属价就留空手输。旧版在这里无条件写档案价（2026-10-15 下线）。
+    priceInput.value = '';
     delete tr.dataset.unitCost;
-    hideRegularPriceOption(regularOption, regularCheck, regularText);
     recalc();
     refineProductRow(tr, product);
     tr.querySelector('.quantity').focus();
@@ -517,10 +475,11 @@ function sourceLinkNote() {
     : '不影响计价规则（按原单成本回冲）';
 }
 /* 单价跟着客户走（2026-10-15 哥哥决策）：往来对象一变，就按**新客户**重写所有已命中
-   商品档案的行（有客户价取客户价，没有则取档案默认价），不保护手输过的值。
+   商品档案的行 —— 有专属价取专属价，**没有专属价就清空**（不保留上一个客户的价），
+   不保护手输过的值。
    原缺陷：`refineProductRow()` 只在「点选商品」那一刻读一次 `customer_id`，所以
-   ① 先点商品、后选客户 → 单价停在档案默认价；② 编辑已有单据/已填行后换客户 → 单价不跟。
-   两条都在隔离库实测复现（同一商品：默认价 100、甲 80、乙 85）。 */
+   ① 先点商品、后选客户 → 单价不跟；② 编辑已有单据/已填行后换客户 → 单价不跟。
+   两条都在隔离库实测复现（同一商品：甲 80、乙 85、无价客户留空）。 */
 function repriceRowsForCustomer() {
   document.querySelectorAll('#orderBody tr:not(.slip-notice)').forEach(tr => {
     const idField = tr.querySelector('.product-id');

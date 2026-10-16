@@ -20,7 +20,7 @@ def _image_bytes(fmt="PNG", color="red", size=(12, 12)):
 
 def test_product_image_upload_is_reencoded_served_and_included_in_backup_and_migration(tmp_path):
     init_db()
-    product_id = create_product("图片商品A1", "个", 1200)
+    product_id = create_product("图片商品A1", "个")
     client = create_app().test_client()
     response = client.post(
         f"/products/{product_id}/image",
@@ -50,7 +50,7 @@ def test_product_image_upload_is_reencoded_served_and_included_in_backup_and_mig
 
 def test_invalid_or_oversize_image_does_not_replace_existing_image():
     init_db()
-    product_id = create_product("图片保留商品", "个", 100)
+    product_id = create_product("图片保留商品", "个")
     client = create_app().test_client()
     first = client.post(
         f"/products/{product_id}/image",
@@ -79,7 +79,7 @@ def test_invalid_or_oversize_image_does_not_replace_existing_image():
 
 def test_image_rejects_unsupported_format_and_pixel_bomb():
     init_db()
-    product_id = create_product("图片限制商品", "个", 100)
+    product_id = create_product("图片限制商品", "个")
     client = create_app().test_client()
     gif = io.BytesIO()
     Image.new("RGB", (2, 2)).save(gif, format="GIF")

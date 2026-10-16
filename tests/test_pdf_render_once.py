@@ -137,7 +137,7 @@ def test_purchase_desktop_preview_keeps_validation_without_rendering(monkeypatch
     from erp.utils import purchase_pdf
 
     customer_id = create_customer("渲染计数采购方")
-    product_id = create_product("渲染计数采购商品R", "个", 1000)
+    product_id = create_product("渲染计数采购商品R", "个")
     initialize_product(product_id, "0", "0", "2026-10-11", "渲染期初", "render-init", confirm_zero=True)
     purchase = create_purchase_order(
         "NH202610110001", "2026-10-11",

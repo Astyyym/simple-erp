@@ -9,7 +9,7 @@ from erp.services.inventory import create_purchase_order, finalize_purchase_orde
 def _seed(quantity='0', cost='0'):
     init_db()
     cid = create_customer('成本守恒虚构对象')
-    pid = create_product('成本守恒商品' 'S', '米', 2000)
+    pid = create_product('成本守恒商品' 'S', '米')
     initialize_product(pid, quantity, cost, '2026-10-02', '虚构期初', 'cost-init', confirm_zero=quantity == '0')
     return cid, pid
 

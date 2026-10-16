@@ -914,10 +914,13 @@ def _new_order_form(order_type: str):
 
 
 def _product_catalog(products) -> list[dict]:
-    """Compact product list for the entry-page picker (商品名称即身份)."""
+    """Compact product list for the entry-page picker (商品名称即身份，不含售价)。
+
+    2026-10-15：档案不再有售价，目录里也就没有价格字段；单价一律由
+    `/orders/api/products` 按**当前客户**的专属价给出。
+    """
     return [
-        {"id": int(p["id"]), "name": p["name"],
-         "unit": p["unit"], "default_price_cents": int(p["default_price_cents"] or 0)}
+        {"id": int(p["id"]), "name": p["name"], "unit": p["unit"]}
         for p in products
     ]
 
@@ -1463,14 +1466,16 @@ def api_customers():
 
 @orders_bp.get("/api/products")
 def api_products():
+    """开单页商品候选：单价 = **该客户的专属价**；没有专属价时 `unit_price` 为 null（页面留空手输）。
+
+    2026-10-15：不再回落到档案默认价，也不再下发「常规价」——售价唯一来源 = 开单学习。
+    """
     q = request.args.get("q", "").strip()
     customer_id = request.args.get("customer_id", type=int) or 0
     with get_db() as conn:
         rows = conn.execute(
             f"""
             SELECT p.id, p.name, p.unit,
-                   COALESCE(cp.price_cents, p.default_price_cents) AS effective_price_cents,
-                   p.default_price_cents,
                    cp.price_cents AS customer_price_cents,
                    s.avg_cost_micro, s.enabled, s.quantity_3dp
             FROM products p
@@ -1483,7 +1488,7 @@ def api_products():
             (customer_id, *name_match_params(q)),
         ).fetchall()
     return jsonify([
-        {"id": row["id"], "name": row["name"], "unit": row["unit"], "unit_price": cents_to_yuan(row["effective_price_cents"]), "regular_price": cents_to_yuan(row["default_price_cents"]), "customer_price": cents_to_yuan(row["customer_price_cents"]) if row["customer_price_cents"] is not None else None, "is_customer_price": row["customer_price_cents"] is not None, "cost_available": bool(row["enabled"] and row["avg_cost_micro"] is not None and row["quantity_3dp"]), "unit_cost": micro_to_yuan(row["avg_cost_micro"], precision=6) if row["enabled"] and row["avg_cost_micro"] is not None and row["quantity_3dp"] else None}
+        {"id": row["id"], "name": row["name"], "unit": row["unit"], "unit_price": cents_to_yuan(row["customer_price_cents"]) if row["customer_price_cents"] is not None else None, "customer_price": cents_to_yuan(row["customer_price_cents"]) if row["customer_price_cents"] is not None else None, "is_customer_price": row["customer_price_cents"] is not None, "cost_available": bool(row["enabled"] and row["avg_cost_micro"] is not None and row["quantity_3dp"]), "unit_cost": micro_to_yuan(row["avg_cost_micro"], precision=6) if row["enabled"] and row["avg_cost_micro"] is not None and row["quantity_3dp"] else None}
         for row in rows
     ])
 

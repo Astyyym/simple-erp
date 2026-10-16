@@ -153,7 +153,13 @@ def normalize_product_brand(brand) -> str | None:
     return text or None
 
 
-def create_product(name: str, unit: str, default_price_cents: int, pinyin_initials: str = "", *, pinyin_full: str = "", safety_stock=None, brand=None) -> int:
+def create_product(name: str, unit: str, pinyin_initials: str = "", *, pinyin_full: str = "", safety_stock=None, brand=None) -> int:
+    """新增商品档案。
+
+    2026-10-15 起档案不再有「默认价」：售价唯一来源是开单学习出的客户专属价。
+    `products.default_price_cents` 列仍在（不删列 = 不写迁移），且 NOT NULL 无默认值，
+    所以建档时必须显式写 0——代码不再读它。
+    """
     name = normalize_product_name(name)
     safety_stock_3dp = _validate_safety_stock(safety_stock)
     # 两列都从名称派生：调用方只给一列时，另一列也补齐（否则该列搜索永远不命中）。
@@ -163,8 +169,8 @@ def create_product(name: str, unit: str, default_price_cents: int, pinyin_initia
     with get_db() as conn:
         try:
             cur = conn.execute(
-                "INSERT INTO products(name, unit, default_price_cents, pinyin_initials, pinyin_full, safety_stock_3dp, origin, brand) VALUES (?, ?, ?, ?, ?, ?, 'manual', ?)",
-                (name, unit, default_price_cents, pinyin_initials, pinyin_full, safety_stock_3dp, normalize_product_brand(brand)),
+                "INSERT INTO products(name, unit, default_price_cents, pinyin_initials, pinyin_full, safety_stock_3dp, origin, brand) VALUES (?, ?, 0, ?, ?, ?, 'manual', ?)",
+                (name, unit, pinyin_initials, pinyin_full, safety_stock_3dp, normalize_product_brand(brand)),
             )
         except sqlite3.IntegrityError as exc:
             if "idx_products_business_identity" in str(exc) or "UNIQUE constraint failed: index" in str(exc):
@@ -178,7 +184,8 @@ def create_product(name: str, unit: str, default_price_cents: int, pinyin_initia
 _BRAND_UNSET = object()
 
 
-def update_product_record(product_id: int, name: str, unit: str, default_price_cents: int, *, safety_stock=None, brand=_BRAND_UNSET) -> None:
+def update_product_record(product_id: int, name: str, unit: str, *, safety_stock=None, brand=_BRAND_UNSET) -> None:
+    """更新商品档案（不含售价：档案已无「默认价」字段）。"""
     name = normalize_product_name(name)
     safety_stock_3dp = _validate_safety_stock(safety_stock)
     with get_db() as conn:
@@ -198,19 +205,19 @@ def update_product_record(product_id: int, name: str, unit: str, default_price_c
                 cursor = conn.execute(
                     """
                     UPDATE products
-                    SET name=?, unit=?, default_price_cents=?, safety_stock_3dp=?, pinyin_initials=?, pinyin_full=?, updated_at=CURRENT_TIMESTAMP
+                    SET name=?, unit=?, safety_stock_3dp=?, pinyin_initials=?, pinyin_full=?, updated_at=CURRENT_TIMESTAMP
                     WHERE id=? AND deleted_at IS NULL
                     """,
-                    (name, unit, default_price_cents, safety_stock_3dp, initials, full, product_id),
+                    (name, unit, safety_stock_3dp, initials, full, product_id),
                 )
             else:
                 cursor = conn.execute(
                     """
                     UPDATE products
-                    SET name=?, unit=?, default_price_cents=?, safety_stock_3dp=?, pinyin_initials=?, pinyin_full=?, brand=?, updated_at=CURRENT_TIMESTAMP
+                    SET name=?, unit=?, safety_stock_3dp=?, pinyin_initials=?, pinyin_full=?, brand=?, updated_at=CURRENT_TIMESTAMP
                     WHERE id=? AND deleted_at IS NULL
                     """,
-                    (name, unit, default_price_cents, safety_stock_3dp, initials, full, normalize_product_brand(brand), product_id),
+                    (name, unit, safety_stock_3dp, initials, full, normalize_product_brand(brand), product_id),
                 )
         except sqlite3.IntegrityError as exc:
             if "idx_products_business_identity" in str(exc) or "UNIQUE constraint failed: index" in str(exc):
@@ -233,7 +240,13 @@ def set_customer_price(customer_id: int, product_id: int, price_cents: int) -> N
     log_action("edit_customer_price", "customer_price", f"{customer_id}:{product_id}", f"设置客户专属价格 {price_cents} 分")
 
 
-def price_for_customer(customer_id: int, product_id: int) -> int:
+def price_for_customer(customer_id: int, product_id: int) -> int | None:
+    """该客户对该商品的**专属价**（分）；没有专属价返回 `None`。
+
+    2026-10-15 起档案不再有「默认价」可回落：售价唯一来源 = 开单学习出的客户专属价。
+    商品不存在仍然报错（调用方按「商品不存在」处理），但「商品存在、该客户没价」是**正常的无价**，
+    不是错误 —— 由调用方决定是留空手输还是拒单。
+    """
     with get_db() as conn:
         row = conn.execute(
             "SELECT price_cents FROM customer_prices WHERE customer_id=? AND product_id=?",
@@ -241,10 +254,10 @@ def price_for_customer(customer_id: int, product_id: int) -> int:
         ).fetchone()
         if row:
             return int(row["price_cents"])
-        product = conn.execute("SELECT default_price_cents FROM products WHERE id=?", (product_id,)).fetchone()
+        product = conn.execute("SELECT id FROM products WHERE id=?", (product_id,)).fetchone()
         if product is None:
             raise ValueError(f"商品不存在: {product_id}")
-        return int(product["default_price_cents"])
+        return None
 
 
 def create_order(customer_id: int, order_no: str, items: Iterable[dict], status: str = "draft", order_date: str | None = None, notes: str = "") -> int:
@@ -258,7 +271,14 @@ def create_order(customer_id: int, order_no: str, items: Iterable[dict], status:
             product = conn.execute("SELECT * FROM products WHERE id=?", (item["product_id"],)).fetchone()
             if product is None:
                 raise ValueError(f"商品不存在: {item['product_id']}")
-            unit_price_cents = int(item.get("unit_price_cents", price_for_customer(customer_id, int(item["product_id"]))))
+            # 取价（2026-10-15 定案）：行内已给单价就用行内值；行内没给时只认该客户的专属价，
+            # 没有专属价**明确报错**（不静默落 0，也不回落档案价——档案已无售价字段）。
+            unit_price_cents = item.get("unit_price_cents")
+            if unit_price_cents is None:
+                unit_price_cents = price_for_customer(customer_id, int(item["product_id"]))
+                if unit_price_cents is None:
+                    raise ValueError("该客户对此商品暂无专属价，请在导入文件中填写单价")
+            unit_price_cents = int(unit_price_cents)
             quantity = _validate_quantity(item["quantity"])
             subtotal = line_subtotal_cents(quantity, unit_price_cents)
             total += subtotal
@@ -282,8 +302,9 @@ def _upsert_product_and_customer_price(conn, customer_id: int, product_name: str
     if product is None:
         initials, full = build_pinyin_fields(product_name)
         cur_product = conn.execute(
-            "INSERT INTO products(name, unit, default_price_cents, pinyin_initials, pinyin_full, usage_count, origin) VALUES (?, ?, ?, ?, ?, 1, 'order')",
-            (product_name, unit, unit_price_cents, initials, full),
+            # `default_price_cents` 已下线：列仍在且 NOT NULL 无默认值，建档显式写 0（不再读）。
+            "INSERT INTO products(name, unit, default_price_cents, pinyin_initials, pinyin_full, usage_count, origin) VALUES (?, ?, 0, ?, ?, 1, 'order')",
+            (product_name, unit, initials, full),
         )
         new_id = int(cur_product.lastrowid)
         # G-0b：自动建档必须留痕，否则事后无法追溯是谁/哪张单建出来的。
@@ -294,6 +315,9 @@ def _upsert_product_and_customer_price(conn, customer_id: int, product_name: str
             f"开单自动建档商品：{product_name}，来源 {order_no}".strip() if order_no else f"开单自动建档商品：{product_name}".strip(),
             conn=conn,
         )
+        # 新建档案也要学习（2026-10-15）：售价唯一来源 = 客户专属价，建档不再写档案价，
+        # 若这里不学，第一次成交的价就丢了，下一单还是空的。
+        _learn_customer_price(conn, customer_id, new_id, unit_price_cents)
         return new_id
     product_id = int(product["id"])
     if product["deleted_at"] is not None:
@@ -309,19 +333,19 @@ def _upsert_product_and_customer_price(conn, customer_id: int, product_name: str
             f"开单复用回收站商品档案并恢复可见性：{product_name}".strip(),
             conn=conn,
         )
-        _learn_customer_price(conn, customer_id, product_id, unit_price_cents, int(product["default_price_cents"]))
+        _learn_customer_price(conn, customer_id, product_id, unit_price_cents)
         return product_id
     conn.execute(
         "UPDATE products SET unit=?, usage_count=usage_count+1, updated_at=CURRENT_TIMESTAMP WHERE id=?",
         (unit, product_id),
     )
-    _learn_customer_price(conn, customer_id, product_id, unit_price_cents, int(product["default_price_cents"]))
+    _learn_customer_price(conn, customer_id, product_id, unit_price_cents)
     return product_id
 
 
-def _learn_customer_price(conn, customer_id: int, product_id: int, unit_price_cents: int, default_price_cents: int) -> None:
-    """手输价 ≠ 默认价时写客户专属价（既有自动学习机制，行为不变）。"""
-    if unit_price_cents != default_price_cents:
+def _learn_customer_price(conn, customer_id: int, product_id: int, unit_price_cents: int) -> None:
+    """手输价 **> 0** 就写客户专属价（2026-10-15 新口径：0 元不学，也不再拿档案价比对）。"""
+    if unit_price_cents > 0:
         conn.execute(
             """
             INSERT INTO customer_prices(customer_id, product_id, price_cents)
@@ -345,7 +369,7 @@ def _select_existing_product(conn, customer_id: int, product_id, unit_price_cent
     except (TypeError, ValueError):
         raise ValueError("必须选择具体商品") from None
     product = conn.execute(
-        "SELECT id, name, unit, default_price_cents, deleted_at FROM products WHERE id=?",
+        "SELECT id, name, unit, deleted_at FROM products WHERE id=?",
         (product_id,),
     ).fetchone()
     if product is None or product["deleted_at"] is not None:
@@ -355,15 +379,8 @@ def _select_existing_product(conn, customer_id: int, product_id, unit_price_cent
         "UPDATE products SET unit=?, usage_count=usage_count+1, updated_at=CURRENT_TIMESTAMP WHERE id=?",
         (effective_unit, product_id),
     )
-    if unit_price_cents != int(product["default_price_cents"]):
-        conn.execute(
-            """
-            INSERT INTO customer_prices(customer_id, product_id, price_cents)
-            VALUES (?, ?, ?)
-            ON CONFLICT(customer_id, product_id) DO UPDATE SET price_cents=excluded.price_cents, updated_at=CURRENT_TIMESTAMP
-            """,
-            (customer_id, product_id, unit_price_cents),
-        )
+    # 学习口径与手输路径共用同一个函数（> 0 才写），避免两处漂移。
+    _learn_customer_price(conn, customer_id, product_id, unit_price_cents)
     return int(product["id"]), product["name"], effective_unit
 
 

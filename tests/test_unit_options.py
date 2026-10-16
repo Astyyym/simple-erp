@@ -21,7 +21,7 @@ def test_unit_options_empty_library_returns_defaults():
 def test_unit_options_collects_from_all_four_tables():
     init_db()
     cid = create_customer("候选池客户")
-    pid = create_product("候选池商品", "箱", 2000)
+    pid = create_product("候选池商品", "箱")
     initialize_product(pid, "10", "20", "2026-10-01", "期初", "p4-units-init")
 
     # products.unit = 箱（已由 create_product 写入）
@@ -49,8 +49,8 @@ def test_unit_options_collects_from_all_four_tables():
 def test_unit_options_sorted_and_deduped():
     init_db()
     from erp.services.accounting import create_product as cp
-    cp("排序商品A", "个", 100)
-    cp("排序商品B", "个", 100)
+    cp("排序商品A", "个")
+    cp("排序商品B", "个")
     options = unit_options()
     assert options.count("个") == 1, "重复单位必须去重"
     assert options[:3] == ["个", "套", "件"], "默认三项在前且保持声明顺序"

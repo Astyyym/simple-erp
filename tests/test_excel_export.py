@@ -36,7 +36,7 @@ def test_excel_export_endpoints_and_headers():
     # 决策变更（v14）：商品身份 = 单一名称，型号直接写进名称（这里用 DN50 后缀表示）。
     deleted_product_name = f"{product_name}DN50"
     create_customer(customer_name, phone="13800000000", address="杭州", opening_balance_cents=yuan_to_cents("12.50"))
-    create_product(deleted_product_name, "个", yuan_to_cents("66.00"))
+    create_product(deleted_product_name, "个")
     customer_id = create_customer(f"单据客户{suffix}")
     create_order_from_typed_rows(
         customer_id,
@@ -112,9 +112,9 @@ def test_excel_export_endpoints_and_headers():
     # E-2：未填品牌 → 导出为空单元格（openpyxl 读回 None），不是字符串 "None"。
     assert product_row[1] in (None, "")
     assert product_row[2] == "箱"
-    assert str(product_row[3]) == "12.34"
-    assert product_row[4] == "商品备注"
-    assert int(product_row[5]) == 3
+    # 决策变更（2026-10-15）：默认价下线 → 导出不再有价格列，备注紧随单位之后。
+    assert product_row[3] == "商品备注"
+    assert int(product_row[4]) == 3
 
     sale_rows = _sheet_rows(
         client.get(

@@ -79,7 +79,7 @@ def stock_products():
         # 决策变更（v14）：商品身份 = 单一名称，原「型号」C4-B 直接并进名称，
         # 期望取行也按合并后的完整名称。
         merged_name = name + "C4-B"
-        pid = create_product(merged_name, "米" if index == 2 else "个", 1000, safety_stock=safety)
+        pid = create_product(merged_name, "米" if index == 2 else "个", safety_stock=safety)
         if qty is not None:
             initialize_product(pid, qty, cost, date.today().isoformat(), "虚构测试期初", f"c4-b-{index}", confirm_zero=qty == "0")
         products.append({"id": pid, "name": merged_name, "enabled": enabled, "status": status})
@@ -87,22 +87,28 @@ def stock_products():
 
 
 def test_real_product_list_and_edit_show_independent_inventory_axes_without_writes(stock_products):
+    """库存两条轴（是否启用 / 当前库存状况）在真实页面上如实呈现，且只读不写库。
+
+    决策变更（2026-10-15）：「启用状态」列与编辑页「启用状态」格已按用户要求删除
+    （「这个字段不再区分已启用还是未启用」）。未启用商品仍由「库存状况」显示为「未启用」，
+    所以这里改为断言「库存状况」一条轴，并显式钉住「未启用仍可看出来」。
+    """
     client, products = stock_products
     before = business_snapshot()
     response = client.get("/products/")
     assert response.status_code == 200
     rows = ProductHTML(response.get_data(as_text=True)).product_rows()
-    assert "启用状态" in rows[products[0]["name"]], "list needs independent enable column"
     assert "库存状况" in rows[products[0]["name"]], "list needs independent stock column"
     for product in products:
         row = rows[product["name"]]
-        assert row["启用状态"] == product["enabled"]
         assert row["库存状况"] == product["status"]
+        if product["enabled"] == "未启用":
+            assert row["库存状况"] == "未启用", "删掉启用列后，未启用商品仍须在列表看得出来"
         response = client.get(f'/products/{product["id"]}/edit')
         assert response.status_code == 200
         definitions = ProductHTML(response.get_data(as_text=True)).definitions
-        assert definitions["启用状态"] == product["enabled"]
         assert definitions["库存状况"] == product["status"]
+        assert "启用状态" not in definitions, "编辑页「启用状态」格应已删除"
     assert business_snapshot() == before
     with get_db() as conn:
         assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
@@ -148,7 +154,6 @@ def test_real_routes_keep_missing_average_and_disabled_inventory_unknown(stock_p
     assert rows[missing_avg["name"]]["库存金额"] == "10.00"
     for field in ("当前库存", "移动平均成本", "库存金额"):
         assert rows[disabled["name"]][field] == "—"
-    assert rows[disabled["name"]]["启用状态"] == "未启用"
     assert rows[disabled["name"]]["库存状况"] == "未启用"
     for product in (missing_avg, disabled):
         definitions = ProductHTML(client.get(f'/products/{product["id"]}/edit').get_data(as_text=True)).definitions
@@ -180,7 +185,8 @@ def test_unknown_quantity_template_projection_never_fabricates_quantity_or_avera
         list_html = render_template("products/list.html", products=[product], suggestions=suggestions, q="", cents_to_yuan=cents_to_yuan, micro_to_yuan=micro_to_yuan)
         edit_html = render_template("products/edit.html", product=product, inventory_state=state, inventory_status=status, initialization=None, cents_to_yuan=cents_to_yuan, micro_to_yuan=micro_to_yuan)
     row = ProductHTML(list_html).product_rows()[product["name"]]
-    assert (row["启用状态"], row["库存状况"], row["当前库存"], row["移动平均成本"]) == ("已启用", "未知", "—", "—")
+    # 2026-10-15：「启用状态」列已删除，未启用由「库存状况」显示；此处启用且数量未知 → 未知。
+    assert (row["库存状况"], row["当前库存"], row["移动平均成本"]) == ("未知", "—", "—")
     definitions = ProductHTML(edit_html).definitions
     assert definitions["库存状况"] == "未知"
     assert definitions["当前库存（个）"] == "—"
@@ -209,7 +215,7 @@ def test_readonly_context_survives_search_export_and_real_error_renderers(stock_
         if parsed.rows:
             assert parsed.product_rows()[products[3]["name"]]["库存状况"] == "正常"
         else:
-            assert "启用状态" in parsed.definitions and "库存状况" in parsed.definitions
+            assert "库存状况" in parsed.definitions
     export = client.get("/products/export.xlsx", query_string={"q": "C4虚构"})
     assert export.status_code == 200
     workbook = load_workbook(io.BytesIO(export.data))
@@ -234,7 +240,6 @@ def test_successful_import_uses_same_two_axis_read_projection(stock_products):
     response = client.get("/products/")
     assert response.status_code == 200
     rows = ProductHTML(response.get_data(as_text=True)).product_rows()
-    assert rows["C4虚构导入新品"]["启用状态"] == "未启用"
     assert rows["C4虚构导入新品"]["库存状况"] == "未启用"
     assert rows[products[1]["name"]]["库存状况"] == "缺货"
     with get_db() as conn:
@@ -244,11 +249,11 @@ def test_successful_import_uses_same_two_axis_read_projection(stock_products):
 def test_workbench_counts_whole_enabled_alert_scope_not_limited_rank(stock_products):
     client, products = stock_products
     for index in range(11):
-        pid = create_product((f"C4虚构额外提醒{index:02}") + ("W"), "个", 100, safety_stock="1")
+        pid = create_product((f"C4虚构额外提醒{index:02}") + ("W"), "个", safety_stock="1")
         initialize_product(pid, "1", "0", date.today().isoformat(), "虚构", f"c4-b-alert-{index}")
-    deleted = create_product("C4虚构已删除提醒W", "个", 100)
+    deleted = create_product("C4虚构已删除提醒W", "个")
     initialize_product(deleted, "0", "", date.today().isoformat(), "虚构", "c4-b-alert-deleted", confirm_zero=True)
-    disabled = create_product("C4虚构未启用提醒W", "个", 100)
+    disabled = create_product("C4虚构未启用提醒W", "个")
     with get_db() as conn:
         conn.execute("UPDATE products SET deleted_at=CURRENT_TIMESTAMP WHERE id=?", (deleted,))
         conn.execute("INSERT INTO product_inventory_state(product_id, enabled, quantity_3dp) VALUES (?, 0, 0)", (disabled,))

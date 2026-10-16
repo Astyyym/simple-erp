@@ -37,7 +37,7 @@ def _audit_summaries(action: str) -> list[str]:
 def test_manual_creation_writes_manual_origin():
     init_db()
     create_customer("手工客户")
-    create_product("手工商品4kg", "个", 12000)
+    create_product("手工商品4kg", "个")
     assert _row("customers", "手工客户")["origin"] == ORIGIN_MANUAL
     assert _row("products", "手工商品4kg")["origin"] == ORIGIN_MANUAL
 
@@ -123,8 +123,8 @@ def test_product_side_pending_completion_uses_the_new_brand_criterion():
     assert hasattr(quality, "product_needs_completion")
     init_db()
     # 未启用库存仍是零建档路径的正常状态：不建任何库存状态行。
-    create_product("无型号商品", "个", 1000)
-    create_product("有型号商品4kg", "个", 1000)
+    create_product("无型号商品", "个")
+    create_product("有型号商品4kg", "个")
     with get_db() as conn:
         assert conn.execute("SELECT COUNT(*) AS c FROM product_inventory_state").fetchone()["c"] == 0
     # 手工建档（即使没有品牌）不算待补全。
@@ -211,7 +211,7 @@ def test_g9_product_in_recycle_bin_is_reused_and_restored():
     client = _client()
     init_db()
     # v14：明细只按名称匹配回收站档案（型号已并入名称）。
-    pid = create_product("回收站商品", "个", 10000)
+    pid = create_product("回收站商品", "个")
     with get_db() as conn:
         conn.execute("UPDATE products SET deleted_at=CURRENT_TIMESTAMP, delete_reason='用户删除' WHERE id=?", (pid,))
 

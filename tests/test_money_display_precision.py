@@ -18,7 +18,7 @@ def test_internal_micro_cost_formats_as_two_visible_decimal_places(micro, expect
 
 def test_two_decimal_display_keeps_exact_cost_payload_and_historical_snapshot():
     app = create_app()
-    product_id = create_product("小数成本验收商品S1", "个", 2000)
+    product_id = create_product("小数成本验收商品S1", "个")
     customer_id = create_customer("小数成本验收往来")
     initialize_product(product_id, "15", "11.333333", "2026-10-01", "测试期初", "money-display-init")
     sale_id = create_order_from_typed_rows(

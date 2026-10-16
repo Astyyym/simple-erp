@@ -19,7 +19,7 @@ from erp.services import purchase_returns
 def _seed(product_name="拿货单位商品", unit="个", price=2000):
     init_db()
     cid = create_customer("拿货单位对象")
-    pid = create_product(product_name, unit, price)
+    pid = create_product(product_name, unit)
     initialize_product(pid, "100", "200", "2026-10-01", "期初", "p4-purchase-init")
     return cid, pid
 

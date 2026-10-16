@@ -46,7 +46,7 @@ def test_purchase_pages_no_longer_use_readonly_unit_display():
 def test_unit_options_rendered_from_candidate_pool():
     """四页渲染的候选池包含库内已有单位（不止默认三项）。"""
     init_db()
-    create_product("候选池渲染商品", "桶", 1000)
+    create_product("候选池渲染商品", "桶")
     client = create_app().test_client()
     for path in ENTRY_PAGES:
         html = client.get(path).get_data(as_text=True)
@@ -59,7 +59,7 @@ def test_unit_options_rendered_from_candidate_pool():
 def test_sales_page_unit_options_come_from_pool_not_hardcoded():
     """销售/退货页原先把默认三项硬编码；改为读取候选池后，库内单位必须出现。"""
     init_db()
-    create_product("销售候选池商品", "打", 1000)
+    create_product("销售候选池商品", "打")
     client = create_app().test_client()
     html = client.get("/orders/new").get_data(as_text=True)
     assert "打" in _unit_pool(html).split("|")

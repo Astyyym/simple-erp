@@ -27,8 +27,8 @@ from erp.services.master_data_import import (
     ImportPreview,
 )
 from erp.services.master_data_quality import COMPLETION_ORIGINS_SQL
-from erp.utils.importing import ImportFileError, ImportResult, excel_template, normalized_name, price_to_cents, read_upload_detailed
-from erp.utils.money import yuan_to_cents, cents_to_yuan, micro_to_yuan
+from erp.utils.importing import ImportFileError, ImportResult, excel_template, normalized_name, read_upload_detailed
+from erp.utils.money import cents_to_yuan, micro_to_yuan
 from erp.utils.backup import list_backups
 
 # Deferred Pillow seams: only the product-image route needs PIL, so it is imported
@@ -77,12 +77,12 @@ def export_products_excel():
 def _product_list_context(conn, q: str = "", quality: str = "", sort: str = ""):
     # v14：商品身份只有名称，「待补全（型号为空）」筛选已随 spec 列一起删除。
     # 2026-10-14 第一轮：用户要求商品页恢复「全部 / 待补全」+ 新增「按拼音排序」。
-    # 2026-10-14 第二轮：口径扩到「开单攒出 + 批量导入」，且缺品牌**或**缺默认价都算
-    #（导入时默认价可留空 → 落库 0）。判定必须与 services/master_data_quality 同源，
-    # 别在这里另写一套条件。
+    # 2026-10-14 第二轮：口径扩到「开单攒出 + 批量导入」。
+    # 2026-10-15 第三轮：默认价下线 → 「待补全」只剩「缺品牌」。判定必须与
+    # services/master_data_quality 同源，别在这里另写一套条件。
     todo_sql = (
         f" AND origin IN {COMPLETION_ORIGINS_SQL}"
-        " AND (TRIM(COALESCE(brand, ''))='' OR COALESCE(default_price_cents, 0) <= 0)"
+        " AND TRIM(COALESCE(brand, ''))=''"
         if quality == "todo"
         else ""
     )
@@ -123,7 +123,7 @@ def _product_list_context(conn, q: str = "", quality: str = "", sort: str = ""):
     todo_count = conn.execute(
         "SELECT COUNT(*) AS c FROM products WHERE deleted_at IS NULL"
         f" AND origin IN {COMPLETION_ORIGINS_SQL}"
-        " AND (TRIM(COALESCE(brand, ''))='' OR COALESCE(default_price_cents, 0) <= 0)"
+        " AND TRIM(COALESCE(brand, ''))=''"
     ).fetchone()["c"]
     projected_products = []
     for row in products:
@@ -234,8 +234,10 @@ def import_products_confirm():
                     continue
                 initials, full = build_pinyin_fields(name)
                 cur = conn.execute(
-                    "INSERT INTO products(name, brand, unit, default_price_cents, pinyin_initials, pinyin_full, origin) VALUES (?, ?, ?, ?, ?, ?, 'import')",
-                    (name, row.payload.get("brand") or None, row.payload.get("unit", "个"), int(row.payload.get("default_price_cents", 0)),
+                    # `default_price_cents` 已下线（售价唯一来源 = 开单学习）。该列保留且
+                    # NOT NULL 无默认值（不删列 = 不写迁移），所以建档时必须显式写 0。
+                    "INSERT INTO products(name, brand, unit, default_price_cents, pinyin_initials, pinyin_full, origin) VALUES (?, ?, ?, 0, ?, ?, 'import')",
+                    (name, row.payload.get("brand") or None, row.payload.get("unit", "个"),
                      initials, full),
                 )
                 product_id = int(cur.lastrowid)
@@ -250,8 +252,8 @@ def import_products_confirm():
                     continue
                 initials, full = build_pinyin_fields(name)
                 conn.execute(
-                    "UPDATE products SET brand=?, unit=?, default_price_cents=?, pinyin_initials=?, pinyin_full=?, updated_at=CURRENT_TIMESTAMP WHERE TRIM(name)=? AND deleted_at IS NULL",
-                    (row.payload.get("brand") or None, row.payload.get("unit", "个"), int(row.payload.get("default_price_cents", 0)),
+                    "UPDATE products SET brand=?, unit=?, pinyin_initials=?, pinyin_full=?, updated_at=CURRENT_TIMESTAMP WHERE TRIM(name)=? AND deleted_at IS NULL",
+                    (row.payload.get("brand") or None, row.payload.get("unit", "个"),
                      initials, full, name),
                 )
                 found = conn.execute(
@@ -343,9 +345,9 @@ def product_suggestions():
 def create_product_view():
     try:
         initials, full = build_pinyin_fields(request.form["name"])
-        create_product(request.form["name"], request.form["unit"], yuan_to_cents(request.form["default_price"]), (request.form.get("pinyin_initials", "") or initials), pinyin_full=(request.form.get("pinyin_full", "") or full), safety_stock=request.form.get("safety_stock", "0"), brand=request.form.get("brand", ""))
+        create_product(request.form["name"], request.form["unit"], (request.form.get("pinyin_initials", "") or initials), pinyin_full=(request.form.get("pinyin_full", "") or full), safety_stock=request.form.get("safety_stock", "0"), brand=request.form.get("brand", ""))
     except (InvalidOperation, KeyError, TypeError, ValueError) as exc:
-        message = str(exc) if isinstance(exc, ValueError) and str(exc) else "默认单价不是有效数字，请填写例如 12.00 的金额"
+        message = str(exc) if isinstance(exc, ValueError) and str(exc) else "新增商品失败，请检查填写内容"
         with get_db() as conn:
             products, suggestions, truncated, todo_count = _product_list_context(conn)
         return render_template("products/list.html", products=products, suggestions=suggestions, truncated=truncated, cents_to_yuan=cents_to_yuan, micro_to_yuan=micro_to_yuan, q="", quality="", sort="", todo_count=todo_count, import_error=message, create_open=True, **_backup_hint()), 400
@@ -361,6 +363,18 @@ def _render_product_edit(product_id: int, *, error: str = "", inventory_message:
         product = conn.execute("SELECT * FROM products WHERE id=? AND deleted_at IS NULL", (product_id,)).fetchone()
         inventory_state = conn.execute("SELECT * FROM product_inventory_state WHERE product_id=?", (product_id,)).fetchone()
         initialization = conn.execute("SELECT * FROM inventory_initializations WHERE product_id=?", (product_id,)).fetchone()
+        # 客户专属价（2026-10-15）：售价唯一来源 = 开单学习出的客户专属价，所以编辑页要能一眼看到
+        # 「这个商品现在对哪些客户是什么价」——用户原话「点进商品后要能看到该客户的专属价」。
+        customer_prices = conn.execute(
+            """
+            SELECT c.name AS customer_name, cp.price_cents, cp.updated_at
+            FROM customer_prices AS cp
+            JOIN customers AS c ON c.id = cp.customer_id
+            WHERE cp.product_id=?
+            ORDER BY c.name COLLATE NOCASE ASC, c.id ASC
+            """,
+            (product_id,),
+        ).fetchall()
     if product is None:
         return not_found("商品不存在，可能已被删除或从未存在。", back_url=url_for("products.list_products"))
     inventory_status = project_inventory_status(
@@ -376,6 +390,7 @@ def _render_product_edit(product_id: int, *, error: str = "", inventory_message:
         inventory_state=inventory_state,
         inventory_status=inventory_status,
         initialization=initialization,
+        customer_prices=customer_prices,
         error=error,
         inventory_message=inventory_message,
     ), status_code
@@ -445,10 +460,9 @@ def product_image(product_id: int):
 @products_bp.post("/<int:product_id>/edit")
 def update_product(product_id: int):
     try:
-        default_price_cents = yuan_to_cents(request.form["default_price"])
-        update_product_record(product_id, request.form["name"], request.form["unit"], default_price_cents, safety_stock=request.form.get("safety_stock", "0"), brand=request.form.get("brand", ""))
+        update_product_record(product_id, request.form["name"], request.form["unit"], safety_stock=request.form.get("safety_stock", "0"), brand=request.form.get("brand", ""))
     except (InvalidOperation, KeyError, TypeError, ValueError) as exc:
-        message = str(exc) if isinstance(exc, ValueError) and str(exc) else "默认单价不是有效数字，请填写例如 12.00 的金额"
+        message = str(exc) if isinstance(exc, ValueError) and str(exc) else "保存失败，请检查填写内容"
         return _render_product_edit(product_id, error=message, status_code=400)
     return redirect(url_for("products.list_products"))
 

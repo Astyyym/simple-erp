@@ -112,7 +112,7 @@ def test_filter_conditions_match_pinyin_too():
     from erp.services.accounting import create_order_from_typed_rows, create_product
 
     customer_id = get_db_customer_id("消防器材张老板")
-    product_id = create_product("筛选拼音商品", "个", 1000)
+    product_id = create_product("筛选拼音商品", "个")
     create_order_from_typed_rows(
         customer_id,
         "MD202610140009",

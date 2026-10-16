@@ -337,7 +337,7 @@ def test_settings_print_samples_never_read_business_data():
     不碰业务库，否则门店会拿别人的单据当自己的版面看。
     """
     init_db()
-    product = create_product("真实商品名称哨兵", "个", 100)
+    product = create_product("真实商品名称哨兵", "个")
     initialize_product(product, "10", "5", "2026-10-01", "期初", "settings-sample-sentinel")
     customer = create_customer("真实客户名称哨兵")
     create_order_from_typed_rows(

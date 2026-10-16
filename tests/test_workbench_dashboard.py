@@ -150,9 +150,9 @@ def test_workbench_inventory_reminder_jumps_to_analytics_alerts():
     from erp.services.inventory import initialize_product
 
     init_db()
-    alert_product = create_product("工作台提醒灭火器4kg", "个", 3000, safety_stock="5")
+    alert_product = create_product("工作台提醒灭火器4kg", "个", safety_stock="5")
     initialize_product(alert_product, "0", "0", date.today().isoformat(), "工作台提醒测试", "workbench-alert-init", confirm_zero=True)
-    normal_product = create_product("工作台正常水带20m", "卷", 5000, safety_stock="1")
+    normal_product = create_product("工作台正常水带20m", "卷", safety_stock="1")
     initialize_product(normal_product, "10", "20", date.today().isoformat(), "工作台提醒测试", "workbench-normal-init")
 
     response = create_app().test_client().get("/")

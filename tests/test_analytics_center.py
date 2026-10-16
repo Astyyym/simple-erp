@@ -6,9 +6,9 @@ from erp.services.inventory import initialize_product
 
 def _seed_analytics_orders():
     init_db()
-    product_a = create_product("灭火器4kg", "个", 3000, safety_stock="5")
-    product_b = create_product("灭火器8kg", "个", 5000, safety_stock="2")
-    other_product = create_product("消防水带20m", "卷", 8000, safety_stock="1")
+    product_a = create_product("灭火器4kg", "个", safety_stock="5")
+    product_b = create_product("灭火器8kg", "个", safety_stock="2")
+    other_product = create_product("消防水带20m", "卷", safety_stock="1")
     initialize_product(product_a, "20", "10", "2026-10-01", "期初", "analytics-init-a")
     initialize_product(product_b, "10", "12", "2026-10-01", "期初", "analytics-init-b")
     initialize_product(other_product, "1", "50", "2026-10-01", "期初", "analytics-init-other")
@@ -180,8 +180,8 @@ def test_analytics_cross_year_range_marks_mixed_units_as_not_comparable():
     from erp.services.analytics import summarize_analytics
 
     init_db()
-    extinguisher = create_product("跨年灭火器4kg", "个", 2000)
-    hose = create_product("跨年水带20m", "卷", 5000)
+    extinguisher = create_product("跨年灭火器4kg", "个")
+    hose = create_product("跨年水带20m", "卷")
     initialize_product(extinguisher, "10", "8", "2025-12-31", "期初", "cross-year-init-a")
     initialize_product(hose, "10", "20", "2025-12-31", "期初", "cross-year-init-b")
     customer_id = create_customer("跨年分析客户")
@@ -214,7 +214,7 @@ def test_analytics_zero_denominator_and_unknown_cost_are_explicit():
     assert zero["summary"]["net_sales_amount_cents"] == 0
     assert zero["summary"]["gross_margin_rate"] is None
 
-    unknown_product = create_product("未知成本商品U1", "个", 1000)
+    unknown_product = create_product("未知成本商品U1", "个")
     create_order_from_typed_rows(customer_id, "MD202610020103", [{"product_id": unknown_product, "product_name": "未知成本商品U1", "unit": "个", "unit_price_yuan": "10", "quantity": "1"}], status="saved", order_date="2026-10-02")
     unknown = summarize_analytics(start_date="2026-10-01", end_date="2026-10-02", customer_id=customer_id, product_name="未知成本商品U1")
     assert unknown["summary"]["net_sales_amount_cents"] == 1000
@@ -256,7 +256,7 @@ def test_analytics_top_filter_supports_year_month_range_and_document_types():
 
     init_db()
     customer = create_customer("P7筛选对象")
-    product = create_product("P7商品S1", "个", 2000)
+    product = create_product("P7商品S1", "个")
     initialize_product(product, "10", "10", "2026-01-01", "期初", "p7-init")
     create_order_from_typed_rows(
         customer, "MD202602100001",
@@ -299,7 +299,7 @@ def test_document_type_filter_only_affects_flow_not_profit_metrics():
 
     init_db()
     customer = create_customer("P7口径对象")
-    product = create_product("P7口径商品S1", "个", 2000)
+    product = create_product("P7口径商品S1", "个")
     initialize_product(product, "10", "10", "2026-03-01", "期初", "p7-scope-init")
     create_order_from_typed_rows(
         customer, "MD202603100001",
@@ -350,7 +350,7 @@ def test_analytics_page_renders_document_flow_card():
 
     init_db()
     customer = create_customer("P7流水卡片对象")
-    product = create_product("P7流水卡片商品S1", "个", 2000)
+    product = create_product("P7流水卡片商品S1", "个")
     initialize_product(product, "10", "10", "2026-04-01", "期初", "p7-flow-init")
     create_purchase_order(
         "NH202604010001", "2026-04-01",

@@ -13,7 +13,7 @@ from erp.services.inventory import create_purchase_order, initialize_product
 
 
 def _product(spec="ERR"):
-    product_id = create_product("错误呈现商品" + spec, "个", 2000)
+    product_id = create_product("错误呈现商品" + spec, "个")
     initialize_product(product_id, "10", "10", "2026-10-01", "系统上线期初", f"err-init-{spec}", confirm_zero=False)
     return product_id
 

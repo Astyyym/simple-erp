@@ -6,10 +6,10 @@
 
 - `products.spec`、`order_items.spec`、`purchase_order_items.spec`、`purchase_return_items.spec` **四列已删除**；任何手写 SQL、夹具、导出/导入模板都不得再出现 `spec`。
 - 唯一索引：`idx_products_business_identity ON products(TRIM(name))`（含软删除行）；重复建档报「商品名称已存在」。
-- 服务签名：`create_product(name, unit, default_price_cents, pinyin_initials="", *, safety_stock=None, brand=None)`、`update_product_record(product_id, name, unit, default_price_cents, *, safety_stock=None, brand=...)`；开单明细 payload 只认 `product_name`。
+- 服务签名（2026-10-15 默认价下线后收窄）：`create_product(name, unit, pinyin_initials="", *, safety_stock=None, brand=None)`、`update_product_record(product_id, name, unit, *, safety_stock=None, brand=...)`；开单明细 payload 只认 `product_name`。`products.default_price_cents` 列仍在（不删列 = 不写迁移）但**只写 0、不再读**——建档 INSERT 必须显式写它（该列 `NOT NULL` 且无默认值）。
 - 开单页商品控件是**单框**：销售/退货 `.picker-name-input`（手输 + 名称建议，未命中交给后端自动建档）；拿货/退拿货 `.picker-name` 下拉（必须选定已建档 ID）。`static/order-product-picker.js` 的 `mountRow`/`mountHybrid` 都按单框实现。
 - 分析中心**没有型号维度**：无「型号 / 未填写型号」控件、无 `spec` 查询参数、无「型号：…」chip、表格无型号列。
-- 导入：模板表头 = `商品名称 / 品牌 / 单位 / 默认价 / 期初数量 / 期初成本（元）/ 备注`（具名常量 `PRODUCT_HEADERS_TEMPLATE`，不要再写 `PRODUCT_HEADERS[i]` 魔法索引）。**含「型号」列的旧文件按整表头精确匹配直接报「表头错误，应为：…」**——这是预期行为（明确报错，不静默丢数据），不要「修」成兼容。
+- 导入：模板表头 = `商品名称 / 品牌 / 单位 / 期初数量 / 期初成本（元）/ 备注`（具名常量 `PRODUCT_HEADERS_TEMPLATE`，不要再写 `PRODUCT_HEADERS[i]` 魔法索引）。2026-10-15 默认价下线后模板不再有「默认价」列；**改模板表头必须同步补进 `PRODUCT_HEADERS` 白名单**（否则新模板自己导不回来，整表报 400 表头错误）。**含「型号」列的旧文件按整表头精确匹配直接报「表头错误，应为：…」**——这是预期行为（明确报错，不静默丢数据），不要「修」成兼容。
 - 商品侧「待补全（型号为空）」已**整体删除**（删列后该条件恒为真）；客户侧待补全（`origin='order'` 且无联系方式）保留。
 
 ## 升级迁移的安全边界（`db.py::migrate_merge_product_spec_into_name`）

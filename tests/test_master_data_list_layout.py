@@ -186,9 +186,11 @@ def test_create_forms_keep_their_fields_and_action_endpoints():
     create = products.split('class="list-create"', 1)[1].split("</form>", 1)[0]
     assert 'action="/products/create"' in create
     # 决策变更（v14）：商品身份 = 单一名称，型号输入（spec）已删除。
-    for name in ("name", "brand", "unit", "default_price", "safety_stock"):
+    # 决策变更（2026-10-15）：默认价下线，新增表单不再有价格输入。
+    for name in ("name", "brand", "unit", "safety_stock"):
         assert f'name="{name}"' in create, name
     assert 'name="spec"' not in create, "型号输入应已删除"
+    assert 'name="default_price"' not in create, "默认价输入应已删除"
     assert 'name="name"' in create and "required" in create
 
     customers = _html("/customers/")
@@ -222,16 +224,19 @@ def test_collapsed_panel_hides_the_form_via_css():
 
 
 def test_failed_create_reopens_the_panel():
-    """新增失败时表单必须自动展开，否则用户看不到错误也改不了值。"""
+    """新增失败时表单必须自动展开，否则用户看不到错误也改不了值。
+
+    决策变更（2026-10-15）：价格不再是档案字段，触发失败改用「商品名称不能为空」。
+    """
     init_db()
     client = create_app().test_client()
     response = client.post(
         "/products/create",
-        data={"name": "错误单价商品", "unit": "个", "default_price": "abc"},
+        data={"name": "   ", "unit": "个"},
     )
     assert response.status_code == 400
     html = response.get_data(as_text=True)
-    assert "默认单价不是有效数字" in html
+    assert "商品名称不能为空" in html
     panel = html.split('class="list-create-panel"', 1)[1].split(">", 1)[0]
     assert "open" in panel, "新增失败后应自动展开面板"
 

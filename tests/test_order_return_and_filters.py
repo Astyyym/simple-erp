@@ -47,7 +47,7 @@ def test_orders_mark_return_orders_red_and_account_ledger_preserves_return_sign_
 
 def test_products_page_has_similarity_suggestions_and_clear_info_button():
     init_db()
-    create_product("沟槽闸阀DN100", "个", 12300, "gczf")
+    create_product("沟槽闸阀DN100", "个", "gczf")
     client = create_app().test_client()
 
     html = client.get("/products/?q=沟").get_data(as_text=True)

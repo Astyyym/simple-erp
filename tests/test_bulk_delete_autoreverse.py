@@ -21,7 +21,7 @@ from erp.services.inventory import create_purchase_order, initialize_product
 
 
 def _product(name="自动冲回商品", spec="AR"):
-    product_id = create_product((name) + (spec), "个", 2000)
+    product_id = create_product((name) + (spec), "个")
     initialize_product(product_id, "10", "10", "2026-10-01", "系统上线期初", f"ar-init-{spec}", confirm_zero=False)
     return product_id
 

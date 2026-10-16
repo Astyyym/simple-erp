@@ -15,7 +15,7 @@ from erp.routes.recycle import _purge_one
 
 def _product(name="期初商品", spec="S1"):
     init_db()
-    return create_product((name) + (spec), "个", 2000)
+    return create_product((name) + (spec), "个")
 
 
 def test_initialize_product_creates_enabled_state_and_is_idempotent():

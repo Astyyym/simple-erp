@@ -8,7 +8,7 @@ from erp.services import purchase_returns
 def _seed():
     init_db()
     cid = accounting.create_customer("并入拿货客户")
-    pid = accounting.create_product("并入商品T1", "个", 1000)
+    pid = accounting.create_product("并入商品T1", "个")
     initialize_product(pid, "20", "10", "2026-10-01", "INTERNAL-INIT", "ledger-merge-init")
     accounting.create_order_from_typed_rows(
         cid, "MD202610010001",

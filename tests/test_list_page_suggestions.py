@@ -24,7 +24,7 @@ PAGES = {
 def _seed():
     init_db()
     create_customer("列表页联想客户")
-    create_product("列表页联想商品", "个", 1000)
+    create_product("列表页联想商品", "个")
 
 
 def _html(path: str) -> str:

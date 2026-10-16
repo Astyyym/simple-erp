@@ -19,14 +19,14 @@ from erp.services.inventory import create_purchase_order, initialize_product
 
 
 def _posted_product(spec, qty="10"):
-    pid = create_product("编辑死路商品" + spec, "个", 2000)
+    pid = create_product("编辑死路商品" + spec, "个")
     initialize_product(pid, qty, "10", "2026-10-01", "系统上线期初", f"edit-dead-{spec}", confirm_zero=False)
     return pid
 
 
 def _plain_product(spec):
     """未启用库存的商品：销售单不会产生库存流水 → 应保持可编辑。"""
-    return create_product("无库存商品" + spec, "个", 2000)
+    return create_product("无库存商品" + spec, "个")
 
 
 def _sale(customer_id, product_id, order_no):

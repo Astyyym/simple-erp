@@ -8,7 +8,7 @@ from erp.services.inventory import create_purchase_order, initialize_product
 def _seed():
     init_db()
     cid = create_customer("来源关联对象")
-    pid = create_product("来源关联商品S1", "个", 2000)
+    pid = create_product("来源关联商品S1", "个")
     initialize_product(pid, "10", "10", "2026-10-01", "期初", "src-init")
     return cid, pid
 

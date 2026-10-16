@@ -41,7 +41,7 @@ class RenderedHTML(HTMLParser):
 
 def test_product_edit_has_prominent_computed_cost_and_top_return_without_editable_average():
     app = create_app()
-    product_id = create_product("只读计量商品M1", "米", 1000, safety_stock="1.250")
+    product_id = create_product("只读计量商品M1", "米", safety_stock="1.250")
     initialize_product(product_id, "12.345", "11.333333", "2026-10-01", "测试期初", "readonly-edit-01")
     response = app.test_client().get(f"/products/{product_id}/edit")
     assert response.status_code == 200
@@ -80,9 +80,9 @@ def test_product_edit_has_prominent_computed_cost_and_top_return_without_editabl
 
 def test_analytics_has_separate_current_average_cost_with_zero_and_missing_distinct():
     app = create_app()
-    zero_id = create_product("分析零成本商品Z1", "个", 1000)
-    missing_id = create_product("分析未启用商品U1", "个", 1000)
-    empty_id = create_product("分析零库存商品E1", "米", 1000)
+    zero_id = create_product("分析零成本商品Z1", "个")
+    missing_id = create_product("分析未启用商品U1", "个")
+    empty_id = create_product("分析零库存商品E1", "米")
     initialize_product(zero_id, "5", "0", "2026-10-01", "测试", "readonly-zero-cost")
     initialize_product(empty_id, "0", "", "2026-10-01", "测试", "readonly-empty-cost", confirm_zero=True)
     response = app.test_client().get("/analytics/", query_string={"start_date": "2026-10-01", "end_date": "2026-10-02"})
@@ -114,9 +114,9 @@ def test_product_cost_cells_and_readonly_summary_display_two_decimals_without_ch
     import re
 
     app = create_app()
-    product_id = create_product("两位成本商品C1", "个", 1000)
-    zero_id = create_product("商品零成本Z1", "个", 1000)
-    missing_id = create_product("商品未启用U1", "个", 1000)
+    product_id = create_product("两位成本商品C1", "个")
+    zero_id = create_product("商品零成本Z1", "个")
+    missing_id = create_product("商品未启用U1", "个")
     initialize_product(product_id, "15", "11.333333", "2026-10-01", "测试", "readonly-precision-cost")
     initialize_product(zero_id, "1", "0", "2026-10-01", "测试", "readonly-product-zero")
     with get_db() as conn:
@@ -145,7 +145,7 @@ def test_display_routes_leave_inventory_postings_accounting_and_analytics_querie
     from erp.services.analytics import summarize_analytics
 
     app = create_app()
-    product_id = create_product("只读显示回归R1", "个", 2000)
+    product_id = create_product("只读显示回归R1", "个")
     initialize_product(product_id, "12.345", "3.333333", "2026-10-01", "测试", "readonly-query-regression")
     customer_id = create_customer("只读显示往来")
     create_order_from_typed_rows(customer_id, "MD202610010902", [{"product_id": product_id, "product_name": "只读显示回归R1", "unit": "个", "unit_price_yuan": "20", "quantity": "1.125"}], status="saved", order_date="2026-10-01")

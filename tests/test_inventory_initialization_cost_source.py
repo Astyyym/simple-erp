@@ -20,7 +20,7 @@ def _init(product_id):
 
 def test_known_cost_source_is_recorded():
     init_db()
-    pid = create_product("已知成本商品A", "个", 1000)
+    pid = create_product("已知成本商品A", "个")
     initialize_product(pid, "10", "8", "2026-10-01", "期初", "c-known", cost_source="known")
     assert _init(pid)["cost_source"] == "known"
     assert _state(pid)["quantity_3dp"] == 10000
@@ -28,7 +28,7 @@ def test_known_cost_source_is_recorded():
 
 def test_estimated_cost_source_is_recorded_and_auditable():
     init_db()
-    pid = create_product("估算成本商品A", "个", 1000)
+    pid = create_product("估算成本商品A", "个")
     initialize_product(pid, "5", "6", "2026-10-01", "期初", "c-est", cost_source="estimated")
     row = _init(pid)
     assert row["cost_source"] == "estimated"
@@ -37,7 +37,7 @@ def test_estimated_cost_source_is_recorded_and_auditable():
 
 def test_zero_quantity_forces_zero_cost_source():
     init_db()
-    pid = create_product("零成本商品A", "个", 1000)
+    pid = create_product("零成本商品A", "个")
     initialize_product(pid, "0", "", "2026-10-01", "期初", "c-zero", confirm_zero=True)
     row = _init(pid)
     assert row["cost_source"] == "zero"
@@ -46,7 +46,7 @@ def test_zero_quantity_forces_zero_cost_source():
 
 def test_total_cost_backs_out_unit_cost():
     init_db()
-    pid = create_product("总金额商品A", "个", 1000)
+    pid = create_product("总金额商品A", "个")
     # 1000 元 / 8 件 = 125 元/件
     initialize_product(pid, "8", "", "2026-10-01", "期初", "c-total", cost_source="known", total_cost="1000")
     state = _state(pid)
@@ -57,7 +57,7 @@ def test_total_cost_backs_out_unit_cost():
 
 def test_quantity_without_cost_is_rejected():
     init_db()
-    pid = create_product("缺成本商品A", "个", 1000)
+    pid = create_product("缺成本商品A", "个")
     try:
         initialize_product(pid, "5", "", "2026-10-01", "期初", "c-missing")
         assert False, "有数量缺成本必须报错"
@@ -67,7 +67,7 @@ def test_quantity_without_cost_is_rejected():
 
 def test_invalid_cost_source_rejected():
     init_db()
-    pid = create_product("来源无效商品A", "个", 1000)
+    pid = create_product("来源无效商品A", "个")
     try:
         initialize_product(pid, "5", "1", "2026-10-01", "期初", "c-bad", cost_source="guess")
         assert False
@@ -77,7 +77,7 @@ def test_invalid_cost_source_rejected():
 
 def test_edit_page_exposes_cost_source_and_total_cost_and_hints():
     init_db()
-    pid = create_product("界面期初商品A", "个", 1000)
+    pid = create_product("界面期初商品A", "个")
     client = create_app().test_client()
     html = client.get(f"/products/{pid}/edit").get_data(as_text=True)
     assert 'name="cost_source"' in html
@@ -90,7 +90,7 @@ def test_edit_page_exposes_cost_source_and_total_cost_and_hints():
 
 def test_web_initialize_with_estimated_source_records_it():
     init_db()
-    pid = create_product("网页估算商品A", "个", 1000)
+    pid = create_product("网页估算商品A", "个")
     client = create_app().test_client()
     resp = client.post(
         f"/products/{pid}/inventory/initialize",

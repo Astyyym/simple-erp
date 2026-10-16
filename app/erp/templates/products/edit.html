@@ -41,10 +41,6 @@
               <label class="form-label" for="productUnit">单位</label>
               <input class="form-control" id="productUnit" name="unit" value="{{product.unit}}" {% if inventory_state and inventory_state.enabled %}readonly title="单位已锁定"{% endif %} required>
             </div>
-            <div{% if 'default_price' in missing_keys %} class="field-warn"{% endif %}>
-              <label class="form-label" for="productPrice">默认单价(元){% if 'default_price' in missing_keys %}<span class="field-flag">⚠ 待补</span>{% endif %}</label>
-              <input class="form-control" id="productPrice" name="default_price" value="{{cents_to_yuan(product.default_price_cents)}}" required>
-            </div>
             <div>
               <label class="form-label" for="productSafety">安全库存</label>
               <input class="form-control" id="productSafety" name="safety_stock" value="{{format_quantity_3dp(product.safety_stock_3dp, product.unit)}}" required>
@@ -58,11 +54,43 @@
       </div>
     </section>
 
+    {# 客户专属价（2026-10-15 用户要求）：售价唯一来源 = 开单学习，所以编辑页要能直接看到
+       「这个商品对哪些客户是什么价」。只读展示，不提供手工设价入口（用户明确不要那个口子）；
+       价格由开单时手输的单价（> 0）自动学习写入。 #}
+    <section class="card" id="customerPrices">
+      <div class="card-body">
+        <div class="card-head">
+          <h3>客户专属价</h3>
+          <span class="card-cap">开单自动带出 · 手输价自动学习</span>
+        </div>
+        {% if customer_prices %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead><tr><th>客户</th><th class="text-end">专属价（元）</th><th>更新时间</th></tr></thead>
+            <tbody>
+              {% for row in customer_prices %}
+              <tr>
+                <td>{{ row.customer_name }}</td>
+                <td class="text-end">¥{{ cents_to_yuan(row.price_cents) }}</td>
+                <td class="text-muted small">{{ row.updated_at }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="field-hint" style="margin:0">暂无客户专属价。开单时手输单价（大于 0）后，系统会自动记为该客户对这个商品的专属价，下次开单自动带出。</p>
+        {% endif %}
+      </div>
+    </section>
+
     <section class="card">
       <div class="card-body">
         <div class="card-head"><h3>当前库存与成本</h3><span class="card-cap">由库存流水计算，只读</span></div>
-        {# 只读派生数据：宽栏下按 auto-fit 铺成一行（5 项在 947px 主栏里正好 5 列），
-           窄栏自动回落 3 / 2 列。整块不含任何表单控件。 #}
+        {# 只读派生数据：宽栏下按 auto-fit 铺成一行（4 项在 947px 主栏里正好 4 列），
+           窄栏自动回落 2 列。整块不含任何表单控件。
+           2026-10-15：「启用状态」格删除（用户明确「这个字段不再区分已启用还是未启用」）——
+           未启用由「库存状况」显示为「未启用」，信息不丢。 #}
         <dl class="readonly-grid" aria-label="当前库存与计算成本">
           <div class="readonly-cell">
             <dt>当前库存（{{ product.unit }}）</dt>
@@ -75,10 +103,6 @@
           <div class="readonly-cell">
             <dt>库存金额（元）</dt>
             <dd class="readonly-value">{{ micro_to_yuan(inventory_state.cost_total_micro) if inventory_state and inventory_state.enabled else '—' }}</dd>
-          </div>
-          <div class="readonly-cell">
-            <dt>启用状态</dt>
-            <dd class="readonly-value" data-field="enable-status">{{ inventory_status.enable_status }}</dd>
           </div>
           <div class="readonly-cell">
             <dt>库存状况</dt>

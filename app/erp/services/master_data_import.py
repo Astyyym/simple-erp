@@ -20,7 +20,7 @@ from erp.services.master_data_quality import (
     customer_missing_fields,
     product_missing_fields,
 )
-from erp.utils.importing import MAX_DISPLAYED_ERRORS, normalized_name, price_to_cents
+from erp.utils.importing import MAX_DISPLAYED_ERRORS, normalized_name
 
 # ---- 表头登记（B-3：新旧同时兼容） ----
 CUSTOMER_HEADERS = (
@@ -30,7 +30,13 @@ CUSTOMER_HEADERS = (
 )
 PRODUCT_HEADERS = (
     ["商品名称", "价格"],
-    # E-2 之前的表头仍可导入（无品牌列 → 品牌留空）。
+    # 2026-10-15 默认价下线后的新模板表头（**必须与 PRODUCT_HEADERS_TEMPLATE 一致**，
+    # 否则下载的模板自己导不回来 → 整表报「表头错误」）。
+    ["商品名称", "品牌", "单位", "期初数量", "期初成本（元）", "备注"],
+    ["商品名称", "品牌", "单位", "期初数量", "期初成本", "备注"],
+    ["商品名称", "单位", "期初数量", "期初成本（元）", "备注"],
+    # 旧模板（含「默认价」列）仍可导入：该列只是不再被读取（其余列照常落库），
+    # 不是静默丢数据——档案已无价格字段可存。
     ["商品名称", "单位", "默认价", "期初数量", "期初成本（元）", "备注"],
     ["商品名称", "单位", "默认价", "期初数量", "期初成本", "备注"],
     ["商品名称", "品牌", "单位", "默认价", "期初数量", "期初成本（元）", "备注"],
@@ -38,15 +44,15 @@ PRODUCT_HEADERS = (
 )
 # 导入模板下载专用（routes/products.py 用它生成样表）。
 # **不要**再用 `PRODUCT_HEADERS[2]` 这类魔法索引 —— v14 删掉含「型号」的候选后索引会移位。
-PRODUCT_HEADERS_TEMPLATE = ["商品名称", "品牌", "单位", "默认价", "期初数量", "期初成本（元）", "备注"]
+PRODUCT_HEADERS_TEMPLATE = ["商品名称", "品牌", "单位", "期初数量", "期初成本（元）", "备注"]
 
 # 模板里第二个 sheet「填写说明」的内容（第一行必须是表头，说明只能另开 sheet）。
 PRODUCT_TEMPLATE_NOTES = [
     "填写说明（第一行表头请勿修改：改标题会导致整表报「表头错误」）",
     "必填：商品名称。单位留空按「个」。",
-    "品牌、默认价可以留空：留空的行照样导入，但会在商品列表里标记为「待补全」，"
+    "品牌可以留空：留空的行照样导入，但会在商品列表里标记为「待补全」，"
     "之后在档案里补上就会自动移出该筛选。",
-    "默认价留空按 0 元计：开单按 0 计价会算错钱，请尽早补价。",
+    "商品档案已不再保存售价：开单单价按客户专属价带出，没有专属价则留空手输（手输价会自动记为该客户的专属价）。",
     "期初数量与期初成本（元）要成对填：填了数量就必须填成本。",
     "型号请直接写进商品名称（例如「闸阀DN50」），不要再加「型号」列。",
     "同名处理在预检页选择：「跳过」（默认，不覆盖已有）或「更新」。",
@@ -82,7 +88,6 @@ def completion_note(kind: str, payload: dict) -> str:
         missing = product_missing_fields({
             "origin": ORIGIN_IMPORT,
             "brand": payload.get("brand"),
-            "default_price_cents": payload.get("default_price_cents"),
         })
     else:
         missing = customer_missing_fields({
@@ -247,7 +252,6 @@ def build_product_preview(headers, rows, existing_identities: set[str], soft_del
     idx_name = _header_index(headers, "商品名称")
     idx_brand = _header_index(headers, "品牌")
     idx_unit = _header_index(headers, "单位")
-    idx_price = _header_index(headers, "价格", "默认价")
     idx_qty = _header_index(headers, "期初数量")
     idx_cost = _header_index(headers, "期初成本（元）", "期初成本")
     seen: set[str] = set()
@@ -259,8 +263,6 @@ def build_product_preview(headers, rows, existing_identities: set[str], soft_del
         # E-2：品牌可空；空单元格与「没这一列」都落成空串（写入时统一转 NULL）。
         brand = normalized_name(_cell(row, idx_brand))
         unit = normalized_name(_cell(row, idx_unit)) or "个"
-        price_value = _cell(row, idx_price)
-        price_text = "" if price_value is None else str(price_value).strip()
         qty_text = _quantity_text(_cell(row, idx_qty))
         cost_value = _cell(row, idx_cost)
         identity = name
@@ -269,13 +271,6 @@ def build_product_preview(headers, rows, existing_identities: set[str], soft_del
             preview.rows.append(PreviewRow(line_number, "skip", label, "文件内重复"))
             continue
         seen.add(identity)
-        try:
-            # 默认价可留空（2026-10-14 第二轮用户决策）：落库 0 并随行标出「待补全」，
-            # 让门店之后在档案里补价，而不是把整行挡在导入之外。
-            price_cents = 0 if price_text == "" else price_to_cents(price_value)
-        except ValueError as exc:
-            preview.rows.append(PreviewRow(line_number, "error", label, str(exc)))
-            continue
         try:
             cost_cents = _money_to_cents(cost_value, field_label="期初成本")
         except ValueError as exc:
@@ -290,14 +285,15 @@ def build_product_preview(headers, rows, existing_identities: set[str], soft_del
             # 有数量必须有成本（缺成本不静默）。
             preview.rows.append(PreviewRow(line_number, "error", label, "填了期初数量就必须填期初成本（元）"))
             continue
-        payload = {"name": name, "brand": brand, "unit": unit, "default_price_cents": price_cents,
+        # 2026-10-15：档案不再有售价字段，文件里带「默认价/价格」列时该列被忽略（不解析、不落库）。
+        payload = {"name": name, "brand": brand, "unit": unit,
                    "quantity": qty_text, "cost_cents": cost_cents}
         if identity in soft_deleted_identities:
             preview.rows.append(PreviewRow(line_number, "error", label, "该名称已被回收站记录占用，请先到回收站恢复或清理"))
             continue
         if identity in existing_identities:
             if same_name == "update":
-                preview.rows.append(PreviewRow(line_number, "update", label, "已存在，将更新单位/默认价", payload))
+                preview.rows.append(PreviewRow(line_number, "update", label, "已存在，将更新品牌/单位", payload))
             else:
                 preview.rows.append(PreviewRow(line_number, "skip", label, "同名已存在"))
             continue

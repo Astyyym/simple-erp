@@ -15,7 +15,7 @@ def _seed():
     """一张有成本快照的正式销售单（商品已启用库存 → 明细带成本）。"""
     init_db()
     customer = create_customer("退货来源对象")
-    product_id = create_product("退货来源商品", "个", 3000)
+    product_id = create_product("退货来源商品", "个")
     initialize_product(product_id, "10", "10", "2026-10-01", "期初", "ret-src-init")
     sale_id = create_order_from_typed_rows(
         customer,
@@ -35,7 +35,7 @@ def _seed():
 def _seed_costless_sale():
     """第二张销售单：商品未启用库存 → 明细无成本快照（关联它只作追溯，不能逐行分摊成本）。"""
     customer = create_customer("缺成本对象")
-    product_id = create_product("缺成本商品", "个", 1000)
+    product_id = create_product("缺成本商品", "个")
     sale_id = create_order_from_typed_rows(
         customer,
         "MD202610130002",

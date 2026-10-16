@@ -17,7 +17,7 @@ def _seed_many(count, prefix="MD20261001", spec="S1"):
     """
     digits = "".join(ch for ch in prefix if ch.isdigit())
     order_date = f"{digits[0:4]}-{digits[4:6]}-{digits[6:8]}"
-    pid = create_product("列表筛选商品" + spec, "个", 1000)
+    pid = create_product("列表筛选商品" + spec, "个")
     cid = create_customer(f"列表筛选客户{spec}")
     ids = []
     for index in range(count):
@@ -66,7 +66,7 @@ def test_multi_value_status_survives_pagination():
 
 def test_status_filter_narrows_results():
     init_db()
-    pid = create_product("状态筛选商品S1", "个", 1000)
+    pid = create_product("状态筛选商品S1", "个")
     cid = create_customer("状态筛选客户")
     saved_id = create_order_from_typed_rows(
         cid, "MD202610010001",

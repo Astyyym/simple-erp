@@ -21,7 +21,7 @@ from pdf_test_utils import assert_a4_portrait_pdf
 def seed_four():
     init_db()
     cid = create_customer('四向虚构往来', opening_balance_cents=12345)
-    pid = create_product('公开商品' '型号-A', '米', 2000)
+    pid = create_product('公开商品' '型号-A', '米')
     initialize_product(pid, '20', '10', '2026-10-01', 'INTERNAL-INIT', 'c3-init')
     sale = create_order_from_typed_rows(cid, 'MD202610010001', [
         {'product_id': pid, 'product_name': '公开商品' '型号-A', 'unit': '米', 'quantity': '2', 'unit_price_yuan': '20'},

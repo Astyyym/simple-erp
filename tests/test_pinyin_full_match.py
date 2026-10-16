@@ -44,9 +44,9 @@ def test_pinyin_full_uses_whole_syllables_not_initials():
 
 def test_product_writes_both_pinyin_columns_and_refreshes_on_rename():
     init_db()
-    product_id = create_product("消防水枪", "个", 5000)
+    product_id = create_product("消防水枪", "个")
     assert _initials_and_full("products", "消防水枪") == ("xfsq", "xiaofangshuiqiang")
-    update_product_record(product_id, "消防水带", "个", 5000)
+    update_product_record(product_id, "消防水带", "个")
     assert _initials_and_full("products", "消防水带") == ("xfsd", "xiaofangshuidai")
 
 
@@ -60,8 +60,8 @@ def test_customer_writes_both_pinyin_columns():
 
 def _seed_products():
     init_db()
-    create_product("消防水枪QZ3.5/7.5", "个", 5000)
-    create_product("Y型过滤器DN50", "个", 3000)
+    create_product("消防水枪QZ3.5/7.5", "个")
+    create_product("Y型过滤器DN50", "个")
 
 
 def test_product_list_search_matches_full_pinyin_and_still_initials():
@@ -124,7 +124,7 @@ def test_analytics_and_summary_customer_scope_match_full_pinyin():
 def _seed_order_for_customer():
     init_db()
     customer_id = create_customer("星辰宾馆")
-    product_id = create_product("星辰商品", "个", 1000)
+    product_id = create_product("星辰商品", "个")
     create_order_from_typed_rows(
         customer_id,
         "MD202610140001",
@@ -157,7 +157,7 @@ def test_order_list_filter_conditions_include_full_pinyin_column():
 def test_purchase_source_candidates_match_customer_full_pinyin():
     init_db()
     customer_id = create_customer("星辰宾馆")
-    product_id = create_product("拿货候选商品", "个", 1000)
+    product_id = create_product("拿货候选商品", "个")
     # 正式拿货单要求商品已启用库存。
     initialize_product(product_id, "10", "10", "2026-10-01", "期初", "pinyin-source-init")
     create_purchase_order(
@@ -173,7 +173,7 @@ def test_purchase_source_candidates_match_customer_full_pinyin():
 def test_return_source_candidates_match_customer_full_pinyin():
     init_db()
     customer_id = create_customer("星辰宾馆")
-    product_id = create_product("退货候选商品", "个", 1000)
+    product_id = create_product("退货候选商品", "个")
     initialize_product(product_id, "10", "10", "2026-10-01", "期初", "pinyin-return-init")
     create_order_from_typed_rows(
         customer_id,

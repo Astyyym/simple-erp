@@ -6,7 +6,8 @@
 恢复三个按钮，并新增按拼音排序。
 
 待补全口径（与客户侧同构，见 services/master_data_quality.py）：
-来源 = 开单自动建档或批量导入（`origin IN ('order','import')`），且缺品牌或缺默认价（默认价为 0）。
+来源 = 开单自动建档或批量导入（`origin IN ('order','import')`），且**缺品牌**
+（2026-10-15 默认价下线后，商品侧只剩品牌这一项）。
 """
 from __future__ import annotations
 
@@ -26,14 +27,14 @@ PINYIN_SECOND = "水枪排序测试品"
 
 def _seed_products():
     init_db()
-    create_product(PINYIN_FIRST, "个", 1000)
-    create_product(PINYIN_SECOND, "个", 1000)
+    create_product(PINYIN_FIRST, "个")
+    create_product(PINYIN_SECOND, "个")
 
 
 def _seed_todo():
     """一个开单攒出（无品牌，算待补全）+ 一个手工建档（无品牌，不算）。"""
     init_db()
-    create_product("手工无品牌测试品", "个", 1000)
+    create_product("手工无品牌测试品", "个")
     customer_id = create_customer("待补全口径测试客户")
     create_order_from_typed_rows(
         customer_id,
@@ -53,10 +54,11 @@ def _results_body(html: str) -> str:
 # ---------------------------------------------------------------- 判定口径本身
 
 def test_product_needs_completion_covers_order_and_import_sources():
-    """口径（2026-10-14 第二轮）：开单攒出 + 批量导入，缺品牌**或**缺默认价都算；手工建档不算。
+    """口径（2026-10-15）：开单攒出 + 批量导入，**缺品牌**才算；手工建档不算。
 
-    导入侧扩进来的理由：门店从旧软件搬档案时字段常常不齐，这些行**照样导入**
-    （默认价留空按 0），但必须被提醒补全 —— 否则列表里看着「完整」，开单按 0 计价会算错钱。
+    默认价下线后商品档案已无价格字段（售价唯一来源 = 开单学习），
+    所以「缺默认价」这一档整体消失；下面刻意仍带 `default_price_cents` 值，
+    钉住「档案价哪怕为 0 也不再影响判定」。
     """
     # 开单攒出：缺品牌算。
     assert product_needs_completion({"origin": "order", "brand": "", "default_price_cents": 1000}) is True
@@ -65,15 +67,15 @@ def test_product_needs_completion_covers_order_and_import_sources():
     # 批量导入：同样算。
     assert product_needs_completion({"origin": "import", "brand": "", "default_price_cents": 1000}) is True
     assert product_needs_completion({"origin": "import", "brand": "远大", "default_price_cents": 1000}) is False
-    # 默认价为 0（导入留空）：有品牌也算缺。
-    assert product_needs_completion({"origin": "import", "brand": "远大", "default_price_cents": 0}) is True
-    assert product_needs_completion({"origin": "order", "brand": "远大", "default_price_cents": 0}) is True
+    # 档案价为 0（列仍在、值恒 0）不再算缺：有品牌就是完整档案。
+    assert product_needs_completion({"origin": "import", "brand": "远大", "default_price_cents": 0}) is False
+    assert product_needs_completion({"origin": "order", "brand": "远大", "default_price_cents": 0}) is False
     # 手工建档：缺什么都是自己的选择，不算（与客户侧口径一致）。
     assert product_needs_completion({"origin": "manual", "brand": "", "default_price_cents": 0}) is False
     assert product_needs_completion({"origin": None, "brand": "", "default_price_cents": 0}) is False
-    # 缺品牌 + 缺价要能一起报出来（徽标 title / 编辑页提示共用）。
-    both_missing = product_completion_hint({"origin": "import", "brand": "", "default_price_cents": 0})
-    assert "缺品牌" in both_missing and "默认价" in both_missing
+    # 缺什么要能报出来（徽标 title / 编辑页提示共用），且不再提「默认价」。
+    hint = product_completion_hint({"origin": "import", "brand": "", "default_price_cents": 0})
+    assert "缺品牌" in hint and "默认价" not in hint
 
 
 # ---------------------------------------------------------------- 按钮就位
@@ -107,7 +109,7 @@ def test_todo_chip_count_matches_the_same_definition():
         expected = conn.execute(
             "SELECT COUNT(*) AS c FROM products WHERE deleted_at IS NULL"
             " AND origin IN ('order', 'import')"
-            " AND (TRIM(COALESCE(brand, ''))='' OR COALESCE(default_price_cents, 0) <= 0)"
+            " AND TRIM(COALESCE(brand, ''))=''"
         ).fetchone()["c"]
     assert expected >= 1, "夹具应至少造出一个待补全商品"
     html = client.get("/products/").get_data(as_text=True)
@@ -155,7 +157,7 @@ def test_edit_page_shows_the_completion_hint_and_it_clears_after_filling_brand()
     assert 'class="field-flag"' not in manual_html
 
     # 补上品牌后提示消失（与筛选、徽标同源）。
-    update_product_record(todo_id, "开单攒出测试品", "个", 1000, brand="金枪")
+    update_product_record(todo_id, "开单攒出测试品", "个", brand="金枪")
     cleared = client.get(f"/products/{todo_id}/edit").get_data(as_text=True)
     assert 'class="completion-chip"' not in cleared
     assert 'class="field-flag"' not in cleared
@@ -174,7 +176,7 @@ def test_branded_order_product_drops_out_of_todo():
     _seed_todo()
     with get_db() as conn:
         product_id = conn.execute("SELECT id FROM products WHERE name='开单攒出测试品'").fetchone()["id"]
-    update_product_record(product_id, "开单攒出测试品", "个", 1000, brand="金枪")
+    update_product_record(product_id, "开单攒出测试品", "个", brand="金枪")
     body = _results_body(create_app().test_client().get("/products/?quality=todo").get_data(as_text=True))
     assert "开单攒出测试品" not in body
 

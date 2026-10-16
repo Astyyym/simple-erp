@@ -2,10 +2,10 @@
 
 页面标记与列表筛选必须用同一个函数，否则「列表说缺、编辑页说全」这类漂移无法收敛。
 
-口径（2026-10-09 定案；2026-10-14 第二轮扩范围，见 开发短计划/2026-10-14_关联带入替换与商品筛选排序与流水展开_执行计划.md §九）：
+口径（2026-10-09 定案；2026-10-14 第二轮扩范围；2026-10-15 默认价下线，见 开发短计划/2026-10-15_商品售价来源收敛与专属价查看_执行计划.md）：
 - **来源**：`order`（开单自动建档）与 `import`（批量导入）都算「顺手搬进来的半成品档案」，
   缺字段就该被提醒补全；`manual`（用户自己点「新增」填的表单）**不算** —— 缺什么是他自己的选择。
-- **商品**缺字段：品牌为空，**或**默认价为 0（导入时默认价可留空，落库为 0）。
+- **商品**缺字段：只剩品牌为空（档案已无「默认价」字段，售价唯一来源 = 开单学习）。
 - **客户**缺字段：电话与地址**都**为空。
 
 来源取值：`manual` / `import` / `order`；旧数据为空（NULL）按「未知」处理，不猜。
@@ -39,7 +39,6 @@ UNKNOWN_ORIGIN_LABEL = "未知"
 # 所以「缺哪个字段」永远只有一条规则，页面提示与筛选口径不会漂移。
 PRODUCT_MISSING_LABELS = {
     "brand": ("品牌（用于区分同名同规格商品）", "品牌"),
-    "default_price": ("默认价（用于开单计价）", "默认价"),
 }
 
 
@@ -77,8 +76,8 @@ def product_missing_fields(product) -> list[str]:
     """商品档案缺哪些字段（人话），空列表 = 不缺。
 
     - 品牌为空：用于区分同名同规格商品。
-    - 默认价为 0：导入时默认价可留空（落库 0），开单按 0 计价会算错钱，必须提醒补。
-      拿不到 `default_price_cents` 这一列时不判价（避免对部分字典误判）。
+    - 2026-10-15 起档案不再有「默认价」字段（售价唯一来源 = 开单学习），
+      所以商品侧只剩品牌这一项。
     """
     keys = product.keys()
     origin = _text(product["origin"] if "origin" in keys else None)
@@ -87,9 +86,6 @@ def product_missing_fields(product) -> list[str]:
     missing: list[str] = []
     if not _text(product["brand"] if "brand" in keys else ""):
         missing.append(PRODUCT_MISSING_LABELS["brand"][0])
-    price = product["default_price_cents"] if "default_price_cents" in keys else None
-    if price is not None and int(price) <= 0:
-        missing.append(PRODUCT_MISSING_LABELS["default_price"][0])
     return missing
 
 
@@ -109,7 +105,7 @@ def product_missing_summary(product) -> str:
 
 
 def product_needs_completion(product) -> bool:
-    """商品待补全：来源为开单攒出/批量导入，且缺品牌或缺默认价。"""
+    """商品待补全：来源为开单攒出/批量导入，且缺品牌。"""
     return bool(product_missing_fields(product))
 
 

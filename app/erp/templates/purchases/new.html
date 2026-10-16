@@ -36,9 +36,6 @@
   .unit-suggestions .suggest-item[aria-disabled="true"] { display: none; }
   .price-cell { padding: 4px !important; }
   .price-cell input { border: 0; width: 100%; padding: 4px 6px; background: transparent; }
-  .price-quick { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 6px 4px; }
-  .price-quick-btn { border: 1px solid var(--erp-border-strong); background: var(--erp-surface-soft); color: var(--erp-primary); border-radius: 5px; font-size: 12px; padding: 2px 6px; cursor: pointer; }
-  .price-quick-btn:hover { background: var(--erp-primary-soft); }
   .today-history{margin-top:24px;padding:18px;background:var(--erp-glass-bg);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);box-shadow:var(--erp-glass-shadow)}
   .today-history h3{font-size:18px;margin:0 0 4px}
   .today-history .table-responsive{overflow-x:auto;overflow-y:hidden}
@@ -106,7 +103,7 @@
         <td class="product-picker"><div class="picker-row"><input type="hidden" name="product_id" class="product-id" value="{{ row.product_id or '' }}"><input type="hidden" name="product_name" class="product-name" value="{{ row.product_name or '' }}"><div class="suggest-wrap product-suggest-wrap"><input class="form-control form-control-sm picker-name-input" autocomplete="off" aria-label="第 {{loop.index}} 行产品名称" placeholder="输入或选择商品名" value="{{ row.product_name or '' }}"><div class="suggest-list d-none product-suggestions" role="listbox" aria-label="商品建议"></div></div><div class="picker-missing d-none" role="status"></div></div></td>
         <td><div class="unit-cell suggest-wrap"><input name="unit" class="unit form-control form-control-sm" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="单位" aria-label="第 {{loop.index}} 行单位" aria-expanded="false" data-unit-options="{{ (unit_options or ['个','套','件'])|join('|') }}" value="{{ row.unit or '' }}"><div class="suggest-list d-none unit-suggestions" role="listbox" aria-label="单位建议"></div></div></td>
         <td><input name="quantity" class="quantity" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.000" value="{{ row.quantity or '' }}"></td>
-        <td class="price-cell"><input name="unit_cost_yuan" class="unit-price" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.00" value="{{ row.unit_cost_yuan or '' }}"><div class="price-quick d-none"></div></td>
+        <td class="price-cell"><input name="unit_cost_yuan" class="unit-price" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.00" value="{{ row.unit_cost_yuan or '' }}"></td>
         <td><div class="readonly-total line-total">0.00</div></td>
         <td><div class="readonly-total unit-cost-display" aria-label="只读成本">未选择商品</div></td>
         <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="clearRow(this)">清空</button></td>
@@ -204,31 +201,9 @@ function recalc() {
   });
   document.getElementById('grandTotal').textContent = money(total);
 }
-/* 拿货 / 退拿货的单价是**入库成本**，与客户售价无关，所以这里不取客户价、也不打接口：
-   「常规价」= 商品档案零售价（`products.default_price_cents`，随目录内嵌下发），
-   只作参考按钮；当前移动平均成本显示在行尾只读成本列，两者都不覆盖用户已填的单价。 */
-function priceYuan(cents) {
-  return (Number(cents || 0) / 100).toFixed(2);
-}
-function renderPriceQuick(tr, product) {
-  const quick = tr.querySelector('.price-quick');
-  if (!quick) return;
-  const source = product || catalogById.get(String(tr.querySelector('.product-id')?.value || '')) || {};
-  const regular = Number(source.default_price_cents || 0);
-  quick.innerHTML = '';
-  if (!regular) { quick.classList.add('d-none'); return; }
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'price-quick-btn';
-  button.textContent = '常规价 ' + priceYuan(regular) + '元';
-  button.addEventListener('click', () => { tr.querySelector('.unit-price').value = priceYuan(regular); recalc(); });
-  quick.appendChild(button);
-  quick.classList.remove('d-none');
-}
-function refineProductRow(tr, product) {
-  if (String(tr.querySelector('.product-id')?.value || '') !== String(product.id)) return;
-  renderPriceQuick(tr, product);
-}
+/* 拿货 / 退拿货的单价是**入库成本**，与售价无关：2026-10-15 起商品档案已不再保存售价
+   （售价唯一来源 = 开单学习出的客户专属价），所以这里既没有客户价、也没有档案零售价按钮；
+   当前移动平均成本显示在行尾只读成本列。 */
 /* P3：未建档提示要随行收起（清空行 / 一键清空 / 新增行）。 */
 function clearMissingHint(tr) {
   const hint = tr.querySelector('.picker-missing');
@@ -238,8 +213,6 @@ function clearRow(button) {
   const tr = button.closest('tr');
   tr.querySelectorAll('input').forEach(input => { input.value = ''; });
   clearMissingHint(tr);
-  tr.querySelector('.price-quick').innerHTML = '';
-  tr.querySelector('.price-quick').classList.add('d-none');
   tr.querySelector('.line-total').textContent = '0.00';
   if (tr.__picker) tr.__picker.reset();
   recalc();
@@ -255,8 +228,6 @@ function clearAllRows() {
   const firstRow = tbody.rows[0];
   firstRow.querySelectorAll('input').forEach(input => { input.value = ''; });
   clearMissingHint(firstRow);
-  firstRow.querySelector('.price-quick').innerHTML = '';
-  firstRow.querySelector('.price-quick').classList.add('d-none');
   firstRow.querySelector('.line-total').textContent = '0.00';
   if (firstRow.__picker) firstRow.__picker.reset();
   document.querySelectorAll('.suggest-list').forEach(box => box.classList.add('d-none'));
@@ -268,8 +239,6 @@ function addRow() {
   const tbody = document.getElementById('purchaseRows');
   const tr = tbody.rows[0].cloneNode(true);
   tr.querySelectorAll('input').forEach(input => { input.value = ''; });
-  tr.querySelector('.price-quick').innerHTML = '';
-  tr.querySelector('.price-quick').classList.add('d-none');
   tr.querySelector('.line-total').textContent = '0.00';
   tbody.appendChild(tr);
   clearMissingHint(tr);
@@ -327,7 +296,6 @@ function bindRow(tr) {
   tr.querySelectorAll('.quantity,.unit-price').forEach(input => input.addEventListener('input', recalc));
   const idField = tr.querySelector('.product-id');
   const unitInput = tr.querySelector('.unit');
-  const quick = tr.querySelector('.price-quick');
   // P2：单位单控件 = 输入框 + 候选浮层（候选池来自服务端，本页手输的新单位跨行共享）。
   ErpOrderEntry.bindUnitCell(unitInput, tr.querySelector('.unit-suggestions'));
   const missingHint = tr.querySelector('.picker-missing');
@@ -335,19 +303,14 @@ function bindRow(tr) {
   function applyProduct(product) {
     if (!product) {
       idField.value = '';
-      quick.innerHTML = '';
-      quick.classList.add('d-none');
       recalc();
       return;
     }
     idField.value = product.id;
     // 选中商品时把档案单位作为默认值填入（用户仍可改）
     if (unitInput) unitInput.value = product.unit || '';
-    quick.innerHTML = '';
-    quick.classList.add('d-none');
     clearMissingHint(tr);
     recalc();
-    refineProductRow(tr, product);
     tr.querySelector('.quantity').focus();
   }
   const picker = ErpProductPicker.mountHybrid(tr, catalog, applyProduct, {
