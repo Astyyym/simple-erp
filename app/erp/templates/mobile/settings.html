@@ -9,15 +9,16 @@
 {% endblock %}
 
 {% block body %}
-{# 设置页**没有任何写端**：主题只是本机 localStorage；「重新配对」只是跳转；
-   彻底断开只能在电脑的「设置 → 手机访问」里撤销设备。 #}
+{# 设置页没有业务写端；「电脑地址」在 APK 里走原生桥改壳的 SharedPreferences，
+   浏览器里没有桥，这一行保持静态展示。 #}
 <div class="group-label"><b>连接</b><span>只读</span></div>
 <div class="card set-card">
-  <div class="set-row">
+  <div class="set-row" id="addressRow">
     <span class="grow">
-      <span class="t"><span class="live">{{ dot() }}已连接</span></span>
-      <span class="s">{{ address }}</span>
+      <span class="t"><span class="live">{{ dot() }}电脑地址</span></span>
+      <span class="s">{{ address }}<span id="addressHint" hidden> · 点这里修改</span></span>
     </span>
+    <span class="chev" id="addressChev" hidden>{{ chev() }}</span>
   </div>
   <div class="set-row">
     <span class="grow">

@@ -2,11 +2,12 @@
    简单ERP 手机只读端 · 页面脚本
    不引用、不修改桌面端的 page-refresh.mjs / order-entry-common.js。
 
-   只做四件事：
+   只做五件事：
    1) 配对页 6 位码输入（自动前移、退格回退、粘贴分发）
    2) 导航等待：150ms 后出骨架，5 秒未返回换成明确失败（不无限转圈）
    3) 日期 sheet（年/月/日/全部 + 四个快捷）
-   4) 外观三选（只存本机 localStorage，手机端没有任何写端）+ 闲置回首页
+   4) 下拉刷新（只在页面顶部接管手势，桌面端不注册）
+   5) 外观三选（只存本机 localStorage，手机端没有任何写端）+ 闲置回首页
    ============================================================================ */
 (function () {
   'use strict';
@@ -271,7 +272,122 @@
     }
   }
 
-  /* ---------------- 4. 外观 + 闲置回首页 ---------------- */
+  /* ---------------- 4. 下拉刷新（只在页面顶部接管手势） ---------------- */
+  // 放在网页侧而不是壳侧：一套代码，桌面浏览器（无 touchstart）完全不注册。
+  // 关键点：真正的滚动容器是 .body（.app 高度 100%，window 不滚动），
+  // 所以判断「在顶部」必须看 .body.scrollTop —— 只看 window.scrollY 会永远为 0，
+  // 列表滚到中间也照样触发下拉刷新。
+  var PULL_THRESHOLD = 70;
+  var PULL_LOCK_MS = 300;
+  var scrollBox = document.querySelector('.body');
+  var pullHint = null;
+  var pulling = false;
+  var pullStartY = null;
+  var pullStartX = null;
+  var pullDistance = 0;
+  var lastRefreshAt = 0;
+  var refreshing = false;
+  var swallowClicksUntil = 0;
+
+  // 下拉手势结束后浏览器仍可能补一个 click（从卡片上开始下拉、松手时正好落在卡片上），
+  // 会让页面刚刷新又跳走。在 window 捕获阶段吞掉这次 click。
+  window.addEventListener('click', function (event) {
+    if (Date.now() < swallowClicksUntil) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }, true);
+
+  function atTop() {
+    var boxTop = scrollBox ? scrollBox.scrollTop : 0;
+    return (window.scrollY || 0) <= 0 && boxTop <= 0.5;
+  }
+
+  function hint(text, ready) {
+    if (!pullHint) { return; }
+    pullHint.textContent = text;
+    pullHint.classList.add('on');
+    pullHint.classList.toggle('ready', !!ready);
+  }
+
+  function hideHint() {
+    if (!pullHint) { return; }
+    pullHint.classList.remove('on', 'ready');
+  }
+
+  function resetPull() {
+    pulling = false;
+    pullStartY = null;
+    pullStartX = null;
+    pullDistance = 0;
+    hideHint();
+  }
+
+  function triggerRefresh() {
+    if (refreshing || Date.now() - lastRefreshAt < PULL_LOCK_MS) { return; }
+    lastRefreshAt = Date.now();
+    refreshing = true;
+    hint('正在刷新…');
+    // 复用导航骨架，不自造第二套 loading。
+    if (layer && skeleton && offline) {
+      clearTimers();
+      layer.hidden = false;
+      layer.setAttribute('aria-hidden', 'false');
+      skeleton.hidden = false;
+      offline.hidden = true;
+    }
+    setTimeout(function () { location.reload(); }, 260);
+  }
+
+  if ('ontouchstart' in window) {
+    pullHint = document.createElement('div');
+    pullHint.className = 'pull-hint';
+    pullHint.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(pullHint);
+
+    document.addEventListener('touchstart', function (event) {
+      if (event.touches.length !== 1 || refreshing) { return; }
+      if (Date.now() - lastRefreshAt < PULL_LOCK_MS) { return; }
+      // 日期 sheet 打开时不动页面
+      var sheetOpen = sheet && !sheet.hidden;
+      if (sheetOpen || !atTop()) { return; }
+      pullStartX = event.touches[0].clientX;
+      pullStartY = event.touches[0].clientY;
+      pullDistance = 0;
+      pulling = false;
+    }, { passive: true });
+
+    document.addEventListener('touchmove', function (event) {
+      if (pullStartY === null || event.touches.length !== 1 || refreshing) { return; }
+      var dy = event.touches[0].clientY - pullStartY;
+      var dx = event.touches[0].clientX - pullStartX;
+      if (!pulling) {
+        // 向上滑 / 看起来是横滑 / 已经不在顶部：完全不接管，交给列表滚动。
+        if (dy <= 0 || Math.abs(dx) > Math.abs(dy) || !atTop()) {
+          resetPull();
+          return;
+        }
+        pulling = true;
+      }
+      if (event.cancelable) { event.preventDefault(); }
+      pullDistance = dy;
+      var ready = dy >= PULL_THRESHOLD;
+      hint(ready ? '松手刷新' : '下拉刷新', ready);
+    }, { passive: false });
+
+    document.addEventListener('touchend', function () {
+      if (pullStartY === null) { return; }
+      var distance = pullDistance;
+      var fired = pulling && distance >= PULL_THRESHOLD;
+      if (pulling) { swallowClicksUntil = Date.now() + 400; }
+      resetPull();
+      if (fired) { triggerRefresh(); }
+    }, { passive: true });
+
+    document.addEventListener('touchcancel', resetPull, { passive: true });
+  }
+
+  /* ---------------- 5. 外观 + 闲置回首页 ---------------- */
   function readTheme() {
     try {
       var saved = localStorage.getItem(THEME_KEY);
@@ -295,6 +411,37 @@
     Array.prototype.forEach.call(themeButtons, function (button) {
       button.addEventListener('click', function () { applyTheme(button.dataset.themeSet); });
     });
+  }
+
+  /* ---------------- 6. 设置页：改电脑地址（只在 APK 原生桥存在时生效） ---------------- */
+  // 旧版壳右下角有个齿轮改地址，和「设置」tab 重复；现在收进设置页这一行。
+  // 浏览器里没有 SimpleERPNative，这行保持静态，不出现「点这里修改」的假入口。
+  var nativeBridge = window.SimpleERPNative;
+  var canOpenAddress = nativeBridge && typeof nativeBridge.openAddressDialog === 'function';
+  if (canOpenAddress) {
+    var addressRow = document.getElementById('addressRow');
+    if (addressRow) {
+      addressRow.classList.add('act');
+      addressRow.setAttribute('role', 'button');
+      addressRow.setAttribute('tabindex', '0');
+      var addressHint = document.getElementById('addressHint');
+      var addressChev = document.getElementById('addressChev');
+      if (addressHint) { addressHint.hidden = false; }
+      if (addressChev) { addressChev.hidden = false; }
+      addressRow.addEventListener('click', function () { nativeBridge.openAddressDialog(); });
+      addressRow.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          nativeBridge.openAddressDialog();
+        }
+      });
+    }
+    // 配对页没有底部 tab，也没有齿轮；地址不对时必须还能改。
+    var pairAddress = document.getElementById('pairChangeAddress');
+    if (pairAddress) {
+      pairAddress.hidden = false;
+      pairAddress.addEventListener('click', function () { nativeBridge.openAddressDialog(); });
+    }
   }
 
   // 闲置回首页：柜台放下一段时间后自动回到今日概览，下一位客人不用看到上一位的客户详情。

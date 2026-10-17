@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Activity 窗口底色与 mobile.css 的页面底色变量对齐：首帧前不透出系统白。 -->
+    <color name="page_bg">#FBFBFD</color>
+</resources>

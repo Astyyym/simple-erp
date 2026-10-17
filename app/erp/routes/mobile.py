@@ -36,10 +36,6 @@ from flask import (
 from erp.services import mobile_pairing, readonly_queries
 from erp.utils.filter_chips import ORDER_TYPE_LABELS
 from erp.utils.mobile_format import (
-    amount_band,
-    band,
-    money_exact,
-    money_short,
     month_day_label,
     quantity_text,
     short_date,
@@ -117,8 +113,6 @@ def customers():
     q = (request.args.get("q") or "").strip()
     only_debt = (request.args.get("filter") or "") == "debt"
     result = readonly_queries.list_customers(q, only_debt=only_debt)
-    for customer in result["customers"]:
-        customer["band"] = band(customer["balance_cents"])
     return render_template(
         "mobile/customers/list.html",
         nav_key="customers",
@@ -134,7 +128,12 @@ def customer_detail(customer_id: int):
     detail = readonly_queries.customer_detail(customer_id)
     if detail is None:
         return _not_found_page("这个客户不存在，可能已被删除。", back_url=url_for("mobile.customers"))
-    detail["band"] = band(detail["current_balance_cents"])
+    price_list = readonly_queries.customer_price_list(customer_id) or {
+        "customer": None,
+        "prices": [],
+        "price_count": 0,
+        "truncated": False,
+    }
     ledger_labels = {**ORDER_TYPE_LABELS, "payment": "收款", "adjustment": "账务调整"}
     for entry in detail["entries"]:
         entry["date_label"] = month_day_label(entry.get("date", ""))
@@ -145,6 +144,20 @@ def customer_detail(customer_id: int):
         "mobile/customers/detail.html",
         nav_key="customers",
         detail=detail,
+        price_list=price_list,
+    )
+
+
+@mobile_bp.get("/customers/<int:customer_id>/prices")
+def customer_prices(customer_id: int):
+    """客户的全部专属价：商品名 + 该客户价格，点商品看这个商品在所有客户处的价。"""
+    price_list = readonly_queries.customer_price_list(customer_id)
+    if price_list is None:
+        return _not_found_page("这个客户不存在，可能已被删除。", back_url=url_for("mobile.customers"))
+    return render_template(
+        "mobile/customers/prices.html",
+        nav_key="customers",
+        price_list=price_list,
     )
 
 
@@ -173,7 +186,6 @@ def orders():
     for document in result["documents"]:
         document["type_label"] = ORDER_TYPE_LABELS.get(document["order_type"], document["order_type"])
         document["day_label"] = short_date(document["business_date"])
-        document["band"] = amount_band(document["amount_cents"])
     return render_template(
         "mobile/orders/list.html",
         nav_key="orders",
@@ -219,32 +231,43 @@ def order_detail(order_type: str, document_id: int):
 
 @mobile_bp.get("/products")
 def products():
-    customer_id = request.args.get("customer_id", type=int) or 0
     q = (request.args.get("q") or "").strip()
-    customers_result = readonly_queries.list_customers("")
-    customer_options = customers_result["customers"]
-    if not customer_id and customer_options:
-        customer_id = customer_options[0]["id"]
-    result = readonly_queries.product_prices(customer_id, q) if customer_id else {
-        "customer": None,
-        "products": [],
-        "truncated": False,
-        "query": q,
-    }
-    for product in result["products"]:
-        special = product["customer_price_cents"]
-        recent = product["last_price_cents"]
-        product["differs"] = special is not None and recent is not None and special != recent
-        product["gap_cents"] = (
-            abs(int(special) - int(recent)) if product["differs"] else 0
-        )
+    result = readonly_queries.product_price_summary(q)
     return render_template(
         "mobile/products/list.html",
         nav_key="products",
         result=result,
-        customer_options=customer_options,
-        customer_id=customer_id,
         query=q,
+    )
+
+
+@mobile_bp.get("/products/<int:product_id>")
+def product_detail(product_id: int):
+    """商品详情：这个商品在**每个客户**那里的专属价（用户点名的那个洞）。"""
+    detail = readonly_queries.product_customer_prices(product_id)
+    if detail is None:
+        return _not_found_page(
+            "这个商品不存在，可能已被删除。", back_url=url_for("mobile.products")
+        )
+    customer_id = request.args.get("customer_id", type=int) or 0
+    if customer_id and readonly_queries.customer_brief(customer_id) is None:
+        customer_id = 0
+    for price in detail["prices"]:
+        special = price["price_cents"]
+        recent = price["last_price_cents"]
+        price["differs"] = recent is not None and special != recent
+        price["gap_cents"] = abs(int(special) - int(recent)) if price["differs"] else 0
+    back_url = (
+        url_for("mobile.customer_prices", customer_id=customer_id)
+        if customer_id
+        else url_for("mobile.products")
+    )
+    return render_template(
+        "mobile/products/detail.html",
+        nav_key="products",
+        detail=detail,
+        customer_id=customer_id,
+        back_url=back_url,
     )
 
 

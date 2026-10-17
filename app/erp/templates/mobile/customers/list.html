@@ -30,7 +30,7 @@
       <span class="t">{{ customer.name }}</span>
       <span class="s">{{ customer.pinyin }}{% if customer.phone %} · {{ customer.phone }}{% endif %}</span>
     </span>
-    <span class="tail"><span class="band {{ customer.band.key }}">{{ customer.band.label }}</span></span>
+    <span class="tail"><span class="num{{ ' neg' if customer.balance_cents < 0 }}">{{ money_short(customer.balance_cents) }}</span></span>
     <span class="chev">{{ chev() }}</span>
   </a>
   {% endfor %}
@@ -42,6 +42,6 @@
 {% if truncated %}<div class="note">客户太多，这里只列了前 400 位；用搜索缩小范围更快。</div>{% endif %}
 <div class="note info">
   <span class="ico">·</span>
-  <span>列表金额只显示分档（无欠款 / &lt;1千 / 1千–1万 / &gt;1万），具体欠款点进去看。</span>
+  <span>金额是当前欠款精确值；点进去看流水与单据。</span>
 </div>
 {% endblock %}

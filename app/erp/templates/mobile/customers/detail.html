@@ -5,9 +5,7 @@
 {% block page_key %}customer{% endblock %}
 
 {% block header %}
-{{ hd(detail.customer.name, "客户详情",
-      '<span class="band ' ~ detail.band.key ~ '">' ~ detail.band.label ~ '</span>',
-      back_url=url_for('mobile.customers')) }}
+{{ hd(detail.customer.name, "客户详情", back_url=url_for('mobile.customers')) }}
 {% endblock %}
 
 {% block body %}
@@ -32,6 +30,30 @@
     </div>
   </div>
 </div>
+
+{# 专属价：这个客户在哪些商品上有专属价（与商品详情页互为反向）。 #}
+<div class="group-label"><b>专属价</b><span>{{ price_list.price_count }} 个商品</span></div>
+{% if price_list.prices %}
+<div class="card" style="padding:0 var(--pad-card)">
+  {% for price in price_list.prices[:3] %}
+  <a class="row" href="{{ url_for('mobile.product_detail', product_id=price.product_id, customer_id=detail.customer.id) }}">
+    <span class="grow">
+      <span class="t">{{ price.product_name }}</span>
+      <span class="s">更新于 {{ price.updated_label }}</span>
+    </span>
+    <span class="tail">
+      <span class="num">{{ money_short(price.price_cents) }}</span>
+    </span>
+    <span class="chev">{{ chev() }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% if price_list.price_count > 3 %}
+<a class="more-link" href="{{ url_for('mobile.customer_prices', customer_id=detail.customer.id) }}">看全部 {{ price_list.price_count }} 个专属价</a>
+{% endif %}
+{% else %}
+<div class="card"><div class="muted-note" style="padding:2px 0">还没有专属价 · 在电脑上开单时手输单价会学成专属价</div></div>
+{% endif %}
 
 <div class="group-label"><b>最近流水</b><span>最近 10 笔</span></div>
 {% if detail.entries %}

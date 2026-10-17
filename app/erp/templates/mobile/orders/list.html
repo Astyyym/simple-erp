@@ -32,7 +32,7 @@
       <span class="s">{{ document.order_no }}{% if date_range.mode != 'day' %} · {{ document.day_label }}{% endif %}{% if document.time_label %} {{ document.time_label }}{% endif %}</span>
     </span>
     <span class="tail">
-      <span class="band {{ document.band.key }}">{{ document.band.label }}</span>
+      <span class="num{{ ' neg' if document.amount_cents < 0 }}">{{ money_short(document.amount_cents) }}</span>
       <span class="tag t-{{ document.order_type }}">{{ document.type_label }}</span>
     </span>
     <span class="chev">{{ chev() }}</span>
@@ -46,7 +46,7 @@
 {% if truncated %}<div class="note">单据太多，这里只列最近 200 张；把时间范围收窄更快。</div>{% endif %}
 <div class="note info">
   <span class="ico">·</span>
-  <span>列表金额只显示分档，点开单据看精确金额与明细。</span>
+  <span>金额是单据精确值；点开看明细。</span>
 </div>
 
 {# 日期 sheet：年/月/日/全部四档 + 四个快捷。点「确定」才写回筛选。 #}

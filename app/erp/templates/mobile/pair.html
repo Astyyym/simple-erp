@@ -34,6 +34,11 @@
 
   <button class="btn" type="submit">配对</button>
 
+  {# 地址填错/电脑换 IP 时会停在这一页；旧版靠右下角齿轮改地址，
+     FAB 去掉后必须在这里留一个入口（只在 APK 原生桥存在时显示）。 #}
+  <button class="more-link" type="button" id="pairChangeAddress" hidden
+          style="border:0;background:transparent;font-family:inherit;cursor:pointer">电脑地址不对？点这里修改</button>
+
   <div class="note info">
     <span class="ico">{{ warn() }}</span>
     <span>连续输错 5 次会锁 5 分钟。配对成功后这台手机会被记住，下次不用再输。</span>

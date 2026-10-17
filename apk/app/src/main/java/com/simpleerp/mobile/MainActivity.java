@@ -4,16 +4,18 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.SharedPreferences;
+import android.content.res.Configuration;
 import android.graphics.Color;
-import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.ColorDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.InputType;
 import android.util.TypedValue;
-import android.view.Gravity;
+import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -26,6 +28,7 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.window.OnBackInvokedDispatcher;
 
 /**
  * 简单ERP 手机只读端的外壳：一个全屏 WebView 指向桌面端第二监听（默认 5001）的 /m/。
@@ -56,12 +59,68 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         baseUrl = prefs().getString(KEY_BASE, "");
         root = new FrameLayout(this);
-        root.setBackgroundColor(Color.WHITE);
         setContentView(root);
+        applyWindowChrome();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // targetSdk 36 默认走预测返回：不注册这个回调时，系统会直接关掉 Activity，
+            // 根本不会调用 onBackPressed（实测返回键从商品详情直接回到桌面）。
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::handleBack);
+        }
         if (baseUrl == null || baseUrl.isEmpty()) {
             showSetup(false);
         } else {
             startWeb();
+        }
+    }
+
+    /** 页面底色：与 mobile.css 的 --bg 对齐（浅 #fbfbfd / 深 #0b0f16）。 */
+    private boolean nightMode() {
+        int mode = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        return mode == Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    private int pageBackground() {
+        return nightMode() ? 0xFF0B0F16 : 0xFFFBFBFD;
+    }
+
+    /** 原生设置页/兜底页的文字与按钮也要跟随深浅色，避免深色下整页刺白。 */
+    private int inkColor() {
+        return nightMode() ? 0xFFF2F5F9 : 0xFF111827;
+    }
+
+    private int mutedColor() {
+        return nightMode() ? 0xFFA9B8CB : 0xFF6B7280;
+    }
+
+    private int softColor() {
+        return nightMode() ? 0xFF1E2733 : 0xFFF4F5F8;
+    }
+
+    /**
+     * Activity 窗口本身的底色也要跟主题：系统默认白底会在 WebView 首帧前透出来，
+     * 冷启动就会闪一下白（深色模式尤其刺眼）。这里把 window / root / 状态栏 / 导航栏
+     * 统一成页面底色，并同步状态栏图标明暗。
+     */
+    private void applyWindowChrome() {
+        int bg = pageBackground();
+        getWindow().setBackgroundDrawable(new ColorDrawable(bg));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            getWindow().setStatusBarColor(bg);
+            getWindow().setNavigationBarColor(bg);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            View decor = getWindow().getDecorView();
+            int flags = decor.getSystemUiVisibility();
+            if (nightMode()) {
+                flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            } else {
+                flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            }
+            decor.setSystemUiVisibility(flags);
+        }
+        if (root != null) {
+            root.setBackgroundColor(bg);
         }
     }
 
@@ -139,12 +198,12 @@ public class MainActivity extends Activity {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(28), dp(48), dp(28), dp(28));
-        box.setBackgroundColor(Color.WHITE);
+        box.setBackgroundColor(pageBackground());
 
         TextView title = new TextView(this);
         title.setText("连接你的电脑");
         title.setTextSize(24f);
-        title.setTextColor(0xFF111827);
+        title.setTextColor(inkColor());
         box.addView(title);
 
         TextView desc = new TextView(this);
@@ -152,7 +211,7 @@ public class MainActivity extends Activity {
                 + "例如 192.168.10.5 或 192.168.10.5:5001（不写端口按 5001）。\n"
                 + "手机要和电脑连同一个 WiFi。");
         desc.setTextSize(14f);
-        desc.setTextColor(0xFF6B7280);
+        desc.setTextColor(mutedColor());
         desc.setPadding(0, dp(14), 0, dp(22));
         box.addView(desc);
 
@@ -161,6 +220,8 @@ public class MainActivity extends Activity {
         input.setSingleLine(true);
         input.setInputType(InputType.TYPE_CLASS_TEXT);
         input.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        input.setTextColor(inkColor());
+        input.setHintTextColor(mutedColor());
         input.setText(baseUrl.isEmpty() ? "" : pretty(baseUrl));
         box.addView(input);
 
@@ -170,6 +231,8 @@ public class MainActivity extends Activity {
 
         Button save = new Button(this);
         save.setText("保存并连接");
+        save.setTextColor(Color.WHITE);
+        save.setBackgroundColor(0xFF2563EB);
         save.setOnClickListener(v -> {
             String url = normalize(input.getText().toString());
             if (url.isEmpty()) {
@@ -185,6 +248,8 @@ public class MainActivity extends Activity {
         if (cancellable) {
             Button cancel = new Button(this);
             cancel.setText("取消");
+            cancel.setTextColor(inkColor());
+            cancel.setBackgroundColor(softColor());
             cancel.setOnClickListener(v -> {
                 if (baseUrl.isEmpty()) {
                     showSetup(false);
@@ -206,6 +271,8 @@ public class MainActivity extends Activity {
         clearViews();
 
         web = new WebView(this);
+        // WebView 默认白底：页面还没画出首帧时会先露这层白，设成页面底色才不闪。
+        web.setBackgroundColor(pageBackground());
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -220,6 +287,8 @@ public class MainActivity extends Activity {
         // 手机端靠 cookie 免配对，必须保留
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
+        // 设置页「电脑地址」这一行通过桥打开原生对话框；不再用右下角齿轮。
+        web.addJavascriptInterface(new NativeBridge(), "SimpleERPNative");
 
         web.setWebViewClient(new WebViewClient() {
             @Override
@@ -276,8 +345,14 @@ public class MainActivity extends Activity {
         root.addView(web, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         openHome();
+    }
 
-        addSettingsFab();
+    /** 网页 → 壳的桥：设置页点「电脑地址」时打开原生地址对话框。 */
+    private class NativeBridge {
+        @JavascriptInterface
+        public void openAddressDialog() {
+            runOnUiThread(MainActivity.this::showAddressDialog);
+        }
     }
 
     /**
@@ -300,23 +375,6 @@ public class MainActivity extends Activity {
                 web.loadUrl(baseUrl + "/m/");
             }
         });
-    }
-
-    private void addSettingsFab() {
-        TextView fab = new TextView(this);
-        fab.setText("\u2699");
-        fab.setTextSize(20f);
-        fab.setTextColor(0xFFFFFFFF);
-        fab.setGravity(Gravity.CENTER);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setShape(GradientDrawable.OVAL);
-        bg.setColor(0x59000000);
-        fab.setBackground(bg);
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(42), dp(42));
-        lp.gravity = Gravity.BOTTOM | Gravity.END;
-        lp.setMargins(0, 0, dp(12), dp(12));
-        fab.setOnClickListener(v -> showAddressDialog());
-        root.addView(fab, lp);
     }
 
     private void showAddressDialog() {
@@ -358,18 +416,18 @@ public class MainActivity extends Activity {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(28), dp(64), dp(28), dp(28));
-        box.setBackgroundColor(0xFFF9FAFB);
+        box.setBackgroundColor(pageBackground());
 
         TextView title = new TextView(this);
         title.setText("连不上电脑");
         title.setTextSize(22f);
-        title.setTextColor(0xFF111827);
+        title.setTextColor(inkColor());
         box.addView(title);
 
         errorDetail = new TextView(this);
         errorDetail.setText("当前地址：" + pretty(baseUrl));
         errorDetail.setTextSize(13f);
-        errorDetail.setTextColor(0xFF6B7280);
+        errorDetail.setTextColor(mutedColor());
         errorDetail.setPadding(0, dp(10), 0, dp(18));
         box.addView(errorDetail);
 
@@ -379,7 +437,7 @@ public class MainActivity extends Activity {
                 + "2. 手机和电脑不在同一个 WiFi；\n"
                 + "3. 电脑换过 IP（路由重启后可能变）。");
         reasons.setTextSize(14f);
-        reasons.setTextColor(0xFF374151);
+        reasons.setTextColor(inkColor());
         reasons.setLineSpacing(dp(4), 1f);
         box.addView(reasons);
 
@@ -389,6 +447,8 @@ public class MainActivity extends Activity {
 
         Button retry = new Button(this);
         retry.setText("重试");
+        retry.setTextColor(Color.WHITE);
+        retry.setBackgroundColor(0xFF2563EB);
         retry.setOnClickListener(v -> {
             if (errorPanel != null) {
                 root.removeView(errorPanel);
@@ -405,6 +465,8 @@ public class MainActivity extends Activity {
 
         Button change = new Button(this);
         change.setText("改地址");
+        change.setTextColor(inkColor());
+        change.setBackgroundColor(softColor());
         change.setOnClickListener(v -> showAddressDialog());
         box.addView(change, btnLp);
 
@@ -417,17 +479,22 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        handleBack();
+    }
+
+    /** 返回键：先让 WebView 后退；回到首页后两次返回才退出。 */
+    private void handleBack() {
         if (web != null && web.canGoBack()) {
             web.goBack();
             return;
         }
         if (web == null) {
-            super.onBackPressed();
+            finish();
             return;
         }
         long now = System.currentTimeMillis();
         if (now - lastBackPress < 2000L) {
-            super.onBackPressed();
+            finish();
             return;
         }
         lastBackPress = now;

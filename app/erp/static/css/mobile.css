@@ -188,8 +188,18 @@ a { color: inherit; text-decoration: none; }
   padding: var(--pad-card);
   transition: background .18s ease, border-color .18s ease, box-shadow .18s ease;
 }
-.card.tap { cursor: pointer; }
+.card.tap { display: block; cursor: pointer; }
 .card.tap:active { transform: scale(.995); }
+
+/* 「看全部」文字链（客户详情专属价段） */
+.more-link {
+  display: block;
+  padding: 2px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 560;
+  color: var(--primary);
+}
 
 .group-label {
   display: flex;
@@ -702,6 +712,29 @@ a { color: inherit; text-decoration: none; }
 .nav-layer .head-skel .b.small { height: 11px; width: 24%; }
 .nav-layer .card { padding: 8px var(--pad-card); }
 
+/* ---------- 下拉刷新提示（页面在顶部时下拉才出现） ---------- */
+.pull-hint {
+  position: fixed;
+  top: calc(max(env(safe-area-inset-top, 0px), 26px) + 4px);
+  left: 50%;
+  z-index: 35;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: var(--card-border);
+  box-shadow: var(--card-shadow);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 560;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -10px);
+  transition: opacity .12s ease, transform .12s ease, color .12s ease;
+}
+.pull-hint.on { opacity: 1; transform: translate(-50%, 0); }
+.pull-hint.ready { color: var(--primary); }
+
 /* ---------- 日期筛选 ---------- */
 .date-btn {
   display: inline-flex;
@@ -1033,5 +1066,6 @@ a { color: inherit; text-decoration: none; }
   .skel .b, .sk-row .b { animation: none; }
   .sheet { animation: none; }
   .app, .card { transition: none; }
+  .pull-hint { transition: none; }
   .row:active, .card.tap:active { transform: none; }
 }

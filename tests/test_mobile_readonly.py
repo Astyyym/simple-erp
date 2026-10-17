@@ -84,6 +84,8 @@ def test_4b_pair_page_is_reachable_and_has_the_only_post_form(app):
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert 'method="post"' in html
+    # 没有底部 tab / 齿轮时，配对页也必须能改电脑地址（APK 原生桥入口）
+    assert 'id="pairChangeAddress"' in html
 
 
 def test_5_batch_balance_matches_authoritative_ledger(seeded):
@@ -130,10 +132,36 @@ def test_order_list_filters_by_type_and_date(paired_client, seeded):
     assert "共 5 张" in all_time
 
 
-def test_product_page_shows_customer_price_side_by_side(paired_client, seeded):
-    html = paired_client.get(f"/m/products?customer_id={seeded['customer_id']}").get_data(as_text=True)
-    assert "专属价" in html and "最近成交" in html
+def test_product_page_is_product_first(paired_client, seeded):
+    html = paired_client.get("/m/products").get_data(as_text=True)
+    assert "搜商品名" in html
     assert "手机端测试商品" in html
+    assert "客户专属价" in html
+    assert "最近成交" not in html
+    assert 'class="customer-switch"' not in html
+
+
+def test_customer_list_shows_exact_debt_not_band(paired_client, seeded):
+    html = paired_client.get("/m/customers").get_data(as_text=True)
+    assert "¥160" in html
+    for band in ("无欠款", "1千–1万", "&lt;1千"):
+        assert band not in html
+
+
+def test_order_list_shows_exact_amount_not_band(paired_client, seeded):
+    html = paired_client.get("/m/orders?date_mode=day").get_data(as_text=True)
+    assert "¥200" in html and "-¥30" in html
+    for band in ("无金额", "1千–1万"):
+        assert band not in html
+
+
+def test_settings_page_has_native_address_row(paired_client, seeded):
+    html = paired_client.get("/m/settings").get_data(as_text=True)
+    assert 'id="addressRow"' in html
+    assert "点这里修改" in html
+    js = paired_client.get("/static/js/mobile/mobile.js").get_data(as_text=True)
+    assert "SimpleERPNative" in js and "openAddressDialog" in js
+    assert "pairChangeAddress" in js
 
 
 def test_customer_detail_shows_exact_money_and_no_cost(paired_client, seeded):

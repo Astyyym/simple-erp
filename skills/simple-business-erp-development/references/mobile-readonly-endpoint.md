@@ -56,8 +56,26 @@
 | 四表列表 | 抄 `routes/orders.py:370-388` 的 UNION（`business_date` 别名统一两种列名） |
 | 名称检索 | `utils/pinyin.py` 的 `name_match_clause()` / `name_match_params()` |
 
-金额显示两条口径：**列表只给分档、详情才给精确**。客户列表用欠款档（无欠款/<1千/1千–1万/>1万）；
-单据列表用**中性档**（无金额/<1千/…，按绝对值）——把「无欠款」套在退货单 `-¥300` 上是错的。
+金额显示：2026-10-17 晚用户改口后，列表与详情都显示精确金额（`money_short()`）；旧的 `band()` / `amount_band()` 分档已从手机列表移除，别再照旧文档写「列表只给分档」。
+
+## 商品详情与客户专属价（2026-10-17 补，晚二次修订）
+
+- 商品价 tab 是**商品优先**：`product_price_summary(q)` 一条 `GROUP BY` 查询返回每个商品的客户价数量与最小/最大价；列表卡片只给「N 个客户 + 价格区间」，**不要再先选客户**。
+- 双向查询：`product_customer_prices(product_id)`（商品 → 每个客户价，价格降序）与 `customer_price_list(customer_id)`（客户 → 有价商品）。客户详情「看全部」走独立 `/m/customers/<id>/prices`，不再跳商品列表。
+- 与桌面端商品编辑页「客户专属价」同源：`customer_prices JOIN customers`；**不额外过滤已删客户**（桌面端也没过滤），否则两边会少一行。已删客户仍列出但标「已删除」、不给链接（点进去会 404）。
+- `updated_at` 是 UTC（`CURRENT_TIMESTAMP`），显示走 `_local_stamp()`；不要用 `timestamp_label()` 直接套（它按本地时间解析，不会再做 UTC→本地转换）。
+- 「最近成交价」口径与商品价列表一致：该客户最近一张 `saved/printed` 销售/退货单里该商品的单价；拿货/退拿货不计。
+- 路由 `/m/products/<id>` 只 GET；`POST` 405，蓝图外 `/products/` 仍 404。
+
+## 金额显示（2026-10-17 晚改口）
+
+用户看到实物后要求列表直接给具体数字。客户列表、单据列表、客户详情头部都走 `money_short()`，不再使用 `band()` / `amount_band()` 分档；工具函数仍保留，但手机列表不再调用。恢复分档必须重新征得用户同意。
+
+## 壳内改地址（2026-10-17 晚）
+
+- 右下角齿轮已删除（和「设置」tab 重复）。设置页 `#addressRow` 与配对页 `#pairChangeAddress` 都通过 `window.SimpleERPNative.openAddressDialog()` 调原生对话框；浏览器里没有桥，入口保持静态/隐藏。
+- 配对页没有底部 tab，地址填错时没有别的出口——新增/删除地址入口时，这两个页面都要留退路。
+- targetSdk 33+ 的返回键必须注册 `OnBackInvokedCallback`；否则系统走预测返回，`onBackPressed()` 不触发，详情页按返回会直接回桌面。
 
 ## 前端实现要点
 
@@ -66,10 +84,18 @@
 - 导航等待：点击后 **150ms** 才显示骨架（局域网常 100ms 内返回，立刻挂骨架会闪），**5 秒**没回
   换成「连不上」+ 地址 + 三条原因 + 重试。电脑关机/不同 WiFi 时请求到不了服务器，浏览器自己的
   错误页接管，我们无法定制。
+- **下拉刷新的「顶部」判断看 `.body.scrollTop`，不是 `window.scrollY`**：`.app` 高 100%、滚动发生在
+  `.body`，`window.scrollY` 恒为 0；只看它会让列表滚到中间也触发。列表在中间时 touchstart 直接放弃接管。
+  手势只在 `'ontouchstart' in window` 时注册；松手触发复用 `#navSkeleton`；300ms 内第二次忽略；
+  手势结束后 400ms 内吞掉补发的 click（否则会顺手点进卡片）。
 - `.body` 必须 `min-height: 0`：flex 子项默认 `min-height:auto`，内容一长就撑破容器、列表钻到
   tab 栏下面。
 - 主题三选取值只存 `localStorage`（键 `erp-mobile-theme`，值是 `system|light|dark`），首帧前用
   内联脚本写 `data-theme`，避免切深色闪白。手机端**没有任何写端**，这是「设置页无写操作」的实现方式。
+- 壳侧底色必须与页面一致：`windowBackground=@color/page_bg`（values / values-night）、Activity 同步
+  window / root / 状态栏 / 导航栏、WebView 也要 `setBackgroundColor(pageBackground())`；深色 theme 用
+  `Theme.Material.NoActionBar`，WebView 的 `prefers-color-scheme` 才会跟系统变深。浅色首帧是
+  `#FBFBFD`、深色 `#0B0F16`，不是纯白。
 - 页头宏的 `aside` 参数是模板自己拼的内联片段（band 标签、日期按钮），必须 `|safe`；
   标题/副标题保持默认转义，客户名不会被当标记执行。
 

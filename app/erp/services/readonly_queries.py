@@ -198,15 +198,32 @@ def customer_detail(
 # 今日概览（4 类合并）
 # ---------------------------------------------------------------------------
 
-def _local_hm(created_at: str) -> str:
-    """`created_at` 存的是 UTC（SQLite CURRENT_TIMESTAMP），显示要换成本地时间。"""
+def _local_moment(value: str):
+    """UTC `CURRENT_TIMESTAMP` 字符串 → 本地 datetime；解析失败返回 None。"""
     try:
-        moment = datetime.fromisoformat(str(created_at))
+        moment = datetime.fromisoformat(str(value))
     except (TypeError, ValueError):
-        return ""
+        return None
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
-    return moment.astimezone().strftime("%H:%M")
+    return moment.astimezone()
+
+
+def _local_hm(created_at: str) -> str:
+    """`created_at` 存的是 UTC（SQLite CURRENT_TIMESTAMP），显示要换成本地时间。"""
+    moment = _local_moment(created_at)
+    return moment.strftime("%H:%M") if moment else ""
+
+
+def _local_stamp(value: str) -> str:
+    """`customer_prices.updated_at`（UTC）→ 本地 `10月17日 15:44`。
+
+    不直接显示 UTC 原串：店主看到的时间必须是本机墙上的时间。
+    """
+    moment = _local_moment(value)
+    if moment is None:
+        return str(value or "")
+    return f"{moment.month}月{moment.day}日 {moment.strftime('%H:%M')}"
 
 
 def mobile_document_url(order_type: str, source_id: int) -> str:
@@ -599,4 +616,177 @@ def product_prices(customer_id: int, q: str = "", *, limit: int = PRODUCT_LIST_L
         "products": products,
         "truncated": truncated,
         "query": q,
+    }
+
+
+CUSTOMER_PRICE_LIMIT = 200
+NO_PRICE_NAME_LIMIT = 10
+
+
+def product_price_summary(q: str = "", *, limit: int = PRODUCT_LIST_LIMIT) -> dict:
+    """商品优先的商品价列表：每个商品有多少客户价、价格区间（精确值）。
+
+    2026-10-17 用户反馈：商品价页不应先选客户，应该直接搜商品名，
+    点进去再看这个商品在每个客户处的专属价。这里只给列表摘要，
+    详情仍走 `product_customer_prices()`，口径不分叉。
+    """
+    q = (q or "").strip()
+    conditions = ["p.deleted_at IS NULL"]
+    params: list = []
+    if q:
+        conditions.append(name_match_clause("p."))
+        params.extend(name_match_params(q))
+    sql = f"""
+        SELECT p.id, p.name, p.unit,
+               COUNT(cp.id) AS price_count,
+               MIN(cp.price_cents) AS min_price_cents,
+               MAX(cp.price_cents) AS max_price_cents
+          FROM products p
+          LEFT JOIN customer_prices cp ON cp.product_id = p.id
+         WHERE {' AND '.join(conditions)}
+         GROUP BY p.id
+         ORDER BY CASE WHEN COUNT(cp.id)=0 THEN 1 ELSE 0 END,
+                  p.usage_count DESC, p.name COLLATE NOCASE ASC
+         LIMIT ?
+    """
+    with connect_readonly() as conn:
+        rows = conn.execute(sql, (*params, max(limit, 1) + 1)).fetchall()
+    truncated = len(rows) > limit
+    products = [
+        {
+            "id": int(row["id"]),
+            "name": row["name"],
+            "unit": row["unit"],
+            "price_count": int(row["price_count"] or 0),
+            "min_price_cents": (
+                None if row["min_price_cents"] is None else int(row["min_price_cents"])
+            ),
+            "max_price_cents": (
+                None if row["max_price_cents"] is None else int(row["max_price_cents"])
+            ),
+        }
+        for row in rows[:limit]
+    ]
+    return {"products": products, "truncated": truncated, "query": q}
+
+
+def product_customer_prices(product_id: int, *, limit: int = CUSTOMER_PRICE_LIMIT) -> dict | None:
+    """商品视角：这个商品在**每个客户**那里的专属价（价格降序）。
+
+    与桌面端商品编辑页的「客户专属价」卡片同源：都是 `customer_prices` JOIN
+    `customers`，**不额外过滤已删客户**（桌面端也没有），否则两边会少一行。
+    `last_price_cents` 仍按「该客户最近一张有效销售/退货单里这个商品的单价」取，
+    与 `product_prices()` 的口径一致，供模板给差额提示。
+    """
+    with connect_readonly() as conn:
+        product = conn.execute(
+            "SELECT id, name, unit FROM products WHERE id=? AND deleted_at IS NULL",
+            (product_id,),
+        ).fetchone()
+        if product is None:
+            return None
+        rows = conn.execute(
+            f"""
+            SELECT cp.customer_id, c.name AS customer_name,
+                   c.deleted_at AS customer_deleted_at,
+                   cp.price_cents, cp.updated_at,
+                   (SELECT oi.unit_price_cents
+                      FROM order_items oi JOIN orders o ON o.id = oi.order_id
+                     WHERE oi.product_id = ? AND o.customer_id = cp.customer_id
+                       AND o.status IN {ORDER_STATUS_SQL} AND o.deleted_at IS NULL
+                     ORDER BY o.order_date DESC, o.id DESC LIMIT 1) AS last_price_cents
+              FROM customer_prices cp
+              JOIN customers c ON c.id = cp.customer_id
+             WHERE cp.product_id = ?
+             ORDER BY cp.price_cents DESC, c.name COLLATE NOCASE ASC, c.id ASC
+             LIMIT ?
+            """,
+            (int(product_id), int(product_id), max(limit, 1) + 1),
+        ).fetchall()
+        # 「没有这个商品专属价」的客户：只在未删客户里算，避免把回收站里的名字点出来。
+        missing_rows = conn.execute(
+            "SELECT c.id, c.name FROM customers c"
+            " WHERE c.deleted_at IS NULL"
+            "   AND NOT EXISTS (SELECT 1 FROM customer_prices cp"
+            "                    WHERE cp.product_id=? AND cp.customer_id=c.id)"
+            " ORDER BY c.name COLLATE NOCASE ASC, c.id ASC",
+            (int(product_id),),
+        ).fetchall()
+    truncated = len(rows) > limit
+    prices = [
+        {
+            "customer_id": int(row["customer_id"]),
+            "customer_name": row["customer_name"],
+            "customer_deleted": row["customer_deleted_at"] is not None,
+            "price_cents": int(row["price_cents"]),
+            "updated_at": row["updated_at"],
+            "updated_label": _local_stamp(row["updated_at"]),
+            "last_price_cents": (
+                None if row["last_price_cents"] is None else int(row["last_price_cents"])
+            ),
+        }
+        for row in rows[:limit]
+    ]
+    return {
+        "product": {
+            "id": int(product["id"]),
+            "name": product["name"],
+            "unit": product["unit"],
+        },
+        "prices": prices,
+        "price_count": len(prices),
+        "truncated": truncated,
+        "customers_without_price": {
+            "count": len(missing_rows),
+            "names": [row["name"] for row in missing_rows[:NO_PRICE_NAME_LIMIT]],
+        },
+    }
+
+
+def customer_price_list(customer_id: int, *, limit: int = CUSTOMER_PRICE_LIMIT) -> dict | None:
+    """客户视角：这个客户有哪些商品的专属价（价格降序），用于客户详情「专属价」段。"""
+    with connect_readonly() as conn:
+        customer = conn.execute(
+            "SELECT id, name FROM customers WHERE id=? AND deleted_at IS NULL",
+            (customer_id,),
+        ).fetchone()
+        if customer is None:
+            return None
+        rows = conn.execute(
+            f"""
+            SELECT cp.product_id, p.name AS product_name, p.unit,
+                   cp.price_cents, cp.updated_at,
+                   (SELECT oi.unit_price_cents
+                      FROM order_items oi JOIN orders o ON o.id = oi.order_id
+                     WHERE oi.product_id = cp.product_id AND o.customer_id = ?
+                       AND o.status IN {ORDER_STATUS_SQL} AND o.deleted_at IS NULL
+                     ORDER BY o.order_date DESC, o.id DESC LIMIT 1) AS last_price_cents
+              FROM customer_prices cp
+              JOIN products p ON p.id = cp.product_id AND p.deleted_at IS NULL
+             WHERE cp.customer_id = ?
+             ORDER BY cp.price_cents DESC, p.name COLLATE NOCASE ASC, p.id ASC
+             LIMIT ?
+            """,
+            (int(customer_id), int(customer_id), max(limit, 1) + 1),
+        ).fetchall()
+    truncated = len(rows) > limit
+    prices = [
+        {
+            "product_id": int(row["product_id"]),
+            "product_name": row["product_name"],
+            "unit": row["unit"],
+            "price_cents": int(row["price_cents"]),
+            "updated_at": row["updated_at"],
+            "updated_label": _local_stamp(row["updated_at"]),
+            "last_price_cents": (
+                None if row["last_price_cents"] is None else int(row["last_price_cents"])
+            ),
+        }
+        for row in rows[:limit]
+    ]
+    return {
+        "customer": {"id": int(customer["id"]), "name": customer["name"]},
+        "prices": prices,
+        "price_count": len(prices),
+        "truncated": truncated,
     }

@@ -259,3 +259,21 @@ dates 确实换行了，但**容器宽度一点没变**（仍是 596px）。
 之和（标签列 + 按钮列）≈ 296px ✓。
 
 → 判据：改完要读**容器自身**的 `getBoundingClientRect().width`，不能只看子项有没有换行。
+
+## 给 Inno 传 `/DIR=` 参数时，反斜杠必须在 Python 里写原始字符串
+
+2026-10-17 实测：用 `subprocess.run([setup, "/DIR=D:\app\简单ERP", ...])` 传安装目录，
+`\a` 被 Python 当成转义 → 实际参数变成 `D:\x07pp\简单ERP`（BEL 字符）。
+Inno 不报错，日志里能看到 `Setup command line: ... /DIR=D:\u0007pp\简单ERP`，
+`{app}` 落回 **当前工作目录**（= 仓库根），于是 679 个文件、`unins000.exe`、
+`HKCU\...\Uninstall\{AppId}_is1` 和 `LastAppDir` 全指向了源码仓库根目录，
+而安装器退出码仍是 **0**。
+
+→ 传路径参数一律用原始字符串（`r"/DIR=D:\app\简单ERP"`）或 `pathlib`/`os.path` 拼，
+   不要写普通字符串字面量；
+→ 静默安装**必须带 `/LOG=`** 并在装完后核对日志里的 `Setup command line` 与
+   `Directory for uninstall files`，不能只看退出码；
+→ 装完立即核对三处：PE 版本变没变、`InstallLocation`（注册表）指向哪、
+   `HKCU\Software\简单ERP\LastAppDir` 指向哪；`config.json` 哈希不变不等于装对了；
+→ 装错目录的善后：先用正确 `/DIR` 重装一次（会重写卸载键与 `LastAppDir`），
+   再手工删掉误写在仓库根的 `_internal/`、`unins000.dat`、`unins000.exe`、`简单ERP.exe`。

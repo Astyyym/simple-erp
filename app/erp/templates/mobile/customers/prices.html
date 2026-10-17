@@ -1,0 +1,39 @@
+{% extends "mobile/base.html" %}
+{% from "mobile/_macros.html" import hd, empty_state %}
+{% from "mobile/_icons.html" import chev, warn %}
+{% block title %}{{ price_list.customer.name }} 专属价 · {{ shop_name }}{% endblock %}
+{% block page_key %}customer{% endblock %}
+
+{% block header %}
+{{ hd(price_list.customer.name, "全部专属价",
+      back_url=url_for('mobile.customer_detail', customer_id=price_list.customer.id)) }}
+{% endblock %}
+
+{% block body %}
+{# 客户视角的完整清单：客户详情只给前 3 条，这里给全部；点商品回商品视角。 #}
+{% if price_list.prices %}
+<div class="group-label"><b>专属价</b><span>{{ price_list.price_count }} 个商品 · 贵的在前</span></div>
+<div class="card" style="padding:0 var(--pad-card)">
+  {% for price in price_list.prices %}
+  <a class="row" href="{{ url_for('mobile.product_detail', product_id=price.product_id, customer_id=price_list.customer.id) }}">
+    <span class="grow">
+      <span class="t">{{ price.product_name }}</span>
+      <span class="s">更新于 {{ price.updated_label }}</span>
+    </span>
+    <span class="tail">
+      <span class="num">{{ money_short(price.price_cents) }}</span>
+    </span>
+    <span class="chev">{{ chev() }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% if price_list.truncated %}<div class="note">专属价太多，这里只列前 {{ price_list.prices|length }} 条。</div>{% endif %}
+{% else %}
+<div class="card">{{ empty_state("这个客户还没有专属价", "在电脑上开单时手输单价，就会学成这个客户的专属价") }}</div>
+{% endif %}
+
+<div class="note info">
+  <span class="ico">{{ warn() }}</span>
+  <span>点商品能看到这个商品在每个客户处的专属价；价格是最近一次手输的单价，不是成本。</span>
+</div>
+{% endblock %}

@@ -1,0 +1,63 @@
+{% extends "mobile/base.html" %}
+{% from "mobile/_macros.html" import hd, empty_state %}
+{% from "mobile/_icons.html" import chev, warn %}
+{% block title %}{{ detail.product.name }} · {{ shop_name }}{% endblock %}
+{% block page_key %}product{% endblock %}
+
+{% block header %}
+{{ hd(detail.product.name, "客户专属价 · " ~ detail.product.unit, back_url=back_url) }}
+{% endblock %}
+
+{% block body %}
+{# 商品价的另一面：商品价页是「某客户看所有商品」，这里是「某商品看所有客户」。 #}
+{% if detail.prices %}
+<div class="group-label"><b>客户专属价</b><span>{{ detail.price_count }} 个客户 · 贵的在前</span></div>
+<div class="card" style="padding:0 var(--pad-card)">
+  {% for price in detail.prices %}
+  {% if price.customer_deleted %}
+  <div class="row" style="cursor:default">
+  {% else %}
+  <a class="row" href="{{ url_for('mobile.customer_detail', customer_id=price.customer_id) }}">
+  {% endif %}
+    <span class="grow">
+      <span class="t">{{ price.customer_name }}{% if price.customer_deleted %} <span class="muted-note">已删除</span>{% endif %}</span>
+      <span class="s">更新于 {{ price.updated_label }}{% if price.last_price_cents is not none %} · 最近成交 {{ money_short(price.last_price_cents) }}{% endif %}</span>
+    </span>
+    <span class="tail">
+      <span class="num">{{ money_short(price.price_cents) }}</span>
+      {% if price.differs %}
+      <span class="diff-flag">差 {{ money_short(price.gap_cents) }}</span>
+      {% elif price.last_price_cents is none %}
+      <span class="muted-note">无成交</span>
+      {% endif %}
+    </span>
+    {% if not price.customer_deleted %}<span class="chev">{{ chev() }}</span>{% endif %}
+  {% if price.customer_deleted %}</div>{% else %}</a>{% endif %}
+  {% endfor %}
+</div>
+{% if detail.truncated %}<div class="note">这个商品的客户价太多，这里只列前 {{ detail.prices|length }} 条；到电脑上的商品编辑页可以看全。</div>{% endif %}
+{% else %}
+<div class="card">
+  {{ empty_state("这个商品还没有客户专属价", "在电脑上开单时手输单价，就会学成这个客户的专属价") }}
+</div>
+{% endif %}
+
+{% if detail.customers_without_price.count %}
+<div class="note">
+  <span class="ico">{{ warn() }}</span>
+  <span>
+    另有 {{ detail.customers_without_price.count }} 个客户没有这个商品的专属价{% if detail.customers_without_price.names %}：{{ detail.customers_without_price.names|join('、') }}{% if detail.customers_without_price.count > detail.customers_without_price.names|length %} 等{% endif %}{% endif %}。
+  </span>
+</div>
+{% endif %}
+
+{% if customer_id %}
+<a class="btn ghost" role="button" style="display:grid;place-items:center;text-decoration:none"
+   href="{{ url_for('mobile.customer_prices', customer_id=customer_id) }}">看这个客户的全部专属价</a>
+{% endif %}
+
+<div class="note info">
+  <span class="ico">{{ warn() }}</span>
+  <span>专属价是该客户最近一次手输的单价；与最近成交不一致时给出差额，不静默取其一。</span>
+</div>
+{% endblock %}
