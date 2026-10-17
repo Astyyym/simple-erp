@@ -167,3 +167,14 @@ sticky 的包含块随之变成这一层 → 滚动超过 280px 后整列滚出�
 修法同样是让容器常驻：`<div class="filter-chips{% if not filter_chips %} is-empty{% endif %}" data-refresh-fragment id="analyticsChips">`
 + `.erp-analytics .filter-chips.is-empty{display:none}`。
 → 对照实验做法：拿**未改动的旧代码实例**跑同一条路径，能干净地区分「既存缺陷」与「本次引入的回归」。
+
+## flex 容器收不窄：要让一组控件换行并变窄，用 grid 不用 flex
+
+2026-10-17 实测：分析页筛选区要把「时间范围 + 模式按钮 + 起止日期」这块从 596px 收到 ~290px
+（腾出宽度给右侧并排的客户 / 商品），先试 `.filter-inline{flex-wrap:wrap}` + `.dates{flex:1 1 100%}`——
+dates 确实换行了，但**容器宽度一点没变**（仍是 596px）。
+原因：flex 容器的 **max-content 宽度按「所有子项不换行之和」算**，换行不参与 intrinsic size 计算。
+改用 grid（`grid-template-columns:auto auto` + `.dates{grid-column:1 / -1}`）后，容器宽度 = 各列 max-content
+之和（标签列 + 按钮列）≈ 296px ✓。
+
+→ 判据：改完要读**容器自身**的 `getBoundingClientRect().width`，不能只看子项有没有换行。
