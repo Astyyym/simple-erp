@@ -281,6 +281,18 @@ def main() -> None:
             prewarm_pdf_engine()
         except Exception:  # noqa: BLE001 — 预热失败不能影响启动
             pass
+        # 手机只读端（第二监听 5001）：只有开关打开才起。起不来不能挡住桌面端启动——
+        # 手机连不上是「少一个功能」，程序起不来是「什么都干不了」。
+        try:
+            from erp.config import load_config
+            from erp.mobile_server import start_mobile_listener
+
+            if load_config().get("mobile_access_enabled"):
+                started, listen_error = start_mobile_listener()
+                if not started:
+                    logging.getLogger(__name__).warning("手机访问监听未启动：%s", listen_error)
+        except Exception:  # noqa: BLE001 — 绝不因手机端影响主程序
+            logging.getLogger(__name__).exception("手机访问监听启动失败")
 
     title = _window_title() if app is not None else "简单ERP"
     try:
@@ -335,7 +347,16 @@ def main() -> None:
 
     _window.events.loaded += _on_loaded
     threading.Thread(target=_swap_to_app, daemon=True).start()
-    webview.start()
+    try:
+        webview.start()
+    finally:
+        # 退出时关掉第二监听并等线程结束；否则下次启动端口仍被占（会报「被占用」）。
+        try:
+            from erp.mobile_server import stop_mobile_listener
+
+            stop_mobile_listener()
+        except Exception:  # noqa: BLE001 — 退出清理失败不该改变退出码
+            pass
 
 
 if __name__ == "__main__":

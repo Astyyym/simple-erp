@@ -1,0 +1,83 @@
+{% extends "mobile/base.html" %}
+{% from "mobile/_macros.html" import hd, empty_state %}
+{% from "mobile/_icons.html" import chev, warn %}
+{% block title %}{{ detail.customer.name }} · {{ shop_name }}{% endblock %}
+{% block page_key %}customer{% endblock %}
+
+{% block header %}
+{{ hd(detail.customer.name, "客户详情",
+      '<span class="band ' ~ detail.band.key ~ '">' ~ detail.band.label ~ '</span>',
+      back_url=url_for('mobile.customers')) }}
+{% endblock %}
+
+{% block body %}
+{#
+  详情页才给精确金额（列表只给分档）：柜台前手机被隔壁客户看到，精确欠款会得罪人。
+  余额与流水来自 get_customer_account_ledger()，与桌面端账款页同一实现。
+  「累计增减」= 当前欠款 − 期初（本页没有日期区间，所以不叫「本期」）。
+#}
+<div class="card" style="padding:0">
+  <div class="balance">
+    <div>
+      <div class="lb">期初</div>
+      <div class="vl">{{ money_exact(detail.opening_balance_cents) }}</div>
+    </div>
+    <div>
+      <div class="lb">累计增减</div>
+      <div class="vl{{ ' neg' if detail.change_cents < 0 }}">{% if detail.change_cents > 0 %}+{% endif %}{{ money_exact(detail.change_cents) }}</div>
+    </div>
+    <div class="big">
+      <div class="lb">当前欠款</div>
+      <div class="vl">{{ money_exact(detail.current_balance_cents) }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="group-label"><b>最近流水</b><span>最近 10 笔</span></div>
+{% if detail.entries %}
+<div class="card" style="padding:0 var(--pad-card)">
+  {% for entry in detail.entries %}
+  <div class="row" style="cursor:default">
+    <span class="grow">
+      <span class="t" style="font-weight:520">{{ entry.description }}{% if entry.status == 'void' %}（已作废）{% endif %}</span>
+      <span class="s">{{ entry.date_label }} · {{ entry.type_label }}{% if entry.reference and entry.reference != entry.type_label %} · {{ entry.reference }}{% endif %}</span>
+    </span>
+    {% set shown_cents = entry.amount_cents if entry.status == 'void' else entry.balance_delta_cents %}
+    <span class="tail">
+      <span class="num{{ ' mut' if entry.status == 'void' else (' neg' if shown_cents < 0) }}">{{ money_exact(shown_cents) }}</span>
+    </span>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">{{ empty_state("还没有流水", "在电脑上给这个客户开单或收款后，这里会出现") }}</div>
+{% endif %}
+
+<div class="group-label"><b>历史单据</b><span>含拿货与退拿货</span></div>
+{% if detail.documents %}
+<div class="card" style="padding:0 var(--pad-card)">
+  {% for document in detail.documents %}
+  <a class="row" href="{{ url_for('mobile.order_detail', order_type=document.order_type, document_id=document.id) }}">
+    <span class="grow">
+      <span class="t">{{ document.type_label }}</span>
+      <span class="s">{{ document.business_date }} · {{ document.order_no }}</span>
+    </span>
+    <span class="tail">
+      <span class="num{{ ' neg' if document.amount_cents < 0 }}">{{ money_exact(document.amount_cents) }}</span>
+    </span>
+    <span class="chev">{{ chev() }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">{{ empty_state("还没有单据", "开过销售单或拿货单之后，这里按时间倒序列出") }}</div>
+{% endif %}
+
+<a class="btn ghost" role="button" style="display:grid;place-items:center;text-decoration:none"
+   href="{{ url_for('mobile.orders', customer_id=detail.customer.id, date_mode='all') }}">看全部单据</a>
+
+<div class="note">
+  <span class="ico">{{ warn() }}</span>
+  <span>只读页：不提供编辑、作废、删除入口。数量和金额以电脑端为准。</span>
+</div>
+{% endblock %}

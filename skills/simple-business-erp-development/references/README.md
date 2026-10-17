@@ -22,6 +22,7 @@
 | [ui-hint-visibility-toggle.md](./ui-hint-visibility-toggle.md) | 界面说明文字开关（`data-ui-hint` + `html[data-ui-hints]` 一条 CSS）：受控范围、必须可见的边界（危险警告/状态/数据/空态/placeholder）、加标记后的断言写法 |
 | [purchase-return-decoupling.md](./purchase-return-decoupling.md) | 四类开单解耦、商品选择器（v14 起单框：销售/退货手输、拿货/退拿货下拉）、手工退拿货与 schema13 迁移；NH 共用日流水取号 |
 | [analytics-visualization.md](./analytics-visualization.md) | 数据分析页月历热力图、四类流水口径、产品排行与条形生长动画（v15 起不再有成本诊断层） |
+| [mobile-readonly-endpoint.md](./mobile-readonly-endpoint.md) | 手机只读端（浏览器直连，第二监听 5001）：独立 app 结构、只读三层保证、两处必须加的接缝、口径复用清单、前端要点与验证方法 |
 
 ## 开发、部署与排障流程
 

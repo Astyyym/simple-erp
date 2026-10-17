@@ -1,0 +1,2279 @@
+<!doctype html>
+<html lang="zh-CN" data-skin="b" data-theme="light" data-today="timeline">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="简单ERP">
+<title>简单ERP · 手机只读端 设计稿</title>
+<style>
+/* ============================================================
+   简单ERP 手机只读端 · 高保真设计稿
+   两套视觉：A = 沿用桌面端 token；B = 原生 App 观感
+   今日概览三版式：数据卡 / 分段列 / 时间轴
+   数据全部为假数据，用于版式定稿，不是真实账目
+   ============================================================ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  font-family: "Microsoft YaHei UI", "Segoe UI", system-ui, -apple-system, "PingFang SC", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+body {
+  background: #11161f;
+  color: #e8eef9;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 28px;
+  padding: 24px;
+  min-height: 100vh;
+}
+
+/* ---------- A 视觉：沿用桌面端 token ---------- */
+[data-skin="a"][data-theme="light"] {
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --soft: #f8fafc;
+  --ink: #172033;
+  --muted: #667085;
+  --border: #dfe3ea;
+  --border-strong: #c8ced8;
+  --primary: #2563eb;
+  --primary-ink: #ffffff;
+  --primary-soft: #eff6ff;
+  --success: #17803d;
+  --danger: #c73535;
+  --warn: #b45309;
+  --warn-bg: #fffbeb;
+  --warn-border: #fcd34d;
+  --radius: 10px;
+  --radius-sm: 8px;
+  --card-shadow: 0 1px 2px rgba(16,24,40,.04), 0 8px 24px rgba(16,24,40,.05);
+  --card-border: 1px solid var(--border);
+  --tab-bg: #ffffff;
+  --tab-border: 1px solid var(--border);
+  --tab-blur: none;
+  --tab-shadow: none;
+  --gap-page: 14px;
+  --pad-card: 14px;
+  --title-size: 19px;
+  --num-size: 26px;
+  --row-pad: 12px;
+}
+[data-skin="a"][data-theme="dark"] {
+  --bg: #0f141d;
+  --surface: #171e2b;
+  --soft: #1c2535;
+  --ink: #e8eef9;
+  --muted: #9aa8c0;
+  --border: #2b3648;
+  --border-strong: #3d4b63;
+  --primary: #3b82f6;
+  --primary-ink: #ffffff;
+  --primary-soft: #1e293b;
+  --success: #34d399;
+  --danger: #f87171;
+  --warn: #fbbf24;
+  --warn-bg: #3a2f14;
+  --warn-border: #6b5217;
+  --radius: 10px;
+  --radius-sm: 8px;
+  --card-shadow: 0 1px 2px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.25);
+  --card-border: 1px solid var(--border);
+  --tab-bg: #171e2b;
+  --tab-border: 1px solid var(--border);
+  --tab-blur: none;
+  --tab-shadow: none;
+  --gap-page: 14px;
+  --pad-card: 14px;
+  --title-size: 19px;
+  --num-size: 26px;
+  --row-pad: 12px;
+}
+
+/* ---------- B 视觉：原生 App ---------- */
+[data-skin="b"][data-theme="light"] {
+  --bg: #fbfbfd;
+  --surface: #ffffff;
+  --soft: #f4f5f8;
+  --ink: #101828;
+  --muted: #6b7280;
+  --border: rgba(16,24,40,.07);
+  --border-strong: rgba(16,24,40,.14);
+  --primary: #2563eb;
+  --primary-ink: #ffffff;
+  --primary-soft: #eef4ff;
+  --success: #16794a;
+  --danger: #c0392b;
+  --warn: #a15c07;
+  --warn-bg: #fff8e6;
+  --warn-border: #f3d08a;
+  --radius: 14px;
+  --radius-sm: 11px;
+  --card-shadow: 0 1px 2px rgba(16,24,40,.04), 0 10px 28px rgba(16,24,40,.055);
+  --card-border: 1px solid transparent;
+  --tab-bg: rgba(255,255,255,.92);
+  --tab-border: 1px solid transparent;
+  --tab-blur: blur(14px);
+  --tab-shadow: 0 -10px 30px rgba(16,24,40,.06);
+  --gap-page: 18px;
+  --pad-card: 18px;
+  --title-size: 22px;
+  --num-size: 30px;
+  --row-pad: 15px;
+}
+[data-skin="b"][data-theme="dark"] {
+  --bg: #0b0f16;
+  --surface: #171f2b;
+  --soft: #1e2733;
+  --ink: #f2f5f9;
+  --muted: #a9b8cb;
+  --border: rgba(255,255,255,.09);
+  --border-strong: rgba(255,255,255,.17);
+  --primary: #4f8cff;
+  --primary-ink: #08121f;
+  --primary-soft: #17253c;
+  --success: #37d399;
+  --danger: #ff7b72;
+  --warn: #f5bd48;
+  --warn-bg: #2e2513;
+  --warn-border: #5d4a1c;
+  --radius: 14px;
+  --radius-sm: 11px;
+  --card-shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 32px rgba(0,0,0,.34);
+  --card-border: 1px solid rgba(255,255,255,.05);
+  --tab-bg: rgba(19,25,34,.92);
+  --tab-border: 1px solid transparent;
+  --tab-blur: blur(14px);
+  --tab-shadow: 0 -10px 30px rgba(0,0,0,.34);
+  --gap-page: 18px;
+  --pad-card: 18px;
+  --title-size: 22px;
+  --num-size: 30px;
+  --row-pad: 15px;
+}
+
+/* ---------- 桌面预览：控制条 + 设备框 ---------- */
+.toolbar {
+  width: 250px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-self: flex-start;
+  position: sticky;
+  top: 24px;
+}
+.toolbar h1 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+  color: #e8eef9;
+  letter-spacing: .2px;
+}
+.toolbar p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #8f9cb3;
+}
+.tool-group { display: flex; flex-direction: column; gap: 6px; }
+.tool-group > span {
+  font-size: 11px;
+  color: #7c8798;
+  letter-spacing: .4px;
+}
+.seg {
+  display: flex;
+  gap: 4px;
+  background: rgba(255,255,255,.06);
+  border-radius: 9px;
+  padding: 3px;
+}
+.seg button {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: #b6c2d6;
+  font: inherit;
+  font-size: 12px;
+  padding: 7px 6px;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.seg button.on { background: #2a3446; color: #fff; }
+.seg button:focus-visible { outline: 2px solid #4f8cff; outline-offset: 1px; }
+
+.device {
+  width: 390px;
+  height: 844px;
+  flex: none;
+  border-radius: 40px;
+  overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.08);
+  background: var(--bg);
+  position: relative;
+}
+.device.landscape { width: 844px; height: 390px; border-radius: 32px; }
+
+/* ---------- App 外壳 ---------- */
+.app {
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  /* 顶部安全区：iOS 刘海走 env()，Android 的 env() 常为 0，用 26px 下限兜住状态栏 */
+  padding-top: max(env(safe-area-inset-top, 0px), 26px);
+  padding-bottom: env(safe-area-inset-bottom);
+  font-size: 14px;
+  line-height: 1.5;
+  transition: background .18s ease, color .18s ease;
+}
+
+.hd {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 16px 18px 10px;
+}
+[data-skin="b"] .hd { padding: 18px 20px 12px; }
+.hd .back {
+  flex: none;
+  width: 40px; height: 40px;
+  margin: 0 0 0 -8px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.hd .back:hover { background: var(--soft); }
+.hd .stack { min-width: 0; flex: 1; }
+.hd .eyebrow {
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: .3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hd h2 {
+  margin: 2px 0 0;
+  font-size: var(--title-size);
+  font-weight: 640;
+  letter-spacing: -.2px;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hd .aside { flex: none; font-size: 12px; color: var(--muted); }
+
+.body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  /* 滚动条不占位：Windows 经典滚动条约 15px，一出现就把内容挤窄 */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding: 4px 16px calc(20px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-page);
+}
+.body::-webkit-scrollbar { width: 0; height: 0; display: none; }
+[data-skin="b"] .body { padding-left: 18px; padding-right: 18px; }
+.device.landscape .body { padding-bottom: 20px; }
+
+/* ---------- 卡片与行 ---------- */
+.card {
+  background: var(--surface);
+  border: var(--card-border);
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
+  padding: var(--pad-card);
+  transition: background .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+.card.tap { cursor: pointer; }
+.card.tap:active { transform: scale(.995); }
+
+.group-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 2px;
+  margin: 2px 0 -6px;
+}
+.group-label b {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: .6px;
+}
+.group-label span { font-size: 11px; color: var(--muted); }
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: var(--row-pad) 2px;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  border-left: 0; border-right: 0; border-top: 0;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.row:last-child { border-bottom: 0; }
+.row .grow { flex: 1; min-width: 0; }
+.row .t {
+  font-size: 14px;
+  font-weight: 560;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row .s {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row .num {
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.row .tail {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+.chev { flex: none; color: var(--border-strong); display: grid; place-items: center; }
+
+/* 金额颜色 */
+.pos { color: var(--ink); }
+.neg { color: var(--danger); }
+.mut { color: var(--muted); }
+
+/* ---------- 今日概览：数据卡 ---------- */
+.kpi-grid { display: grid; gap: var(--gap-page); }
+.kpi {
+  background: var(--surface);
+  border: var(--card-border);
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
+  padding: var(--pad-card);
+}
+.kpi .kpi-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.kpi .kpi-hd b { font-size: 13px; font-weight: 600; letter-spacing: .3px; }
+.kpi .kpi-hd .count { font-size: 12px; color: var(--muted); }
+.kpi .lines { display: flex; flex-direction: column; }
+.kpi .ln {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 0;
+  font-size: 13px;
+  border-bottom: 1px dashed var(--border);
+}
+.kpi .ln:last-child { border-bottom: 0; }
+.kpi .ln .lb { color: var(--muted); }
+.kpi .ln .vl { font-variant-numeric: tabular-nums; font-weight: 560; }
+.kpi .ln.zero .lb, .kpi .ln.zero .vl { color: var(--muted); opacity: .72; }
+.kpi .net {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1.5px solid var(--border-strong);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.kpi .net .lb { font-size: 13px; font-weight: 600; }
+.kpi .net .vl {
+  font-size: var(--num-size);
+  font-weight: 660;
+  letter-spacing: -.6px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 今日概览：分段列 ---------- */
+.seg-list { padding: 4px var(--pad-card); }
+.seg-list .sec {
+  padding: 12px 0 4px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.seg-list .sec b { font-size: 12px; color: var(--muted); letter-spacing: .6px; }
+.seg-list .sec .amt {
+  font-size: 13px;
+  font-weight: 620;
+  font-variant-numeric: tabular-nums;
+}
+.seg-list .ln {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 46px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+.seg-list .ln .l { display: flex; align-items: center; gap: 8px; }
+.seg-list .ln .v { font-variant-numeric: tabular-nums; font-weight: 560; }
+.seg-list .ln.zero { color: var(--muted); }
+.seg-list .ln .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--border-strong);
+}
+.seg-list .ln[data-type="sale"] .dot { background: var(--primary); }
+.seg-list .ln[data-type="return"] .dot { background: var(--danger); }
+.seg-list .ln[data-type="purchase"] .dot { background: var(--warn); }
+.seg-list .ln[data-type="purchase_return"] .dot { background: var(--success); }
+
+/* ---------- 今日概览：时间轴 ---------- */
+.tl-top {
+  display: flex;
+  gap: 10px;
+}
+.tl-top .mini {
+  flex: 1;
+  background: var(--surface);
+  border: var(--card-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--card-shadow);
+  padding: 11px 12px;
+}
+.tl-top .mini .lb { font-size: 11px; color: var(--muted); }
+.tl-top .mini .vl {
+  margin-top: 3px;
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -.4px;
+  font-variant-numeric: tabular-nums;
+}
+.tl { display: flex; flex-direction: column; gap: 0; }
+.tl .item {
+  display: grid;
+  grid-template-columns: 46px 14px 1fr;
+  gap: 0 8px;
+  align-items: start;
+}
+.tl .time {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  padding-top: 15px;
+  text-align: right;
+}
+.tl .rail { position: relative; display: flex; justify-content: center; }
+.tl .rail::before {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+.tl .item:first-child .rail::before { top: 19px; }
+.tl .item:last-child .rail::before { bottom: auto; height: 19px; }
+.tl .dot {
+  position: relative;
+  margin-top: 15px;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--border-strong);
+  z-index: 1;
+}
+.tl .item[data-type="sale"] .dot { border-color: var(--primary); }
+.tl .item[data-type="return"] .dot { border-color: var(--danger); }
+.tl .item[data-type="purchase"] .dot { border-color: var(--warn); }
+.tl .item[data-type="purchase_return"] .dot { border-color: var(--success); }
+.tl .ev {
+  padding: 10px 0 14px;
+  min-width: 0;
+  border-bottom: 1px solid var(--border);
+}
+.tl .item:last-child .ev { border-bottom: 0; }
+.tl .ev .l1 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.tl .ev .who {
+  font-size: 14px;
+  font-weight: 560;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tl .ev .amt { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 14px; }
+.tl .ev .l2 {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- 分档金额 ---------- */
+.band {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 560;
+  white-space: nowrap;
+}
+.band.b0 { background: var(--soft); color: var(--muted); }
+.band.b1 { background: var(--primary-soft); color: var(--primary); }
+.band.b2 { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-border); }
+.band.b3 { background: var(--danger); color: #fff; }
+
+/* ---------- 标签 / chip ---------- */
+.chip-bar {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 16px 0;
+  flex: none;
+}
+.chip-bar::-webkit-scrollbar { display: none; }
+.chip {
+  flex: none;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 14px;
+  min-height: 38px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.chip.on {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-ink);
+  font-weight: 560;
+}
+[data-skin="b"] .chip { border-radius: 12px; border-color: var(--border); background: var(--soft); }
+[data-skin="b"] .chip.on { background: var(--primary); border-color: var(--primary); }
+
+.search {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px 4px;
+  padding: 0 12px;
+  height: 42px;
+  background: var(--surface);
+  border: var(--card-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--card-shadow);
+}
+.search input {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+  min-width: 0;
+}
+.search input::placeholder { color: var(--muted); }
+.search .kbd {
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* ---------- 单据状态 ---------- */
+.tag {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--soft);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.tag.t-sale { background: var(--primary-soft); color: var(--primary); border-color: transparent; }
+.tag.t-return { background: rgba(199,53,53,.10); color: var(--danger); border-color: transparent; }
+.tag.t-purchase { background: var(--warn-bg); color: var(--warn); border-color: var(--warn-border); }
+.tag.t-purchase_return { background: rgba(23,128,61,.10); color: var(--success); border-color: transparent; }
+
+/* ---------- 客户详情：余额三段 ---------- */
+.balance {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1px;
+  background: var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.balance > div {
+  background: var(--surface);
+  padding: 12px 10px;
+}
+.balance .lb { font-size: 11px; color: var(--muted); }
+.balance .vl {
+  margin-top: 4px;
+  font-size: 15px;
+  font-weight: 640;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.2px;
+}
+.balance .big .vl { font-size: 18px; }
+
+/* ---------- 提示条 ---------- */
+.note {
+  display: flex;
+  gap: 9px;
+  padding: 11px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  line-height: 1.6;
+  text-wrap: pretty;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+  color: var(--warn);
+}
+.note .ico { flex: none; margin-top: 1px; }
+.note.info { background: var(--primary-soft); border-color: transparent; color: var(--primary); }
+
+/* ---------- 底部 tab ---------- */
+.tabbar {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1px;
+  background: var(--tab-bg);
+  border-top: var(--tab-border);
+  backdrop-filter: var(--tab-blur);
+  -webkit-backdrop-filter: var(--tab-blur);
+  box-shadow: var(--tab-shadow);
+  padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+}
+.tabbar button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10.5px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px 1px 4px;
+  min-height: 48px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tabbar button.on { color: var(--primary); font-weight: 600; }
+.tabbar .ico { display: grid; place-items: center; height: 22px; }
+
+/* ---------- 横屏：左侧 rail ---------- */
+.device.landscape .app {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+.device.landscape .tabbar {
+  order: -1;
+  grid-template-columns: 1fr;
+  grid-template-rows: repeat(4, auto);
+  align-content: start;
+  width: 76px;
+  border-top: 0;
+  border-right: var(--tab-border);
+  padding: 14px 6px;
+  gap: 6px;
+}
+.device.landscape .tabbar button { min-height: 62px; font-size: 11px; }
+.device.landscape .main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.device.landscape .body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-content: start;
+  padding-bottom: 16px;
+}
+.device.landscape .body > * { grid-column: 1 / -1; }
+.device.landscape .body > .kpi-grid { grid-template-columns: 1fr 1fr; }
+.device.landscape .body[data-page="today"] > .tl-top { grid-column: 1 / -1; }
+
+.main { display: contents; }
+.device.landscape .main { display: flex; }
+
+/* ---------- 空状态 / 骨架 ---------- */
+.skel { display: flex; flex-direction: column; gap: 10px; }
+.skel .b {
+  height: 14px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--soft) 25%, var(--border) 37%, var(--soft) 63%);
+  background-size: 400% 100%;
+  animation: sk 1.4s ease infinite;
+}
+.skel .b.w40 { width: 40%; }
+.skel .b.w70 { width: 70%; }
+@keyframes sk { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .skel .b { animation: none; } }
+
+/* 列表骨架行 */
+.sk-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 7px 16px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--border);
+}
+.sk-row:last-child { border-bottom: 0; }
+.sk-row .b {
+  height: 12px;
+  border-radius: 5px;
+  background: linear-gradient(90deg, var(--soft) 25%, var(--border) 37%, var(--soft) 63%);
+  background-size: 400% 100%;
+  animation: sk 1.4s ease infinite;
+}
+.sk-row .b.t1 { width: 40%; }
+.sk-row .b.t2 { grid-column: 1 / -1; width: 66%; }
+.sk-row .b.amt { width: 52px; height: 14px; }
+@media (prefers-reduced-motion: reduce) { .sk-row .b { animation: none; } }
+
+/* 连不上 */
+.offline-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin: auto 0;
+  padding: 0 4px;
+  text-align: center;
+}
+.offline-ico {
+  width: 66px;
+  height: 66px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--soft);
+  color: var(--muted);
+  border: 1px dashed var(--border-strong);
+}
+.offline-wrap h3 {
+  margin: 2px 0 0;
+  font-size: 17px;
+  font-weight: 620;
+  letter-spacing: -.2px;
+}
+.offline-wrap .addr {
+  font-size: 12.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  background: var(--soft);
+  border-radius: 6px;
+  padding: 3px 9px;
+}
+.reasons {
+  width: 100%;
+  text-align: left;
+  background: var(--surface);
+  border: var(--card-border);
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
+  padding: 2px var(--pad-card);
+  margin-top: 2px;
+}
+.reasons .r {
+  display: flex;
+  gap: 9px;
+  align-items: baseline;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13.5px;
+}
+.reasons .r:last-child { border-bottom: 0; }
+.reasons .r b { font-weight: 540; }
+.reasons .n {
+  flex: none;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 10.5px;
+  display: grid;
+  place-items: center;
+}
+.offline-wrap .btn { width: 100%; max-width: 220px; margin-top: 2px; }
+.offline-wrap .hint { font-size: 11.5px; color: var(--muted); line-height: 1.8; }
+
+.empty {
+  text-align: center;
+  padding: 34px 10px;
+  color: var(--muted);
+}
+.empty .ring {
+  width: 44px; height: 44px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  border: 1.5px dashed var(--border-strong);
+  display: grid;
+  place-items: center;
+}
+.empty b { display: block; font-size: 14px; color: var(--ink); font-weight: 560; margin-bottom: 4px; }
+.empty span { font-size: 12.5px; line-height: 1.7; }
+
+/* ---------- 日期筛选 ---------- */
+.date-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.date-btn .caret { color: var(--muted); font-size: 9px; }
+
+.sheet-mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(10,14,20,.42);
+  z-index: 30;
+}
+.sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 31;
+  background: var(--surface);
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -18px 48px rgba(0,0,0,.28);
+  padding: 8px 18px calc(16px + env(safe-area-inset-bottom));
+  max-height: 82%;
+  overflow-y: auto;
+  scrollbar-width: none;
+  animation: sheet-up .18s ease;
+}
+.sheet::-webkit-scrollbar { width: 0; height: 0; display: none; }
+@keyframes sheet-up {
+  from { transform: translateY(14px); opacity: .5; }
+  to { transform: none; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) { .sheet { animation: none; } }
+.sheet-grab {
+  width: 36px; height: 4px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  margin: 2px auto 10px;
+}
+.sheet-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.sheet-hd b { font-size: 15px; font-weight: 620; }
+.sheet-x {
+  width: 32px; height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+.pick-grid { display: grid; gap: 8px; }
+.pick-grid.y { grid-template-columns: 1fr; }
+.pick-grid.m { grid-template-columns: repeat(4, 1fr); margin-top: 10px; }
+.pick-grid button {
+  min-height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.pick-grid button.on {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-ink);
+  font-weight: 600;
+}
+.pick-years { display: flex; gap: 6px; }
+.pick-years .mini-y {
+  flex: 1;
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--soft);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.pick-years .mini-y.on {
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-color: transparent;
+  font-weight: 600;
+}
+.date-input {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+}
+.day-range { display: grid; gap: 10px; }
+.day-range .fl {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.quick-row { display: flex; gap: 8px; margin: 14px 0 12px; }
+.quick-row button {
+  flex: 1;
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--soft);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.sheet .btn { width: 100%; }
+
+/* ---------- 设置页 ---------- */
+.hd .aside .icon-btn {
+  width: 40px;
+  height: 40px;
+  margin: -8px -8px -8px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.hd .aside .icon-btn:hover { background: var(--soft); }
+.set-card { padding: 0 var(--pad-card); }
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 54px;
+  padding: 12px 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+.set-row:last-child { border-bottom: 0; }
+.set-row.act { cursor: pointer; }
+.set-row .s { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
+.set-row.danger .t { color: var(--danger); }
+.live { display: inline-flex; align-items: center; gap: 5px; }
+.live svg { color: var(--success); }
+.seg-inline {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  background: var(--soft);
+  border-radius: var(--radius-sm);
+}
+.seg-inline button {
+  flex: 1;
+  min-height: 38px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.seg-inline button.on {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--border-strong), 0 1px 2px rgba(16,24,40,.10);
+}
+
+/* ---------- 配对页 ---------- */
+.pair-wrap { padding: 26px 6px; display: flex; flex-direction: column; gap: 18px; }
+.pair-code {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.pair-code input {
+  width: 40px; height: 52px;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  outline: none;
+}
+.pair-code input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.btn {
+  min-height: 46px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--primary);
+  color: var(--primary-ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn.ghost { background: var(--soft); color: var(--ink); border: 1px solid var(--border); }
+.meta-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 3px 0;
+}
+
+/* ---------- 商品价：专属价与最近成交横向并排 ---------- */
+.price-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 9px;
+}
+.price-row .pg { display: inline-flex; align-items: baseline; gap: 6px; }
+.price-row .lab { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.price-row .val { font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.price-row .val.diff { color: var(--warn); }
+.price-row .val.none { color: var(--muted); font-weight: 500; }
+.price-row .flag { margin-left: auto; }
+.muted-note { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.diff-flag {
+  font-size: 11px;
+  color: var(--warn);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+
+/* ---------- 单据明细 ---------- */
+.items { display: flex; flex-direction: column; }
+.items .it {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  gap: 3px 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.items .it:last-child { border-bottom: 0; }
+.items .name { grid-column: 1; grid-row: 1; font-size: 14px; font-weight: 540; }
+.items .calc { grid-column: 1; grid-row: 2; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.items .amt {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: end;
+  text-align: right;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.total-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 10px;
+  padding: 12px 12px 11px;
+  background: var(--soft);
+  border-top: 2px solid var(--border-strong);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.total-line .v { font-size: 22px; letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
+.meta-line span:last-child { text-align: right; }
+
+/* ---------- 说明脚注（仅在桌面预览显示） ---------- */
+.footnote {
+  width: 250px;
+  flex: none;
+  align-self: flex-start;
+  position: sticky;
+  top: 24px;
+  font-size: 12px;
+  line-height: 1.75;
+  color: #8f9cb3;
+}
+.footnote h2 { font-size: 12px; color: #c3cfe2; margin: 0 0 6px; font-weight: 600; }
+.footnote ul { margin: 0 0 14px; padding-left: 16px; }
+.footnote li { margin-bottom: 4px; }
+.footnote code { color: #a8c7ff; font-size: 11px; }
+
+/* 手机上：去掉预览外壳 */
+@media (max-width: 1080px) {
+  body { padding: 0; gap: 0; background: var(--bg); }
+  .toolbar, .footnote { display: none; }
+  .device { width: 100vw; height: 100vh; border-radius: 0; box-shadow: none; }
+  .device.landscape { width: 100vw; height: 100vh; border-radius: 0; }
+
+  /* ?w=390 时锁定手机尺寸，用于截图/桌面预览；真实手机不带这个参数，仍然满屏 */
+  .device.fixed {
+    border-radius: 40px;
+    box-shadow: 0 30px 80px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.08);
+  }
+  body:has(.device.fixed) {
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: #11161f;
+  }
+}
+</style>
+</head>
+<body data-skin="b" data-theme="light">
+
+<aside class="toolbar">
+  <h1>简单ERP · 手机只读端</h1>
+  <p>设计稿，数据为假。三个开关可组合，右侧手机内可真实点击。</p>
+
+  <div class="tool-group">
+    <span>视觉方向</span>
+    <div class="seg" data-ctl="skin">
+      <button data-v="a">A 桌面同款</button>
+      <button data-v="b" class="on">B 原生 App ✓</button>
+    </div>
+  </div>
+
+  <div class="tool-group">
+    <span>今日概览版式</span>
+    <div class="seg" data-ctl="today">
+      <button data-v="cards">数据卡</button>
+      <button data-v="list">分段列</button>
+      <button data-v="timeline" class="on">时间轴 ✓</button>
+    </div>
+  </div>
+
+  <div class="tool-group">
+    <span>明暗</span>
+    <div class="seg" data-ctl="theme">
+      <button data-v="light" class="on">浅色</button>
+      <button data-v="dark">深色</button>
+    </div>
+  </div>
+
+  <div class="tool-group">
+    <span>页面状态</span>
+    <div class="seg" data-ctl="ui">
+      <button data-v="normal" class="on">正常</button>
+      <button data-v="loading">骨架</button>
+      <button data-v="empty">空数据</button>
+      <button data-v="offline">连不上</button>
+    </div>
+  </div>
+
+  <div class="tool-group">
+    <span>屏幕</span>
+    <div class="seg" data-ctl="orient">
+      <button data-v="portrait" class="on">竖屏</button>
+      <button data-v="landscape">横屏</button>
+    </div>
+  </div>
+
+  <p id="path" style="font-size:11px;color:#7c8798"></p>
+</aside>
+
+<div class="device" id="device">
+  <div class="app" id="app"></div>
+</div>
+
+<aside class="footnote">
+  <h2>这一版做了什么</h2>
+  <ul>
+    <li><b>视觉已定 B（原生 App）</b>，A 仍可切换，仅作对照</li>
+    <li><b>今日概览已定时间轴版式</b>：顶部两个净额小卡 + 按时间倒序的事件流，两段小计仍保留</li>
+    <li>7 个页面：今日概览、客户列表、客户详情、单据列表、单据详情、商品价、配对页</li>
+    <li>列表金额只给<b>分档</b>（无欠款 / &lt;1千 / 1千–1万 / &gt;1万），精确金额进详情才出</li>
+    <li>商品价：专属价与最近成交<b>横向并排</b>，一屏能多看几条</li>
+    <li>某类为 0 仍然占一行</li>
+    <li>顶部留了 <b>26px 状态栏安全区</b>（刘海屏取 env 实际值），全部触控目标 ≥ 44px</li>
+  </ul>
+  <h2>可点的路径</h2>
+  <ul>
+    <li>今日概览 → 任一类型行 → 单据列表</li>
+    <li>单据列表 → 单据 → 单据详情</li>
+    <li>客户 → 客户详情 → 历史单据</li>
+    <li>商品价：专属价与成交价不一致时给提示</li>
+  </ul>
+  <h2>还没画的</h2>
+  <ul>
+    <li>骨架屏 / 连不上 / 空数据 三种状态（下一版补）</li>
+    <li>横屏只做了 tab 位置，栅格还需按真实平板调</li>
+  </ul>
+</aside>
+
+<script>
+/* ============================================================
+   假数据：全部为版式演示用，与真实账目无关
+   ============================================================ */
+const TODAY = "2026-10-17";
+
+const TODAY_TYPES = [
+  { type: "sale",            label: "销售单",   count: 5, amount:  3980 },
+  { type: "return",          label: "退货单",   count: 1, amount:  -300 },
+  { type: "purchase",        label: "拿货单",   count: 2, amount:  1200 },
+  { type: "purchase_return", label: "退拿货单", count: 0, amount:     0 }
+];
+
+const CUSTOMERS = [
+  { id: 1, name: "张记五金",   pinyin: "zjwj", balance: 12380 },
+  { id: 2, name: "李家装饰",   pinyin: "ljzs", balance: 4200  },
+  { id: 3, name: "王工",       pinyin: "wg",   balance: 680   },
+  { id: 4, name: "兴隆超市",   pinyin: "xlcs", balance: 0     }
+];
+
+const LEDGER = [
+  { date: "10-14", type: "sale",    desc: "销售单 MD202610140001", delta:  860 },
+  { date: "10-10", type: "payment", desc: "收款",                  delta: -2000 },
+  { date: "10-08", type: "sale",    desc: "销售单 MD202610080003", delta: 1280 },
+  { date: "10-02", type: "sale",    desc: "销售单 MD202610020001", delta: 2450 },
+  { date: "09-28", type: "return",  desc: "退货单 MD202609280002", delta: -300 },
+  { date: "09-25", type: "payment", desc: "收款",                  delta: -1500 },
+  { date: "09-20", type: "sale",    desc: "销售单 MD202609200004", delta: 980 },
+  { date: "09-12", type: "sale",    desc: "销售单 MD202609120002", delta: 1760 }
+];
+
+const TODAY_DATE = "2026-10-17";
+
+const ORDERS = [
+  { no: "MD202610170005", type: "sale",            customer: "张记五金", amount:  1280, status: "正式保存", date: TODAY_DATE, time: "15:42" },
+  { no: "MD202610170004", type: "sale",            customer: "李家装饰", amount:   980, status: "已打印",   date: TODAY_DATE, time: "14:10" },
+  { no: "MD202610170003", type: "return",          customer: "兴隆超市", amount:  -300, status: "正式保存", date: TODAY_DATE, time: "11:26" },
+  { no: "MD202610170002", type: "sale",            customer: "王工",     amount:   860, status: "正式保存", date: TODAY_DATE, time: "10:05" },
+  { no: "NH202610170002", type: "purchase",        customer: "张记五金", amount:   800, status: "正式保存", date: TODAY_DATE, time: "09:30" },
+  { no: "MD202610170001", type: "sale",            customer: "张记五金", amount:   860, status: "正式保存", date: TODAY_DATE, time: "08:58" },
+  { no: "NH202610170001", type: "purchase",        customer: "李家装饰", amount:   400, status: "正式保存", date: TODAY_DATE, time: "08:12" }
+];
+
+/* 历史单据：只给「单据」页的日期筛选演示用，不参与今日概览 */
+const ARCHIVE = [
+  { no: "MD202610150003", type: "sale",            customer: "张记五金", amount:  640, status: "已打印", date: "2026-10-15", time: "16:20" },
+  { no: "MD202610140002", type: "sale",            customer: "李家装饰", amount: 1760, status: "已打印", date: "2026-10-14", time: "10:12" },
+  { no: "MD202610080003", type: "return",          customer: "王工",     amount: -180, status: "已打印", date: "2026-10-08", time: "09:40" },
+  { no: "NH202610050001", type: "purchase",        customer: "兴隆超市", amount: 2400, status: "已打印", date: "2026-10-05", time: "14:05" },
+  { no: "MD202609210001", type: "sale",            customer: "张记五金", amount: 3200, status: "已打印", date: "2026-09-21", time: "11:30" },
+  { no: "MD202609200004", type: "sale",            customer: "王工",     amount:  980, status: "已打印", date: "2026-09-20", time: "15:11" },
+  { no: "MD202609120002", type: "sale",            customer: "李家装饰", amount: 1760, status: "已打印", date: "2026-09-12", time: "09:22" },
+  { no: "MD202608300001", type: "sale",            customer: "兴隆超市", amount:  450, status: "已打印", date: "2026-08-30", time: "10:48" },
+  { no: "MD202607120002", type: "sale",            customer: "张记五金", amount: 2100, status: "已打印", date: "2026-07-12", time: "13:35" }
+];
+
+const ALL_ORDERS = [...ORDERS, ...ARCHIVE];
+
+const ORDER_DETAIL = {
+  no: "MD202610170005",
+  type: "sale",
+  customer: "张记五金",
+  date: "2026-10-17",
+  status: "正式保存",
+  items: [
+    { name: "手提式干粉灭火器 MFZ/ABC4 4kg", qty: 10, unit: "具", price: 68,  amount: 680 },
+    { name: "灭火器箱 2 具装",                qty: 4,  unit: "个", price: 150, amount: 600 }
+  ],
+  total: 1280
+};
+
+const PRODUCTS = [
+  { name: "手提式干粉灭火器 MFZ/ABC4 4kg", pinyin: "mhq", special: 68,  recent: 65, unit: "具" },
+  { name: "消防水带 65mm×20m",             pinyin: "sdd", special: 120, recent: 120, unit: "盘" },
+  { name: "灭火器箱 2 具装",                pinyin: "mhqx", special: null, recent: 45, unit: "个" },
+  { name: "应急照明灯",                    pinyin: "yjzmd", special: null, recent: null, unit: "个" }
+];
+
+/* ============================================================
+   工具
+   ============================================================ */
+const yuan = n => {
+  const v = Math.abs(n);
+  const s = v.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (n < 0 ? "-¥" : "¥") + s;
+};
+const yuanShort = n => {
+  const v = Math.abs(n);
+  const s = v % 1 === 0
+    ? v.toLocaleString("zh-CN")
+    : v.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (n < 0 ? "-¥" : "¥") + s;
+};
+const band = n => {
+  if (n <= 0) return { cls: "b0", label: "无欠款" };
+  if (n < 1000) return { cls: "b1", label: "<1千" };
+  if (n < 10000) return { cls: "b2", label: "1千–1万" };
+  return { cls: "b3", label: ">1万" };
+};
+const TYPE_LABEL = {
+  sale: "销售单", return: "退货单",
+  purchase: "拿货单", purchase_return: "退拿货单"
+};
+const chevron = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>`;
+const backIco = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>`;
+const searchIco = `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted);flex:none"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>`;
+const warnIco = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v5"/><circle cx="12" cy="16.5" r=".6" fill="currentColor"/><path d="M10.3 3.9L2.6 17.4A1.8 1.8 0 004.2 20h15.6a1.8 1.8 0 001.6-2.6L13.7 3.9a1.9 1.9 0 00-3.4 0z"/></svg>`;
+
+const ICONS = {
+  gear: `<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.11a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.11A1.7 1.7 0 0 0 4.6 8.87a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.11a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.11a1.7 1.7 0 0 0-1.49 1.03z"/></svg>`,
+  dot: `<svg width="8" height="8" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3.2" fill="currentColor"/></svg>`,
+  today: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>`,
+  customers: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.6"/><path d="M4.8 20c.7-3.6 3.7-5.6 7.2-5.6s6.5 2 7.2 5.6"/></svg>`,
+  orders: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h8.5L19 8v12.5H6z"/><path d="M14 3.5V8h5M9 12.5h7M9 16h5"/></svg>`,
+  products: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3.8 8.2L12 4l8.2 4.2v7.6L12 20l-8.2-4.2z"/><path d="M3.8 8.2L12 12.4l8.2-4.2M12 12.4V20"/></svg>`
+};
+
+/* ============================================================
+   状态
+   ============================================================ */
+const state = {
+  page: "today",
+  orderType: null,   // 单据列表筛选
+  customerId: 1,
+  orderNo: null,
+  ui: "normal",      // normal | loading | empty | offline
+  // 单据页日期范围：mode = day | month | year | all；day 用 y/m/d 起始 + ey/em/ed 截止
+  range: { mode: "day", y: 2026, m: 10, d: 17, ey: 2026, em: 10, ed: 17 },
+  // 日期 sheet 里的临时选择（点「确定」才写回 range）
+  pick:  { mode: "month", y: 2026, m: 10, d: 17, ey: 2026, em: 10, ed: 17 },
+  sheet: false
+};
+const stack = [];
+
+function go(page, patch) {
+  stack.push({ page: state.page, orderType: state.orderType, customerId: state.customerId, orderNo: state.orderNo });
+  Object.assign(state, { page }, patch || {});
+  state.sheet = false;
+  render();
+}
+function back() {
+  const prev = stack.pop();
+  if (!prev) { state.page = "today"; render(); return; }
+  Object.assign(state, prev);
+  render();
+}
+
+/* ============================================================
+   页面片段
+   ============================================================ */
+function hd(title, sub, opts) {
+  opts = opts || {};
+  return `
+  <div class="hd">
+    ${opts.back ? `<button class="back" data-act="back" aria-label="返回">${backIco}</button>` : ""}
+    <div class="stack">
+      ${sub ? `<div class="eyebrow">${sub}</div>` : ""}
+      <h2>${title}</h2>
+    </div>
+    ${opts.aside ? `<div class="aside">${opts.aside}</div>` : ""}
+  </div>`;
+}
+
+/* ---------- 今日概览 ---------- */
+function todayCards() {
+  const sale = TODAY_TYPES[0], ret = TODAY_TYPES[1], pur = TODAY_TYPES[2], pret = TODAY_TYPES[3];
+  const netSale = sale.amount + ret.amount;
+  const netPur  = pur.amount - pret.amount;
+
+  const line = (t) => `
+    <div class="ln ${t.count === 0 ? "zero" : ""}" data-act="orders" data-type="${t.type}" style="cursor:pointer">
+      <span class="lb">${t.label}</span>
+      <span class="vl">${t.count} 单&nbsp;&nbsp;${yuanShort(t.amount)}</span>
+    </div>`;
+
+  return `
+  <div class="kpi-grid">
+    <div class="kpi">
+      <div class="kpi-hd"><b>卖货</b><span class="count">销售 − 退货</span></div>
+      <div class="lines">
+        ${line(sale)}
+        ${line(ret)}
+      </div>
+      <div class="net"><span class="lb">卖货净额</span><span class="vl">${yuanShort(netSale)}</span></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-hd"><b>进货</b><span class="count">拿货 − 退拿货</span></div>
+      <div class="lines">
+        ${line(pur)}
+        ${line(pret)}
+      </div>
+      <div class="net"><span class="lb">进货净额</span><span class="vl">${yuanShort(netPur)}</span></div>
+    </div>
+  </div>
+  <div class="note info">
+    <span class="ico">${warnIco}</span>
+    <span>点任一行看该类单据。金额为当天单据金额，不是利润。</span>
+  </div>`;
+}
+
+function todayList() {
+  const sale = TODAY_TYPES[0], ret = TODAY_TYPES[1], pur = TODAY_TYPES[2], pret = TODAY_TYPES[3];
+  const netSale = sale.amount + ret.amount;
+  const netPur  = pur.amount - pret.amount;
+
+  const ln = (t) => `
+    <div class="ln ${t.count === 0 ? "zero" : ""}" data-type="${t.type}" data-act="orders" style="cursor:pointer">
+      <span class="l"><span class="dot"></span>${t.label}</span>
+      <span class="v">${t.count} 单&nbsp;&nbsp;${yuanShort(t.amount)}</span>
+    </div>`;
+
+  return `
+  <div class="card seg-list">
+    <div class="sec"><b>卖货</b><span class="amt">${yuanShort(netSale)}</span></div>
+    ${ln(sale)}${ln(ret)}
+    <div class="sec"><b>进货</b><span class="amt">${yuanShort(netPur)}</span></div>
+    ${ln(pur)}${ln(pret)}
+  </div>
+  <div class="note info">
+    <span class="ico">${warnIco}</span>
+    <span>某类为 0 也保留一行，用来回答「今天进过货吗」。</span>
+  </div>`;
+}
+
+function todayTimeline() {
+  const sale = TODAY_TYPES[0], ret = TODAY_TYPES[1], pur = TODAY_TYPES[2], pret = TODAY_TYPES[3];
+  const netSale = sale.amount + ret.amount;
+  const netPur  = pur.amount - pret.amount;
+
+  const ev = (o) => `
+    <div class="item" data-type="${o.type}">
+      <div class="time">${o.time}</div>
+      <div class="rail"><span class="dot"></span></div>
+      <div class="ev" data-act="order" data-no="${o.no}" style="cursor:pointer">
+        <div class="l1">
+          <span class="who">${o.customer}</span>
+          <span class="amt ${o.amount < 0 ? "neg" : ""}">${yuanShort(o.amount)}</span>
+        </div>
+        <div class="l2">${TYPE_LABEL[o.type]} · ${o.no}</div>
+      </div>
+    </div>`;
+
+  return `
+  <div class="tl-top">
+    <div class="mini">
+      <div class="lb">卖货净额</div>
+      <div class="vl">${yuanShort(netSale)}</div>
+    </div>
+    <div class="mini">
+      <div class="lb">进货净额</div>
+      <div class="vl">${yuanShort(netPur)}</div>
+    </div>
+  </div>
+  <div class="card tl">
+    ${ORDERS.map(ev).join("")}
+  </div>`;
+}
+
+function pageToday() {
+  const body = document.body;
+  const mode = body.dataset.today || "timeline";
+  const inner = mode === "list" ? todayList() : mode === "timeline" ? todayTimeline() : todayCards();
+  const total = TODAY_TYPES.reduce((a, t) => a + t.count, 0);
+  return `
+    ${hd("今天", `10月17日 周六 · ${total} 单`, {})}
+    <div class="body" data-page="today">${inner}</div>`;
+}
+
+/* ---------- 客户列表 ---------- */
+function pageCustomers() {
+  const rows = CUSTOMERS.map(c => {
+    const b = band(c.balance);
+    return `
+    <button class="row" data-act="customer" data-id="${c.id}">
+      <span class="grow">
+        <span class="t">${c.name}</span>
+        <span class="s">${c.pinyin}</span>
+      </span>
+      <span class="tail">
+        <span class="band ${b.cls}">${b.label}</span>
+      </span>
+      <span class="chev">${chevron}</span>
+    </button>`;
+  }).join("");
+
+  return `
+    ${hd("客户", "按欠款从多到少", { aside: `${CUSTOMERS.length} 位` })}
+    <div class="search">
+      ${searchIco}
+      <input type="search" placeholder="搜索客户名或拼音首字母" value="">
+      <span class="kbd">zjwj</span>
+    </div>
+    <div class="chip-bar">
+      <button class="chip on">全部</button>
+      <button class="chip">有欠款</button>
+      <button class="chip">本月有单据</button>
+    </div>
+    <div class="body" data-page="customers">
+      <div class="card" style="padding:0 var(--pad-card)">${rows}</div>
+      <div class="note">列表金额只显示分档，具体欠款点进去看。</div>
+    </div>`;
+}
+
+/* ---------- 客户详情 ---------- */
+function pageCustomer() {
+  const c = CUSTOMERS.find(x => x.id === state.customerId) || CUSTOMERS[0];
+  const b = band(c.balance);
+  const opening = 9240;
+  const delta = c.balance - opening;
+
+  const ledger = LEDGER.map(l => `
+    <div class="row" style="cursor:default">
+      <span class="grow">
+        <span class="t" style="font-weight:520">${l.desc}</span>
+        <span class="s">${l.date}</span>
+      </span>
+      <span class="tail">
+        <span class="num ${l.delta < 0 ? "neg" : ""}">${yuanShort(l.delta)}</span>
+      </span>
+    </div>`).join("");
+
+  const orders = ORDERS.filter(o => o.customer === c.name).slice(0, 3).map(o => `
+    <button class="row" data-act="order" data-no="${o.no}">
+      <span class="grow">
+        <span class="t">${TYPE_LABEL[o.type]}</span>
+        <span class="s">${o.no}</span>
+      </span>
+      <span class="tail">
+        <span class="num ${o.amount < 0 ? "neg" : ""}">${yuanShort(o.amount)}</span>
+      </span>
+      <span class="chev">${chevron}</span>
+    </button>`).join("");
+
+  return `
+    ${hd(c.name, "客户详情", { back: true, aside: `<span class="band ${b.cls}">${b.label}</span>` })}
+    <div class="body" data-page="customer">
+      <div class="card" style="padding:0">
+        <div class="balance">
+          <div><div class="lb">期初</div><div class="vl">${yuanShort(opening)}</div></div>
+          <div><div class="lb">本期增减</div><div class="vl ${delta < 0 ? "neg" : ""}">${delta > 0 ? "+" : ""}${yuanShort(delta)}</div></div>
+          <div class="big"><div class="lb">当前欠款</div><div class="vl">${yuanShort(c.balance)}</div></div>
+        </div>
+      </div>
+
+      <div class="group-label"><b>最近流水</b><span>最近 10 笔</span></div>
+      <div class="card" style="padding:0 var(--pad-card)">${ledger}</div>
+
+      <div class="group-label"><b>历史单据</b><span>含拿货与退拿货</span></div>
+      <div class="card" style="padding:0 var(--pad-card)">${orders}</div>
+
+      <button class="btn ghost" data-act="orders" data-customer="${c.name}">看全部单据</button>
+    </div>`;
+}
+
+/* ---------- 单据页：日期范围 ---------- */
+const pad2 = n => String(n).padStart(2, "0");
+
+function rangeLabel(r) {
+  const x = r || state.range;
+  if (x.mode === "all") return "全部时间";
+  if (x.mode === "year") return x.y + " 年";
+  if (x.mode === "month") return x.y + " 年 " + x.m + " 月";
+  const s = x.y + "-" + pad2(x.m) + "-" + pad2(x.d);
+  const e = x.ey + "-" + pad2(x.em) + "-" + pad2(x.ed);
+  if (s === e) return x.y + " 年 " + x.m + " 月 " + x.d + " 日";
+  return pad2(x.m) + "/" + pad2(x.d) + " – " + pad2(x.em) + "/" + pad2(x.ed);
+}
+
+function inRange(o, r) {
+  const x = r || state.range;
+  if (x.mode === "all") return true;
+  if (x.mode === "year") return o.date.startsWith(String(x.y) + "-");
+  const mm = pad2(x.m);
+  if (x.mode === "month") return o.date.startsWith(x.y + "-" + mm);
+  const start = x.y + "-" + mm + "-" + pad2(x.d);
+  const end = x.ey + "-" + pad2(x.em) + "-" + pad2(x.ed);
+  return o.date >= start && o.date <= end;
+}
+
+/* ---------- 单据列表 ---------- */
+function pageOrders() {
+  const filter = state.orderType;
+  const list = ALL_ORDERS
+    .filter(o => inRange(o) && (!filter || o.type === filter))
+    .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+
+  const chips = [
+    { v: null, label: "全部" },
+    { v: "sale", label: "销售" },
+    { v: "return", label: "退货" },
+    { v: "purchase", label: "拿货" },
+    { v: "purchase_return", label: "退拿货" }
+  ].map(c => `<button class="chip ${filter === c.v ? "on" : ""}" data-act="filter" data-type="${c.v ?? ""}">${c.label}</button>`).join("");
+
+  const rows = list.length ? list.map(o => `
+    <button class="row" data-act="order" data-no="${o.no}">
+      <span class="grow">
+        <span class="t">${o.customer}</span>
+        <span class="s">${o.no} · ${state.range.mode === "day" ? o.time : o.date.slice(5) + " " + o.time}</span>
+      </span>
+      <span class="tail">
+        <span class="num ${o.amount < 0 ? "neg" : ""}">${yuanShort(o.amount)}</span>
+        <span class="tag t-${o.type}">${TYPE_LABEL[o.type]}</span>
+      </span>
+      <span class="chev">${chevron}</span>
+    </button>`).join("") : `
+    <div class="empty" style="margin:auto 0">
+      <div class="ring">${ICONS.orders}</div>
+      <b>这个范围里没有单据</b>
+      <span>换个时间，或把类型切回「全部」</span>
+    </div>`;
+
+  return `
+    ${hd("单据", "共 " + list.length + " 张", { back: true, aside: `<button class="date-btn" data-act="open-date">${rangeLabel()}<span class="caret">▾</span></button>` })}
+    <div class="chip-bar">${chips}</div>
+    <div class="body" data-page="orders">
+      <div class="card" style="padding:0 var(--pad-card)">${rows}</div>
+    </div>`;
+}
+
+/* ---------- 日期选择 sheet ---------- */
+function dateSheet() {
+  const p = state.pick;
+  /* 年份从左到右递增：右撇子拇指活动区在右侧，最新的 2026 应靠近右手 */
+  const years = [2024, 2025, 2026];
+
+  const seg = `
+    <div class="seg-inline" style="margin-bottom:14px">
+      <button data-act="pick-mode" data-v="year"  class="${p.mode === "year" ? "on" : ""}">按年</button>
+      <button data-act="pick-mode" data-v="month" class="${p.mode === "month" ? "on" : ""}">按月</button>
+      <button data-act="pick-mode" data-v="day"   class="${p.mode === "day" ? "on" : ""}">按日</button>
+    </div>`;
+
+  let body = "";
+  if (p.mode === "year") {
+    body = `<div class="pick-grid y">${years.map(y =>
+      `<button data-act="pick-year" data-v="${y}" class="${p.y === y ? "on" : ""}">${y} 年</button>`).join("")}</div>`;
+  } else if (p.mode === "month") {
+    body = `
+      <div class="pick-years">${years.map(y =>
+        `<button data-act="pick-year" data-v="${y}" class="mini-y ${p.y === y ? "on" : ""}">${y}</button>`).join("")}</div>
+      <div class="pick-grid m">${Array.from({ length: 12 }, (_, i) => i + 1).map(m =>
+        `<button data-act="pick-month" data-v="${m}" class="${p.m === m ? "on" : ""}">${m} 月</button>`).join("")}</div>`;
+  } else {
+    const s = p.y + "-" + pad2(p.m) + "-" + pad2(p.d);
+    const e = p.ey + "-" + pad2(p.em) + "-" + pad2(p.ed);
+    body = `
+      <div class="day-range">
+        <div>
+          <span class="fl">开始日期</span>
+          <input class="date-input" type="date" data-pick="start" value="${s}">
+        </div>
+        <div>
+          <span class="fl">截止日期</span>
+          <input class="date-input" type="date" data-pick="end" value="${e}">
+        </div>
+      </div>`;
+  }
+
+  return `
+  <div class="sheet-mask" data-act="close-sheet"></div>
+  <div class="sheet" role="dialog" aria-label="选择时间">
+    <div class="sheet-grab"></div>
+    <div class="sheet-hd">
+      <b>选择时间</b>
+      <button class="sheet-x" data-act="close-sheet" aria-label="关闭">×</button>
+    </div>
+    ${seg}
+    ${body}
+    <div class="quick-row">
+      <button data-act="quick" data-v="today">今天</button>
+      <button data-act="quick" data-v="month">本月</button>
+      <button data-act="quick" data-v="year">今年</button>
+      <button data-act="quick" data-v="all">全部</button>
+    </div>
+    <button class="btn" data-act="apply-date">确定</button>
+  </div>`;
+}
+
+/* ---------- 单据详情 ---------- */
+function pageOrder() {
+  const d = ORDER_DETAIL;
+  const items = d.items.map(it => `
+    <div class="it">
+      <div class="name">${it.name}</div>
+      <div class="amt">${yuanShort(it.amount)}</div>
+      <div class="calc">${it.qty} ${it.unit} × ${yuanShort(it.price)}</div>
+    </div>`).join("");
+
+  return `
+    ${hd(d.customer, `${TYPE_LABEL[d.type]} · ${d.no}`, { back: true })}
+    <div class="body" data-page="order">
+      <div class="card">
+        <div class="meta-line"><span>单据号</span><span style="color:var(--ink);font-variant-numeric:tabular-nums">${d.no}</span></div>
+        <div class="meta-line"><span>业务日期</span><span style="color:var(--ink)">${d.date}</span></div>
+        <div class="meta-line"><span>状态</span><span class="tag t-sale">${d.status}</span></div>
+      </div>
+
+      <div class="group-label"><b>明细</b><span>${d.items.length} 行</span></div>
+      <div class="card">
+        <div class="items">${items}</div>
+        <div class="total-line"><span>合计</span><span class="v">${yuanShort(d.total)}</span></div>
+      </div>
+
+      <div class="note">
+        <span class="ico">${warnIco}</span>
+        <span>只读页：不提供编辑、作废、删除入口。</span>
+      </div>
+    </div>`;
+}
+
+/* ---------- 商品价 ---------- */
+function pageProducts() {
+  const rows = PRODUCTS.map(p => {
+    const diff = p.special !== null && p.recent !== null && p.special !== p.recent;
+    return `
+    <div class="card" style="cursor:default">
+      <div style="display:flex;align-items:flex-start;gap:8px">
+        <div style="flex:1;min-width:0">
+          <div class="t" style="font-size:14px;font-weight:600;line-height:1.45">${p.name}</div>
+        </div>
+        <span class="tag">${p.unit}</span>
+      </div>
+      <div class="price-row">
+        <span class="pg">
+          <span class="lab">专属价</span>
+          <span class="val ${p.special === null ? "none" : (diff ? "diff" : "")}">${p.special === null ? "—" : yuanShort(p.special)}</span>
+        </span>
+        <span class="pg">
+          <span class="lab">最近成交</span>
+          <span class="val ${p.recent === null ? "none" : (diff ? "diff" : "")}">${p.recent === null ? "—" : yuanShort(p.recent)}</span>
+        </span>
+        <span class="flag">${
+          p.special === null && p.recent === null ? `<span class="muted-note">无专属价 · 无成交</span>`
+          : p.special === null ? `<span class="muted-note">无专属价</span>`
+          : p.recent === null ? `<span class="muted-note">无成交记录</span>`
+          : diff ? `<span class="diff-flag">差 ${yuanShort(Math.abs(p.special - p.recent))}</span>`
+          : ""
+        }</span>
+      </div>
+    </div>`;
+  }).join("");
+
+  return `
+    ${hd("商品价", "张记五金 · 专属价", { back: true })}
+    <div class="search">
+      ${searchIco}
+      <input type="search" placeholder="搜索商品名或拼音首字母" value="">
+    </div>
+    <div class="body" data-page="products">
+      ${rows}
+      <div class="note">
+        <span class="ico">${warnIco}</span>
+        <span>专属价与最近成交价不一致时给出差额提示，不静默取其一。</span>
+      </div>
+    </div>`;
+}
+
+/* ---------- 配对页 ---------- */
+function pagePair() {
+  return `
+    ${hd("配对这台手机", "简单ERP 手机端", {})}
+    <div class="body" data-page="pair">
+      <div class="pair-wrap">
+        <div style="text-align:center">
+          <div style="font-size:13px;color:var(--muted);line-height:1.8">
+            在电脑的「设置 → 手机访问」里点「添加设备」，<br>把这 6 位数字填进来
+          </div>
+        </div>
+        <div class="pair-code">
+          <input inputmode="numeric" maxlength="1" value="4">
+          <input inputmode="numeric" maxlength="1" value="8">
+          <input inputmode="numeric" maxlength="1" value="2">
+          <input inputmode="numeric" maxlength="1" value="">
+          <input inputmode="numeric" maxlength="1" value="">
+          <input inputmode="numeric" maxlength="1" value="">
+        </div>
+        <button class="btn" data-act="paired">配对</button>
+        <div class="note info">
+          <span class="ico">${warnIco}</span>
+          <span>连续输错 5 次会锁 5 分钟。配对成功后这台手机会被记住，下次不用再输。</span>
+        </div>
+        <div style="font-size:11.5px;color:var(--muted);line-height:1.8;text-align:center">
+          电脑没开、或手机不在同一个 WiFi 时连不上。<br>这是当前版本的限制。
+        </div>
+      </div>
+    </div>`;
+}
+
+/* ---------- 设置 ---------- */
+function pageSettings() {
+  const theme = document.documentElement.dataset.theme || "light";
+  return `
+    ${hd("设置", "简单ERP 手机端", {})}
+    <div class="body" data-page="settings">
+      <div class="group-label"><b>连接</b><span>只读</span></div>
+      <div class="card set-card">
+        <div class="set-row">
+          <span class="grow">
+            <span class="t"><span class="live">${ICONS.dot}已连接</span></span>
+            <span class="s">192.168.10.5:5001</span>
+          </span>
+        </div>
+        <div class="set-row">
+          <span class="grow">
+            <span class="t">最后成功</span>
+            <span class="s">今天 15:44</span>
+          </span>
+        </div>
+        <button class="set-row act" data-act="pair">
+          <span class="grow">
+            <span class="t">重新配对</span>
+            <span class="s">换了电脑或端口后需要重新配对</span>
+          </span>
+          <span class="chev">${chevron}</span>
+        </button>
+      </div>
+
+      <div class="group-label"><b>外观</b></div>
+      <div class="card">
+        <div class="seg-inline">
+          <button data-act="theme" data-v="system" class="${theme === "system" ? "on" : ""}">跟随系统</button>
+          <button data-act="theme" data-v="light" class="${theme === "light" ? "on" : ""}">浅色</button>
+          <button data-act="theme" data-v="dark" class="${theme === "dark" ? "on" : ""}">深色</button>
+        </div>
+      </div>
+
+      <div class="group-label"><b>这台设备</b></div>
+      <div class="card set-card">
+        <div class="set-row">
+          <span class="grow">
+            <span class="t">Redmi Note 12</span>
+            <span class="s">配对于 10月17日 14:02</span>
+          </span>
+        </div>
+        <div class="set-row">
+          <span class="grow">
+            <span class="t">要彻底断开这台手机</span>
+            <span class="s">到电脑「设置 → 手机访问」里撤销它</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="group-label"><b>关于</b></div>
+      <div class="card set-card">
+        <div class="set-row">
+          <span class="grow">
+            <span class="t">简单ERP v4.2.0</span>
+            <span class="s">手机端只读，不改账目</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="note">电脑关机、或手机不在同一个 WiFi 时连不上。这是当前版本的限制。</div>
+    </div>`;
+}
+
+/* ============================================================
+   三态：骨架屏 / 空数据 / 连不上
+   ============================================================ */
+const ICON_OFF = `<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 9.6a13 13 0 0 1 4.3-2M20.5 9.6a13 13 0 0 0-9.2-2.5"/><path d="M6.7 13.1a8 8 0 0 1 3-1.1M17.3 13.1a8 8 0 0 0-3.6-1.2"/><circle cx="12" cy="17.6" r="1.1" fill="currentColor" stroke="none"/><path d="M3.5 3.5l17 17"/></svg>`;
+
+function skRow() {
+  return `<div class="sk-row"><div class="b t1"></div><div class="b amt"></div><div class="b t2"></div></div>`;
+}
+
+function pageSkeleton(title, sub, pageKey, extra) {
+  return `
+    ${hd(title, sub, {})}
+    <div class="body" data-page="${pageKey}">
+      ${extra || ""}
+      <div class="card">
+        ${Array.from({ length: 6 }).map(skRow).join("")}
+      </div>
+    </div>`;
+}
+
+function pageEmpty(title, sub, pageKey, icon, headline, note) {
+  return `
+    ${hd(title, sub, {})}
+    <div class="body" data-page="${pageKey}">
+      <div class="empty" style="margin:auto 0;padding:0 10px">
+        <div class="ring">${icon}</div>
+        <b>${headline}</b>
+        <span>${note}</span>
+      </div>
+    </div>`;
+}
+
+function pageOffline() {
+  return `
+    ${hd("连不上电脑", "", {})}
+    <div class="body" data-page="offline">
+      <div class="offline-wrap">
+        <div class="offline-ico">${ICON_OFF}</div>
+        <h3>试了 5 秒没有回应</h3>
+        <div class="addr">192.168.10.5:5001</div>
+        <div class="reasons">
+          <div class="r"><span class="n">1</span><b>电脑关机了，或 ERP 没打开</b></div>
+          <div class="r"><span class="n">2</span><b>手机和电脑不在同一个 WiFi</b></div>
+          <div class="r"><span class="n">3</span><b>路由器给电脑换了地址</b></div>
+        </div>
+        <button class="btn" data-act="retry">重试</button>
+        <div class="hint">一直连不上的话，把上面这行地址发给店主</div>
+      </div>
+    </div>`;
+}
+
+const STATE_VIEWS = {
+  today: {
+    loading: () => pageSkeleton("今天", "10月17日 周六", "today",
+      `<div class="tl-top">
+         <div class="mini"><div class="skel"><div class="b w40"></div><div class="b w70"></div></div></div>
+         <div class="mini"><div class="skel"><div class="b w40"></div><div class="b w70"></div></div></div>
+       </div>`),
+    empty: () => pageEmpty("今天", "10月17日 周六 · 0 单", "today", ICONS.today,
+      "今天还没有单据", "在电脑上开了第一单之后，这里会按类型汇总")
+  },
+  customers: {
+    loading: () => pageSkeleton("客户", "按欠款从多到少", "customers"),
+    empty: () => pageEmpty("客户", "按欠款从多到少", "customers", ICONS.customers,
+      "没有找到这个客户", "换个关键字试试，或者清空搜索")
+  },
+  orders: {
+    loading: () => pageSkeleton("单据", "全部类型", "orders"),
+    empty: () => pageEmpty("单据", "全部类型", "orders", ICONS.orders,
+      "今天还没有单据", "换一个类型，或者回今日概览看汇总")
+  },
+  products: {
+    loading: () => pageSkeleton("商品价", "专属价与最近成交", "products"),
+    empty: () => pageEmpty("商品价", "专属价与最近成交", "products", ICONS.products,
+      "没有找到这个商品", "换个关键字试试，或者换个客户看专属价")
+  }
+};
+
+/* ============================================================
+   渲染
+   ============================================================ */
+const PAGES = {
+  today: pageToday,
+  customers: pageCustomers,
+  customer: pageCustomer,
+  orders: pageOrders,
+  order: pageOrder,
+  products: pageProducts,
+  pair: pagePair,
+  settings: pageSettings
+};
+
+const TAB_OF = { today: "today", customers: "customers", customer: "customers", orders: "orders", order: "orders", products: "products", pair: "", settings: "settings" };
+
+function tabbar(active) {
+  const items = [
+    { k: "today", label: "今日", ico: ICONS.today },
+    { k: "orders", label: "单据", ico: ICONS.orders },
+    { k: "customers", label: "客户", ico: ICONS.customers },
+    { k: "products", label: "商品价", ico: ICONS.products },
+    { k: "settings", label: "设置", ico: ICONS.gear }
+  ];
+  return `
+  <div class="tabbar">
+    ${items.map(i => `
+      <button class="${active === i.k ? "on" : ""}" data-act="tab" data-tab="${i.k}">
+        <span class="ico">${i.ico}</span>
+        <span>${i.label}</span>
+      </button>`).join("")}
+  </div>`;
+}
+
+function render() {
+  const app = document.getElementById("app");
+  const active = TAB_OF[state.page];
+  const withTabs = state.page !== "pair";
+  const views = STATE_VIEWS[state.page] || {};
+
+  let html;
+  if (state.ui === "offline") html = pageOffline();
+  else if (state.ui !== "normal" && views[state.ui]) html = views[state.ui]();
+  else html = (PAGES[state.page] || pageToday)();
+
+  app.innerHTML = `
+    <div class="main">
+      ${html}
+    </div>
+    ${withTabs ? tabbar(active) : ""}
+    ${state.sheet ? dateSheet() : ""}
+  `;
+
+  document.getElementById("path").textContent =
+    "当前：" + state.page
+    + (state.orderType ? " · " + state.orderType : "")
+    + (state.ui !== "normal" ? " · " + state.ui : "");
+
+  if (new URLSearchParams(location.search).get("debug")) {
+    const dev = document.getElementById("device");
+    const app = document.getElementById("app");
+    const bod = document.querySelector(".body");
+    const tab = document.querySelector(".tabbar");
+    const box = document.querySelector(".empty, .offline-wrap");
+    document.title = [
+      "vw=" + innerWidth + "x" + innerHeight,
+      "devH=" + dev.offsetHeight,
+      "appH=" + app.offsetHeight,
+      "bodyH=" + (bod ? bod.offsetHeight : "-"),
+      "boxH=" + (box ? box.offsetHeight : "-"),
+      "boxTop=" + (box && bod ? (box.getBoundingClientRect().top - bod.getBoundingClientRect().top).toFixed(0) : "-"),
+      "bodyScroll=" + (bod ? bod.scrollHeight : "-"),
+      "tabScroll=" + (tab ? tab.scrollWidth : "-")
+    ].join(" | ");
+  }
+}
+
+/* ============================================================
+   事件
+   ============================================================ */
+document.getElementById("app").addEventListener("click", (e) => {
+  const el = e.target.closest("[data-act]");
+  if (!el) return;
+  const act = el.dataset.act;
+
+  if (act === "back") return back();
+  if (act === "tab") return go(el.dataset.tab, { orderType: null });
+  if (act === "orders") {
+    const type = el.dataset.type || null;
+    return go("orders", { orderType: type || null });
+  }
+  if (act === "filter") {
+    state.orderType = el.dataset.type || null;
+    return render();
+  }
+  if (act === "open-date") {
+    const r = state.range;
+    state.pick = { mode: "month", y: r.y, m: r.m, d: r.d, ey: r.ey, em: r.em, ed: r.ed };
+    state.sheet = true;
+    return render();
+  }
+  if (act === "close-sheet") {
+    state.sheet = false;
+    return render();
+  }
+  if (act === "pick-mode") {
+    state.pick.mode = el.dataset.v;
+    return render();
+  }
+  if (act === "pick-year") {
+    state.pick.y = Number(el.dataset.v);
+    return render();
+  }
+  if (act === "pick-month") {
+    state.pick.m = Number(el.dataset.v);
+    return render();
+  }
+  if (act === "quick") {
+    const v = el.dataset.v;
+    if (v === "today") state.pick = { mode: "day", y: 2026, m: 10, d: 17, ey: 2026, em: 10, ed: 17 };
+    else if (v === "month") state.pick = { mode: "month", y: 2026, m: 10, d: 17, ey: 2026, em: 10, ed: 17 };
+    else if (v === "year") state.pick = { mode: "year", y: 2026, m: 10, d: 17, ey: 2026, em: 10, ed: 17 };
+    else state.pick = { mode: "all", y: 2026, m: 10, d: 17, ey: 2026, em: 10, ed: 17 };
+    state.range = Object.assign({}, state.pick);
+    state.sheet = false;
+    return render();
+  }
+  if (act === "apply-date") {
+    state.range = Object.assign({}, state.pick);
+    state.sheet = false;
+    return render();
+  }
+  if (act === "order") {
+    return go("order", { orderNo: el.dataset.no });
+  }
+  if (act === "customer") {
+    return go("customer", { customerId: Number(el.dataset.id) });
+  }
+  if (act === "theme") {
+    const v = el.dataset.v;
+    document.documentElement.dataset.theme = v;
+    document.body.dataset.theme = v;
+    const seg = document.querySelector('.seg[data-ctl="theme"]');
+    if (seg) seg.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
+    return render();
+  }
+  if (act === "pair" || act === "unpair") {
+    return go("pair");
+  }
+  if (act === "retry") {
+    state.ui = "normal";
+    const seg = document.querySelector('.seg[data-ctl="ui"]');
+    if (seg) seg.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === "normal"));
+    return render();
+  }
+  if (act === "paired") {
+    return go("today");
+  }
+});
+
+/* 日期原生控件取值：区分开始/截止 */
+document.getElementById("app").addEventListener("change", (e) => {
+  const t = e.target;
+  if (!t || !t.classList || !t.classList.contains("date-input")) return;
+  const parts = String(t.value || "").split("-").map(Number);
+  if (parts.length !== 3 || !parts.every(n => n > 0)) return;
+  const [y, m, d] = parts;
+  if (t.dataset.pick === "end") {
+    state.pick.ey = y; state.pick.em = m; state.pick.ed = d;
+  } else {
+    state.pick.y = y; state.pick.m = m; state.pick.d = d;
+  }
+});
+
+/* 桌面控制条 */
+document.querySelectorAll(".seg[data-ctl]").forEach(seg => {
+  seg.addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    seg.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === btn));
+    const ctl = seg.dataset.ctl;
+    const v = btn.dataset.v;
+
+    if (ctl === "skin") { document.documentElement.dataset.skin = v; document.body.dataset.skin = v; }
+    if (ctl === "theme") { document.documentElement.dataset.theme = v; document.body.dataset.theme = v; }
+    if (ctl === "today") { document.body.dataset.today = v; render(); }
+    if (ctl === "ui") { state.ui = v; render(); }
+    if (ctl === "orient") {
+      document.getElementById("device").classList.toggle("landscape", v === "landscape");
+    }
+  });
+});
+
+/* 初始：支持 ?skin=b&theme=dark&today=list&orient=landscape&page=customer */
+(function initFromQuery() {
+  const q = new URLSearchParams(location.search);
+  const skin = q.get("skin") || "b";
+  const theme = q.get("theme") || "light";
+  const today = q.get("today") || "timeline";
+  const orient = q.get("orient") || "portrait";
+  const page = q.get("page") || "today";
+  const want = q.get("customer");
+  const ui = q.get("ui") || "normal";
+
+  document.documentElement.dataset.skin = skin;
+  document.body.dataset.skin = skin;
+  document.documentElement.dataset.theme = theme;
+  document.body.dataset.theme = theme;
+  document.body.dataset.today = today;
+
+  const setOn = (ctl, v) => {
+    const seg = document.querySelector('.seg[data-ctl="' + ctl + '"]');
+    if (!seg) return;
+    seg.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.v === v));
+  };
+  setOn("skin", skin);
+  setOn("theme", theme);
+  setOn("today", today);
+  setOn("orient", orient);
+  setOn("ui", ui);
+
+  if (orient === "landscape") document.getElementById("device").classList.add("landscape");
+  if (PAGES[page]) state.page = page;
+  if (want) state.customerId = Number(want);
+  state.ui = ui;
+
+  const range = q.get("range");
+  const base = { y: 2026, m: 10, d: 17, ey: 2026, em: 10, ed: 17 };
+  if (range === "month") state.range = Object.assign({ mode: "month" }, base);
+  else if (range === "year") state.range = Object.assign({ mode: "year" }, base);
+  else if (range === "all") state.range = Object.assign({ mode: "all" }, base);
+  if (q.get("sheet")) {
+    const r = state.range;
+    state.pick = { mode: "month", y: r.y, m: r.m, d: r.d, ey: r.ey, em: r.em, ed: r.ed };
+    const pm = q.get("pickmode");
+    if (pm === "day" || pm === "month" || pm === "year") state.pick.mode = pm;
+    state.sheet = true;
+  }
+
+  const wq = q.get("w");
+  if (wq) {
+    const dev = document.getElementById("device");
+    dev.classList.add("fixed");
+    dev.style.width = wq + "px";
+    dev.style.height = (q.get("h") || Math.round(Number(wq) * 844 / 390)) + "px";
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>

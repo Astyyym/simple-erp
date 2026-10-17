@@ -1,0 +1,74 @@
+{% extends "mobile/base.html" %}
+{% from "mobile/_macros.html" import hd, empty_state %}
+{% from "mobile/_icons.html" import warn %}
+{% block title %}今天 · {{ shop_name }}{% endblock %}
+{% block page_key %}today{% endblock %}
+
+{% block header %}
+{{ hd("今天", date_label ~ " " ~ weekday ~ " · " ~ overview.document_count ~ " 单") }}
+{% endblock %}
+
+{% block body %}
+{#
+  今日概览 = 两段净额 + 四类分组（某类为 0 仍占一行）+ 当日时间轴。
+  - **不做四类相加的总计**：那是把卖货净收入与进货支出混加，既不等于收到的钱、
+    也不等于利润，符号还与余额口径相反（余额里拿货是减项）。
+  - 不显示任何成本或利润数字。
+#}
+<div class="tl-top">
+  <div class="mini">
+    <div class="lb">卖货净额</div>
+    <div class="vl">{{ money_short(overview.net_sale_cents) }}</div>
+  </div>
+  <div class="mini">
+    <div class="lb">进货净额</div>
+    <div class="vl">{{ money_short(overview.net_purchase_cents) }}</div>
+  </div>
+</div>
+
+<div class="card seg-list">
+  <div class="sec"><b>卖货</b><span class="amt mut">销售 − 退货</span></div>
+  {% for entry in overview.types[:2] %}
+  <a class="ln{{ ' zero' if entry.count == 0 }}" data-type="{{ entry.type }}"
+     href="{{ url_for('mobile.orders', order_type=entry.type, date_mode='day') }}">
+    <span class="l"><span class="dot"></span>{{ entry.label }}</span>
+    <span class="v">{{ entry.count }} 单&nbsp;&nbsp;{{ money_short(entry.amount_cents) }}</span>
+  </a>
+  {% endfor %}
+  <div class="sec"><b>进货</b><span class="amt mut">拿货 − 退拿货</span></div>
+  {% for entry in overview.types[2:] %}
+  <a class="ln{{ ' zero' if entry.count == 0 }}" data-type="{{ entry.type }}"
+     href="{{ url_for('mobile.orders', order_type=entry.type, date_mode='day') }}">
+    <span class="l"><span class="dot"></span>{{ entry.label }}</span>
+    <span class="v">{{ entry.count }} 单&nbsp;&nbsp;{{ money_short(entry.amount_cents) }}</span>
+  </a>
+  {% endfor %}
+</div>
+
+<div class="group-label"><b>今日单据</b><span>按时间倒序</span></div>
+{% if overview.events %}
+<div class="card tl">
+  {% for event in overview.events %}
+  <a class="item" data-type="{{ event.order_type }}"
+     href="{{ url_for('mobile.order_detail', order_type=event.order_type, document_id=event.source_id) }}">
+    <div class="time">{{ event.time }}</div>
+    <div class="rail"><span class="dot"></span></div>
+    <div class="ev">
+      <div class="l1">
+        <span class="who">{{ event.customer_name }}</span>
+        <span class="amt{{ ' neg' if event.amount_cents < 0 }}">{{ money_short(event.amount_cents) }}</span>
+      </div>
+      <div class="l2">{{ order_type_labels[event.order_type] }} · {{ event.order_no }}</div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">{{ empty_state("今天还没有单据", "在电脑上开了第一单之后，这里会按时间显示") }}</div>
+{% endif %}
+
+<div class="note info">
+  <span class="ico">{{ warn() }}</span>
+  <span>点任一行看该类单据。金额是当天单据金额，不是利润；某类为 0 也保留一行。</span>
+</div>
+{% endblock %}

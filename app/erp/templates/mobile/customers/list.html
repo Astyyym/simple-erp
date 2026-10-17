@@ -1,0 +1,47 @@
+{% extends "mobile/base.html" %}
+{% from "mobile/_macros.html" import hd, empty_state %}
+{% from "mobile/_icons.html" import chev, search as ico_search %}
+{% block title %}客户 · {{ shop_name }}{% endblock %}
+{% block page_key %}customers{% endblock %}
+
+{% block header %}
+{{ hd("客户", "按欠款从多到少", customers|length ~ " 位") }}
+{% endblock %}
+
+{% block toolbar %}
+<form class="search" method="get" action="{{ url_for('mobile.customers') }}" role="search">
+  {{ ico_search() }}
+  <input type="search" name="q" value="{{ query }}" placeholder="搜索客户名或拼音首字母"
+         enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false">
+  {% if only_debt %}<input type="hidden" name="filter" value="debt">{% endif %}
+</form>
+<div class="chip-bar">
+  <a class="chip{{ '' if only_debt else ' on' }}" href="{{ url_for('mobile.customers', q=query) }}">全部</a>
+  <a class="chip{{ ' on' if only_debt }}" href="{{ url_for('mobile.customers', q=query, filter='debt') }}">有欠款</a>
+</div>
+{% endblock %}
+
+{% block body %}
+{% if customers %}
+<div class="card" style="padding:0 var(--pad-card)">
+  {% for customer in customers %}
+  <a class="row" href="{{ url_for('mobile.customer_detail', customer_id=customer.id) }}">
+    <span class="grow">
+      <span class="t">{{ customer.name }}</span>
+      <span class="s">{{ customer.pinyin }}{% if customer.phone %} · {{ customer.phone }}{% endif %}</span>
+    </span>
+    <span class="tail"><span class="band {{ customer.band.key }}">{{ customer.band.label }}</span></span>
+    <span class="chev">{{ chev() }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">{{ empty_state("没有找到这个客户", "换个关键字试试，或者清空搜索") }}</div>
+{% endif %}
+
+{% if truncated %}<div class="note">客户太多，这里只列了前 400 位；用搜索缩小范围更快。</div>{% endif %}
+<div class="note info">
+  <span class="ico">·</span>
+  <span>列表金额只显示分档（无欠款 / &lt;1千 / 1千–1万 / &gt;1万），具体欠款点进去看。</span>
+</div>
+{% endblock %}

@@ -1,0 +1,25 @@
+{
+  "type": "design",
+  "designSystems": [],
+  "primaryDesignSystem": null,
+  "assets": {
+    "手机只读端（今日概览 / 客户 / 单据 / 商品价）": {
+      "versions": [
+        {
+          "path": "mobile-readonly.html",
+          "createdAt": "2026-10-17T03:54:38.950Z",
+          "status": "approved",
+          "subtitle": "视觉 B + 时间轴首页 + 商品价两价横向 + 5 tab（含设置）+ 三态（骨架/空/连不上）+ 26px 状态栏安全区",
+          "viewport": {
+            "width": 390,
+            "height": 844
+          },
+          "section": "手机端",
+          "updatedAt": "2026-10-17T04:52:45.030Z"
+        }
+      ]
+    }
+  },
+  "createdAt": "2026-10-17T03:54:38.950Z",
+  "updatedAt": "2026-10-17T04:52:45.030Z"
+}

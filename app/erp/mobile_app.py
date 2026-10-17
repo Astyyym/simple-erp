@@ -1,0 +1,68 @@
+"""手机端的**独立 Flask app**（第二监听 5001 用）。
+
+为什么不复用 `create_app()`（决策文档 §4 约束 8，理由都是硬的）：
+
+1. `create_app()` 注册了全部 9 个桌面蓝图并执行 `init_db()`（含迁移）。
+   复用它，`/customers/` 就是 200 —— 「蓝图外一律 404」直接失效；更糟的是
+   第二监听会**再跑一次迁移**（迁移只应由主应用跑一次）。
+2. 独立 app 只注册 `mobile_bp`，蓝图外天然 404，不靠 `if` 判断。
+3. 它不注册主应用的 `reject_cross_origin_mutations`（`__init__.py:142`）——
+   配对 POST 因此不会被那条 hook 误判成「跨站写请求」。
+
+数据根不必另传：`db_path()` 走 `project_path()`（`config.py:159`），
+同一进程内天然与主应用一致。**禁止**为第二监听新起进程或另指定 `ERP_DATA_ROOT`。
+"""
+from __future__ import annotations
+
+from flask import Flask
+
+from erp.config import load_config
+from erp.routes.mobile import mobile_bp
+from erp.utils.filter_chips import ORDER_TYPE_LABELS
+from erp.utils.mobile_format import (
+    amount_band,
+    band,
+    money_exact,
+    money_short,
+    month_day_label,
+    quantity_text,
+    short_date,
+    timestamp_label,
+    weekday_label,
+)
+
+try:  # 版本号：源码模式读 VERSION；读不到不影响手机端可用
+    from erp import app_version
+except ImportError:  # pragma: no cover
+    def app_version() -> str:  # type: ignore[misc]
+        return ""
+
+
+def create_mobile_app() -> Flask:
+    """构造第二监听的 app：只挂 `mobile_bp` + static，**不调 `init_db()`**。"""
+    app = Flask(__name__)
+    app.config["SECRET_KEY"] = "local-fire-erp-mobile-readonly"
+    app.config["ERP_VERSION"] = app_version()
+    try:
+        config = load_config()
+    except Exception:  # noqa: BLE001 — 配置文件缺失时手机端仍应能起来并提示
+        config = {}
+    app.config["ERP_SHOP_NAME"] = str(config.get("shop_name") or "简单ERP")
+
+    app.jinja_env.globals.update(
+        money_short=money_short,
+        money_exact=money_exact,
+        band=band,
+        amount_band=amount_band,
+        quantity_text=quantity_text,
+        short_date=short_date,
+        month_day_label=month_day_label,
+        weekday_label=weekday_label,
+        timestamp_label=timestamp_label,
+        order_type_labels=ORDER_TYPE_LABELS,
+        shop_name=app.config["ERP_SHOP_NAME"],
+        app_version=app.config["ERP_VERSION"],
+    )
+
+    app.register_blueprint(mobile_bp)
+    return app

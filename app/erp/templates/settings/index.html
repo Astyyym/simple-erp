@@ -28,6 +28,7 @@
       <a href="#groupBasic">基本</a>
       <a href="#groupPrint">打印</a>
       <a href="#groupData">数据与备份</a>
+      <a href="#groupMobile">手机访问</a>
       <a href="#groupPurgeLegacy">清空与留底</a>
     </nav>
     {# 保存设置：独立圆角卡片，按钮用 form 属性关联主表单提交，行为与原先一致。 #}
@@ -333,6 +334,138 @@
   </table>
   {% else %}
   <p data-ui-hint class="text-muted small mb-0">还没有任何备份。迁移旧数据前，请先点上面的「立即备份」。</p>
+  {% endif %}
+</section>
+
+<section class="settings-group" id="groupMobile">
+  <div class="settings-group-head"><h2>手机访问</h2><span class="settings-group-note">手机<b>只看不改</b>（今日概览 / 客户 / 单据 / 商品价）。下面这些卡片不在主表单里，<strong>点按钮当场生效</strong></span></div>
+</section>
+
+<section class="settings-card settings-card-wide settings-instant mt-4" id="mobileAccessSection">
+  <h3>手机只读端</h3>
+  <p data-ui-hint class="text-muted small">
+    手机与这台电脑连<strong>同一个 WiFi</strong>，用手机<strong>相机或 Chrome 扫码</strong>打开；
+    不要用微信「扫一扫」——微信内置浏览器的 cookie 与系统浏览器隔离，通常也无法添加到主屏幕。
+    手机端只用只读连接查库，不会改账目；电脑关机或手机不在同一 WiFi 时打不开，这是当前版本的已知限制。
+  </p>
+
+  <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+    <form method="post" action="{{ url_for('settings.mobile_toggle') }}">
+      <input type="hidden" name="enabled" value="{{ '0' if mobile.enabled else '1' }}">
+      {% if mobile.enabled %}
+      <button type="submit" class="btn btn-outline-danger">关闭手机访问</button>
+      {% else %}
+      <button type="submit" class="btn btn-primary">打开手机访问</button>
+      {% endif %}
+    </form>
+    {% if mobile.enabled %}
+    <form method="post" action="{{ url_for('settings.mobile_pair_code') }}">
+      <button type="submit" class="btn btn-outline-primary">生成配对码</button>
+    </form>
+    {% endif %}
+    <span class="text-muted small">
+      当前：{{ '已打开' if mobile.enabled else '未打开' }}{% if mobile.enabled and not mobile.status.listening %}（监听未起来，见下方诊断）{% endif %}
+    </span>
+  </div>
+
+  {# 反馈与配对码就地显示在这里：这些按钮在页面下半部，放 page 顶部的 flash 用户看不见。 #}
+  {% if mobile_notice %}
+  <div class="alert alert-{{ mobile_notice[0] }} py-2" role="alert">{{ mobile_notice[1] }}</div>
+  {% endif %}
+  {% if mobile_code %}
+  <div class="alert alert-success py-3" role="alert" id="mobilePairCode">
+    <div class="small text-muted mb-1">配对码 · {{ mobile_code_seconds }} 秒内有效 · 只能用一次</div>
+    <div style="font-size:32px;font-weight:700;letter-spacing:10px;font-variant-numeric:tabular-nums;line-height:1.1">{{ mobile_code }}</div>
+    <div class="small text-muted mt-2">现在在手机上输入这 6 位数字。过期了就再点一次「生成配对码」。</div>
+  </div>
+  {% endif %}
+
+  {% if mobile.enabled %}
+  <div class="row g-3 align-items-start mb-3">
+    <div class="col-md-7">
+      <dl class="settings-dl mb-2">
+        <dt>手机访问地址</dt>
+        <dd><code>{{ mobile.status.url }}</code></dd>
+      </dl>
+      {% if mobile.status.lan_warning %}
+      <div class="alert alert-warning py-2" role="alert">{{ mobile.status.lan_warning }}</div>
+      {% endif %}
+      <dl class="settings-dl mb-2">
+        <dt>配对码</dt>
+        <dd>
+          {% if mobile.pending.active %}
+          已生成，<strong>{{ mobile.pending.seconds_left }} 秒</strong>内有效（只在这块显示一次；没记下来就重新生成）
+          {% else %}
+          点上方「生成配对码」，码会显示在按钮下面
+          {% endif %}
+        </dd>
+      </dl>
+      <p data-ui-hint class="text-muted small mb-0">
+        地址里的 IP 由路由器分配。<strong>IP 一变，手机上存的快捷方式就失效</strong>——建议在路由器上把这个 Wi-Fi 网卡绑成固定 IP（DHCP 保留），
+        进不去路由器时也可以先这样用（租约通常会把同一地址续给同一台机器）。
+      </p>
+    </div>
+    <div class="col-md-5 text-md-end">
+      {% if mobile.qr %}
+      <img src="{{ mobile.qr }}" width="176" height="176" alt="手机访问二维码"
+           style="background:#fff;border-radius:10px;padding:8px;border:1px solid var(--erp-border)">
+      {% elif mobile.status.lan_warning %}
+      <span class="text-muted small">没有可用的局域网地址，二维码不显示；先检查这台电脑的 Wi-Fi。</span>
+      {% else %}
+      <span class="text-muted small">二维码生成失败（缺少 qrcode 依赖），可手输上面的地址。</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <h4 class="mt-4">诊断信息</h4>
+  <dl class="settings-dl" id="mobileDiagnostics">
+    <dt>监听地址</dt><dd><code>{{ mobile.status.host }}:{{ mobile.status.port }}</code></dd>
+    <dt>局域网地址</dt><dd><code>{{ mobile.status.lan_ip }}</code>{{ '（看起来不是手机能连的地址）' if not mobile.status.lan_usable }}</dd>
+    <dt>是否在监听</dt>
+    <dd>
+      {% if mobile.status.listening %}正在监听{% if mobile.reachable %}，端口自检通过{% else %}，但端口探测失败{% endif %}
+      {% else %}未监听{% endif %}
+    </dd>
+    <dt>最后一次手机成功请求</dt><dd>{{ mobile.last_success_label }}</dd>
+    <dt>上次错误</dt><dd>{{ mobile.status.error or '无' }}</dd>
+    <dt>已配对设备</dt><dd>{{ mobile.devices|length }} 台</dd>
+  </dl>
+  <p data-ui-hint class="text-muted small">
+    首次打开手机访问时 Windows 防火墙会弹窗，<strong>必须点「允许」</strong>；点「取消」后规则会被记成阻止且不再询问，
+    表现就是「手机永远连不上、电脑看不出异常」。端口 5001 被占用时这里会给出明确报错，不会自动换端口。
+  </p>
+  <button type="button" class="btn btn-sm btn-outline-secondary" id="mobileCopyDiagnostics"
+          data-copy-target="mobileDiagnostics">复制诊断信息</button>
+
+  <h4 class="mt-4">已配对设备</h4>
+  {% if mobile.devices %}
+  <table class="table align-middle">
+    <thead><tr><th>设备</th><th>配对时间</th><th>最后访问</th><th>来源 IP</th><th>操作</th></tr></thead>
+    <tbody>
+      {% for device in mobile.devices %}
+      <tr>
+        <td>{{ device.label }}</td>
+        <td>{{ device.paired_label }}</td>
+        <td>{{ device.last_seen_label }}</td>
+        <td><code>{{ device.last_ip or '—' }}</code></td>
+        <td>
+          <form method="post" action="{{ url_for('settings.mobile_revoke') }}"
+                onsubmit="return confirm('撤销后这台手机下次请求会回到配对页，数据不在手机本地，确定撤销？');">
+            <input type="hidden" name="device_id" value="{{ device.id }}">
+            <button type="submit" class="btn btn-sm btn-outline-danger">撤销这台</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <form method="post" action="{{ url_for('settings.mobile_revoke_all') }}"
+        onsubmit="return confirm('撤销全部手机？撤销后都要重新配对。');">
+    <button type="submit" class="btn btn-sm btn-outline-danger">撤销全部</button>
+  </form>
+  {% else %}
+  <p data-ui-hint class="text-muted small mb-0">还没有配对过手机。打开手机访问后，用手机扫码并输入配对码即可。</p>
   {% endif %}
 </section>
 
@@ -699,5 +832,41 @@
   });
   sync();
 })();
+</script>
+{% if mobile_code %}
+<script>
+  // 生成配对码是 POST 后整页重渲染，浏览器会把滚动位置重置到页面顶部；
+  // 码就在刚点的按钮下面，但用户会看到「页面回到顶部」。这一次把码滚进视野。
+  (function () {
+    var box = document.getElementById('mobilePairCode');
+    if (box && box.scrollIntoView) {
+      box.scrollIntoView({block: 'center'});
+    }
+  })();
+</script>
+{% endif %}
+<script>
+  // 「复制诊断信息」：把诊断 dl 的文本拼起来放剪贴板（失败就全选提示手抄）。
+  (function () {
+    var button = document.getElementById('mobileCopyDiagnostics');
+    if (!button) { return; }
+    button.addEventListener('click', function () {
+      var source = document.getElementById(button.dataset.copyTarget);
+      if (!source) { return; }
+      var text = Array.prototype.map.call(source.children, function (node) {
+        return node.tagName === 'DT' ? node.textContent.trim() + '：' : node.textContent.trim();
+      }).filter(Boolean).join(' ');
+      var done = function () {
+        var original = button.textContent;
+        button.textContent = '已复制';
+        setTimeout(function () { button.textContent = original; }, 1500);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () { window.prompt('复制下面的诊断信息：', text); });
+      } else {
+        window.prompt('复制下面的诊断信息：', text);
+      }
+    });
+  })();
 </script>
 {% endblock %}

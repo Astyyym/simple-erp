@@ -672,7 +672,8 @@ def new_return_order():
 def _today_history(conn, today: str) -> list[dict]:
     rows = conn.execute(
         """SELECT o.id, o.order_no, o.order_date, o.order_type, o.status,
-                  o.total_amount_cents, COALESCE(c.name, '（未知客户）') AS customer_name
+                  o.total_amount_cents, o.created_at,
+                  COALESCE(c.name, '（未知客户）') AS customer_name
            FROM orders o LEFT JOIN customers c ON c.id=o.customer_id
            WHERE o.order_date=? AND o.deleted_at IS NULL
              AND o.status IN ('saved', 'printed')

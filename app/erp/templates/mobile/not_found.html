@@ -1,0 +1,20 @@
+{% extends "mobile/base.html" %}
+{% from "mobile/_macros.html" import hd %}
+{% block title %}没找到 · {{ shop_name }}{% endblock %}
+{% block page_key %}notfound{% endblock %}
+
+{% block header %}
+{{ hd("没找到这个页面", "") }}
+{% endblock %}
+
+{% block body %}
+<div class="empty" style="margin:auto 0">
+  <div class="ring">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 8v4.5M12 16h.01"/></svg>
+  </div>
+  <b>{{ message }}</b>
+  <span>可以从下面的按钮回到首页。</span>
+</div>
+<a class="btn ghost" role="button" style="display:grid;place-items:center;text-decoration:none"
+   href="{{ back_url }}">回到首页</a>
+{% endblock %}

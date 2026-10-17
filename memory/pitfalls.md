@@ -5,6 +5,42 @@
 `utils/backup.py:create_backup` 覆盖 `erp.db` + `config.json` + `product_images/` + `legacy_archive/`。
 恢复已实现 `restore_backup`：**默认不动 `config.json`**，恢复前自动建 `pre_restore` 备份。
 
+## 手机只读端（第二监听 5001）的两个硬坑
+
+**Windows 上「端口被占」不能用 bind 异常判定。** `SO_REUSEADDR` 在 Windows 允许**重复绑定**
+已在监听的端口（与 POSIX 语义不同），waitress `create_server` 会「绑定成功」然后行为诡异。
+判据必须用 connect 探测（`socket.connect_ex(("127.0.0.1", port)) == 0`），见
+`app/erp/mobile_server.py:start_mobile_listener`。2026-10-17 实测：另一个 socket 已 listen 时
+`start_mobile_listener` 仍返回成功。
+
+**headless Chrome 的窗口宽度被夹到最小 500px。** `--window-size=390,844 --screenshot` 出来的
+PNG 确实是 390×844，但**布局视口是 500 宽**，于是截图右侧被裁、会把「窄档正常」看成「内容溢出」。
+`--headless=old` 同样被夹。验证 390 手机布局的正确做法：外层页面放一个 `390×844` 的 `<iframe>`，
+用 `--window-size=500,1000` 截图后裁到 `(0,0,390,844)`。自证方法：页面内探针把
+`innerWidth` 写进 `document.title`，`--dump-dom` 里 grep（实测 `vw=500x749`）。
+
+## 桌面版关掉之前别跑全量测试
+
+`dist\local-vX.Y.Z\简单ERP\简单ERP.exe` 在跑时会占 5000。此时**不带** `ERP_PORT` 跑全量，
+`tests/test_desktop_startup.py::test_main_reports_real_database_failure_before_opening_webview`
+会走「已有实例」分支，真的去 `webview.start()` 开窗并**一直挂住**（表现为该测试卡死、整轮超时），
+不是回归。判据：`Get-Process -Id <占用 PID>` 看是不是用户的桌面版。
+
+## 取「局域网 IP」不能只看默认路由（本机有 TUN 代理）
+
+本机装了 Meta（Clash 系）TUN 代理，网卡地址是 `198.18.0.1`（RFC 2544 基准测试段）。
+`udp connect("8.8.8.8", 80)` 再 `getsockname()` 这种常见取地址法，在这台机器上返回的是
+**`198.18.0.1`**，不是真实的 `192.168.10.5`（WLAN）。用它生成二维码/配对地址，手机会永远连不上，
+而电脑端一切「看起来正常」。
+
+判据与做法（`app/erp/mobile_server.py`）：
+
+- 候选取两路：默认路由（连几个公网 IP）+ `socket.gethostbyname_ex(hostname)[2]`（本机返回
+  `192.168.10.5` 与 `198.18.0.1`）。
+- 过滤掉 `198.18.0.0/15`、`169.254.0.0/16`、`127.0.0.0/8`，只留 RFC1918；
+  排序 192.168 > 10. > 172.16–31。
+- 一个都没剩时不生成二维码，并给「先检查电脑 Wi-Fi」的提示，不要显示 127 地址的二维码。
+
 ## 客户与供应商共用一张表
 
 `customers` 表同时存客户和供应商，`name` 有 UNIQUE 约束，**软删除的记录也占名**。

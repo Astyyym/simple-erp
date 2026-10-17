@@ -60,6 +60,7 @@ a = Analysis(
         'weasyprint',
         'pydyf',
         'pypinyin',
+        'qrcode',
         # demo_entry 的导入目标：分析器通常能自己抓到，显式列出防止漏打包。
         'desktop_app',
     ],

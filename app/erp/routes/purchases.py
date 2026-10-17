@@ -115,10 +115,25 @@ def _resolve_purchase_customer_id() -> int:
         return new_id
 
 
-def _purchase_today_history(conn, today: str) -> list[dict]:
+def _purchase_today_history(conn, today: str, *, detail_url_builder=None) -> list[dict]:
+    """今日拿货 + 退拿货（`business_date` + `status='saved'`，逐表照抄余额口径）。
+
+    `detail_url_builder` 是给手机端留的接缝：手机端跑在**独立 app**（只挂
+    `mobile_bp`），`url_for("purchases.purchase_detail")` 在那里会抛 BuildError。
+    默认仍走桌面端 URL，行为不变；传了就由调用方决定详情链接。
+    """
+
+    def detail_url(order_type: str, source_id: int) -> str:
+        if detail_url_builder is not None:
+            return detail_url_builder(order_type, source_id)
+        if order_type == "purchase":
+            return url_for("purchases.purchase_detail", purchase_id=source_id)
+        return url_for("purchases.return_detail", return_id=source_id)
+
     items: list[dict] = []
     rows = conn.execute(
-        """SELECT id, order_no, customer_name, status, total_amount_cents FROM purchase_orders
+        """SELECT id, order_no, customer_name, status, total_amount_cents, created_at
+           FROM purchase_orders
            WHERE business_date=? AND deleted_at IS NULL AND status='saved' ORDER BY id DESC""",
         (today,),
     ).fetchall()
@@ -127,11 +142,13 @@ def _purchase_today_history(conn, today: str) -> list[dict]:
             "id": r["id"], "order_no": r["order_no"], "customer_name": r["customer_name"] or "（未知对象）",
             "order_type": "purchase", "type_label": "拿货单",
             "amount_display": cents_to_yuan(r["total_amount_cents"]),
+            "total_amount_cents": r["total_amount_cents"], "created_at": r["created_at"],
             "status": r["status"], "status_label": "正式保存",
-            "detail_url": url_for("purchases.purchase_detail", purchase_id=r["id"]),
+            "detail_url": detail_url("purchase", r["id"]),
         })
     rows = conn.execute(
-        """SELECT id, order_no, customer_name, status, total_amount_cents FROM purchase_return_orders
+        """SELECT id, order_no, customer_name, status, total_amount_cents, created_at
+           FROM purchase_return_orders
            WHERE business_date=? AND deleted_at IS NULL AND status='saved' ORDER BY id DESC""",
         (today,),
     ).fetchall()
@@ -140,8 +157,9 @@ def _purchase_today_history(conn, today: str) -> list[dict]:
             "id": r["id"], "order_no": r["order_no"], "customer_name": r["customer_name"] or "（未知对象）",
             "order_type": "purchase_return", "type_label": "退拿货单",
             "amount_display": cents_to_yuan(r["total_amount_cents"]),
+            "total_amount_cents": r["total_amount_cents"], "created_at": r["created_at"],
             "status": r["status"], "status_label": "正式保存",
-            "detail_url": url_for("purchases.return_detail", return_id=r["id"]),
+            "detail_url": detail_url("purchase_return", r["id"]),
         })
     return items
 

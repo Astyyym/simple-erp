@@ -1,0 +1,73 @@
+{% extends "mobile/base.html" %}
+{% from "mobile/_macros.html" import hd %}
+{% from "mobile/_icons.html" import chev, dot %}
+{% block title %}设置 · {{ shop_name }}{% endblock %}
+{% block page_key %}settings{% endblock %}
+
+{% block header %}
+{{ hd("设置", "简单ERP 手机端") }}
+{% endblock %}
+
+{% block body %}
+{# 设置页**没有任何写端**：主题只是本机 localStorage；「重新配对」只是跳转；
+   彻底断开只能在电脑的「设置 → 手机访问」里撤销设备。 #}
+<div class="group-label"><b>连接</b><span>只读</span></div>
+<div class="card set-card">
+  <div class="set-row">
+    <span class="grow">
+      <span class="t"><span class="live">{{ dot() }}已连接</span></span>
+      <span class="s">{{ address }}</span>
+    </span>
+  </div>
+  <div class="set-row">
+    <span class="grow">
+      <span class="t">最后成功</span>
+      <span class="s">{{ last_success_label }}</span>
+    </span>
+  </div>
+  <a class="set-row act" href="{{ url_for('mobile.pair', next=url_for('mobile.today')) }}">
+    <span class="grow">
+      <span class="t">重新配对</span>
+      <span class="s">换了电脑或端口后需要重新配对</span>
+    </span>
+    <span class="chev">{{ chev() }}</span>
+  </a>
+</div>
+
+<div class="group-label"><b>外观</b></div>
+<div class="card">
+  <div class="seg-inline" role="group" aria-label="外观主题">
+    <button type="button" data-theme-set="system">跟随系统</button>
+    <button type="button" data-theme-set="light">浅色</button>
+    <button type="button" data-theme-set="dark">深色</button>
+  </div>
+</div>
+
+<div class="group-label"><b>这台设备</b></div>
+<div class="card set-card">
+  <div class="set-row">
+    <span class="grow">
+      <span class="t">{{ device.label or '手机' }}</span>
+      <span class="s">配对于 {{ device_paired_label }}</span>
+    </span>
+  </div>
+  <div class="set-row">
+    <span class="grow">
+      <span class="t">要彻底断开这台手机</span>
+      <span class="s">到电脑「设置 → 手机访问」里撤销它</span>
+    </span>
+  </div>
+</div>
+
+<div class="group-label"><b>关于</b></div>
+<div class="card set-card">
+  <div class="set-row">
+    <span class="grow">
+      <span class="t">{{ shop_name }} {{ app_version }}</span>
+      <span class="s">手机端只读，不改账目</span>
+    </span>
+  </div>
+</div>
+
+<div class="note">电脑关机、或手机不在同一个 WiFi 时连不上。这是当前版本的限制。</div>
+{% endblock %}

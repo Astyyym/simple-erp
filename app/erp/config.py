@@ -71,6 +71,9 @@ CONFIG_DEFAULTS: dict[str, Any] = {
     # 界面说明文字总开关：关掉后带 data-ui-hint 的提示/说明类小字整体隐藏
     # （危险操作警告、状态与数据不在此列）。默认开启，保持原有界面。
     "ui_show_hints": True,
+    # 手机只读端（第二监听 5001）开关。默认关闭；打开后主应用仍只绑 127.0.0.1，
+    # 手机走的是独立的只读蓝图，见 docs/需求/2026-10-17_安卓只读端架构决策.md。
+    "mobile_access_enabled": False,
     "print_order_phone": "",
     "print_order_address": "",
     "print_main_business": "软密封闸阀，蝶阀，铜芯硬密封（国，韩标）过滤器，止回阀等消防闸门",

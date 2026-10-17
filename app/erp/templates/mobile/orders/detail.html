@@ -1,0 +1,47 @@
+{% extends "mobile/base.html" %}
+{% from "mobile/_macros.html" import hd %}
+{% from "mobile/_icons.html" import warn %}
+{% block title %}{{ document.order_no }} · {{ shop_name }}{% endblock %}
+{% block page_key %}order{% endblock %}
+
+{% block header %}
+{{ hd(document.customer_name, document.type_label ~ " · " ~ document.order_no,
+      back_url=url_for('mobile.orders')) }}
+{% endblock %}
+
+{% block body %}
+{# 详情页才给精确金额（列表只给分档）。只读：没有编辑/作废/删除入口。 #}
+<div class="card">
+  <div class="meta-line"><span>单据号</span><span style="color:var(--ink);font-variant-numeric:tabular-nums">{{ document.order_no }}</span></div>
+  <div class="meta-line"><span>业务日期</span><span style="color:var(--ink)">{{ document.business_date }}</span></div>
+  <div class="meta-line"><span>状态</span><span class="tag t-{{ document.order_type }}">{{ document.status_label }}</span></div>
+</div>
+
+<div class="group-label"><b>明细</b><span>{{ document['items']|length }} 行</span></div>
+<div class="card">
+  {% if document['items'] %}
+  <div class="items">
+    {% for item in document['items'] %}
+    <div class="it">
+      <div class="name">{{ item.name }}</div>
+      <div class="amt">{{ money_exact(item.subtotal_cents) }}</div>
+      <div class="calc">{{ item.quantity_label }} {{ item.unit }} × {{ money_exact(item.unit_price_cents) }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="meta-line"><span>这张单据没有明细</span><span></span></div>
+  {% endif %}
+  <div class="total-line"><span>合计</span><span class="v">{{ money_exact(document.total_cents) }}</span></div>
+</div>
+
+{% if document.notes %}
+<div class="group-label"><b>备注</b><span></span></div>
+<div class="card" style="font-size:13px;line-height:1.7">{{ document.notes }}</div>
+{% endif %}
+
+<div class="note">
+  <span class="ico">{{ warn() }}</span>
+  <span>只读页：不提供编辑、作废、删除入口。要改这张单请回电脑操作。</span>
+</div>
+{% endblock %}

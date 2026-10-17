@@ -946,6 +946,11 @@ def get_ledger_document_items(source: str, document_id: int) -> dict:
 
 
 def customer_balance_cents(customer_id: int) -> int:
+    """**不要在功能代码里调用**：`app/` 内零调用者（只有 `tests/` 在调）。
+
+    余额的权威实现是 `get_customer_account_ledger()`（桌面端在用、有测试覆盖），
+    手机端也只走它。本函数保留只是为了不破坏既有测试引用。
+    """
     with get_db() as conn:
         customer = conn.execute("SELECT opening_balance_cents FROM customers WHERE id=?", (customer_id,)).fetchone()
         if customer is None:
@@ -959,147 +964,170 @@ def customer_balance_cents(customer_id: int) -> int:
                 - int(payments or 0) - int(purchases or 0) + int(purchase_returns or 0))
 
 
-def get_customer_account_ledger(customer_id: int, start_date: str = "", end_date: str = "", type_filter: list[str] | None = None) -> dict:
-    """Return one customer's current balance and date-filtered, auditable ledger."""
+def get_customer_account_ledger(
+    customer_id: int,
+    start_date: str = "",
+    end_date: str = "",
+    type_filter: list[str] | None = None,
+    *,
+    conn=None,
+) -> dict:
+    """客户当前欠款与逐笔流水（桌面端与手机端共用的唯一余额口径）。
+
+    `conn` 是给只读调用方留的接缝：传入后不再自开连接、不 commit；
+    不传时行为与以前完全一致（自开 `get_db()`）。
+    """
+    if conn is None:
+        with get_db() as owned:
+            return _ledger_with_connection(owned, customer_id, start_date, end_date, type_filter)
+    return _ledger_with_connection(conn, customer_id, start_date, end_date, type_filter)
+
+
+def _ledger_with_connection(
+    conn,
+    customer_id: int,
+    start_date: str = "",
+    end_date: str = "",
+    type_filter: list[str] | None = None,
+) -> dict:
     start_date = (start_date or "").strip()
     end_date = (end_date or "").strip()
-    with get_db() as conn:
-        customer = conn.execute(
-            "SELECT * FROM customers WHERE id=? AND deleted_at IS NULL",
-            (customer_id,),
-        ).fetchone()
-        if customer is None:
-            raise ValueError(f"客户不存在: {customer_id}")
+    customer = conn.execute(
+        "SELECT * FROM customers WHERE id=? AND deleted_at IS NULL",
+        (customer_id,),
+    ).fetchone()
+    if customer is None:
+        raise ValueError(f"客户不存在: {customer_id}")
 
-        rows = conn.execute(
-            """
-            WITH ledger AS (
-                SELECT
-                    'order' AS source,
-                    o.id AS source_id,
-                    o.order_type AS type,
-                    o.order_date AS date,
-                    o.created_at AS sort_at,
-                    o.order_no AS reference,
-                    COALESCE((
-                        SELECT group_concat(
-                            trim(oi.product_name),
-                            '、'
-                        )
-                        FROM order_items oi WHERE oi.order_id=o.id
-                    ), '订单') AS description,
-                    o.total_amount_cents AS amount_cents,
-                    CASE WHEN o.status='void' THEN 0 ELSE o.total_amount_cents END AS balance_delta_cents,
-                    CASE WHEN o.status='void' THEN 'void' ELSE 'active' END AS status,
-                    COALESCE(o.void_reason, '') AS void_reason
-                FROM orders o
-                WHERE o.customer_id=? AND o.deleted_at IS NULL
-                  AND o.status IN ('saved','printed','void')
+    rows = conn.execute(
+        """
+        WITH ledger AS (
+            SELECT
+                'order' AS source,
+                o.id AS source_id,
+                o.order_type AS type,
+                o.order_date AS date,
+                o.created_at AS sort_at,
+                o.order_no AS reference,
+                COALESCE((
+                    SELECT group_concat(
+                        trim(oi.product_name),
+                        '、'
+                    )
+                    FROM order_items oi WHERE oi.order_id=o.id
+                ), '订单') AS description,
+                o.total_amount_cents AS amount_cents,
+                CASE WHEN o.status='void' THEN 0 ELSE o.total_amount_cents END AS balance_delta_cents,
+                CASE WHEN o.status='void' THEN 'void' ELSE 'active' END AS status,
+                COALESCE(o.void_reason, '') AS void_reason
+            FROM orders o
+            WHERE o.customer_id=? AND o.deleted_at IS NULL
+              AND o.status IN ('saved','printed','void')
 
-                UNION ALL
+            UNION ALL
 
-                SELECT
-                    'payment' AS source,
-                    p.id AS source_id,
-                    'payment' AS type,
-                    p.payment_date AS date,
-                    p.created_at AS sort_at,
-                    p.method AS reference,
-                    CASE WHEN COALESCE(p.notes, '')='' THEN '客户收款' ELSE p.notes END AS description,
-                    p.amount_cents AS amount_cents,
-                    CASE WHEN p.status='void' THEN 0 ELSE -p.amount_cents END AS balance_delta_cents,
-                    p.status AS status,
-                    COALESCE(p.void_reason, '') AS void_reason
-                FROM payments p
-                WHERE p.customer_id=?
+            SELECT
+                'payment' AS source,
+                p.id AS source_id,
+                'payment' AS type,
+                p.payment_date AS date,
+                p.created_at AS sort_at,
+                p.method AS reference,
+                CASE WHEN COALESCE(p.notes, '')='' THEN '客户收款' ELSE p.notes END AS description,
+                p.amount_cents AS amount_cents,
+                CASE WHEN p.status='void' THEN 0 ELSE -p.amount_cents END AS balance_delta_cents,
+                p.status AS status,
+                COALESCE(p.void_reason, '') AS void_reason
+            FROM payments p
+            WHERE p.customer_id=?
 
-                UNION ALL
+            UNION ALL
 
-                SELECT
-                    'adjustment' AS source,
-                    a.id AS source_id,
-                    'adjustment' AS type,
-                    date(a.created_at, 'localtime') AS date,
-                    datetime(a.created_at, 'localtime') AS sort_at,
-                    '账务调整' AS reference,
-                    a.reason AS description,
-                    a.amount_cents AS amount_cents,
-                    CASE WHEN a.status='void' THEN 0 ELSE a.amount_cents END AS balance_delta_cents,
-                    a.status AS status,
-                    COALESCE(a.void_reason, '') AS void_reason
-                FROM adjustments a
-                WHERE a.customer_id=?
+            SELECT
+                'adjustment' AS source,
+                a.id AS source_id,
+                'adjustment' AS type,
+                date(a.created_at, 'localtime') AS date,
+                datetime(a.created_at, 'localtime') AS sort_at,
+                '账务调整' AS reference,
+                a.reason AS description,
+                a.amount_cents AS amount_cents,
+                CASE WHEN a.status='void' THEN 0 ELSE a.amount_cents END AS balance_delta_cents,
+                a.status AS status,
+                COALESCE(a.void_reason, '') AS void_reason
+            FROM adjustments a
+            WHERE a.customer_id=?
 
-                UNION ALL
+            UNION ALL
 
-                SELECT
-                    'purchase' AS source,
-                    po.id AS source_id,
-                    'purchase' AS type,
-                    po.business_date AS date,
-                    po.created_at AS sort_at,
-                    po.order_no AS reference,
-                    COALESCE((SELECT group_concat(trim(pi.product_name), '、') FROM purchase_order_items pi WHERE pi.purchase_order_id=po.id), '拿货') AS description,
-                    po.total_amount_cents AS amount_cents,
-                    CASE WHEN po.status='void' THEN 0 ELSE -po.total_amount_cents END AS balance_delta_cents,
-                    CASE WHEN po.status='void' THEN 'void' ELSE 'active' END AS status,
-                    '' AS void_reason
-                FROM purchase_orders po
-                WHERE po.customer_id=? AND po.deleted_at IS NULL AND po.status IN ('saved','void')
+            SELECT
+                'purchase' AS source,
+                po.id AS source_id,
+                'purchase' AS type,
+                po.business_date AS date,
+                po.created_at AS sort_at,
+                po.order_no AS reference,
+                COALESCE((SELECT group_concat(trim(pi.product_name), '、') FROM purchase_order_items pi WHERE pi.purchase_order_id=po.id), '拿货') AS description,
+                po.total_amount_cents AS amount_cents,
+                CASE WHEN po.status='void' THEN 0 ELSE -po.total_amount_cents END AS balance_delta_cents,
+                CASE WHEN po.status='void' THEN 'void' ELSE 'active' END AS status,
+                '' AS void_reason
+            FROM purchase_orders po
+            WHERE po.customer_id=? AND po.deleted_at IS NULL AND po.status IN ('saved','void')
 
-                UNION ALL
+            UNION ALL
 
-                SELECT
-                    'purchase_return' AS source,
-                    pr.id AS source_id,
-                    'purchase_return' AS type,
-                    pr.business_date AS date,
-                    pr.created_at AS sort_at,
-                    pr.order_no AS reference,
-                    COALESCE((SELECT group_concat(trim(pri.product_name), '、') FROM purchase_return_items pri WHERE pri.purchase_return_id=pr.id), '退拿货') AS description,
-                    pr.total_amount_cents AS amount_cents,
-                    CASE WHEN pr.status='void' THEN 0 ELSE pr.total_amount_cents END AS balance_delta_cents,
-                    CASE WHEN pr.status='void' THEN 'void' ELSE 'active' END AS status,
-                    '' AS void_reason
-                FROM purchase_return_orders pr
-                WHERE pr.customer_id=? AND pr.deleted_at IS NULL AND pr.status IN ('saved','void')
-            )
-            SELECT source, source_id, type, date, sort_at, reference, description,
-                   amount_cents, balance_delta_cents, status, void_reason
-            FROM ledger
-            ORDER BY date DESC, sort_at DESC, source ASC, source_id DESC
-            """,
-            (customer_id, customer_id, customer_id, customer_id, customer_id),
-        ).fetchall()
+            SELECT
+                'purchase_return' AS source,
+                pr.id AS source_id,
+                'purchase_return' AS type,
+                pr.business_date AS date,
+                pr.created_at AS sort_at,
+                pr.order_no AS reference,
+                COALESCE((SELECT group_concat(trim(pri.product_name), '、') FROM purchase_return_items pri WHERE pri.purchase_return_id=pr.id), '退拿货') AS description,
+                pr.total_amount_cents AS amount_cents,
+                CASE WHEN pr.status='void' THEN 0 ELSE pr.total_amount_cents END AS balance_delta_cents,
+                CASE WHEN pr.status='void' THEN 'void' ELSE 'active' END AS status,
+                '' AS void_reason
+            FROM purchase_return_orders pr
+            WHERE pr.customer_id=? AND pr.deleted_at IS NULL AND pr.status IN ('saved','void')
+        )
+        SELECT source, source_id, type, date, sort_at, reference, description,
+               amount_cents, balance_delta_cents, status, void_reason
+        FROM ledger
+        ORDER BY date DESC, sort_at DESC, source ASC, source_id DESC
+        """,
+        (customer_id, customer_id, customer_id, customer_id, customer_id),
+    ).fetchall()
 
     all_entries = [dict(row) for row in rows]
     active_entries = [entry for entry in all_entries if entry["status"] == "active"]
     visible_entries = [
-        entry for entry in all_entries
-        if (not start_date or entry["date"] >= start_date)
-        and (not end_date or entry["date"] <= end_date)
+    entry for entry in all_entries
+    if (not start_date or entry["date"] >= start_date)
+    and (not end_date or entry["date"] <= end_date)
     ]
     active_period_entries = [entry for entry in visible_entries if entry["status"] == "active"]
 
     document_net_cents = sum(
-        entry["balance_delta_cents"] for entry in active_entries
-        if entry["type"] in {"sale", "return"}
+    entry["balance_delta_cents"] for entry in active_entries
+    if entry["type"] in {"sale", "return"}
     )
     purchase_net_cents = sum(
-        entry["balance_delta_cents"] for entry in active_entries
-        if entry["type"] in {"purchase", "purchase_return"}
+    entry["balance_delta_cents"] for entry in active_entries
+    if entry["type"] in {"purchase", "purchase_return"}
     )
     adjustment_cents = sum(
-        entry["balance_delta_cents"] for entry in active_entries
-        if entry["type"] == "adjustment"
+    entry["balance_delta_cents"] for entry in active_entries
+    if entry["type"] == "adjustment"
     )
     payment_cents = sum(
-        entry["amount_cents"] for entry in active_entries
-        if entry["type"] == "payment"
+    entry["amount_cents"] for entry in active_entries
+    if entry["type"] == "payment"
     )
     opening_balance_cents = int(customer["opening_balance_cents"] or 0)
     current_balance_cents = opening_balance_cents + sum(
-        entry["balance_delta_cents"] for entry in active_entries
+    entry["balance_delta_cents"] for entry in active_entries
     )
 
     # D-1：区间两端余额。
@@ -1107,42 +1135,42 @@ def get_customer_account_ledger(customer_id: int, start_date: str = "", end_date
     #   截止欠款 = 起始欠款 + 区间净变动。
     #   因此当 end_date 为空或=今天（且所有流水都不晚于今天）时，截止欠款 == 当前余额。
     period_start_balance_cents = opening_balance_cents + sum(
-        entry["balance_delta_cents"] for entry in active_entries
-        if start_date and entry["date"] < start_date
+    entry["balance_delta_cents"] for entry in active_entries
+    if start_date and entry["date"] < start_date
     )
 
     period = {
-        "start_date": start_date,
-        "end_date": end_date,
-        "sales_cents": sum(entry["balance_delta_cents"] for entry in active_period_entries if entry["type"] == "sale"),
-        "returns_cents": sum(entry["balance_delta_cents"] for entry in active_period_entries if entry["type"] == "return"),
-        "purchases_cents": sum(entry["balance_delta_cents"] for entry in active_period_entries if entry["type"] == "purchase"),
-        "purchase_returns_cents": sum(entry["balance_delta_cents"] for entry in active_period_entries if entry["type"] == "purchase_return"),
-        "payments_cents": sum(entry["balance_delta_cents"] for entry in active_period_entries if entry["type"] == "payment"),
-        "adjustments_cents": sum(entry["balance_delta_cents"] for entry in active_period_entries if entry["type"] == "adjustment"),
+    "start_date": start_date,
+    "end_date": end_date,
+    "sales_cents": sum(entry["balance_delta_cents"] for entry in active_period_entries if entry["type"] == "sale"),
+    "returns_cents": sum(entry["balance_delta_cents"] for entry in active_period_entries if entry["type"] == "return"),
+    "purchases_cents": sum(entry["balance_delta_cents"] for entry in active_period_entries if entry["type"] == "purchase"),
+    "purchase_returns_cents": sum(entry["balance_delta_cents"] for entry in active_period_entries if entry["type"] == "purchase_return"),
+    "payments_cents": sum(entry["balance_delta_cents"] for entry in active_period_entries if entry["type"] == "payment"),
+    "adjustments_cents": sum(entry["balance_delta_cents"] for entry in active_period_entries if entry["type"] == "adjustment"),
     }
     period["net_change_cents"] = sum(
-        period[key] for key in ("sales_cents", "returns_cents", "purchases_cents",
-                                "purchase_returns_cents", "payments_cents", "adjustments_cents")
+    period[key] for key in ("sales_cents", "returns_cents", "purchases_cents",
+                            "purchase_returns_cents", "payments_cents", "adjustments_cents")
     )
     period["start_balance_cents"] = period_start_balance_cents
     period["end_balance_cents"] = period_start_balance_cents + period["net_change_cents"]
 
     allowed_types = {t for t in (type_filter or []) if t in {
-        "sale", "return", "purchase", "purchase_return", "payment", "adjustment"}}
+    "sale", "return", "purchase", "purchase_return", "payment", "adjustment"}}
     displayed_entries = [
-        entry for entry in visible_entries
-        if not allowed_types or entry["type"] in allowed_types
+    entry for entry in visible_entries
+    if not allowed_types or entry["type"] in allowed_types
     ]
 
     return {
-        "customer": dict(customer),
-        "opening_balance_cents": opening_balance_cents,
-        "document_net_cents": document_net_cents,
-        "purchase_net_cents": purchase_net_cents,
-        "adjustment_cents": adjustment_cents,
-        "payment_cents": payment_cents,
-        "current_balance_cents": current_balance_cents,
-        "period": period,
-        "entries": displayed_entries,
+    "customer": dict(customer),
+    "opening_balance_cents": opening_balance_cents,
+    "document_net_cents": document_net_cents,
+    "purchase_net_cents": purchase_net_cents,
+    "adjustment_cents": adjustment_cents,
+    "payment_cents": payment_cents,
+    "current_balance_cents": current_balance_cents,
+    "period": period,
+    "entries": displayed_entries,
     }

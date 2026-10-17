@@ -99,3 +99,41 @@ def test_windows_spec_version_resource_and_public_bundle_name(monkeypatch):
     assert strings["FileVersion"] == f"{major}.{minor}.{patch}.0"
     configuration = [(name, source) for name, source, kind in scope["a"].datas if name == "config.json"]
     assert configuration == [("config.json", str(ROOT / "packaging" / "default_config.json"))]
+
+
+def test_specs_bundle_mobile_templates_and_static_with_qrcode():
+    """手机端资源必须能被 PyInstaller 带进包 —— 漏了源码正常、EXE 上永远 404/500。
+
+    这条钉的是**构建输入**（不是构建产物）：两个 spec 的 `datas` 都是整目录
+    `erp/templates` / `erp/static`，所以 `templates/mobile/` 与 `static/css/mobile.css`
+    天然被包含；再确认这些文件真的在那些目录里，以及 `qrcode` 在 `hiddenimports`。
+    """
+    required_files = [
+        ROOT / "app" / "erp" / "templates" / "mobile" / "base.html",
+        ROOT / "app" / "erp" / "templates" / "mobile" / "today.html",
+        ROOT / "app" / "erp" / "static" / "css" / "mobile.css",
+        ROOT / "app" / "erp" / "static" / "js" / "mobile" / "mobile.js",
+    ]
+    for path in required_files:
+        assert path.is_file(), f"缺少手机端资源：{path}"
+
+    for spec_name in ("简单ERP.spec", "简单ERP-demo.spec"):
+        tree = ast.parse((ROOT / spec_name).read_text(encoding="utf-8"))
+        analysis = next(
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "Analysis"
+        )
+        datas = next(keyword.value for keyword in analysis.keywords if keyword.arg == "datas")
+        sources = set()
+        for item in datas.elts:
+            expression = ast.Expression(item.elts[0])
+            sources.add(Path(eval(compile(expression, "<build-input>", "eval"), {"project_root": ROOT})))
+        # 整目录打包：模板与静态资源目录都必须在 datas 里
+        assert ROOT / "app" / "erp" / "templates" in sources, spec_name
+        assert ROOT / "app" / "erp" / "static" in sources, spec_name
+
+        hiddenimports = next(
+            keyword.value for keyword in analysis.keywords if keyword.arg == "hiddenimports"
+        )
+        names = {elt.value for elt in hiddenimports.elts}
+        assert "qrcode" in names, f"{spec_name} 的 hiddenimports 缺少 qrcode（设置页二维码会 500）"

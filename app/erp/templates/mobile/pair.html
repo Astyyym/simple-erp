@@ -1,0 +1,45 @@
+{% extends "mobile/base.html" %}
+{% from "mobile/_macros.html" import hd %}
+{% from "mobile/_icons.html" import warn %}
+{% block title %}配对这台手机 · {{ shop_name }}{% endblock %}
+{% block page_key %}pair{% endblock %}
+{% block tabbar %}{% endblock %}
+
+{% block header %}
+{{ hd("配对这台手机", "简单ERP 手机端") }}
+{% endblock %}
+
+{% block body %}
+{# 未配对时唯一可见的页面。唯一写端：POST 到这里，只写 data/mobile_devices.json。 #}
+<form method="post" action="{{ url_for('mobile.pair') }}" class="pair-wrap" autocomplete="off">
+  <input type="hidden" name="next" value="{{ next_path }}">
+  <div style="text-align:center">
+    <div style="font-size:13px;color:var(--muted);line-height:1.8">
+      在电脑的「设置 → 手机访问」里点「生成配对码」，<br>把这 6 位数字填进来
+    </div>
+  </div>
+
+  {% if error %}<div class="pair-error">{{ error }}</div>{% endif %}
+  {% if lock_seconds and not error %}
+  <div class="pair-error">配对已锁定，约 {{ (lock_seconds // 60) + 1 }} 分钟后可再试。</div>
+  {% endif %}
+
+  <div class="pair-code">
+    {% for index in range(6) %}
+    <input inputmode="numeric" pattern="[0-9]*" maxlength="1" name="digit{{ index }}"
+           aria-label="第 {{ index + 1 }} 位" required>
+    {% endfor %}
+  </div>
+  <input type="hidden" name="code" id="pairCode" value="">
+
+  <button class="btn" type="submit">配对</button>
+
+  <div class="note info">
+    <span class="ico">{{ warn() }}</span>
+    <span>连续输错 5 次会锁 5 分钟。配对成功后这台手机会被记住，下次不用再输。</span>
+  </div>
+  <div style="font-size:11.5px;color:var(--muted);line-height:1.8;text-align:center">
+    电脑没开、或手机不在同一个 WiFi 时连不上。<br>这是当前版本的限制。
+  </div>
+</form>
+{% endblock %}

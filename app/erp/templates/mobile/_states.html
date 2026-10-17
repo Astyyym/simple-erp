@@ -1,0 +1,35 @@
+{% from "mobile/_icons.html" import offline as ico_off %}
+{#
+  导航等待层：浏览器方案下「电脑关机 / 不同 WiFi」时请求根本到不了服务器，
+  由浏览器自己的错误页接管（我们无法定制）。这一层只覆盖「服务在但没响应」：
+
+  - 点击链接后 **150ms 内返回就直接渲染内容**，超过 150ms 才显示骨架
+    （局域网正常请求常 100ms 内返回，立刻挂骨架会闪一下，比不显示更烦）。
+  - 5 秒还没回 → 骨架换成明确失败（地址 + 三条原因 + 重试），不无限转圈。
+#}
+<div class="nav-layer" id="navLayer" hidden aria-hidden="true">
+  <div id="navSkeleton" style="display:flex;flex-direction:column;gap:var(--gap-page)">
+    <div class="head-skel"><div class="b"></div><div class="b small"></div></div>
+    <div class="card">
+      <div class="sk-row"><div class="b t1"></div><div class="b amt"></div><div class="b t2"></div></div>
+      <div class="sk-row"><div class="b t1"></div><div class="b amt"></div><div class="b t2"></div></div>
+      <div class="sk-row"><div class="b t1"></div><div class="b amt"></div><div class="b t2"></div></div>
+      <div class="sk-row"><div class="b t1"></div><div class="b amt"></div><div class="b t2"></div></div>
+      <div class="sk-row"><div class="b t1"></div><div class="b amt"></div><div class="b t2"></div></div>
+      <div class="sk-row"><div class="b t1"></div><div class="b amt"></div><div class="b t2"></div></div>
+    </div>
+  </div>
+
+  <div class="offline-wrap" id="navOffline" hidden>
+    <div class="offline-ico">{{ ico_off() }}</div>
+    <h3>试了 5 秒没有回应</h3>
+    <div class="addr" id="navAddress">{{ request.host }}</div>
+    <div class="reasons">
+      <div class="r"><span class="n">1</span><b>电脑关机了，或 ERP 没打开</b></div>
+      <div class="r"><span class="n">2</span><b>手机和电脑不在同一个 WiFi</b></div>
+      <div class="r"><span class="n">3</span><b>路由器给电脑换了地址</b></div>
+    </div>
+    <button class="btn" type="button" id="navRetry">重试</button>
+    <div class="hint">一直连不上的话，把上面这行地址发给店主</div>
+  </div>
+</div>

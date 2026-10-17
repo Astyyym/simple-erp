@@ -1,0 +1,73 @@
+{% extends "mobile/base.html" %}
+{% from "mobile/_macros.html" import hd, empty_state %}
+{% from "mobile/_icons.html" import search as ico_search, warn %}
+{% block title %}商品价 · {{ shop_name }}{% endblock %}
+{% block page_key %}products{% endblock %}
+
+{% block header %}
+{% set sub = (result.customer.name ~ " · 专属价") if result.customer else "先选一个客户" %}
+{{ hd("商品价", sub) }}
+{% endblock %}
+
+{% block toolbar %}
+{# 客户切换：专属价是「某客户」的价格，先定客户再看价。换客户直接提交。 #}
+<form class="customer-switch" method="get" action="{{ url_for('mobile.products') }}">
+  <span>客户</span>
+  <select name="customer_id" aria-label="选择客户">
+    {% for customer in customer_options %}
+    <option value="{{ customer.id }}" {{ 'selected' if customer.id == customer_id }}>{{ customer.name }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn" type="submit" style="min-height:34px;padding:0 12px;font-size:13px">查看</button>
+</form>
+<form class="search" method="get" action="{{ url_for('mobile.products') }}" role="search">
+  <input type="hidden" name="customer_id" value="{{ customer_id }}">
+  {{ ico_search() }}
+  <input type="search" name="q" value="{{ query }}" placeholder="搜索商品名或拼音首字母"
+         enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false">
+</form>
+{% endblock %}
+
+{% block body %}
+{% if result.products %}
+{% for product in result.products %}
+<div class="card">
+  <div style="display:flex;align-items:flex-start;gap:8px">
+    <div style="flex:1;min-width:0">
+      <div class="t" style="font-size:14px;font-weight:600;line-height:1.45">{{ product.name }}</div>
+    </div>
+    <span class="tag">{{ product.unit }}</span>
+  </div>
+  <div class="price-row">
+    <span class="pg">
+      <span class="lab">专属价</span>
+      <span class="val{{ ' none' if product.customer_price_cents is none else (' diff' if product.differs else '') }}">{{ money_short(product.customer_price_cents) if product.customer_price_cents is not none else '—' }}</span>
+    </span>
+    <span class="pg">
+      <span class="lab">最近成交</span>
+      <span class="val{{ ' none' if product.last_price_cents is none else (' diff' if product.differs else '') }}">{{ money_short(product.last_price_cents) if product.last_price_cents is not none else '—' }}</span>
+    </span>
+    <span class="flag">
+      {% if product.customer_price_cents is none and product.last_price_cents is none %}
+      <span class="muted-note">无专属价 · 无成交</span>
+      {% elif product.customer_price_cents is none %}
+      <span class="muted-note">无专属价</span>
+      {% elif product.last_price_cents is none %}
+      <span class="muted-note">无成交记录</span>
+      {% elif product.differs %}
+      <span class="diff-flag">差 {{ money_short(product.gap_cents) }}</span>
+      {% endif %}
+    </span>
+  </div>
+</div>
+{% endfor %}
+{% else %}
+<div class="card">{{ empty_state("没有找到这个商品", "换个关键字试试，或者换个客户看专属价") }}</div>
+{% endif %}
+
+{% if result.truncated %}<div class="note">商品太多，这里只列前 60 条；用搜索缩小范围更快。</div>{% endif %}
+<div class="note info">
+  <span class="ico">{{ warn() }}</span>
+  <span>专属价与最近成交价不一致时给出差额提示，不静默取其一。</span>
+</div>
+{% endblock %}

@@ -56,6 +56,7 @@ a = Analysis(
         'weasyprint',
         'pydyf',
         'pypinyin',
+        'qrcode',
     ],
     hookspath=[],
     hooksconfig={},

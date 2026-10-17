@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="system">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="color-scheme" content="light dark">
+  <title>{% block title %}{{ shop_name }}{% endblock %}</title>
+  <!-- 品牌图标 favicon：与桌面端同一 Keyline 图形，内联 data URI（不依赖外部文件/CDN） -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%232563eb'/%3E%3Cg fill='none' stroke='%23fff' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 3.6H9C7.3 3.6 5.9 5 5.9 6.7V17.3C5.9 19 7.3 20.4 9 20.4H15C16.7 20.4 18.1 19 18.1 17.3V7.7L14 3.6ZM14 3.6V6C14 7.3 15.1 8.4 16.4 8.4H18.1M9 12.4H10.6M13.4 12.4H15M9 15.8H10.6M13.4 15.8H15'/%3E%3C/g%3E%3C/svg%3E">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/mobile.css') }}">
+  <script>
+    // 主题在首帧前定好，避免切深色时闪白。三选（跟随系统/浅色/深色）只存本机，
+    // 手机端没有任何写端 —— 这就是「设置页无写操作」的实现方式。
+    (function () {
+      try {
+        var saved = localStorage.getItem('erp-mobile-theme');
+        if (saved === 'light' || saved === 'dark' || saved === 'system') {
+          document.documentElement.setAttribute('data-theme', saved);
+        }
+      } catch (error) { /* 隐私模式下 localStorage 不可用，退回跟随系统 */ }
+    })();
+  </script>
+</head>
+<body data-home="{{ url_for('mobile.today') }}">
+<div class="app" id="app">
+  <div class="main">
+    {% block header %}{% endblock %}
+    {% block toolbar %}{% endblock %}
+    <div class="body" data-page="{% block page_key %}{% endblock %}">
+      {% block body %}{% endblock %}
+    </div>
+  </div>
+  {% block tabbar %}{% include "mobile/_tabbar.html" %}{% endblock %}
+  {% include "mobile/_states.html" %}
+</div>
+<script src="{{ url_for('static', filename='js/mobile/mobile.js') }}" defer></script>
+</body>
+</html>

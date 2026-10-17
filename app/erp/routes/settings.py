@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for, current_app, Response
+from flask import Blueprint, flash, redirect, render_template, request, session, url_for, current_app, Response
 
 from erp.config import (
     UI_FONT_WEIGHT_CHOICES,
@@ -33,6 +33,10 @@ from erp.utils.backup import (
 from erp.utils.money import cents_to_yuan
 from erp.utils.quantity import format_quantity
 from erp.utils.legacy_archive import archive_dir, list_archives, save_archive
+from erp.mobile_server import mobile_url, port_in_use, start_mobile_listener, status as mobile_status, stop_mobile_listener
+from erp.services import mobile_pairing
+from erp.utils.mobile_format import timestamp_label
+from erp.utils.mobile_qr import qr_png_data_uri
 from erp.utils.pdf import (
     generate_settings_print_preview_pdf,
     generate_settings_reconciliation_preview_pdf,
@@ -55,26 +59,38 @@ def _reload_app_config() -> dict:
     return cfg
 
 
+def _settings_template_context(**extra) -> dict:
+    """设置页模板上下文。`extra` 用来就地渲染一次性的结果（如手机配对码）。
+
+    `mobile_notice` 走 session 一次性传递，而不是 flash：手机访问这几个按钮在页面**下半部**，
+    flash 渲染在页面顶部，用户点了按钮只会看到「页面刷新了、什么也没出现」。
+    """
+    config = load_config()
+    context = {
+        "config": config,
+        "data_root_path": str(data_root()),
+        "default_data_root_path": default_data_root_display(),
+        "location_file_path": str(location_file()),
+        "ui_scale_choices": UI_SCALE_CHOICES,
+        "ui_theme_choices": UI_THEME_CHOICES,
+        "ui_font_weight_choices": UI_FONT_WEIGHT_CHOICES,
+        "ui_font_weight_labels": UI_FONT_WEIGHT_LABELS,
+        "is_desktop": bool(os.environ.get("ERP_DESKTOP") or os.environ.get("ERP_DESKTOP_SHELL")),
+        "backups": list_backups(),
+        "backup_retention_days": config.get("backup_retention_days", 30),
+        "archives": list_archives(),
+        "mobile": mobile_panel_context(),
+        "mobile_notice": session.pop("mobile_notice", None),
+        "mobile_code": "",
+        "mobile_code_seconds": 0,
+    }
+    context.update(extra)
+    return context
+
+
 @settings_bp.get("/")
 def settings_page():
-    config = load_config()
-    current = str(data_root())
-    is_desktop = bool(os.environ.get("ERP_DESKTOP") or os.environ.get("ERP_DESKTOP_SHELL"))
-    return render_template(
-        "settings/index.html",
-        config=config,
-        data_root_path=current,
-        default_data_root_path=default_data_root_display(),
-        location_file_path=str(location_file()),
-        ui_scale_choices=UI_SCALE_CHOICES,
-        ui_theme_choices=UI_THEME_CHOICES,
-        ui_font_weight_choices=UI_FONT_WEIGHT_CHOICES,
-        ui_font_weight_labels=UI_FONT_WEIGHT_LABELS,
-        is_desktop=is_desktop,
-        backups=list_backups(),
-        backup_retention_days=config.get("backup_retention_days", 30),
-        archives=list_archives(),
-    )
+    return render_template("settings/index.html", **_settings_template_context())
 
 
 def _parse_print_mm(raw: str | None, field_label: str) -> float:
@@ -409,3 +425,109 @@ def backup_restore():
     except Exception as exc:  # noqa: BLE001
         flash(f"恢复失败：{exc}", "danger")
     return redirect(url_for("settings.settings_page") + "#backupSection")
+
+
+# ---------------------------------------------------------------------------
+# 手机只读端（第二监听 5001）：开关 / 配对码 / 撤销设备 / 诊断
+# ---------------------------------------------------------------------------
+# 三条不可动口径：
+#   1) 主应用 5000 永远只绑 127.0.0.1；手机端走**独立 app**（erp/mobile_app.py）。
+#   2) 端口固定 5001：被占就明确报错并把开关回弹到关，**不自动漂移**
+#      ——端口是配对 base_url 的一部分，漂移的失败是静默的。
+#   3) 手机端没有任何写端：解绑只能在这里做。
+
+
+def mobile_panel_context() -> dict:
+    """设置页「手机访问」分区要展示的一切（不含任何业务数据）。"""
+    status = mobile_status()
+    devices = mobile_pairing.list_devices()
+    for device in devices:
+        device["paired_label"] = timestamp_label(device.get("paired_at", ""))
+        device["last_seen_label"] = timestamp_label(device.get("last_seen_at", ""))
+    enabled = bool(load_config().get("mobile_access_enabled"))
+    reachable = bool(status["listening"]) and port_in_use(status["port"])
+    return {
+        "status": status,
+        "devices": devices,
+        "pending": mobile_pairing.pending_code_info(),
+        "enabled": enabled,
+        "reachable": reachable,
+        "last_success_label": timestamp_label(mobile_pairing.last_success_at()),
+        # 二维码只在「真的在监听 + 地址看起来手机能连」时才给：给一个 127 或代理网卡
+        # 地址的二维码，等于让店主扫一张永远连不上的图。
+        "qr": (
+            qr_png_data_uri(status["url"])
+            if status["listening"] and status.get("lan_usable")
+            else ""
+        ),
+        "url": mobile_url(status["port"], ip=status["lan_ip"]),
+    }
+
+
+@settings_bp.post("/mobile/toggle")
+def mobile_toggle():
+    enable = (request.form.get("enabled") or "") == "1"
+    try:
+        if enable:
+            ok, error = start_mobile_listener()
+            if not ok:
+                # 起不来就把开关回弹到关，别让配置说「开着」而实际没监听。
+                save_config({"mobile_access_enabled": False})
+                session["mobile_notice"] = ("danger", error)
+            else:
+                save_config({"mobile_access_enabled": True})
+                session["mobile_notice"] = (
+                    "success",
+                    "手机访问已打开。用手机相机或 Chrome 扫下面的二维码，再点「生成配对码」。",
+                )
+        else:
+            stop_mobile_listener()
+            save_config({"mobile_access_enabled": False})
+            session["mobile_notice"] = (
+                "success",
+                "手机访问已关闭（已配对的设备不会自动撤销，需要时可在下面单独撤销）。",
+            )
+        _reload_app_config()
+    except Exception as exc:  # noqa: BLE001 — 界面给中文原因
+        session["mobile_notice"] = ("danger", f"操作失败：{exc}")
+    return redirect(url_for("settings.settings_page") + "#mobileAccessSection")
+
+
+@settings_bp.post("/mobile/pair-code")
+def mobile_pair_code():
+    if not mobile_status()["listening"]:
+        session["mobile_notice"] = ("danger", "请先打开「手机访问」开关，再生成配对码。")
+        return redirect(url_for("settings.settings_page") + "#mobileAccessSection")
+    code, error = mobile_pairing.generate_pair_code()
+    if error:
+        session["mobile_notice"] = ("danger", error)
+        return redirect(url_for("settings.settings_page") + "#mobileAccessSection")
+    # 就地渲染，不 redirect：码只活 120 秒，必须出现在用户正在看的这一屏上。
+    # 不放 URL（会进浏览器历史/访问日志），也不放 session（session cookie 客户端可读）。
+    return render_template(
+        "settings/index.html",
+        **_settings_template_context(
+            mobile_code=code,
+            mobile_code_seconds=mobile_pairing.PAIR_CODE_TTL_SECONDS,
+        ),
+    )
+
+
+@settings_bp.post("/mobile/revoke")
+def mobile_revoke():
+    device_id = (request.form.get("device_id") or "").strip()
+    if mobile_pairing.revoke_device(device_id):
+        session["mobile_notice"] = (
+            "success",
+            "已撤销这台手机：它下次请求会回到配对页（阶段一手机端不落本地数据）。",
+        )
+    else:
+        session["mobile_notice"] = ("danger", "没找到这台设备，可能已经被撤销。")
+    return redirect(url_for("settings.settings_page") + "#mobileAccessSection")
+
+
+@settings_bp.post("/mobile/revoke-all")
+def mobile_revoke_all():
+    count = mobile_pairing.revoke_all_devices()
+    session["mobile_notice"] = ("success", f"已撤销全部 {count} 台手机。要再连回来需要重新配对。")
+    return redirect(url_for("settings.settings_page") + "#mobileAccessSection")

@@ -1,0 +1,120 @@
+{% extends "mobile/base.html" %}
+{% from "mobile/_macros.html" import hd, empty_state %}
+{% from "mobile/_icons.html" import chev %}
+{% block title %}单据 · {{ shop_name }}{% endblock %}
+{% block page_key %}orders{% endblock %}
+
+{% block header %}
+{% set sub = (customer_brief.name ~ " · ") if customer_brief else "" %}
+{{ hd("单据", sub ~ "共 " ~ documents|length ~ " 张",
+      '<button class="date-btn" type="button" data-sheet-open>' ~ date_range.label ~ '<span class="caret">▾</span></button>') }}
+{% endblock %}
+
+{% block toolbar %}
+{% set date_args = {'date_mode': date_range.mode, 'year': date_range.year, 'month': date_range.month,
+                    'start_date': date_range.start_date, 'end_date': date_range.end_date} %}
+{% if customer_id %}{% set _ = date_args.update({'customer_id': customer_id}) %}{% endif %}
+<div class="chip-bar">
+  {% for value, label in [(None, '全部'), ('sale', '销售'), ('return', '退货'), ('purchase', '拿货'), ('purchase_return', '退拿货')] %}
+  <a class="chip{{ ' on' if (order_type or None) == value }}"
+     href="{{ url_for('mobile.orders', order_type=value or '', **date_args) }}">{{ label }}</a>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block body %}
+{% if documents %}
+<div class="card" style="padding:0 var(--pad-card)">
+  {% for document in documents %}
+  <a class="row" href="{{ url_for('mobile.order_detail', order_type=document.order_type, document_id=document.id) }}">
+    <span class="grow">
+      <span class="t">{{ document.customer_name }}</span>
+      <span class="s">{{ document.order_no }}{% if date_range.mode != 'day' %} · {{ document.day_label }}{% endif %}{% if document.time_label %} {{ document.time_label }}{% endif %}</span>
+    </span>
+    <span class="tail">
+      <span class="band {{ document.band.key }}">{{ document.band.label }}</span>
+      <span class="tag t-{{ document.order_type }}">{{ document.type_label }}</span>
+    </span>
+    <span class="chev">{{ chev() }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">{{ empty_state("这个范围里没有单据", "换个时间，或把类型切回「全部」") }}</div>
+{% endif %}
+
+{% if truncated %}<div class="note">单据太多，这里只列最近 200 张；把时间范围收窄更快。</div>{% endif %}
+<div class="note info">
+  <span class="ico">·</span>
+  <span>列表金额只显示分档，点开单据看精确金额与明细。</span>
+</div>
+
+{# 日期 sheet：年/月/日/全部四档 + 四个快捷。点「确定」才写回筛选。 #}
+<button type="button" class="sheet-mask" id="dateSheetMask" hidden data-sheet-close aria-label="关闭遮罩"></button>
+<form class="sheet" id="dateSheet" method="get" action="{{ url_for('mobile.orders') }}" hidden
+      data-mode="{{ date_range.mode }}" data-year="{{ date_range.year }}" data-month="{{ date_range.month }}"
+      data-today="{{ today_iso }}">
+  <input type="hidden" name="order_type" value="{{ order_type }}">
+  {% if customer_id %}<input type="hidden" name="customer_id" value="{{ customer_id }}">{% endif %}
+  <input type="hidden" name="date_mode" id="sheetMode" value="{{ date_range.mode }}">
+  <input type="hidden" name="year" id="sheetYear" value="{{ date_range.year }}">
+  <input type="hidden" name="month" id="sheetMonth" value="{{ date_range.month }}">
+
+  <div class="sheet-grab"></div>
+  <div class="sheet-hd">
+    <b>选择时间</b>
+    <button class="sheet-x" type="button" data-sheet-close aria-label="关闭">×</button>
+  </div>
+
+  <div class="seg-inline" role="group" aria-label="筛选粒度">
+    <button type="button" data-sheet-mode="year">按年</button>
+    <button type="button" data-sheet-mode="month">按月</button>
+    <button type="button" data-sheet-mode="day">按日</button>
+  </div>
+
+  {# 年份从左到右 / 从上到下递增：右撇子拇指活动区在右下，最新年份靠近右手 #}
+  <div class="pick-panel" data-panel="year">
+    <div class="pick-grid y">
+      {% for year in years %}
+      <button type="button" class="pick-cell" data-sheet-year="{{ year }}">{{ year }} 年</button>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="pick-panel" data-panel="month" hidden>
+    <div class="pick-years">
+      {% for year in years %}
+      <button type="button" class="pick-cell" data-sheet-year="{{ year }}">{{ year }}</button>
+      {% endfor %}
+    </div>
+    <div class="pick-grid m">
+      {% for month in range(1, 13) %}
+      <button type="button" class="pick-cell" data-sheet-month="{{ month }}">{{ month }} 月</button>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="pick-panel" data-panel="day" hidden>
+    <div class="day-range">
+      <div>
+        <span class="fl">开始日期</span>
+        <input class="date-input" type="date" name="start_date"
+               value="{{ date_range.start_date or today_iso }}">
+      </div>
+      <div>
+        <span class="fl">截止日期</span>
+        <input class="date-input" type="date" name="end_date"
+               value="{{ date_range.end_date or today_iso }}">
+      </div>
+    </div>
+  </div>
+
+  <div class="quick-row">
+    <button type="button" data-sheet-quick="day" data-quick-value="{{ today_iso }}">今天</button>
+    <button type="button" data-sheet-quick="month">本月</button>
+    <button type="button" data-sheet-quick="year">今年</button>
+    <button type="button" data-sheet-quick="all">全部</button>
+  </div>
+  <button class="btn" type="submit">确定</button>
+</form>
+{% endblock %}
