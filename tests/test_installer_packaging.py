@@ -34,12 +34,42 @@ def iss_text() -> str:
 
 
 def test_installer_is_per_user_and_never_requests_elevation(iss_text):
-    assert r"DefaultDirName={localappdata}\Programs\简单ERP" in iss_text
+    # 默认目录由 code 常量给出；它的**回退值**仍是 per-user 路径（见下一条测试）
+    assert "DefaultDirName={code:GetLastAppDir}" in iss_text
     assert "PrivilegesRequired=lowest" in iss_text
     # 空值 = 禁止用户切换到提权模式（提权会落到受保护的系统目录，配置就写不动了）
     assert re.search(r"^PrivilegesRequiredOverridesAllowed=\s*$", iss_text, re.M)
     assert "{pf}" not in iss_text.lower()
     assert "{commonpf" not in iss_text.lower()
+
+
+def test_installer_remembers_previous_install_dir_across_uninstall(iss_text):
+    """ERP-INSTALL-02：卸载会删掉 Inno 自己的 Uninstall 键，重装不能落回默认目录。
+
+    守护四点（少任何一点，症状就复现回「店铺名/主题/手机开关全部回到默认」）：
+    1. 默认目录读自建 HKCU 键，且读不到时有非空回退（返回空字符串会让向导拿到空目录名）；
+    2. 回退值必须是 per-user 路径，不能是 Program Files；
+    3. 安装成功后把 {app} 写进这个键——不写就永远记不住；
+    4. 这个键不能被卸载清掉（卸载只删 Uninstall 键，所以键必须在 HKCU\\Software 下）。
+    """
+    assert "LAST_APPDIR_KEY = 'Software\\简单ERP'" in iss_text
+    assert "LAST_APPDIR_VALUE = 'LastAppDir'" in iss_text
+    assert "DEFAULT_APPDIR = '{localappdata}\\Programs\\简单ERP'" in iss_text
+
+    # 1+2：读不到时回退 per-user 默认路径
+    code = iss_text.split("[Code]", 1)[1]
+    getter = code.split("function GetLastAppDir", 1)[1].split("end;", 1)[0]
+    assert "RegQueryStringValue(HKCU, LAST_APPDIR_KEY, LAST_APPDIR_VALUE" in getter
+    assert "Result := ExpandConstant(DEFAULT_APPDIR)" in getter
+
+    # 3：安装完成时写入本次 {app}
+    post_install = code.split("if CurStep = ssPostInstall then", 1)[1]
+    assert "RegWriteStringValue(HKCU, LAST_APPDIR_KEY, LAST_APPDIR_VALUE, ExpandConstant('{app}'))" in post_install[:800]
+
+    # 4：卸载清理范围里不得出现这个键
+    uninstall = iss_text.split("[UninstallDelete]", 1)[1].split("[Code]", 1)[0]
+    for forbidden in ("LastAppDir", "HKCU", "Software\\简单ERP"):
+        assert forbidden not in uninstall, f"[UninstallDelete] 不得涉及 {forbidden}"
 
 
 def test_installer_version_has_a_single_source_of_truth(iss_text):

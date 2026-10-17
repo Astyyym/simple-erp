@@ -2,6 +2,14 @@
 
 > 各版本条目按当时发布口径保留。v0.8.0 永久免登录已经取代早期版本中记录的本机登录门；历史凭据不在更新记录中保存。
 
+## v4.4.0 - 安装目录记忆（卸载后重装不再落回默认目录）（2026-10-17，已发版）
+
+- **修掉一个会让人以为「配置丢了」的安装器缺陷**：装到非默认目录（例如 `D:\app\简单ERP`）→ 卸载 → 重装，安装器原本会静默落回 `%LOCALAPPDATA%\Programs\简单ERP`，并在那里生成一份**全默认 `config.json`**。用户看到的是店铺名、打印偏移、主题、手机访问开关全部变回默认——原件其实还在旧目录，业务数据一个字没动。根因：Inno 把「上次安装目录」存在自己的卸载注册表键 `HKCU\...\Uninstall\{AppId}_is1` 里，卸载把这个键整体删掉，重装时没有任何记录可用。
+- **改法**：安装完成（`ssPostInstall`）时把本次 `{app}` 写进 `HKCU\Software\简单ERP\LastAppDir`——这个键不归卸载器管，卸载不会删；`DefaultDirName={code:GetLastAppDir}` 优先读它，读不到才回退 `{localappdata}\Programs\简单ERP`（回退值必须非空，否则向导会拿到空目录名）。
+- **实测（真实安装器，不是单测）**：装到 `D:\app\简单ERP-test` → 卸载（卸载键删除、`LastAppDir` 保留）→ **不带 `/DIR` 重装仍落回 `D:\app\简单ERP-test`**，`config.json` 逐字节不变（`065e90c9…`），`%LOCALAPPDATA%\Programs\简单ERP` 未被创建；已安装状态下覆盖安装（升级路径）落点与配置不变；删掉注册表键后全新安装仍正确落到默认目录；用户真实安装 `D:\app\简单ERP` 全程未被测试触碰（`config.json` 仍 `bee3fcbb…`）。
+- **守护测试**：`tests/test_installer_packaging.py::test_installer_remembers_previous_install_dir_across_uninstall` 钉住四点——读自建键、非空 per-user 回退、`ssPostInstall` 写 `{app}`、该键不得进 `[UninstallDelete]`。
+- **验证**：全量 `pytest tests/ -q` = **1003 passed / 0 failed / 0 skipped**（基线 1002，新增 1 条）。
+- **不变**：per-user 安装（`PrivilegesRequired=lowest`，不允许切换提权）、升级不覆盖 `config.json`、卸载不删业务数据、`[UninstallDelete]` 只碰 `{app}` 下安装残留——这几条契约原样保留，守护测试同步照旧。
 ## v4.3.0 - 手机只读端（浏览器直连，与电脑同一 WiFi）（2026-10-17，已发版）
 
 - **新增手机只读端**：手机浏览器连同一 WiFi 打开 `http://<电脑局域网IP>:5001/m/`，只用**只读**方式查账——今日概览、客户（欠款与最近流水）、单据（含年/月/日筛选）、商品价（该客户专属价 + 最近成交）、设置。**不能开单、不能编辑、不能作废**，所有改动仍只能在电脑上做。本版**不做 APK**（用户 2026-10-17 定案：先用浏览器直连跑 2–3 周，确认真的会用再包壳）。

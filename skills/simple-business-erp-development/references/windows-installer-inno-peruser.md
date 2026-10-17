@@ -28,6 +28,46 @@
 
 `tests/test_installer_packaging.py` 用文本断言守护上述四点，包括「`[UninstallDelete]` 段不得提及数据目录」。
 
+## 安装目录记忆（ERP-INSTALL-02，2026-10-17）
+
+**症状**：装到非默认目录 → 卸载 → 重装，静默落回 `%LOCALAPPDATA%\Programs\简单ERP`，并在那里生成一份
+全默认 `config.json`。门店用户看到的是「店铺名 / 打印偏移 / 主题 / 手机开关全变回默认」，像是配置丢了
+（原件仍在旧目录，`onlyifdoesntexist` 只保护同一个 `{app}`）。
+
+**根因**：Inno 把「上次安装目录」存在自己的卸载注册表键 `HKCU\...\Uninstall\{AppId}_is1` 里，
+卸载会把这个键整体删掉，于是重装时没有任何记录可用。
+
+**当前实现**（不要改回去）：
+
+```
+DefaultDirName={code:GetLastAppDir}
+
+const
+  LAST_APPDIR_KEY = 'Software\简单ERP';
+  LAST_APPDIR_VALUE = 'LastAppDir';
+  DEFAULT_APPDIR = '{localappdata}\Programs\简单ERP';   // 回退值，必须非空
+
+function GetLastAppDir(Param: String): String;   // 读到就用，读不到回退 DEFAULT_APPDIR
+
+procedure CurStepChanged(CurStep: TSetupStep);
+  if CurStep = ssPostInstall then
+    RegWriteStringValue(HKCU, LAST_APPDIR_KEY, LAST_APPDIR_VALUE, ExpandConstant('{app}'));
+```
+
+规则：
+
+- 键必须放在 **HKCU\Software** 下，且**不得**出现在 `[UninstallDelete]` 里——卸载只删 Uninstall 键，
+  这样「卸载 → 重装」才能沿用原目录。
+- `GetLastAppDir` 任何情况下都要返回非空字符串；返回空会让向导拿到空目录名。
+- `{code:}` 常量在向导初始化时求值，HKCU 此时可读。
+- 已安装状态下覆盖安装仍走 Inno 自带的 `UsePreviousAppDir`（卸载键还在），本机制只负责「卸载之后」。
+- `tests/test_installer_packaging.py::test_installer_remembers_previous_install_dir_across_uninstall`
+  守死这四点；改 `DefaultDirName` 前先读这条测试。
+
+**实测（2026-10-17，修复后的 iss + v4.3.0 程序产物编出的测试包）**：装到 `D:\app\简单ERP-test` →
+卸载（键保留）→ 不带 `/DIR` 重装落回原目录、`config.json` 逐字节不变；删键后全新安装正确落默认目录；
+已安装状态覆盖安装落点不变；真实安装 `D:\app\简单ERP` 未被触碰。
+
 ## 版本单一真源
 
 安装脚本用 ISPP 读仓库根 `VERSION`，脚本里**不写死版本号**：

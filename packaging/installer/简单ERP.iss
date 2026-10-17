@@ -51,7 +51,10 @@ VersionInfoProductName=简单ERP
 ; 注意：不要显式写 VersionInfoProductVersion——Inno 要求它是纯数字版本，
 ; 而这里想保留产品版本字符串 vX.Y.Z；不写该指令时 Inno 会自动从 AppVersion 派生，
 ; 实测 PE ProductVersion 正好是 vX.Y.Z。
-DefaultDirName={localappdata}\Programs\简单ERP
+; 默认目录：优先用上次安装过的目录（我们自己在 HKCU 里记的那份），否则回退 per-user 默认值。
+; 不能只写死常量：Inno 自带的「上次安装目录」存在卸载注册表键里，卸载会连键一起删，
+; 于是「卸载 → 重装」会静默落回默认目录并生成一份全默认 config.json（ERP-INSTALL-02，2026-10-17 实测）。
+DefaultDirName={code:GetLastAppDir}
 DefaultGroupName=简单ERP
 DisableProgramGroupPage=yes
 ; per-user：不申请提权，也不允许用户切到提权模式（提权会装进 Program Files，配置将不可写）
@@ -108,6 +111,22 @@ Type: files; Name: "{app}\简单ERP.exe"
 const
   WEBVIEW2_KEY = 'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
   WEBVIEW2_URL = 'https://developer.microsoft.com/microsoft-edge/webview2/';
+  { 上次安装目录：存在我们自己的 HKCU 键里，卸载不会删除它（Inno 卸载只删 Uninstall 键） }
+  LAST_APPDIR_KEY = 'Software\简单ERP';
+  LAST_APPDIR_VALUE = 'LastAppDir';
+  DEFAULT_APPDIR = '{localappdata}\Programs\简单ERP';
+
+{ DefaultDirName 用的默认值：读过上次装过的目录就沿用它，否则回退 per-user 默认路径。
+  留空会让向导拿到空目录名，所以任何情况下都必须返回一个非空值。 }
+function GetLastAppDir(Param: String): String;
+var
+  Saved: String;
+begin
+  if RegQueryStringValue(HKCU, LAST_APPDIR_KEY, LAST_APPDIR_VALUE, Saved) and (Saved <> '') then
+    Result := Saved
+  else
+    Result := ExpandConstant(DEFAULT_APPDIR);
+end;
 
 function IsAppRunning(): Boolean;
 var
@@ -154,13 +173,20 @@ procedure CurStepChanged(CurStep: TSetupStep);
 var
   ErrorCode: Integer;
 begin
-  if (CurStep = ssPostInstall) and (not WebView2Installed()) then
+  if CurStep = ssPostInstall then
   begin
-    if MsgBox('本机未检测到 Microsoft Edge WebView2 运行时。' + #13#10#13#10 +
-              '缺少它时，简单ERP 会改用系统默认浏览器打开界面（功能可用，但没有独立程序窗口）。' + #13#10#13#10 +
-              '是否现在打开官方下载页面？',
-              mbConfirmation, MB_YESNO) = IDYES then
-      ShellExec('open', WEBVIEW2_URL, '', '', SW_SHOWNORMAL, ewNoWait, ErrorCode);
+    { 记住本次安装目录。Inno 自带的「上次安装目录」存在卸载注册表键里、卸载时会被删，
+      所以另存一份到不会被卸载清理的 HKCU 键，供「卸载 → 重装」沿用（DefaultDirName 读它）。 }
+    RegWriteStringValue(HKCU, LAST_APPDIR_KEY, LAST_APPDIR_VALUE, ExpandConstant('{app}'));
+
+    if not WebView2Installed() then
+    begin
+      if MsgBox('本机未检测到 Microsoft Edge WebView2 运行时。' + #13#10#13#10 +
+                '缺少它时，简单ERP 会改用系统默认浏览器打开界面（功能可用，但没有独立程序窗口）。' + #13#10#13#10 +
+                '是否现在打开官方下载页面？',
+                mbConfirmation, MB_YESNO) = IDYES then
+        ShellExec('open', WEBVIEW2_URL, '', '', SW_SHOWNORMAL, ewNoWait, ErrorCode);
+    end;
   end;
 end;
 

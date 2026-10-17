@@ -56,6 +56,36 @@ PNG 确实是 390×844，但**布局视口是 500 宽**，于是截图右侧被�
 
 **同一台手机重复配对会产生多条设备记录**（没有设备指纹，每次配对都新增一条）。
 设置页看到两台「Android 手机」是正常的，撤销多余的那条即可。
+
+## 安装/卸载/重装：卸载会丢掉「上次安装目录」（2026-10-17 已修）
+
+Inno 把上次安装路径存在 `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\{AppId}_is1`
+的 `Inno Setup: App Path` 里，**卸载会把整个键删掉**。于是「装到 D 盘 → 卸载 → 重装」
+会静默回到 `DefaultDirName`（`%LOCALAPPDATA%\Programs\简单ERP`），并在那里生成一份**全默认的
+config.json**：店铺名、打印偏移、主题、手机开关全部看起来「丢了」，其实原件还躺在旧目录
+（`onlyifdoesntexist` 只保护同一个 `{app}`）。2026-10-17 实测复现。
+
+**已修（2026-10-17）**：`[Code]` 在 `ssPostInstall` 把 `{app}` 写进
+`HKCU\Software\简单ERP\LastAppDir`（卸载不会删这个键），`DefaultDirName={code:GetLastAppDir}`
+读它，读不到才回退 `{localappdata}\Programs\简单ERP`。实测：装到 `D:\app\简单ERP-test` → 卸载 →
+不带 `/DIR` 重装仍落回该目录且 `config.json` 逐字节不变；删掉注册表键后全新安装仍正确落到默认目录。
+`tests/test_installer_packaging.py::test_installer_remembers_previous_install_dir_across_uninstall`
+守死这条，**别把 `DefaultDirName` 改回纯常量**。
+
+→ v4.3.0 及更早的安装包没有这个修复：重装时用 `/DIR=<原目录>`，或在向导里选回原目录。
+
+**卸载后 `{app}` 只剩 `config.json` 是正常的**（`uninsneveruninstall` 的预期），不是残留 bug；
+卸载日志里的 `Failed to delete directory (145)` 就是「目录非空」——145 = `ERROR_DIR_NOT_EMPTY`。
+
+**别用文件 mtime 判断「升级有没有真的替换程序文件」**：安装器把 mtime 复原成源文件时间戳，
+同版本覆盖安装后 `简单ERP.exe` 的 mtime 不变，但日志里有 `Installing the file.` —— 文件是真重写了。
+
+**自己跑冒烟测试留下的防火墙规则要按 Program 删**：Windows 首次监听 `0.0.0.0` 时按 EXE 名生成的规则
+（`TCP/UDP Query User{...}`，DisplayName 就是 `简单erp.exe`）会跟着 EXE 路径走；EXE 被删后规则仍留着。
+删除需要管理员，且别按 DisplayName 精确匹配（中文/大小写不稳），用
+`Get-NetFirewallRule | Get-NetFirewallApplicationFilter` 的 `Program -like '*<路径片段>*'` 过滤。
+（2026-10-17 实测：按 DisplayName 精确匹配拿到 0 条，按 Program 才删到那 2 条。）
+
 ## 客户与供应商共用一张表
 
 `customers` 表同时存客户和供应商，`name` 有 UNIQUE 约束，**软删除的记录也占名**。

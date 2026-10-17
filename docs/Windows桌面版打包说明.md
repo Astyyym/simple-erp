@@ -51,6 +51,42 @@ winget install --id JRSoftware.InnoSetup
 - **版本单一真源**：ISPP 从仓库根 `VERSION` 读，脚本内不写死版本号。
 - 简体中文安装界面需要 `packaging\installer\ChineseSimplified.isl`（Inno 发行包不带中文语言文件）。
 
+#### 安装 / 升级 / 卸载实测记录（v4.3.0，2026-10-17）
+
+在本机真实安装（自选目录 `D:\app\简单ERP`）上按门店路径走了一遍，证据如下：
+
+| 动作 | 实测结果 |
+|---|---|
+| 同版本静默覆盖安装（`/SILENT /SUPPRESSMSGBOXES /NORESTART`） | 退出码 0；程序文件**真重写**（安装日志 `Installing the file.`）；`config.json` 逐字节不变（日志 `Dest file exists. Skipping due to "onlyifdoesntexist" flag.`）；`data\erp.db` 与 `data\mobile_devices.json` 逐字节不变 |
+| 覆盖安装后启动 | `/health` = `{"status":"ok","version":"v4.3.0","database":"ok","data_root":"C:\Users\<用户>\Documents\简单ERP数据"}`；`127.0.0.1:5000` 200；局域网 `5001 /m/` → 302 到 `/m/pair`；蓝图外 `/customers/` 404 |
+| 卸载（`unins000.exe /VERYSILENT /SUPPRESSMSGBOXES`） | 退出码 0；`{app}` 只剩 `config.json`（`uninsneveruninstall` 的预期，日志 `Failed to delete directory (145)` = 目录非空）；开始菜单项与桌面快捷方式删除；`HKCU\...\Uninstall\{8F1C2A64-...}_is1` 删除；`data\erp.db`、`mobile_devices.json` 逐字节不变 |
+
+**安装目录记忆（已修复，待随下一版发布）**：Inno 把「上次安装目录」存在卸载注册表键里，卸载会连键一起删，
+所以原本**「卸载 → 重装」会静默回到 `DefaultDirName`**（v4.3.0 实测：装到 `D:\app\简单ERP`，卸载后重装
+落到了 `%LOCALAPPDATA%\Programs\简单ERP`）并在新目录生成一份**全默认 `config.json`**——对装到
+D 盘的门店用户表现为「店铺名 / 打印偏移 / 主题 / 手机开关全部回到默认」，而原件其实仍在旧目录。
+
+现在 `[Code]` 在 `ssPostInstall` 里把 `{app}` 写进 `HKCU\Software\简单ERP\LastAppDir`（这个键不会被
+卸载删除），`DefaultDirName={code:GetLastAppDir}` 读它；读不到才回退 `{localappdata}\Programs\简单ERP`。
+`tests/test_installer_packaging.py::test_installer_remembers_previous_install_dir_across_uninstall` 守死这四点。
+
+实测（2026-10-17，用**修复后的 iss + v4.3.0 程序产物**编出的测试包，装在 `D:\app\简单ERP-test`）：
+
+| 场景 | 结果 |
+|---|---|
+| 装到非默认目录 | exit 0；`LastAppDir` = `D:\app\简单ERP-test` |
+| 卸载 | exit 0；卸载键删除，**`LastAppDir` 保留** |
+| 不带 `/DIR` 重装 | **落回 `D:\app\简单ERP-test`**；`config.json` 逐字节不变（`065e90c9…`）；默认目录未被创建 |
+| 已安装状态下覆盖安装（升级路径） | 落点不变，`config.json` 不变 |
+| 删掉注册表键后全新安装 | 正确落到 `{localappdata}\Programs\简单ERP`，并写入 `LastAppDir` |
+| 真实安装 `D:\app\简单ERP` | 全程未被测试触碰（`config.json` 仍 `bee3fcbb…`，5 个条目） |
+
+**v4.3.0 已发布，安装包字节不能改，此修复只能随下一版交付**；在那之前，用户遇到「卸载后重装」时
+手动选回原安装目录即可（`/DIR=<原目录>` 同理，`config.json` 会被原样复用）。
+
+升级前用户的配置在 `config.json`（EXE 旁），业务数据在数据根；「升级不覆盖配置 / 卸载不删数据」
+两条契约本次均已逐字节验证通过。
+
 ### 2.2 绿色包（免安装、自带 200 条演示数据）
 
 绿色包由上面的发版脚本第 ④⑤ 步生成（`dist\local-vX.Y.Z\简单ERP\`）。旧脚本 `打包Windows桌面版.bat` 只出普通绿色目录（不含演示数据、不发版用）。
