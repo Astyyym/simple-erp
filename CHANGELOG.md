@@ -2,7 +2,7 @@
 
 > 各版本条目按当时发布口径保留。v0.8.0 永久免登录已经取代早期版本中记录的本机登录门；历史凭据不在更新记录中保存。
 
-## v4.2.0 - 客户/商品筛选改模糊联想输入 + 分析页筛选区重排 + UI 批次 2 收口（2026-10-17，本地打包；未推送、未建 Release）
+## v4.2.0 - 客户/商品筛选改模糊联想输入 + 分析页筛选区重排 + UI 批次 2 收口（2026-10-17，已发版）
 
 - **账款管理 / 往来对账的客户字段：原生下拉 → 模糊联想输入。** 输入即匹配（名称子串 / 拼音首字母 / 全拼），候选浮层点选或回车选中；提交值仍是 hidden `customer_id`（收款、调整、作废、对账入口与对账快照全按 id 工作，链路未动）。只输入名称、没点候选时明确提示「请从下拉候选里选择…」，**不猜客户**；选中后再改字会清空已选 id，避免「改了名字却按上一个客户查」。复用共享组件 `ErpOrderEntry.bindAutocomplete`（原生 `<datalist>` 在 WebView2 不渲染弹层，不得回退）。
 - **数据分析页的客户与商品名称同样改联想输入。** 商品候选模糊、**选中项仍是精确单品**（`summarize_analytics` 继续用 `p.name = ?`）；半截名未点候选时给明确提示，不再静默返回空结果（避免「明明有销售却查不出」的假象）。顺带删除无人消费的全量商品 JSON（`#analysisProductOptions`）与 customers/products 全量下发。
@@ -12,14 +12,16 @@
 - **验证**：全量 `pytest tests/ -q` = **956 passed / 1 skipped / 0 failed**；新增 `tests/test_accounts_customer_autocomplete.py`（8 项）与 `tests/test_analytics_filter_autocomplete.py`（6 项）；4 个既有测试文件随契约演进改断言（**改断言不删用例**）。隔离实例 + headless Chrome CDP 真实交互实测：真实键盘输入 → 真实鼠标点候选 → 查询，覆盖客户/商品联想、拼音首字母候选（13 条）、半截名提示、换客户 chip 跟随、对账页首次查询、1258/1578 两档筛选区几何。
 - **本地私有**：短计划见 `开发短计划/2026-10-17_客户与商品筛选改模糊联想_执行计划.md`（不随公开仓库发布）。
 
-## v4.1.0 - 恢复旧版备份的代价提示与界面说明文字开关（2026-10-16，本地打包；未推送、未建 Release）
+- **发版证据（2026-10-17）**：提交 `6c41b99` 推送 `main`（`git ls-remote origin refs/heads/main` = `6c41b9950e56…`），annotated tag `v4.2.0`（tag 对象 `dd2c1f23` 解引用回该提交）；[GitHub Release v4.2.0](https://github.com/Astyyym/simple-erp/releases/tag/v4.2.0)（Latest）挂两个资产：`simple-erp-setup-v4.2.0.exe`（40,491,385 B，SHA256 `6d98e9e321dc65ed258c6230634845ad5730ebca57e86808ea19f915a5f3da0f`）、`simple-erp-windows-v4.2.0.zip`（54,087,630 B，SHA256 `60879660f4f709b6d82a08c3847d86a047dc98ade516a778db9b4558957b72cf`）——`gh release download` 取回后与构建产物 `sha256sum` 相同且 `cmp` 字节一致；远端树 531 条目 / 489 blob，`demo_data` / `*.db` / `*.exe` / 根 `config.json` / `开发短计划/` 均 0 命中（仅出厂模板 `packaging/default_config.json` 与 `packaging/seed_demo_data.py` 按设计在库）。**发版前重跑**全量 `pytest tests/ -q` = **956 passed / 1 skipped / 0 failed**（`ERP_PORT=5099`，306.76s）；**真实 EXE 冒烟**（ZIP 解压到隔离副本 + 临时 `ERP_DATA_ROOT`/`ERP_CONFIG_PATH`）：`/health` = `v4.2.0` 且 `auth: disabled`，`/`、`/accounts/`、`/accounts/reconciliation`、`/analytics/`、`/orders/new` 全 200 且包内页含 `bindAutocomplete`，包内「本轮改动过的模板 / 静态文件」与源码**逐字节一致**（27 个改动文件，PY 模块随 EXE 内嵌）。**本次推送同时带上未单独发版的 v4.1.0 源码**（v4.1.0 无独立安装包，其改动全部包含在 v4.2.0 产物内，对用户以 v4.2.0 一次性交付）。安装包真实安装 / 升级 / 卸载链路与目标打印机实打仍未做。
+
+## v4.1.0 - 恢复旧版备份的代价提示与界面说明文字开关（2026-10-16，本地打包；未单独发版，源码随 v4.2.0 推送至 main）
 
 - **备份与恢复：恢复旧版备份前先看见代价。**备份列表新增「数据库版本」列——读备份包内 `erp.db` 的 `schema_version`（`utils/backup.py` 新增 `read_backup_schema_version()`，读不出按旧版处理）；版本低于当前的标「旧版结构」，并在**行内红字 + 恢复确认框 + 恢复成功提示**三处说明：恢复并重开程序会自动升级到当前版本，**库存与成本数据将被永久删除、无法回退**（v15 升级不可逆，回退只能靠迁移前自动生成的整库备份）。
 - **设置页「显示」新增「界面说明文字」开关**（配置项 `ui_show_hints`，默认开启）：关掉后隐藏各页面的提示 / 说明 / 注意类小字。实现为 `base.html` 的 `<html data-ui-hints="on|off">` + 一条 `html[data-ui-hints="off"] [data-ui-hint]{display:none!important}`，模板里 76 处说明段**逐处显式**标记 `data-ui-hint`（不按 class 一刀切：`text-muted small` 这批 class 里混着导入原因、更新时间戳等数据单元格）。**不纳入**：危险操作警告（「此操作不可撤销」、旧版备份警告）、状态与数据文字（计数 / 金额 / 日期 / 当前状态）、空态提示、`placeholder`、按钮与弹窗正文。设置页复选框未勾选时浏览器不提交该字段，服务端按「在场即开、缺席即关」解析。
 - **v15 删除库存链后的清空 / 备份 / 导入同步核对**：实测确认清空清单已不含库存三表（表已物理删除）、备份是整库文件级快照（与表结构无关）、商品导入已不接受「期初数量 / 期初成本」两列；仅修掉一处过时 docstring（`routes/products.py` 导入确认函数不再写「带期初的行独立事务初始化」）。
 - **验证**：全量 `pytest tests/ -q` = **942 passed / 1 skipped / 0 failed**（`ERP_PORT=5099`，412s）；前端 `node --test tests/frontend/*.test.mjs` = **fail 0**；新增 `tests/test_ui_hints_toggle.py`（4 项）与 `tests/test_backup_restore.py` 的 4 项备份库版本用例。真实浏览器验收（headless Chrome 同源 iframe 读 `getComputedStyle`，隔离实例）：关掉开关后开单页 **5/5**、设置页 **14/14**、回收站 **5/5** 标记元素 `display:none`，打开开关时 0 隐藏；同一页危险警告 `danger_hidden=0`（关掉开关也始终可见）。
 - 顺带：出厂模板 `packaging/default_config.json` 补 `ui_show_hints` 键（键值必须与 `CONFIG_DEFAULTS` 一致）；`tests/test_master_data_list_layout.py` 的图例断言改为容忍属性插在 `class` 之前（**改断言不删测试**）。文档同步：需求文档「系统设置」行补开关口径，新增项目 reference `skills/simple-business-erp-development/references/ui-hint-visibility-toggle.md` 并挂进 references 索引。
-## v4.0.0 - 库存与成本链整体移除（schema v15 物理删表删列）（2026-10-16，本地打包；未推送、未打 tag、未建 Release）
+## v4.0.0 - 库存与成本链整体移除（schema v15 物理删表删列）（2026-10-16，已发版）
 
 - **用户决策（2026-10-16 逐项拍板 8 条）**：① 拿货 / 退拿货**保留为纯流水单据**（单据、打印、`NH` 单号、对账并入、账款抵扣、回收站、当天历史全部照旧；不再动库存、不再产生成本）；② **成本 / 利润链全删**（计价引擎、成本快照写入、毛利润/毛利率、成本诊断、历史成本补录、毛利润排行、开单页成本列与毛利润预览全部下线）；③ **物理删表删列 + 写迁移（schema 14 → 15）**，老库不可逆、不能回退到 v3.15.0 程序（用户已知并接受，回退只能靠迁移前自动生成的整库备份）；④ **单据编辑锁全部放开**——已过账锁、补录锁、正式拿货/退拿货锁全撤，四类单据除「已作废」外都可编辑；⑤ 绿色版演示数据**维持 200 条、重做组成**，去库存/成本内容、保持「打开即用」；⑥ 导入**硬删**「期初数量 / 期初成本」列（含这两列的旧文件整表报「表头错误」）；⑦ 商品**安全库存** UI 与代码一并删除、列随 v15 迁移删除；⑧ `designs/simple-erp-inventory-analytics/` 整目录及引用它的 2 个前端测试一并退休。同日第二轮补充定案：`products.default_price_cents` 与 `purchase_return_orders.posted_once` **均删**。
 
@@ -39,7 +41,7 @@
 
 - **文档与记忆同步**：`AGENTS.md`（`default_price_cents` 旧规则改为 v15 已物理删除的 9 列 + 3 表完整清单与「不得写回代码 / 老库升级不可逆」口径）、`README.md`（「进销存」定位改为「轻量开单与账款系统」、`库存、双向往来与数据分析` 整节重写为 `拿货/退拿货、账款与分析` 并首条声明本次移除与不可逆、绿色包描述去「期初」、升级节改为不可逆警示）、`docs/需求/消防器材店ERP系统-需求文档.md`（§3.8 整段重写为「单据、账款与数据分析的当前基线」并新增「已撤销的旧基线（不得再实现）」块，§3.9 加历史横幅）、`docs/需求/库存成本与对账业务契约.md` → 改名 **`拿货与对账业务契约.md`** 并收缩正文、项目技能 `SKILL.md` 与 4 份 references（退休 `cost-backfill.md`、重写 `analytics-visualization.md`、订正 `purchase-return-decoupling.md` 5 处）、`memory/project-context.md` 与 `memory/pitfalls.md`。
 
-- **本轮未做 / 未验**：`git push`、打 tag、建 GitHub Release（按规矩与打包分开核实，等待用户指示）；**安装包真实安装 / 升级 / 卸载链路**未做；**目标打印机实打**未做（本版不改打印版式，四类开单 241mm 连续纸 / 对账单 A4 竖版规格保持原样）；**WebView2 桌面壳内点击链路**未在本版复验（本版在真实 Chrome 完成浏览器层验收，桌面壳接线由 `tests/test_desktop_*.py` 覆盖且全绿）。
+- **本轮未做 / 未验**：`git push`、打 tag、建 GitHub Release 已在本版发版时补齐（提交 `c3a9db2` 推送 `main`、`tag v4.0.0` 解引用回该提交、Release 挂 `simple-erp-setup-v4.0.0.exe` + `simple-erp-windows-v4.0.0.zip` 两个资产）；**安装包真实安装 / 升级 / 卸载链路**未做；**目标打印机实打**未做（本版不改打印版式，四类开单 241mm 连续纸 / 对账单 A4 竖版规格保持原样）；**WebView2 桌面壳内点击链路**未在本版复验（本版在真实 Chrome 完成浏览器层验收，桌面壳接线由 `tests/test_desktop_*.py` 覆盖且全绿）。
 
 - **必须记录的两件事**：① 一个子代理在跑权限探针时用 `open(path,"w")` 误把 `tests/test_purge_all_data.py` 截断为 0 字节，已按截断前读入**逐字节还原**（字节数一致、复跑得到与基线相同的失败集合作为证据），教训已写入全局技能 `tool-discipline`；② 本轮派出的子代理**越权**给 4 个**全局**技能（`tool-discipline`、`repository-engineering`、`phase-gated-erp-delivery` 及其新增脚本 `scripts/check_template_inline_js.py`、`project-development-delivery-discipline/references/implementation-and-parallel-execution.md`）追加了从本次交付提炼、已泛化去项目细节的教训——内容准确但与「全局技能除明确要求外不主动修改」的约定冲突，已如实上报，待用户裁决保留或移除。
 
