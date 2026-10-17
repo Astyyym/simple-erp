@@ -2,7 +2,7 @@
 
 > 各版本条目按当时发布口径保留。v0.8.0 永久免登录已经取代早期版本中记录的本机登录门；历史凭据不在更新记录中保存。
 
-## v4.5.0 - 手机端查得更透（商品/客户价全景、精确金额）+ 壳手感（2026-10-17，已打包）
+## v4.5.0 - 手机端查得更透（商品/客户价全景、精确金额）+ 壳手感（2026-10-17，已发版）
 
 - **商品价页改成「商品优先」**：去掉「先选客户」下拉，直接搜商品名/拼音；卡片显示「N 个客户 + 价格区间（如 `¥52 – ¥58.06`）」，整块可点。原先是按客户一张表、卡片纯展示，用户点不进去（就是他提的那个洞：「商品价格这里我点不进去，我不能看到每个用户的专属价格」）。
 - **新增商品详情页 `/m/products/<id>`**：这个商品在**每个客户**处的专属价，价格降序，带更新时间与「差 ¥0.27」的差额提示；没有该商品专属价的客户单独给数目（如「另有 13 个客户没有这个商品的专属价」）。与桌面端商品编辑页的「客户专属价」卡片同口径。
@@ -13,6 +13,7 @@
 - **APK 1.1.0（versionCode 2，签名不变可覆盖安装）**：窗口/WebView/状态栏/导航栏统一成页面底色，消掉冷启动白闪；**修掉一个真机才暴露的返回键 bug**——targetSdk 36 走 Android 预测返回，`onBackPressed()` 根本不被调用、详情页按返回直接回桌面，已注册 `OnBackInvokedCallback`（详情页→商品列表，首页连按两次退出）。
 - **验证**：全量 `pytest tests/ -q` = **1020 passed / 0 failed**（基线 1003，新增 17 条：商品详情查询对拍 / 路由 200 / 只读保证）。模拟器（Android 16 / targetSdk 36）实测：装 APK → 配对 → 今日概览 → 商品价 → 点卡片进详情、15 个客户价降序 → 客户详情「专属价 3 个商品」；返回键两段行为；深色冷启首帧无白闪。下拉刷新用 headless Chrome + CDP 真 touch 事件验：顶部下拉 80px →「松手刷新」→ 骨架层 → `navigation type=reload`，滚到中间下拉不触发，300ms 内二次下拉被忽略，桌面无 `ontouchstart` 不注册。
 - **产物与安装验收（2026-10-17）**：`dist/simple-erp-setup-v4.5.0.exe` **41,402,406 B**（SHA256 `610e4fa0…`）、`dist/simple-erp-windows-v4.5.0.zip` **55,290,247 B**（`767eeb50…`）、`dist/simple-erp-mobile-v1.1.0.apk` **43,140 B**（`35789ed1…`，versionCode 2 / versionName 1.1.0，DEX 内含 `OnBackInvokedCallback`、`SimpleERPNative`）。ZIP **680 条目**、顶层唯一 `简单ERP/`、无 `.db` / `demo_data` / 日志，包内 `VERSION` = `v4.5.0`，**18 个**手机端模板 / 静态文件与源码**逐字节一致**（含新增 `products/detail.html`、`customers/prices.html`）；安装包与绿色版 EXE 的 PE 版本均为 `4.5.0.0` / `v4.5.0`。**真实覆盖安装（正式安装包，v4.3.0 → v4.5.0，显式 `/DIR=D:\app\简单ERP`）**：679 个文件安装成功、PE 变 `4.5.0.0`、`config.json` **逐字节不变**（`bee3fcbb…`）、业务库 `data/erp.db`（`e8412c66…`）与 `mobile_devices.json` 一字节未动；装完启动 `/health` = `v4.5.0`、`auth: disabled`、数据根仍是「文档\简单ERP数据」、`/`、`/accounts/`、`/orders/new`、`/products/` 均 **200**，手机监听 `0.0.0.0:5001` 自动起来、`/m/pair` **200** 且含新文案「电脑地址不对？点这里修改」，蓝图外与未配对路径仍是 302。**人工复验（用户 2026-10-17 完成）**：目标打印机实打通过（本版不动打印版式）；手机真机装 `1.1.0` 覆盖安装、新页面逐页点过、千元机手感与横竖屏均通过。
+- **发版证据（2026-10-17）**：提交 `77d7b4f` 推送 `main`（`git ls-remote origin refs/heads/main` = `77d7b4fd3714…`，`gh api .../commits/main` 同值）；annotated tag `v4.5.0`（tag 对象 `c53b9341` 解引用回该提交）；[GitHub Release v4.5.0](https://github.com/Astyyym/simple-erp/releases/tag/v4.5.0)（**Latest**）挂三个资产：`simple-erp-setup-v4.5.0.exe`（41,402,406 B，SHA256 `610e4fa0…`）、`simple-erp-windows-v4.5.0.zip`（55,290,247 B，SHA256 `767eeb50…`）、`simple-erp-mobile-v1.1.0.apk`（43,140 B，SHA256 `35789ed1…`）——Release API 的 `digest` 与本地 SHA256 一致，`gh release download` 取回后与本地产物 `cmp` **三个全部字节一致**。**远端树**：610 条目 / **544 blob** / 7.29 MB，`config.json` / `data/` / `demo_data` / `*.db` / `*.exe` / `*.apk` / `dist/` / `build/` 命中 **0**（仅 `packaging/seed_demo_data.py` 按设计在库）。**仍未验**：卸载 → 不带 `/DIR` 重装落回原目录（安装器逻辑本版未改，未在真实安装上复跑）。
 
 ## v4.4.0 - 安装目录记忆（卸载后重装不再落回默认目录）（2026-10-17，已发版）
 
