@@ -4,49 +4,48 @@
 <form id="ordersFilterForm" class="filter-card" method="get" data-inplace action="/orders/" autocomplete="off">
   <div class="filter-tier-query">
     <div class="filter-field-composite">
-      <label class="form-label mb-1 d-block">时间范围</label>
-      <div class="filter-mode-options" role="group" aria-label="时间模式">
-        {% for value, label, suffix in [('year','按年','Year'),('month','按月到月','Month'),('range','按日到日','Range')] %}
-        <input type="radio" class="btn-check" name="date_mode" id="dateMode{{suffix}}" value="{{value}}" {{ 'checked' if date_mode == value else '' }} autocomplete="off">
-        <label class="btn btn-outline-primary" for="dateMode{{suffix}}">{{label}}</label>
-        {% endfor %}
-      </div>
-      <div class="dates">
-        <div class="filter-field-date" data-mode="year" {% if date_mode != 'year' %}hidden{% endif %}>
-          <label class="form-label mb-1" for="filterYear">年份</label>
-          <input class="form-control" id="filterYear" name="year" type="number" min="2000" max="2100" value="{{filter_year}}">
+      <div class="filter-inline">
+        <label class="form-label">时间范围</label>
+        <div class="filter-mode-options" role="group" aria-label="时间模式">
+          {% for value, label, suffix in [('year','按年','Year'),('month','按月到月','Month'),('range','按日到日','Range')] %}
+          <input type="radio" class="btn-check" name="date_mode" id="dateMode{{suffix}}" value="{{value}}" {{ 'checked' if date_mode == value else '' }} autocomplete="off">
+          <label class="btn btn-outline-primary" for="dateMode{{suffix}}">{{label}}</label>
+          {% endfor %}
         </div>
-        <div class="filter-field-date" data-mode="month" {% if date_mode != 'month' %}hidden{% endif %}>
-          <div class="date-range">
-            <div>
-              <label class="form-label mb-1" for="filterStartMonthInput">开始月份</label>
-              <input class="form-control" id="filterStartMonthInput" name="start_month_raw" type="month" value="{{ '%04d-%02d'|format(filter_start_year, filter_start_month) }}">
-            </div>
-            <div>
-              <label class="form-label mb-1" for="filterEndMonthInput">结束月份</label>
-              <input class="form-control" id="filterEndMonthInput" name="end_month_raw" type="month" value="{{ '%04d-%02d'|format(filter_end_year, filter_end_month) }}">
+        <div class="dates">
+          <div class="filter-field-date" data-mode="year" {% if date_mode != 'year' %}hidden{% endif %}>
+            <input class="form-control" id="filterYear" name="year" type="number" min="2000" max="2100" value="{{filter_year}}" aria-label="年份" placeholder="年份">
+          </div>
+          <div class="filter-field-date" data-mode="month" {% if date_mode != 'month' %}hidden{% endif %}>
+            <div class="date-range">
+              <div>
+                <input class="form-control" id="filterStartMonthInput" name="start_month_raw" type="month" value="{{ '%04d-%02d'|format(filter_start_year, filter_start_month) }}" aria-label="开始月份">
+              </div>
+              <div>
+                <input class="form-control" id="filterEndMonthInput" name="end_month_raw" type="month" value="{{ '%04d-%02d'|format(filter_end_year, filter_end_month) }}" aria-label="结束月份">
+              </div>
             </div>
           </div>
-        </div>
-        <div class="filter-field-date" data-mode="range" {% if date_mode != 'range' %}hidden{% endif %}>
-          <div class="date-range">
-            <div>
-              <label class="form-label mb-1" for="filterStartDate">开始日期</label>
-              <input class="form-control" id="filterStartDate" type="date" name="start_date" value="{{start_date}}" title="开始日期">
-            </div>
-            <div>
-              <label class="form-label mb-1" for="filterEndDate">结束日期</label>
-              <input class="form-control" id="filterEndDate" type="date" name="end_date" value="{{end_date}}" title="结束日期">
+          <div class="filter-field-date" data-mode="range" {% if date_mode != 'range' %}hidden{% endif %}>
+            <div class="date-range">
+              <div>
+                <input class="form-control" id="filterStartDate" type="date" name="start_date" value="{{start_date}}" title="开始日期" aria-label="开始日期">
+              </div>
+              <div>
+                <input class="form-control" id="filterEndDate" type="date" name="end_date" value="{{end_date}}" title="结束日期" aria-label="结束日期">
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
     <div class="filter-field-plain">
-      <label class="form-label mb-1" for="customerFilterInput">客户名称</label>
-      <div class="suggest-wrap">
-        <input class="form-control" id="customerFilterInput" name="customer" value="{{customer_q}}" autocomplete="off" placeholder="输入可自动匹配库内客户">
-        <div class="suggest-list d-none" id="order_customer_suggestions" role="listbox" aria-label="客户建议"></div>
+      <div class="filter-inline">
+        <label class="form-label" for="customerFilterInput">客户名称</label>
+        <div class="suggest-wrap">
+          <input class="form-control" id="customerFilterInput" name="customer" value="{{customer_q}}" autocomplete="off" placeholder="输入可自动匹配库内客户" aria-label="客户名称">
+          <div class="suggest-list d-none" id="order_customer_suggestions" role="listbox" aria-label="客户建议"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -93,6 +92,12 @@
       <button class="btn btn-primary" type="submit">筛选</button>
       <a class="btn btn-outline-secondary" href="/orders/">清除筛选条件</a>
     </div>
+    {# 批次 2：新建/删除选中原先夹在筛选卡与结果表之间单独占一行（孤儿条），
+       与「删除选中」同属对结果集的操作 → 提升进动作条，与筛选类、导出类并列成第三类。 #}
+    <div class="filter-actions-records" role="group" aria-label="单据操作">
+      <a class="btn btn-primary" href="/orders/new">新建订单</a>
+      <button class="btn btn-danger" type="button" onclick="submitSelected('bulkOrdersForm','确认删除选中的单据吗？正式单据会先自动作废并冲回账款，再移入回收站。')">删除选中</button>
+    </div>
     <div class="filter-actions-extra orders-filter-export-group">
       <a id="exportSummaryBtn" class="btn btn-info" title="按筛选范围内有单据的客户分段打印销售+退货汇总；不受上方「订单类型」筛选影响" href="/orders/summary_pdf{% if is_desktop %}?desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>导出汇总表</a>
       <a id="exportSalesExcelBtn" class="btn btn-outline-success" href="/orders/export/sales.xlsx">导出销售单Excel</a>
@@ -107,16 +112,15 @@
   <div class="alert alert-warning mb-0" role="status">{{ dashboard_notice }}{% if matched_customer_names %}（匹配：{{ matched_customer_names|join('、') }}）{% endif %}</div>
   {% endif %}
   </form>
-<div class="d-flex gap-2 mb-3"><a class="btn btn-primary" href="/orders/new">新建订单</a><button class="btn btn-danger" type="button" onclick="submitSelected('bulkOrdersForm','确认删除选中的单据吗？正式单据会先自动作废并冲回账款，再移入回收站。')">删除选中</button></div>
 <form id="bulkOrdersForm" method="post" action="/orders/bulk_delete"></form>
 <section id="ordersResults" data-refresh-fragment>
 <table class="table table-striped align-middle stable-table">
   <colgroup><col style="width:44px"><col style="width:16%"><col style="width:17%"><col style="width:11%"><col style="width:11%"><col style="width:11%"><col style="width:11%"><col style="width:300px"></colgroup>
-  <thead><tr><th><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>单号</th><th>往来对象</th><th>日期</th><th>类型</th><th>金额</th><th>状态</th><th class="action-cell">操作</th></tr></thead>
+  <thead><tr><th class="selection-cell"><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>单号</th><th>往来对象</th><th>日期</th><th>类型</th><th>金额</th><th>状态</th><th class="action-cell">操作</th></tr></thead>
   <tbody>
   {% for o in documents %}
   <tr class="{{ 'table-danger return-order-row' if o.order_type == 'return' else '' }}" data-order-type="{{o.order_type}}" data-document-key="{{o.document_key}}">
-    <td>{% if o.deletable %}<input form="bulkOrdersForm" type="checkbox" name="ids" value="{{o.document_key}}">{% endif %}</td>
+    <td class="selection-cell">{% if o.deletable %}<input form="bulkOrdersForm" type="checkbox" name="ids" value="{{o.document_key}}">{% endif %}</td>
     <td title="{{o.order_no}}">{{o.order_no}}</td>
     <td title="{{o.customer_name}}">{{o.customer_name or '历史未关联对象'}}</td>
     <td>{{o.business_date}}</td>
@@ -147,11 +151,12 @@
   {% endfor %}
   </tbody>
 </table>
-<div data-ui-hint class="small text-muted mb-2">共 {{total_order_count}} 条单据；勾选后可删除。正式单据会先自动作废并冲回账款，再移入回收站；有生效历史的单据会保留追溯。</div>
 <div class="orders-pagination d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3 mb-4" aria-label="单据分页">
   <div class="small text-muted" id="ordersRangeCount">
     显示 <strong>{{range_start}}–{{range_end}}</strong> 条，共 <strong>{{total_order_count}}</strong> 条
     <span class="ms-2">第 {{page}} / {{total_pages}} 页 · 每页 {{page_size}} 条</span>
+    {# 批次 2：原先「共 N 条单据」在表格下方与这里各印一次；合并成一条，说明紧跟条数。 #}
+    <span data-ui-hint class="d-block mt-1">勾选后可删除。正式单据会先自动作废并冲回账款，再移入回收站；有生效历史的单据会保留追溯。</span>
   </div>
   <nav aria-label="单据列表分页">
     <ul class="pagination pagination-sm mb-0">

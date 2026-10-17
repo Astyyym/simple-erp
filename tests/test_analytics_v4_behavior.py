@@ -120,7 +120,9 @@ def test_unfilled_model_sentinel_and_model_dimension_are_removed():
     assert result["summary"]["net_sales_amount_cents"] == 1000
     assert str(contexts[-1]["filters"]["customer_id"]) == str(customer)
     html = response.get_data(as_text=True)
-    assert f'value="{customer}" selected' in html
+    # 客户字段 2026-10-17 改联想输入：选中态由 hidden `customer_id` + 可见框里的名称回显承担（不再有 select 的 selected）。
+    assert f'id="customerFilter" name="customer_id" value="{customer}"' in html
+    assert 'value="型号与对象留存"' in html
     # `__unfilled__` 哨兵已删除：页面不再提供型号选择控件，也没有「未填写型号 / 全部型号」选项。
     assert 'id="specFilter"' not in html
     assert "未填写型号" not in html and "全部型号" not in html

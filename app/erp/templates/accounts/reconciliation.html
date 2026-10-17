@@ -2,14 +2,20 @@
 {% block content %}
 <style>
   .recon-head h1{margin:0}.recon-head p{margin:5px 0 0;color:var(--erp-muted);font-size:13px}
-  .recon-filters{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr auto;gap:10px;align-items:end;margin-bottom:16px}.recon-actions{display:flex;gap:8px;align-items:center;min-height:40px}.recon-panel{padding:16px;border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);background:var(--erp-glass-bg);box-shadow:var(--erp-glass-shadow)}
+  .recon-filters{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr auto;gap:10px;align-items:end;margin-bottom:16px}.recon-filters .suggest-wrap{position:relative}.recon-actions{display:flex;gap:8px;align-items:center;min-height:40px}.recon-panel{padding:16px;border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);background:var(--erp-glass-bg);box-shadow:var(--erp-glass-shadow)}
   .recon-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}.recon-toolbar strong{font-variant-numeric:tabular-nums}.recon-toolbar .actions{display:flex;gap:8px}.recon-table input{width:16px;height:16px}.return-row{color:var(--erp-danger)}.empty-state{padding:20px;text-align:center;color:var(--erp-muted);border:1px dashed var(--erp-border)}
   @media(max-width:800px){.recon-filters{grid-template-columns:1fr 1fr}.recon-filters .recon-actions{grid-column:1/-1}.recon-toolbar{align-items:flex-start;flex-direction:column}.recon-toolbar .actions{width:100%;flex-wrap:wrap}}
 </style>
 <header class="page-header recon-head"><div><h1>往来对账</h1><p data-ui-hint>销售、客户退货、拿货、退拿货按完整单据核对；默认选中完整结果集，打印不等于收款或结算。</p></div><div class="page-actions"><a class="btn btn-secondary page-return" href="{{ recon_back_url }}">{{ recon_back_label }}</a></div></header>
 {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
 <form class="recon-filters" method="get" data-inplace action="{{ url_for('accounts.reconciliation') }}">
-  <div><label class="form-label" for="reconCustomer">往来对象</label><select class="form-select" id="reconCustomer" name="customer_id" required><option value="">请选择往来对象</option>{% for customer in customers %}<option value="{{ customer['id'] }}" {{ 'selected' if customer_id == customer['id'] else '' }}>{{ customer['name'] }}</option>{% endfor %}</select></div>
+  <div><label class="form-label" for="reconCustomerInput">往来对象</label>
+    <div class="suggest-wrap">
+      <input class="form-control" id="reconCustomerInput" name="customer" value="{{ customer_name }}" autocomplete="off" placeholder="输入对象名或拼音首字母" required>
+      <div class="suggest-list d-none" id="recon_customer_suggestions" role="listbox" aria-label="对象建议"></div>
+    </div>
+    <input type="hidden" id="reconCustomer" name="customer_id" value="{{ customer_id or '' }}">
+  </div>
   <div><label class="form-label" for="reconStart">开始日期</label><input class="form-control" id="reconStart" type="date" name="start_date" value="{{ start_date }}"></div>
   <div><label class="form-label" for="reconEnd">结束日期</label><input class="form-control" id="reconEnd" type="date" name="end_date" value="{{ end_date }}"></div>
   <div><label class="form-label" for="reconType">单据类型</label><select class="form-select" id="reconType" name="order_type"><option value="all" {{ 'selected' if order_type_filter == 'all' else '' }}>全部四类交易</option><option value="sale" {{ 'selected' if order_type_filter == 'sale' else '' }}>销售</option><option value="customer_return" {{ 'selected' if order_type_filter in ['return','customer_return'] else '' }}>客户退货</option><option value="purchase" {{ 'selected' if order_type_filter == 'purchase' else '' }}>拿货</option><option value="purchase_return" {{ 'selected' if order_type_filter == 'purchase_return' else '' }}>退拿货</option></select></div>
@@ -96,5 +102,31 @@
   });
 })();
 </script>
-{% else %}<div class="recon-panel empty-state">请选择一个往来对象并查询，系统会默认选中完整结果集。</div>{% endif %}
+{% else %}<div class="recon-panel empty-state" id="reconPanel" data-refresh-fragment>请选择一个往来对象并查询，系统会默认选中完整结果集。</div>{% endif %}
+<script src="{{ url_for('static', filename='order-entry-common.js') }}?v=2"></script>
+<script>
+/* 往来对象联想（2026-10-17 用户要求）：与账款管理客户字段同一形态、同一候选接口。
+   候选口径 = 名称子串 / 拼音首字母 / 全拼（erp/utils/pinyin.py 的 name_match_clause）。
+   提交值仍是 hidden `customer_id`：快照、返回链接与分页都按 id 工作。
+   本脚本在 data-refresh-fragment 之外 —— 被替换区块内的 <script> 不会重新执行（page-refresh.mjs:12-13）。 */
+(() => {
+  const input = document.getElementById('reconCustomerInput');
+  const box = document.getElementById('recon_customer_suggestions');
+  const hidden = document.getElementById('reconCustomer');
+  if (!input || !box || !hidden) return;
+  ErpOrderEntry.bindAutocomplete(
+    input,
+    box,
+    async query => {
+      const response = await fetch('/orders/api/customers?q=' + encodeURIComponent(query));
+      const rows = await response.json();
+      return (Array.isArray(rows) ? rows : []).map(row => ({id: row.id, name: row.name}));
+    },
+    item => { const node = document.createElement('span'); node.textContent = item.name; return node; },
+    item => { hidden.value = item.id; },
+    // 改字即清空已选 id，避免「改了名字却仍按上一个对象建快照」。
+    () => { hidden.value = ''; },
+  );
+})();
+</script>
 {% endblock %}

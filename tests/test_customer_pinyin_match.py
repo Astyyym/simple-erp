@@ -85,10 +85,18 @@ def test_purchases_api_objects_matches_pinyin():
 
 
 def test_analytics_customer_scope_matches_pinyin():
-    """orders.py:229 分析页客户作用域匹配（_resolve_customer_scope）。"""
+    """分析页客户筛选的拼音匹配（2026-10-17 改联想输入后落在候选接口上）。
+
+    原实现靠页面渲染的全量客户下拉，断言「客户名出现在 HTML 里」；现在客户字段是
+    combobox + 候选浮层，拼音匹配发生在候选源 `/orders/api/customers`，
+    所以这里改为验证「页面确实用该接口取候选」+「该接口按拼音命中」。
+    """
     _seed_customers()
-    html = create_app().test_client().get("/analytics/?customer=xfqcz").get_data(as_text=True)
-    assert "消防器材张老板" in html
+    client = create_app().test_client()
+    html = client.get("/analytics/").get_data(as_text=True)
+    assert "/orders/api/customers?q=" in html
+    rows = client.get("/orders/api/customers?q=xfqcz").get_json()
+    assert "消防器材张老板" in [row["name"] for row in rows]
 
 
 def test_summary_pdf_customer_scope_matches_pinyin():

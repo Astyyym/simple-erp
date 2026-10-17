@@ -77,6 +77,8 @@ def test_order_filter_actions_split_primary_and_export_groups():
     init_db()
     html = create_app().test_client().get("/orders/").get_data(as_text=True)
 
-    assert ".filter-actions-extra{margin-left:auto}" in html
+    # 批次 2（2026-10-16）：动作条按功能分三组（筛选 / 单据 / 导出），导出组左侧加竖分隔线，
+    # 该规则从「只有 margin-left:auto」扩为「贴右 + 分隔线」。保护点仍是「导出组贴右」。
+    assert ".filter-actions-extra{margin-left:auto" in html
     assert ".filter-actions{" in html
     assert "border-top:1px solid var(--erp-border)" in html

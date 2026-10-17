@@ -118,14 +118,24 @@ def test_analytics_page_exposes_filters_heatmap_flow_and_ranking_sections():
     customer_id, _, _, _ = _seed_analytics_orders()
     response = create_app().test_client().get(
         "/analytics/",
-        query_string={"start_date": "2026-10-01", "end_date": "2026-10-02", "customer_id": customer_id, "product_name": "灭火器"},
+        query_string={"start_date": "2026-10-01", "end_date": "2026-10-02", "customer_id": customer_id,
+                      # 商品筛选按**完整名称**精确匹配；2026-10-17 起半截名（如「灭火器」）会明确提示，
+                      # 不再静默返回空结果（本用例只验证页面各分区都在，故传完整名）。
+                      "product_name": "灭火器4kg"},
     )
     html = response.get_data(as_text=True)
     assert response.status_code == 200
     assert "数据分析中心" in html
     assert 'id="analyticsFilters"' in html
     assert "净销售数量" in html and "流水净额" in html
-    assert "流水热力图" in html and "产品排行" in html and "单据流水" in html
+    assert "流水热力图" in html and "产品排行" in html
+    # 2026-10-17：「单据流水」段已在 2026-10-16 并入「金额汇总」（用户决策），
+    # 旧断言靠筛选区提示里的「下方『单据流水』」这句话才通过 —— 那句话已按当前
+    # 分区结构改成「金额汇总」。此处改断言为目标本身：合并后的六卡与承载它的容器。
+    assert "金额汇总" in html
+    assert 'id="documentFlow"' in html and 'class="analytics-amount-grid"' in html
+    for card_label in ("销售金额", "退货金额", "拿货金额", "退拿货金额", "净销售额", "流水净额"):
+        assert card_label in html, card_label
     # 决策 ②/③：毛利润/毛利率卡与成本诊断页签整块下线。
     assert "毛利润" not in html and "毛利率" not in html and "成本诊断" not in html
     assert "2026-10-02" in html

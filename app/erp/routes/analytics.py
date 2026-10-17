@@ -54,13 +54,6 @@ def _parse_month_field(value: str, default_year: int, default_month: int) -> tup
     return default_year, _parse_month(text, default_month)
 
 
-def _customers():
-    with get_db() as conn:
-        return conn.execute(
-            "SELECT id, name FROM customers WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE, id"
-        ).fetchall()
-
-
 def _customer_name(customer_id: str) -> str:
     """客户 chip 展示用名称；找不到或未选时返回空串。"""
     if not customer_id:
@@ -86,6 +79,18 @@ def _products():
             ORDER BY name COLLATE NOCASE, id
             """
         ).fetchall()
+
+
+def _product_name_exists(name: str) -> bool:
+    """商品筛选仍按完整名称精确匹配（`summarize_analytics` 用 `p.name = ?`）。
+
+    筛选字段改联想输入后（2026-10-17），用户可能打了半截字却没点候选；
+    那种名称必然查不到，直接给明确提示，避免「明明有销售却显示空」的假象。
+    """
+    with get_db() as conn:
+        return conn.execute(
+            "SELECT 1 FROM products WHERE deleted_at IS NULL AND name = ? LIMIT 1", (name,)
+        ).fetchone() is not None
 
 
 def _month_calendars(cells):
@@ -189,6 +194,9 @@ def analytics_center():
     product_name = request.args.get("product_name", "").strip()
     metric = request.args.get("metric", "amount").strip() or "amount"
     customer_raw = request.args.get("customer_id", "").strip()
+    # 客户 / 商品字段 2026-10-17 由原生下拉改「输入即模糊匹配 + 候选点选」：
+    # 可见输入框提交的是名称（用于回显与兜底提示），真正筛选仍按 customer_id 与完整商品名。
+    customer_query = request.args.get("customer_name", "").strip()
     year_raw = request.args.get("year", "").strip()
     start_year_raw = request.args.get("start_year", "").strip()
     # 模板用 <input type="month" name="start_month_raw"> 提交 YYYY-MM；
@@ -222,7 +230,15 @@ def analytics_center():
     filters = dict(start_date=requested_start, end_date=requested_end,
                    customer_id=customer_raw, product_name=product_name, metric=metric,
                    document_types=document_types)
+    # 联想输入后可能「打了字但没点候选」：不猜客户、也不把商品静默筛成空结果，直接给明确提示。
+    filter_error = ""
+    if not customer_raw and customer_query:
+        filter_error = "客户名称未匹配到已建档客户，请从下拉候选里选择（清空表示全部客户）。"
+    elif product_name and not _product_name_exists(product_name):
+        filter_error = "商品名称未匹配到已建档商品，请从下拉候选里选择（清空表示全部商品）。"
     try:
+        if filter_error:
+            raise ValueError(filter_error)
         result = summarize_analytics(**filters)
         filters = result["filters"]
         view = _analysis_presentation(result)
@@ -242,10 +258,13 @@ def analytics_center():
     month_end_year, month_end_month = _parse_month_field(
         end_month_raw or start_month_raw or year_raw, month_start_year, month_start_month
     )
+    # 客户回显名称：优先用户输入（未命中也要回显，用户不必重打），否则按 id 反查。
+    resolved_customer_name = customer_query or _customer_name(customer_raw)
     return render_template(
         "analytics/index.html",
-        customers=_customers(),
-        products=[dict(row) for row in _products()],
+        # customers / products 全量列表已随筛选字段改联想输入一起不再下发（2026-10-17）：
+        # 客户回显用上面的名称，商品候选走 /products/api/suggestions。
+        customer_name=resolved_customer_name,
         filters=filters,
         result=result,
         error=error,
@@ -261,7 +280,7 @@ def analytics_center():
         selected_document_types=set(document_types),
         filter_chips=analytics_filter_chips(
             customer_id=customer_raw,
-            customer_name=_customer_name(customer_raw),
+            customer_name=resolved_customer_name,
             product_name=product_name,
             document_types=document_types,
         ),

@@ -42,22 +42,28 @@ def _seed_recycle_bin():
 
 
 def test_recycle_bins_are_two_column_cards_not_full_width_tables():
-    """回收站：左列一张四类单据合并列表，右列商品、客户两张卡片，窄屏回落单列。"""
+    """回收站：单据卡独占整行（主体），商品、客户两张卡两栏并排（附属），窄屏回落单列。
+
+    2026-10-16 重做：旧版把商品/客户塞在右窄栏，把「单据」那张主表的列压到省略号截断
+    （单号/金额/删除时间全看不见）。改成单据独占整行后列宽才够用。
+    """
     page = _html("/recycle/")
     assert 'class="recycle-layout"' in page
-    assert ".recycle-layout{display:grid;grid-template-columns:minmax(0,1.9fr) minmax(0,1fr)" in page
-    assert "@media(max-width:1280px){.recycle-layout{grid-template-columns:minmax(0,1fr)}}" in page
-    # 三张卡片：单据（左列）+ 商品、客户（右列）。
+    assert ".recycle-layout{display:grid;gap:16px;align-items:start}" in page
+    assert ".recycle-side{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))" in page
+    assert "@media(max-width:1100px){.recycle-side{grid-template-columns:minmax(0,1fr)}}" in page
+    # 三张卡片：单据（整行）+ 商品、客户（并排）。
     assert page.count('class="recycle-card"') == 3
-    assert page.count('class="recycle-count"') == 3
+    # 计数徽章三处；空计数会额外带 is-zero（褪成中性色，不拿「有内容」的蓝徽章提示空）。
+    assert page.count('class="recycle-count') == 3
     for title in ("单据", "商品", "客户"):
         assert f"<h3>{title} <span" in page, title
     # 每个卡片的表格都在自己的滚动区里，不再把整页撑宽。
     assert page.count('class="recycle-scroll"') == 3
     # 空状态不再留空白表体。
     assert page.count('class="recycle-empty"') == 3
-    # 左列单据卡带四类类型筛选（与单据管理页同一套语义）。
-    assert 'class="recycle-type-row"' in page
+    # 单据卡带四类类型筛选（与单据管理页同一套语义）。
+    assert 'class="recycle-layer"' in page
     assert 'class="recycle-type-options"' in page
     for value in ("sale", "return", "purchase", "purchase_return"):
         assert f'id="recycleType{value}"' in page
@@ -119,14 +125,45 @@ def test_recycle_action_cells_reserve_width_so_buttons_are_not_clipped():
 def test_settings_uses_two_columns_only_on_wide_screens():
     """宽屏把下方设置项放到右侧；窄屏保持单列并可用。"""
     page = _html("/settings/")
-    assert ".settings-form{display:flex;flex-direction:column;gap:18px;max-width:920px}" in page
+    # 批次 2（2026-10-16）：gap 18 → 16，并新增左侧常驻目录 + 右侧内容骨架。
+    # 保护点仍是「只有宽屏才两列」「宽卡片与操作条跨整行」。
+    assert ".settings-form{display:flex;flex-direction:column;gap:16px;max-width:920px}" in page
     assert "@media(min-width:1440px)" in page
     assert "grid-template-columns:repeat(2,minmax(0,1fr))" in page
     # 字段/说明很多的卡片保持整行，避免压窄后换行难读。
     assert 'class="settings-card settings-card-wide"' in page
     assert ".settings-form>.settings-card.settings-card-wide{grid-column:1/-1}" in page
-    # 操作按钮条也跨整行。
-    assert ".settings-form>.settings-actions{grid-column:1/-1}" in page
+    # 操作按钮条已搬到左栏（2026-10-16 用户决策）；宽屏网格里不再有跨行操作条。
+    assert ".settings-form>.settings-actions{grid-column:1/-1}" not in page
+    # 批次 2：左侧目录 + 右侧内容的分区骨架，以及 4 个分组的锚点。
+    assert 'class="settings-layout"' in page
+    assert 'class="settings-toc"' in page
+    assert ".settings-layout{display:grid;grid-template-columns:200px minmax(0,1fr)" in page
+    for anchor in ("groupBasic", "groupPrint", "groupData", "groupPurgeLegacy"):
+        assert f'id="{anchor}"' in page, f"缺少设置分组锚点 {anchor}"
+    # 保存设置（2026-10-16 决策，2026-10-17 按用户截图反馈重做）：左栏里与「设置分区」目录
+    # **并列的独立圆角卡片**，中间留空隙。
+    # 实测病根（2026-10-17）：上一版把保存卡嵌在 nav.settings-toc 内部，而 toc 自带内边距
+    # 与玻璃背景，视觉上被读成「同一张大卡片里又嵌了一层描边面板」；用户明确指出
+    # 「你为什么还是把它们做到了一块儿」。故断言从「在目录内」改为「与目录平级 + 有间距」，
+    # 并钉住 sticky 挂在容器上（挂在 toc 上时其包含块仅两卡高度，滚动即整列滚出视口）。
+    assert "position:sticky;bottom:-1px" not in page
+    assert 'class="settings-side"' in page
+    assert ".settings-side{position:sticky;top:0;display:flex;flex-direction:column;gap:14px" in page
+    assert 'class="settings-save-card"' in page
+    assert ".settings-save-card{" in page and ".settings-save-card .btn{width:100%}" in page
+    # 不再有「嵌在父卡内部」的伪元素分隔线（那正是被读成同一张卡的原因）。
+    assert ".settings-save-card:before" not in page
+    side = page[page.index('class="settings-side"'):page.index('class="settings-main"')]
+    assert 'class="settings-toc"' in side and 'class="settings-save-card"' in side
+    # 两者是兄弟节点：保存卡必须在 nav.settings-toc 之外。
+    assert side.index('</nav>') < side.index('class="settings-save-card"')
+    assert 'id="settingsSaveBtn"' in side and 'form="settingsMainForm"' in side
+    # 右侧分区标题必须比卡片标题更醒目（实测病根：分区 15px < 卡片 h3 18px 层级倒挂）。
+    assert ".settings-group-head h2{margin:0 0 4px;font-size:20px;font-weight:700" in page
+    assert "border-left:4px solid var(--erp-primary)" in page
+    # 「点了立即生效、不用先保存」的卡片有独立标注。
+    assert "settings-instant" in page
 
 
 def test_both_filter_cards_share_one_full_row_field_grid():
@@ -160,3 +197,21 @@ def test_both_filter_cards_share_one_full_row_field_grid():
     # 旧的 analytics-filters / filter-action 规则已迁入 base.html，不再重复定义。
     assert ".erp-analytics .analytics-filters" not in css
     assert ".erp-analytics .filter-action" not in css
+    # 2026-10-17 用户截图反馈：金额汇总容器**不能再是 3 列网格**。
+    # 实测病根：该段结构早已变成「.section-heading 标题 + .analytics-amount-grid 卡片网格」
+    # 两个子元素，而 .analytics-summary 上残留的 3 列网格把两者各塞进一列 —— 标题只占 1/3 宽，
+    # 六张卡被压进 391px（每张 90px），金额 ¥24012.03 实需 110px、溢出 52px、退货金额折两行。
+    assert ".erp-analytics .analytics-summary{margin-bottom:18px}" in css
+    assert ".erp-analytics .analytics-summary{display:grid" not in css
+    # 净值卡跨两列：草图上第二行两个宽框分别压在四张卡的 1-2 与 3-4 之下。
+    assert ".erp-analytics .analytics-card-net{grid-column:span 2" in css
+    # 窄档必须把 span 收掉，否则 1 列网格里 span 2 会撑出隐式列、产生横向溢出。
+    assert ".erp-analytics .analytics-card-net{grid-column:span 1}" in css
+    # 筛选区：客户+商品并排在时间控件**右侧**同一行（2026-10-17 第三轮用户截图要求；
+    # 此前是 column 的两行布局）。放不下时由 flex-wrap 折行，窄档规则见媒体查询。
+    assert 'class="filter-row-counterparty"' in analytics
+    assert ".erp-analytics .filter-tier-query{display:flex;flex-direction:row;flex-wrap:wrap" in css
+    # 时间块内部排成两行（与单据管理页同一形态）：第一行「时间范围 + 模式按钮」，第二行「起止日期」。
+    # 用 grid 让时间块宽度收到约 290px，腾出宽度给右侧并排的「客户 + 商品名称」。
+    assert ".erp-analytics .filter-field-composite .filter-inline{display:grid" in css
+    assert ".erp-analytics .filter-field-composite .filter-inline>.dates{grid-column:1 / -1" in css

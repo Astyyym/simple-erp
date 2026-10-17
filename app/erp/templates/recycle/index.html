@@ -1,11 +1,24 @@
 {% extends "base.html" %}
 {% block content %}
 <style>
-  /* 回收站：左列＝四类单据合并列表（带类型筛选），右列＝商品、客户。
-     每个卡片内部只有一个滚动区，避免整页横向拉出一长条表格。 */
-  .recycle-layout{display:grid;grid-template-columns:minmax(0,1.9fr) minmax(0,1fr);gap:16px;align-items:start}
-  @media(max-width:1280px){.recycle-layout{grid-template-columns:minmax(0,1fr)}}
-  .recycle-side{display:grid;gap:16px;align-content:start;min-width:0}
+  /*
+    回收站（2026-10-16 重做）。
+    改动动机（用户看过旧版后的判断：太丑），实测旧版五个真问题：
+      ① 单号 / 金额 / 删除时间三列全被省略号截断 —— 来回收站第一眼就是判断
+         「哪张单、多少钱、什么时候删的」，三个全看不见；
+      ② 金额写成 ¥-1253.82，与账款管理页的 -¥1253.82 两套写法；
+      ③ 「商品 0」「客户 0」空卡片照样渲染筛选行 + 操作按钮 + 空表头，点不了又占地方；
+      ④ 一行挤 8 个按钮（4 类型 + 全选 + 清空 + 两枚批量动作），没有分组；
+      ⑤ 类型徽章与状态徽章撞色（退货单=红、已作废也=红），两种概念共用一套颜色。
+    本页只重排「呈现」，不动任何端点 / 勾选项名 / 版本号契约（见 tests/test_ui_layout_reflow.py
+    与 tests/frontend/recycle_bulk.test.mjs）。
+
+    布局：单据是主体 → 独占整行；商品 / 客户是附属 → 两栏并排。
+    旧版把商品客户塞在右侧窄栏，把「单据」那张表的列压到截断，是本末倒置。
+  */
+  .recycle-layout{display:grid;gap:16px;align-items:start}
+  .recycle-side{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start;min-width:0}
+  @media(max-width:1100px){.recycle-side{grid-template-columns:minmax(0,1fr)}}
   .recycle-card{
     display:flex;flex-direction:column;min-width:0;
     padding:16px 16px 14px;
@@ -16,49 +29,71 @@
   }
   .recycle-card>h3{margin:0 0 4px;font-size:16px;display:flex;align-items:center;gap:8px}
   .recycle-count{padding:1px 7px;border-radius:99px;font-size:11px;font-weight:650;color:var(--erp-primary);background:var(--erp-primary-soft)}
+  /* 计数为 0 时褪成中性色：不该用一个「有内容」的蓝徽章去提示「这里是空的」。 */
+  .recycle-count.is-zero{color:var(--erp-muted);background:var(--erp-surface-soft)}
   .recycle-card>.recycle-hint{margin:0 0 10px;color:var(--erp-muted);font-size:12px;line-height:1.6}
-  .recycle-card .recycle-actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
-  .recycle-card .recycle-actions .btn{min-height:32px;padding:3px 12px;font-size:13px}
-  /* 单据类型筛选：标签 + 四类 + 全选/清空同一行，与单据管理页同一套语义。 */
-  .recycle-type-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:10px}
-  .recycle-type-row .form-label{margin:0;font-size:12px}
-  .recycle-type-options,.recycle-type-bulk{display:flex;flex-wrap:wrap;gap:8px}
+  /*
+    动作层（旧版④）：筛选与「选中项动作」分成两层，各带小标签，不再 8 个按钮挤一行。
+    第一层＝筛选（类型多选 + 全选/清空 + 命中计数），第二层＝对本区勾选项做的动作。
+  */
+  .recycle-layer{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:10px}
+  .recycle-layer-cap{flex:0 0 auto;color:var(--erp-muted);font-size:12px;font-weight:650;letter-spacing:.03em}
+  .recycle-layer-actions{display:flex;flex-wrap:wrap;gap:8px}
+  .recycle-layer-actions .btn{min-height:32px;padding:3px 12px;font-size:13px}
+  .recycle-type-options,.recycle-type-bulk{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
   .recycle-type-options .btn,.recycle-type-bulk .btn{white-space:nowrap;min-height:32px;padding:3px 12px;font-size:13px}
-  .recycle-type-count{padding:1px 6px;border-radius:99px;font-size:11px;background:var(--erp-surface-soft);color:var(--erp-muted)}
+  .recycle-type-count{margin-left:auto;color:var(--erp-muted);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
   /* 单一滚动区：表格在卡片内滚动，不再把整页撑宽 */
-  .recycle-scroll{max-height:430px;overflow:auto;border:1px solid var(--erp-border);border-radius:6px}
-  .recycle-side .recycle-scroll{max-height:300px}
+  .recycle-scroll{max-height:460px;overflow:auto;border:1px solid var(--erp-border);border-radius:6px}
+  .recycle-side .recycle-scroll{max-height:280px}
   .recycle-scroll table{margin:0;font-size:13px}
   .recycle-scroll thead th{position:sticky;top:0;z-index:1;white-space:nowrap;background:var(--erp-glass-bg-strong);color:var(--erp-muted);font-size:12px;font-weight:650}
   .recycle-scroll th,.recycle-scroll td{padding:7px 9px;vertical-align:middle;white-space:nowrap}
   .recycle-scroll .btn-sm{min-height:28px;padding:2px 9px;font-size:12px}
   .recycle-scroll .action-wrap{display:flex;gap:6px;align-items:center}
+  /*
+    列宽（旧版①）：给每列真实需要的最小宽度，不再靠「剩余宽度均分」。
+    `table-layout:fixed` 下不给宽度就按内容猜，单号 + 金额 + 时间三列互相挤压，
+    最后全被 ellipsis 吃掉。这里显式声明，单号 / 金额 / 时间都留够。
+  */
+  .recycle-scroll .col-no{width:152px}
+  .recycle-scroll .col-type{width:88px}
+  .recycle-scroll .col-amount{width:112px;text-align:right;font-variant-numeric:tabular-nums}
+  .recycle-scroll .col-status{width:96px}
+  .recycle-scroll .col-time{width:150px;color:var(--erp-muted);font-variant-numeric:tabular-nums}
   /* 操作列必须自己占住宽度：stable-table 是 table-layout:fixed + td{overflow:hidden}，
      若把 action-wrap 直接写在 <td> 上，这一列只会分到「剩余宽度均分」的零头，
      按钮就被裁掉（实测窄卡片下「确认删除」裁掉 76px，几乎点不到）。 */
   .recycle-scroll .action-cell{width:150px;min-width:150px}
+  .recycle-scroll .negative{color:var(--erp-danger)}
+  /*
+    类型 chip（旧版⑤）：中性描边，不吃颜色；颜色只留给「状态」徽章。
+    类型回答「它是什么」，状态回答「它现在怎样」——两种语义不该共用一套色板。
+  */
+  .recycle-type-chip{display:inline-block;padding:2px 8px;border:1px solid var(--erp-border-strong);border-radius:4px;background:var(--erp-surface-soft);color:var(--erp-ink);font-size:11.5px;font-weight:600;white-space:nowrap}
   .recycle-empty{padding:16px;color:var(--erp-muted);text-align:center;font-size:13px}
-  .recycle-topbar{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:0 0 14px}
-  .recycle-topbar form{margin:0}
-  .recycle-topbar-hint{color:var(--erp-muted);font-size:12px;line-height:1.6}
 </style>
 
-<h2>回收站</h2>
-<p data-ui-hint class="text-muted">删除后的记录进入回收站，保留 7 天后启动系统时自动清理。也可以在这里确认删除。</p>
-<div class="recycle-topbar">
-  <form method="post" action="/recycle/empty" onsubmit="return confirm('确认清空回收站吗？这里能清的记录会被永久删除，无法恢复；有账务的客户与有活单据引用的记录会保留并列出原因。')">
-    <button class="btn btn-danger">清空回收站</button>
-  </form>
-  <span data-ui-hint class="recycle-topbar-hint">清空会永久删除能清掉的记录；清不掉的会列出原因，不会被静默跳过。</span>
+<div class="page-header">
+  <div>
+    <h2>回收站</h2>
+    <p data-ui-hint class="text-muted mb-0">删除后的记录进入回收站，保留 7 天后启动系统时自动清理。也可以在这里确认删除。</p>
+  </div>
+  <div class="page-actions">
+    <form method="post" action="/recycle/empty" onsubmit="return confirm('确认清空回收站吗？这里能清的记录会被永久删除，无法恢复；有账务的客户与有活单据引用的记录会保留并列出原因。')">
+      <button class="btn btn-danger">清空回收站</button>
+    </form>
+  </div>
 </div>
+<p data-ui-hint class="text-muted small">清空会永久删除能清掉的记录；清不掉的会列出原因，不会被静默跳过。</p>
 
 <div class="recycle-layout">
 <section class="recycle-card" data-recycle-section data-recycle-checkbox="recycle_ids" data-recycle-form="recycleBulkForm">
-<h3>单据 <span class="recycle-count" id="recycleDocumentCount">{{ documents|length }}</span></h3>
+<h3>单据 <span class="recycle-count{% if not documents %} is-zero{% endif %}" id="recycleDocumentCount">{{ documents|length }}</span></h3>
 <p data-ui-hint class="recycle-hint">销售、退货、拿货、退拿货的删除记录。恢复对所有类型可用；确认删除会把明细一起清掉。有未删除单据引用它时会保留并说明原因。</p>
-<div class="recycle-type-row" role="group" aria-label="回收站单据类型筛选">
-  <label class="form-label">单据类型</label>
-  <div class="recycle-type-options">
+<div class="recycle-layer">
+  <span class="recycle-layer-cap">筛选</span>
+  <div class="recycle-type-options" role="group" aria-label="回收站单据类型筛选">
     {% for value, label in [('sale','销售单'),('return','退货单'),('purchase','拿货单'),('purchase_return','退拿货单')] %}
     <input type="checkbox" class="btn-check" name="recycle_type" id="recycleType{{value}}" value="{{value}}" autocomplete="off">
     <label class="btn btn-outline-primary" for="recycleType{{value}}">{{label}}</label>
@@ -70,28 +105,31 @@
   </div>
   <span class="recycle-type-count" id="recycleTypeCount">显示 {{ documents|length }} / {{ documents|length }}</span>
 </div>
-<div class="recycle-actions">
-  <button class="btn btn-success" type="button" data-recycle-submit="restore" data-recycle-message="确认恢复选中的单据吗？">恢复选中</button>
-  <button class="btn btn-danger" type="button" data-recycle-submit="purge" data-recycle-message="确认彻底删除选中的单据吗？有生效历史、来源引用或不可清理的类型会被拒绝。">确认删除选中</button>
+<div class="recycle-layer">
+  <span class="recycle-layer-cap">选中项</span>
+  <div class="recycle-layer-actions">
+    <button class="btn btn-success" type="button" data-recycle-submit="restore" data-recycle-message="确认恢复选中的单据吗？">恢复选中</button>
+    <button class="btn btn-danger" type="button" data-recycle-submit="purge" data-recycle-message="确认彻底删除选中的单据吗？有生效历史、来源引用或不可清理的类型会被拒绝。">确认删除选中</button>
+  </div>
 </div>
 <form id="recycleBulkForm" method="post" action="/recycle/bulk"></form>
 <div class="recycle-scroll">
 <table class="table table-striped stable-table">
-  <colgroup><col style="width:44px"><col style="width:14%"><col style="width:10%"><col style="width:18%"><col style="width:11%"><col style="width:11%"><col style="width:14%"><col></colgroup>
+  <colgroup><col style="width:44px"><col class="col-no"><col class="col-type"><col><col class="col-amount"><col class="col-status"><col class="col-time"><col></colgroup>
   <thead><tr>
-    <th><input type="checkbox" aria-label="全选单据" data-recycle-check-all="1"></th>
-    <th>单号</th><th>类型</th><th>往来对象</th><th>金额</th><th>状态</th><th>删除时间</th><th class="action-cell">操作</th>
+    <th class="selection-cell"><input type="checkbox" aria-label="全选单据" data-recycle-check-all="1"></th>
+    <th>单号</th><th>类型</th><th>往来对象</th><th class="col-amount">金额</th><th>状态</th><th>删除时间</th><th class="action-cell">操作</th>
   </tr></thead>
   <tbody>
   {% for d in documents %}
   <tr data-recycle-kind="{{ d.order_type }}" data-document-key="{{ d.key }}">
-    <td><input type="checkbox" name="recycle_ids" value="{{ d.key }}" data-recycle-version="{{ d.version }}"></td>
-    <td>{{ d.order_no }}</td>
-    <td><span class="badge {{ d.type_badge }}">{{ d.type_label }}</span></td>
-    <td>{{ d.customer_name }}</td>
-    <td>¥{{ cents_to_yuan(d.total_amount_cents) }}</td>
+    <td class="selection-cell"><input type="checkbox" name="recycle_ids" value="{{ d.key }}" data-recycle-version="{{ d.version }}"></td>
+    <td title="{{ d.order_no }}">{{ d.order_no }}</td>
+    <td><span class="recycle-type-chip">{{ d.type_label }}</span></td>
+    <td title="{{ d.customer_name }}">{{ d.customer_name }}</td>
+    <td class="col-amount{{ ' negative' if d.total_amount_cents < 0 else '' }}">{{ d.amount_display }}</td>
     <td><span class="badge {{ d.status_badge }}">{{ d.status_label }}</span></td>
-    <td>{{ d.deleted_at }}</td>
+    <td title="{{ d.deleted_at }}">{{ d.deleted_at_display }}</td>
     <td class="action-cell"><div class="action-wrap">
       <form class="d-inline" method="post" action="/recycle/{{ d.kind }}/{{ d.id }}/restore">{% if d.version != '' %}<input type="hidden" name="version" value="{{ d.version }}">{% endif %}<button class="btn btn-sm btn-success">恢复</button></form>
       {% if d.can_purge %}
@@ -111,25 +149,36 @@
 
 <div class="recycle-side">
 <section class="recycle-card" data-recycle-section data-recycle-checkbox="product_ids" data-recycle-form="recycleProductForm">
-<h3>商品 <span class="recycle-count">{{ products|length }}</span></h3>
+<h3>商品 <span class="recycle-count{% if not products %} is-zero{% endif %}">{{ products|length }}</span></h3>
+{% if products %}
 <p data-ui-hint class="recycle-hint">历史单据会保留商品名称快照。没有未删除单据引用时即可确认删除。</p>
-<div class="recycle-actions">
-  <button class="btn btn-success" type="button" data-recycle-submit="restore" data-recycle-message="确认恢复选中的商品吗？">恢复选中</button>
-  <button class="btn btn-danger" type="button" data-recycle-submit="purge" data-recycle-message="确认彻底删除选中的商品吗？">确认删除选中</button>
+{# 空卡片不再渲染操作层（旧版③）：没有可勾选的行时，两枚按钮点了只会弹「请先选中」。 #}
+<div class="recycle-layer">
+  <span class="recycle-layer-cap">选中项</span>
+  <div class="recycle-layer-actions">
+    <button class="btn btn-success" type="button" data-recycle-submit="restore" data-recycle-message="确认恢复选中的商品吗？">恢复选中</button>
+    <button class="btn btn-danger" type="button" data-recycle-submit="purge" data-recycle-message="确认彻底删除选中的商品吗？">确认删除选中</button>
+  </div>
 </div>
+{% endif %}
 <form id="recycleProductForm" method="post" action="/recycle/bulk/product/purge"></form>
-<div class="recycle-scroll"><table class="table table-striped stable-table"><thead><tr><th style="width:44px"><input type="checkbox" aria-label="全选商品" data-recycle-check-all="1"></th><th>名称</th><th>单位</th><th>删除时间</th><th class="action-cell">操作</th></tr></thead><tbody>{% for p in products %}<tr><td><input type="checkbox" name="product_ids" value="{{p.id}}"></td><td>{{p.name}}</td><td>{{p.unit}}</td><td>{{p.deleted_at}}</td><td class="action-cell"><div class="action-wrap"><form class="d-inline" method="post" action="/recycle/product/{{p.id}}/restore"><button class="btn btn-sm btn-success">恢复</button></form> <form class="d-inline" method="post" action="/recycle/product/{{p.id}}/purge" onsubmit="return confirm('确认彻底删除这个商品吗？历史单据会保留商品名称快照。')"><button class="btn btn-sm btn-danger">确认删除</button></form></div></td></tr>{% else %}<tr><td class="recycle-empty" colspan="5">暂无删除的商品。</td></tr>{% endfor %}</tbody></table></div>
+<div class="recycle-scroll"><table class="table table-striped stable-table"><thead><tr><th class="selection-cell" style="width:44px"><input type="checkbox" aria-label="全选商品" data-recycle-check-all="1"></th><th>名称</th><th>单位</th><th class="col-time">删除时间</th><th class="action-cell">操作</th></tr></thead><tbody>{% for p in products %}<tr><td class="selection-cell"><input type="checkbox" name="product_ids" value="{{p.id}}"></td><td>{{p.name}}</td><td>{{p.unit}}</td><td class="col-time" title="{{ p.deleted_at }}">{{ (p.deleted_at or '')[:16] }}</td><td class="action-cell"><div class="action-wrap"><form class="d-inline" method="post" action="/recycle/product/{{p.id}}/restore"><button class="btn btn-sm btn-success">恢复</button></form> <form class="d-inline" method="post" action="/recycle/product/{{p.id}}/purge" onsubmit="return confirm('确认彻底删除这个商品吗？历史单据会保留商品名称快照。')"><button class="btn btn-sm btn-danger">确认删除</button></form></div></td></tr>{% else %}<tr><td class="recycle-empty" colspan="5">暂无删除的商品。</td></tr>{% endfor %}</tbody></table></div>
 </section>
 
 <section class="recycle-card" data-recycle-section data-recycle-checkbox="customer_ids" data-recycle-form="recycleCustomerForm">
-<h3>客户 <span class="recycle-count">{{ customers|length }}</span></h3>
+<h3>客户 <span class="recycle-count{% if not customers %} is-zero{% endif %}">{{ customers|length }}</span></h3>
+{% if customers %}
 <p data-ui-hint class="recycle-hint">有历史账务的客户不会被物理删除。</p>
-<div class="recycle-actions">
-  <button class="btn btn-success" type="button" data-recycle-submit="restore" data-recycle-message="确认恢复选中的客户吗？">恢复选中</button>
-  <button class="btn btn-danger" type="button" data-recycle-submit="purge" data-recycle-message="确认彻底删除选中的客户吗？有历史账务的客户不会被物理删除。">确认删除选中</button>
+<div class="recycle-layer">
+  <span class="recycle-layer-cap">选中项</span>
+  <div class="recycle-layer-actions">
+    <button class="btn btn-success" type="button" data-recycle-submit="restore" data-recycle-message="确认恢复选中的客户吗？">恢复选中</button>
+    <button class="btn btn-danger" type="button" data-recycle-submit="purge" data-recycle-message="确认彻底删除选中的客户吗？有历史账务的客户不会被物理删除。">确认删除选中</button>
+  </div>
 </div>
+{% endif %}
 <form id="recycleCustomerForm" method="post" action="/recycle/bulk/customer/purge"></form>
-<div class="recycle-scroll"><table class="table table-striped stable-table"><thead><tr><th style="width:44px"><input type="checkbox" aria-label="全选客户" data-recycle-check-all="1"></th><th>名称</th><th>电话</th><th>删除时间</th><th class="action-cell">操作</th></tr></thead><tbody>{% for c in customers %}<tr><td><input type="checkbox" name="customer_ids" value="{{c.id}}"></td><td>{{c.name}}</td><td>{{c.phone}}</td><td>{{c.deleted_at}}</td><td class="action-cell"><div class="action-wrap"><form class="d-inline" method="post" action="/recycle/customer/{{c.id}}/restore"><button class="btn btn-sm btn-success">恢复</button></form> <form class="d-inline" method="post" action="/recycle/customer/{{c.id}}/purge" onsubmit="return confirm('确认彻底删除这个客户吗？有历史账务的客户不会被物理删除。')"><button class="btn btn-sm btn-danger">确认删除</button></form></div></td></tr>{% else %}<tr><td class="recycle-empty" colspan="5">暂无删除的客户。</td></tr>{% endfor %}</tbody></table></div>
+<div class="recycle-scroll"><table class="table table-striped stable-table"><thead><tr><th class="selection-cell" style="width:44px"><input type="checkbox" aria-label="全选客户" data-recycle-check-all="1"></th><th>名称</th><th>电话</th><th class="col-time">删除时间</th><th class="action-cell">操作</th></tr></thead><tbody>{% for c in customers %}<tr><td class="selection-cell"><input type="checkbox" name="customer_ids" value="{{c.id}}"></td><td>{{c.name}}</td><td>{{c.phone}}</td><td class="col-time" title="{{ c.deleted_at }}">{{ (c.deleted_at or '')[:16] }}</td><td class="action-cell"><div class="action-wrap"><form class="d-inline" method="post" action="/recycle/customer/{{c.id}}/restore"><button class="btn btn-sm btn-success">恢复</button></form> <form class="d-inline" method="post" action="/recycle/customer/{{c.id}}/purge" onsubmit="return confirm('确认彻底删除这个客户吗？有历史账务的客户不会被物理删除。')"><button class="btn btn-sm btn-danger">确认删除</button></form></div></td></tr>{% else %}<tr><td class="recycle-empty" colspan="5">暂无删除的客户。</td></tr>{% endfor %}</tbody></table></div>
 </section>
 </div>
 </div>

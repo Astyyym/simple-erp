@@ -1,7 +1,16 @@
 .erp-analytics{min-width:0;color-scheme:light}.erp-analytics h1{margin:0}.erp-analytics .analytics-head{margin-bottom:18px}.erp-analytics .help{color:var(--erp-muted);font-size:12px;margin:5px 0 12px}.erp-analytics .flow-meta{color:var(--erp-muted);font-size:11px;margin-top:5px}/* 顶部筛选：时间模式 / 日期面板 / 订单类型多选 */
-.erp-analytics .analytics-flow-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+/*
+  金额汇总（2026-10-16 用户决策）：原「金额汇总」+「单据流水」两段合并成一段六卡。
+  第一行四类开单金额、第二行两个净额 —— 4 列网格让第二行只占左两格，
+  右侧留白天然把「两个净额」读成一组，不必再加分隔线或小标题。
+  窄档 2 列（净额那两张正好各占一格，不落单）。
+*/
+.erp-analytics .analytics-amount-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.erp-analytics .analytics-card-net{grid-column:span 2;background:color-mix(in srgb,var(--erp-primary) 6%,var(--erp-glass-bg))}
+@media(max-width:1180px){.erp-analytics .analytics-amount-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.erp-analytics .analytics-card-net{grid-column:span 1}}
+@media(max-width:700px){.erp-analytics .analytics-amount-grid{grid-template-columns:minmax(0,1fr)}.erp-analytics .analytics-card-net{grid-column:span 1}}
 /* 顶部筛选卡与单据管理页共用 base.html 的 .filter-card，本文件不再重复定义。 */
-.erp-analytics .form-control,.erp-analytics .form-select{min-width:0}.erp-analytics .btn{white-space:nowrap}.erp-analytics .analytics-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:18px}.erp-analytics .analytics-card,.erp-analytics .analytics-panel{border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);background:var(--erp-glass-bg);box-shadow:var(--erp-glass-shadow);min-width:0}.erp-analytics .analytics-card{padding:14px 15px}.erp-analytics .label{color:var(--erp-muted);font-size:12px}.erp-analytics .value{font-size:21px;font-weight:700;margin-top:7px;font-variant-numeric:tabular-nums}.erp-analytics .analytics-panel{padding:18px;margin-bottom:22px}.erp-analytics .analytics-panel h2{font-size:17px;margin:0}.erp-analytics .recon-entry,.erp-analytics .section-heading{display:flex;align-items:center;justify-content:space-between;gap:18px}.erp-analytics .section-heading{margin-bottom:14px;flex-wrap:wrap}.erp-analytics .recon-entry{background:color-mix(in srgb,var(--erp-primary) 8%,var(--erp-glass-bg))}.erp-analytics .recon-entry .help{margin-bottom:0}.erp-analytics .analysis-tabs{display:flex;gap:20px;border-bottom:1px solid var(--erp-border);margin-bottom:18px}.erp-analytics .analysis-tab{border:0;border-bottom:2px solid transparent;padding:8px 0 12px;background:none;color:var(--erp-muted);font:inherit;white-space:nowrap}.erp-analytics .analysis-tab[aria-selected=true]{border-bottom-color:var(--erp-primary);color:var(--erp-primary);font-weight:600}.erp-analytics .inline-field{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.erp-analytics .inline-field .form-select{width:auto}.erp-analytics .heat-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(190px,.3fr);gap:18px;align-items:start}.erp-analytics .heat-calendars{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:14px}.erp-analytics .heat-legend{grid-column:1/-1;display:flex;align-items:center;gap:5px}.erp-analytics .heat-legend .help{margin:0}.erp-analytics .heat-swatch{width:15px;height:15px;border:1px solid var(--erp-border);border-radius:3px;display:inline-block}.erp-analytics .heat-legend-negative{margin-left:12px;color:var(--erp-danger)}.erp-analytics .month-calendar{border:1px solid var(--erp-border);border-radius:6px;padding:9px;background:var(--erp-surface-soft)}.erp-analytics .month-calendar-title{font-size:13px;font-weight:650;margin:0 0 7px;color:var(--erp-ink)}.erp-analytics .month-weekdays{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;margin-bottom:3px}.erp-analytics .weekday-label{text-align:center;font-size:10px;line-height:1.5;color:var(--erp-muted);user-select:none}.erp-analytics .month-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}.erp-analytics .heat-day{display:grid;place-items:center;aspect-ratio:1;min-width:0;padding:0;border:1px solid var(--erp-border);border-radius:3px;background:var(--erp-heat-0);color:var(--erp-heat-ink-0);font-size:11px;line-height:1;font-variant-numeric:tabular-nums;text-decoration:none}.erp-analytics .heat-day:hover{outline:2px solid var(--erp-primary);outline-offset:-2px}.erp-analytics .heat-day.level-1{background:var(--erp-heat-1);color:var(--erp-heat-ink-1)}.erp-analytics .heat-day.level-2{background:var(--erp-heat-2);color:var(--erp-heat-ink-2)}.erp-analytics .heat-day.level-3{background:var(--erp-heat-3);color:var(--erp-heat-ink-3)}.erp-analytics .heat-day.level-4{background:var(--erp-heat-4);color:var(--erp-heat-ink-4)}.erp-analytics .heat-day.negative{box-shadow:inset 0 0 0 2px var(--erp-danger)}.erp-analytics .heat-day.no-activity{border-style:dashed}.erp-analytics .heat-day[aria-current=true]{outline:2px solid var(--erp-primary);outline-offset:1px}.erp-analytics .heat-day-blank{border:0;background:transparent;pointer-events:none}.erp-analytics .heat-detail{border:1px solid var(--erp-border);border-radius:6px;padding:14px;position:sticky;top:8px}.erp-analytics .detail-list{display:grid;gap:9px}.erp-analytics .detail-line{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--erp-border);font-size:13px}.erp-analytics .detail-line strong{font-variant-numeric:tabular-nums}.erp-analytics .ranking-card{border:1px solid var(--erp-border);border-radius:6px;padding:14px;margin-bottom:12px}.erp-analytics .ranking-card h3{font-size:14px;margin:0 0 10px}.erp-analytics .rank-bars{display:grid;gap:6px}/* 产品排行：竖向柱状图；横向可滚动，柱高按同榜最大值等比。 */
+.erp-analytics .form-control,.erp-analytics .form-select{min-width:0}.erp-analytics .btn{white-space:nowrap}.erp-analytics .analytics-summary{margin-bottom:18px}.erp-analytics .analytics-card,.erp-analytics .analytics-panel{border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);background:var(--erp-glass-bg);box-shadow:var(--erp-glass-shadow);min-width:0}.erp-analytics .analytics-card{padding:14px 15px}.erp-analytics .label{color:var(--erp-muted);font-size:12px}.erp-analytics .value{font-size:21px;font-weight:700;margin-top:7px;font-variant-numeric:tabular-nums}.erp-analytics .analytics-panel{padding:18px;margin-bottom:22px}.erp-analytics .analytics-panel h2{font-size:17px;margin:0}.erp-analytics .recon-entry,.erp-analytics .section-heading{display:flex;align-items:center;justify-content:space-between;gap:18px}.erp-analytics .section-heading{margin-bottom:14px;flex-wrap:wrap}.erp-analytics .recon-entry{background:color-mix(in srgb,var(--erp-primary) 8%,var(--erp-glass-bg))}.erp-analytics .recon-entry .help{margin-bottom:0}.erp-analytics .analysis-tabs{display:flex;gap:20px;border-bottom:1px solid var(--erp-border);margin-bottom:18px}.erp-analytics .analysis-tab{border:0;border-bottom:2px solid transparent;padding:8px 0 12px;background:none;color:var(--erp-muted);font:inherit;white-space:nowrap}.erp-analytics .analysis-tab[aria-selected=true]{border-bottom-color:var(--erp-primary);color:var(--erp-primary);font-weight:600}.erp-analytics .inline-field{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.erp-analytics .inline-field .form-select{width:auto}.erp-analytics .heat-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(190px,.3fr);gap:18px;align-items:start}.erp-analytics .heat-calendars{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:14px}.erp-analytics .heat-legend{grid-column:1/-1;display:flex;align-items:center;gap:5px}.erp-analytics .heat-legend .help{margin:0}.erp-analytics .heat-swatch{width:15px;height:15px;border:1px solid var(--erp-border);border-radius:3px;display:inline-block}.erp-analytics .heat-legend-negative{margin-left:12px;color:var(--erp-danger)}.erp-analytics .month-calendar{border:1px solid var(--erp-border);border-radius:6px;padding:9px;background:var(--erp-surface-soft)}.erp-analytics .month-calendar-title{font-size:13px;font-weight:650;margin:0 0 7px;color:var(--erp-ink)}.erp-analytics .month-weekdays{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;margin-bottom:3px}.erp-analytics .weekday-label{text-align:center;font-size:10px;line-height:1.5;color:var(--erp-muted);user-select:none}.erp-analytics .month-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}.erp-analytics .heat-day{display:grid;place-items:center;aspect-ratio:1;min-width:0;padding:0;border:1px solid var(--erp-border);border-radius:3px;background:var(--erp-heat-0);color:var(--erp-heat-ink-0);font-size:11px;line-height:1;font-variant-numeric:tabular-nums;text-decoration:none}.erp-analytics .heat-day:hover{outline:2px solid var(--erp-primary);outline-offset:-2px}.erp-analytics .heat-day.level-1{background:var(--erp-heat-1);color:var(--erp-heat-ink-1)}.erp-analytics .heat-day.level-2{background:var(--erp-heat-2);color:var(--erp-heat-ink-2)}.erp-analytics .heat-day.level-3{background:var(--erp-heat-3);color:var(--erp-heat-ink-3)}.erp-analytics .heat-day.level-4{background:var(--erp-heat-4);color:var(--erp-heat-ink-4)}.erp-analytics .heat-day.negative{box-shadow:inset 0 0 0 2px var(--erp-danger)}.erp-analytics .heat-day.no-activity{border-style:dashed}.erp-analytics .heat-day[aria-current=true]{outline:2px solid var(--erp-primary);outline-offset:1px}.erp-analytics .heat-day-blank{border:0;background:transparent;pointer-events:none}.erp-analytics .heat-detail{border:1px solid var(--erp-border);border-radius:6px;padding:14px;position:sticky;top:8px}.erp-analytics .detail-list{display:grid;gap:9px}.erp-analytics .detail-line{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--erp-border);font-size:13px}.erp-analytics .detail-line strong{font-variant-numeric:tabular-nums}.erp-analytics .ranking-card{border:1px solid var(--erp-border);border-radius:6px;padding:14px;margin-bottom:12px}.erp-analytics .ranking-card h3{font-size:14px;margin:0 0 10px}.erp-analytics .rank-bars{display:grid;gap:6px}/* 产品排行：竖向柱状图；横向可滚动，柱高按同榜最大值等比。 */
 .erp-analytics .rank-columns{display:flex;align-items:flex-end;gap:10px;overflow-x:auto;padding:22px 2px 0}
 .erp-analytics .rank-column{flex:0 0 74px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:6px;min-width:0}
 /* 柱高按同榜最大值等比（最高 190px），不再画等高槽框：柱子到哪，数值标注就贴到哪。 */
@@ -11,8 +20,30 @@
 .erp-analytics .rank-column .rank-bar-label{width:100%;color:var(--erp-muted);font-size:10px;text-align:center;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .erp-analytics .rank-column.negative .rank-bar-fill{background:var(--erp-danger)}
 .erp-analytics .rank-column.negative .rank-bar-value{color:var(--erp-danger)}
-.erp-analytics .rank-pagination{display:flex;align-items:center;flex-wrap:wrap;gap:10px}.erp-analytics .analytics-product-table-shell{overflow-x:auto}.erp-analytics .analytics-product-table{min-width:520px;width:100%;table-layout:auto}.erp-analytics .analytics-product-table th,.erp-analytics .analytics-product-table td{white-space:nowrap;overflow:visible;text-overflow:clip}.erp-analytics .numeric-cell{text-align:right;font-variant-numeric:tabular-nums}.erp-analytics .numeric-cell::before,.erp-analytics .numeric-cell::after{content:none;display:none}.erp-analytics .status-badge{display:inline-block;padding:3px 7px;border-radius:4px;border:1px solid var(--erp-border);background:var(--erp-surface-soft);font-size:11px}.erp-analytics .negative,.erp-analytics .danger{color:var(--erp-danger)}.erp-analytics .empty-state{padding:18px;color:var(--erp-muted);text-align:center;border:1px dashed var(--erp-border)}.erp-analytics [hidden]{display:none!important}@media(max-width:1100px){.erp-analytics .analytics-summary{grid-template-columns:repeat(3,minmax(0,1fr))}.erp-analytics .analytics-flow-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.erp-analytics .heat-layout{grid-template-columns:1fr}}@media(max-width:700px){.erp-analytics .analytics-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.erp-analytics .analytics-card:first-child{grid-column:1/-1}.erp-analytics .analytics-flow-grid{grid-template-columns:1fr}.erp-analytics .recon-entry{align-items:flex-start;flex-direction:column}.erp-analytics .analytics-panel{padding:14px}.erp-analytics .heat-calendars{grid-template-columns:1fr}.erp-analytics .heat-day{font-size:10px}.erp-analytics .analysis-tabs{gap:16px}}
+.erp-analytics .rank-pagination{display:flex;align-items:center;flex-wrap:wrap;gap:10px}.erp-analytics .analytics-product-table-shell{overflow-x:auto}.erp-analytics .analytics-product-table{min-width:520px;width:100%;table-layout:auto}.erp-analytics .analytics-product-table th,.erp-analytics .analytics-product-table td{white-space:nowrap;overflow:visible;text-overflow:clip}.erp-analytics .numeric-cell{text-align:right;font-variant-numeric:tabular-nums}.erp-analytics .numeric-cell::before,.erp-analytics .numeric-cell::after{content:none;display:none}.erp-analytics .status-badge{display:inline-block;padding:3px 7px;border-radius:4px;border:1px solid var(--erp-border);background:var(--erp-surface-soft);font-size:11px}.erp-analytics .negative,.erp-analytics .danger{color:var(--erp-danger)}.erp-analytics .empty-state{padding:18px;color:var(--erp-muted);text-align:center;border:1px dashed var(--erp-border)}.erp-analytics [hidden]{display:none!important}@media(max-width:1100px){.erp-analytics .heat-layout{grid-template-columns:1fr}}@media(max-width:700px){.erp-analytics .recon-entry{align-items:flex-start;flex-direction:column}.erp-analytics .analytics-panel{padding:14px}.erp-analytics .heat-calendars{grid-template-columns:1fr}.erp-analytics .heat-day{font-size:10px}.erp-analytics .analysis-tabs{gap:16px}}
 /* Scope control fixes here; do not change the accepted global ERP theme. */
+.erp-analytics .form-select:disabled{background:var(--erp-surface-soft);color:var(--erp-muted);opacity:1}
+/*
+  批次 2（2026-10-16）段导航：整页实测 2455px（3 屏），5 段竖排平权、无导航。
+  这条吸顶目录给出页内位置感，点段即跳；不用页签分页，避免一次只看得到一段而失去全局对照。
+  吸顶 top 取 -1px 贴合滚动容器上沿（.page-body 的 padding-top 由父层给，这里只负责粘住）。
+*/
+.erp-analytics .analytics-sections{
+  position:sticky;top:-1px;z-index:6;display:flex;flex-wrap:wrap;gap:6px;align-items:center;
+  margin:0 0 16px;padding:8px 10px;border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);
+  background:var(--erp-glass-bg);box-shadow:var(--erp-glass-shadow);
+  -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);
+}
+@supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
+  .erp-analytics .analytics-sections{background:var(--erp-surface)}
+}
+.erp-analytics .analytics-sections-cap{margin-right:4px;color:var(--erp-muted);font-size:12px;font-weight:650;letter-spacing:.03em}
+.erp-analytics .analytics-sections a{
+  padding:5px 11px;border:1px solid transparent;border-radius:6px;color:var(--erp-ink);
+  font-size:13px;font-weight:600;text-decoration:none;white-space:nowrap;transition:background .15s,color .15s,border-color .15s;
+}
+.erp-analytics .analytics-sections a:hover{background:var(--erp-surface-soft);border-color:var(--erp-border)}
+.erp-analytics .analytics-sections a.is-current{background:var(--erp-primary-soft);color:var(--erp-primary);border-color:color-mix(in srgb,var(--erp-primary) 30%,var(--erp-border))}
 .erp-analytics .form-select:disabled{background:var(--erp-surface-soft);color:var(--erp-muted);opacity:1}
 .erp-analytics .btn-outline-secondary{color:var(--erp-ink);border-color:var(--erp-border)}
 html[data-ui-theme="dark"] .erp-analytics{color-scheme:dark}
@@ -28,3 +59,45 @@ html[data-ui-theme="dark"] .erp-analytics{color-scheme:dark}
 .erp-analytics .is-growing .rank-bar-value{animation:barlabel var(--bar-dur,.8s) linear forwards}
 
 @media(prefers-reduced-motion:reduce){.erp-analytics .is-growing .rank-bar-fill,.erp-analytics .is-growing .rank-bar-value{animation:none}}
+
+/*
+  分析页筛选区重排（2026-10-17 用户截图反馈）：
+    ① 第一行只放时间筛选（模式按钮 + 起止日期），客户与商品名称下移第二行；
+    ② 起止日期按控件自身宽度，不再拉伸占满整行，右侧留白；
+    ③ 客户/商品下拉不再被 flex 撑到三百多像素，给一个正常宽度区间。
+  全部规则用 .erp-analytics 前缀限定在分析页 —— 单据管理页共用 base.html 的 .filter-card，
+  不得被这一轮改动波及。
+*/
+/* 2026-10-17 第三轮（用户截图）：客户 / 商品名称移到「时间范围」控件**右侧**同一行。
+   此前这里是 column（时间独占第一行、客户+商品第二行），本条是该布局的反向调整；
+   放不下时由 flex-wrap 自然折到下一行（窄档规则见文件末尾媒体查询）。 */
+.erp-analytics .filter-tier-query{display:flex;flex-direction:row;flex-wrap:wrap;gap:12px 16px;align-items:flex-end}
+/* 时间块按内容宽度，不被 base 的 flex:1.2 1 320px 拉伸。 */
+.erp-analytics .filter-field-composite{flex:0 0 auto}
+/* 时间块排成两行（与单据管理页同一形态）：第一行「时间范围 + 模式按钮」，第二行「起止日期」。
+   用 grid 而不是 flex：flex 容器的 max-content 宽度按「所有子项不换行之和」算，时间块收不窄；
+   grid 的 auto 列宽 = 各列 max-content，时间块宽度 = 标签列 + 按钮列 ≈ 290px，
+   腾出来的宽度正好让「客户 + 商品名称」并排在右侧同一行（2026-10-17 用户要求与单据管理页一致）。 */
+.erp-analytics .filter-field-composite .filter-inline{display:grid;grid-template-columns:auto auto;justify-content:start;align-items:center;gap:8px 12px;min-width:0}
+.erp-analytics .filter-field-composite .filter-inline>.dates{grid-column:1 / -1;margin:0}
+.erp-analytics .filter-field-date .date-range{grid-template-columns:auto auto;justify-content:start}
+.erp-analytics .filter-field-date .form-control{width:auto;min-width:132px}
+/* 第二行：客户 + 商品名称并排成一组，宽度按内容，右侧留白。 */
+.erp-analytics .filter-row-counterparty{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:flex-start}
+.erp-analytics .filter-row-counterparty .filter-field-plain{flex:0 1 auto;min-width:0}
+.erp-analytics .filter-row-counterparty .filter-inline>.form-select{flex:0 0 auto;width:auto;min-width:190px;max-width:300px}
+/* 客户 / 商品名称 2026-10-17 由原生下拉改联想输入：宽度与浮层定位跟随同一组取值。 */
+.erp-analytics .filter-row-counterparty .filter-inline>.suggest-wrap{position:relative;flex:0 0 auto;width:auto;min-width:150px;max-width:230px}
+.erp-analytics .filter-row-counterparty .filter-inline>.suggest-wrap .form-control{width:100%}
+/* 窄档：客户/商品各自独占一行，下拉回到撑满，避免挤成两三个字宽。 */
+@media(max-width:1180px){
+  /* 窄档：客户 / 商品回到时间块下方、各自独占一行。 */
+  .erp-analytics .filter-row-counterparty{flex-basis:100%;flex-direction:column;align-items:stretch}
+  .erp-analytics .filter-row-counterparty .filter-field-plain{flex:1 1 auto;width:100%}
+  .erp-analytics .filter-row-counterparty .filter-inline>.form-select{flex:1 1 auto;width:100%;max-width:none}
+  .erp-analytics .filter-row-counterparty .filter-inline>.suggest-wrap{flex:1 1 auto;width:100%;max-width:none}
+  .erp-analytics .filter-field-date .form-control{width:100%;min-width:0}
+}
+/* 已选条件行始终留在 DOM 里（空态用 .is-empty 隐藏），就地刷新才能按 id 替换：
+   「首次筛选 → chip 从无到有」时新容器不会被插入（page-refresh.mjs 只替换已有同 id 区块）。 */
+.erp-analytics .filter-chips.is-empty{display:none}

@@ -27,6 +27,7 @@
   <style>
     :root{
       --erp-primary:#2563eb;--erp-primary-hover:#1d4ed8;--erp-primary-soft:#eff6ff;
+      --erp-btn-primary:#2563eb;--erp-btn-primary-hover:#1d4ed8;--erp-btn-success:#17803d;--erp-btn-success-hover:#047857;--erp-btn-danger:#c73535;--erp-btn-danger-hover:#b91c1c;--erp-btn-warning:#f59e0b;--erp-btn-warning-hover:#d97706;--erp-btn-warning-ink:#172033;--erp-outline-primary:#1d4ed8;--erp-outline-success:#17803d;--erp-outline-danger:#c73535;--erp-outline-info:#0e7490;--erp-content-border:rgba(255,255,255,.88);
       --erp-ink:#172033;--erp-muted:#667085;--erp-border:#dfe3ea;--erp-border-strong:#c8ced8;
       --erp-bg:#f3f5f8;--erp-surface:#fff;--erp-surface-soft:#f8fafc;
       --erp-sidebar:#012121;--erp-sidebar-hover:#0a3535;--erp-success:#17803d;--erp-danger:#c73535;
@@ -34,7 +35,7 @@
       --erp-warn:#b45309;--erp-warn-bg:#fffbeb;--erp-warn-border:#fcd34d;
       --erp-heat-0:#f1f5f9;--erp-heat-1:#dcfce7;--erp-heat-2:#86efac;--erp-heat-3:#15803d;--erp-heat-4:#166534;
       --erp-heat-ink-0:#172033;--erp-heat-ink-1:#172033;--erp-heat-ink-2:#172033;--erp-heat-ink-3:#fff;--erp-heat-ink-4:#fff;
-      --erp-radius:8px;--erp-shadow:0 1px 2px rgba(16,24,40,.04),0 8px 24px rgba(16,24,40,.05);
+      --erp-radius:10px;--erp-shadow:0 1px 2px rgba(16,24,40,.04),0 8px 24px rgba(16,24,40,.05);
       --erp-scale:1;
       /* stronger glassmorphism tokens (still enterprise, blur capped ~16px) */
       --erp-glass-blur:16px;
@@ -57,6 +58,7 @@
     html[data-ui-hints="off"] [data-ui-hint]{display:none!important}
     html[data-ui-theme="dark"]{
       --erp-primary:#3b82f6;--erp-primary-hover:#60a5fa;--erp-primary-soft:#1e293b;
+      --erp-btn-primary:#1d4ed8;--erp-btn-primary-hover:#2563eb;--erp-btn-success:#047857;--erp-btn-success-hover:#065f46;--erp-btn-danger:#b91c1c;--erp-btn-danger-hover:#dc2626;--erp-btn-warning:#f59e0b;--erp-btn-warning-hover:#d97706;--erp-btn-warning-ink:#172033;--erp-outline-primary:#93c5fd;--erp-outline-success:#6ee7b7;--erp-outline-danger:#fca5a5;--erp-outline-info:#67e8f9;--erp-content-border:#2b3648;
       --erp-ink:#e8eef9;--erp-muted:#9aa8c0;--erp-border:#2b3648;--erp-border-strong:#3d4b63;
       --erp-bg:#0f141d;--erp-surface:#171e2b;--erp-surface-soft:#1c2535;
       --erp-sidebar:#012121;--erp-sidebar-hover:#0a3535;--erp-success:#34d399;--erp-danger:#f87171;
@@ -77,6 +79,7 @@
     @media (prefers-color-scheme: dark){
       html[data-ui-theme="system"]{
         --erp-primary:#3b82f6;--erp-primary-hover:#60a5fa;--erp-primary-soft:#1e293b;
+        --erp-btn-primary:#1d4ed8;--erp-btn-primary-hover:#2563eb;--erp-btn-success:#047857;--erp-btn-success-hover:#065f46;--erp-btn-danger:#b91c1c;--erp-btn-danger-hover:#dc2626;--erp-btn-warning:#f59e0b;--erp-btn-warning-hover:#d97706;--erp-btn-warning-ink:#172033;--erp-outline-primary:#93c5fd;--erp-outline-success:#6ee7b7;--erp-outline-danger:#fca5a5;--erp-outline-info:#67e8f9;--erp-content-border:#2b3648;
         --erp-ink:#e8eef9;--erp-muted:#9aa8c0;--erp-border:#2b3648;--erp-border-strong:#3d4b63;
         --erp-bg:#0f141d;--erp-surface:#171e2b;--erp-surface-soft:#1c2535;
         --erp-sidebar:#012121;--erp-sidebar-hover:#0a3535;--erp-success:#34d399;--erp-danger:#f87171;
@@ -96,7 +99,7 @@
       }
     }
     html[data-ui-theme="light"]{
-      --erp-sidebar:#f1f3f6;--erp-sidebar-hover:#e7ebf1;--erp-sidebar-ink:#475467;--erp-sidebar-muted:#778397;--erp-sidebar-active:#e4ecfb;--erp-sidebar-active-ink:#1e4fae;
+      --erp-sidebar:#f1f3f6;--erp-sidebar-hover:#e7ebf1;--erp-sidebar-ink:#475467;--erp-sidebar-muted:#5b6675;--erp-sidebar-active:#e4ecfb;--erp-sidebar-active-ink:#1e4fae;
       --erp-sidebar-scroll-thumb:rgba(71,84,103,.28);--erp-sidebar-scroll-thumb-hover:rgba(71,84,103,.44);
       --erp-sidebar-glass:#f1f3f6;--erp-sidebar-border:rgba(23,32,51,.10);
     }
@@ -114,7 +117,7 @@
     }
     @media (prefers-color-scheme: light){
       html[data-ui-theme="system"]{
-        --erp-sidebar:#f1f3f6;--erp-sidebar-hover:#e7ebf1;--erp-sidebar-ink:#475467;--erp-sidebar-muted:#778397;--erp-sidebar-active:#e4ecfb;--erp-sidebar-active-ink:#1e4fae;
+        --erp-sidebar:#f1f3f6;--erp-sidebar-hover:#e7ebf1;--erp-sidebar-ink:#475467;--erp-sidebar-muted:#5b6675;--erp-sidebar-active:#e4ecfb;--erp-sidebar-active-ink:#1e4fae;
         --erp-sidebar-scroll-thumb:rgba(71,84,103,.28);--erp-sidebar-scroll-thumb-hover:rgba(71,84,103,.44);
         --erp-sidebar-glass:#f1f3f6;--erp-sidebar-border:rgba(23,32,51,.10);
       }
@@ -149,15 +152,15 @@
     .sidebar::-webkit-scrollbar-thumb{min-height:34px;background:var(--erp-sidebar-scroll-thumb);border:2px solid transparent;border-radius:999px;background-clip:padding-box}
     .sidebar:hover::-webkit-scrollbar-thumb{background:var(--erp-sidebar-scroll-thumb-hover);border-width:1px}
     .brand{min-height:calc(72px * var(--erp-scale));display:flex;align-items:center;gap:11px;padding:10px;border-bottom:1px solid var(--erp-sidebar-border);margin-bottom:12px}
-    .brand-mark{width:34px;height:34px;border-radius:7px;background:var(--erp-primary);color:#fff;display:grid;place-items:center;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18);flex:0 0 auto}
+    .brand-mark{width:34px;height:34px;border-radius:6px;background:var(--erp-primary);color:#fff;display:grid;place-items:center;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18);flex:0 0 auto}
     .brand-mark svg{width:20px;height:20px;display:block}
     .brand-title{font-size:calc(15px * var(--erp-scale));font-weight:650;letter-spacing:.02em;line-height:1.25}
     .nav-group{flex:0 0 auto}
     .nav-label{margin:0 0 7px;padding:9px 12px;color:var(--erp-sidebar-ink);font-size:calc(14px * var(--erp-scale));font-weight:700;letter-spacing:.04em}
-    .nav-section{display:flex;align-items:center;min-height:42px;margin:2px 0;padding:9px 12px;border-radius:7px;color:var(--erp-sidebar-ink);font-size:calc(14px * var(--erp-scale));font-weight:600;text-decoration:none;transition:background .15s,color .15s}
+    .nav-section{display:flex;align-items:center;min-height:42px;margin:2px 0;padding:9px 12px;border-radius:6px;color:var(--erp-sidebar-ink);font-size:calc(14px * var(--erp-scale));font-weight:600;text-decoration:none;transition:background .15s,color .15s}
     .nav-section:hover{background:var(--erp-sidebar-hover);color:var(--erp-sidebar-ink)}.nav-section.active{background:var(--erp-sidebar-active);color:var(--erp-sidebar-active-ink)}
     .nav-divider{height:2px;flex:none;background:var(--erp-sidebar-border);margin:20px 0 14px}
-    .sidebar a{position:relative;color:var(--erp-sidebar-ink);display:flex;align-items:center;min-height:42px;padding:9px 12px;margin:2px 0;text-decoration:none;border-radius:7px;font-weight:500;font-size:calc(14px * var(--erp-scale));transition:background .15s,color .15s}
+    .sidebar a{position:relative;color:var(--erp-sidebar-ink);display:flex;align-items:center;min-height:42px;padding:9px 12px;margin:2px 0;text-decoration:none;border-radius:6px;font-weight:500;font-size:calc(14px * var(--erp-scale));transition:background .15s,color .15s}
     .sidebar a.nav-section{font-weight:700;letter-spacing:.04em}
     .sidebar a:hover{background:var(--erp-sidebar-hover);color:var(--erp-sidebar-ink)}.sidebar a.active{background:var(--erp-sidebar-active);color:var(--erp-sidebar-active-ink);font-weight:600}
     .sidebar a.sidebar-sub{min-height:34px;margin-left:14px;padding:6px 12px 6px 20px;font-size:calc(13px * var(--erp-scale));color:var(--erp-sidebar-muted);background:transparent}
@@ -172,7 +175,7 @@
     .content{
       position:relative;z-index:1;flex:1 1 auto;min-width:0;height:calc(100% - 28px);margin:14px;
       display:flex;flex-direction:column;overflow:hidden;padding:0;
-      border:1px solid rgba(255,255,255,.88);border-radius:26px;background:var(--erp-surface);box-shadow:var(--erp-glass-shadow);
+      border:1px solid var(--erp-content-border);border-radius:14px;background:var(--erp-surface);box-shadow:var(--erp-glass-shadow);
     }
     .page-topbar{
       display:flex;align-items:center;justify-content:space-between;
@@ -222,12 +225,18 @@
     .order-detail-header{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center}
     .order-detail-header h2{overflow-wrap:anywhere}
     .order-detail-header .page-actions{flex-wrap:nowrap}
-    .btn-primary{background:var(--erp-primary);border-color:var(--erp-primary)}.btn-primary:hover,.btn-primary:focus{background:var(--erp-primary-hover);border-color:var(--erp-primary-hover)}
-    .btn-secondary{background:#475467;border-color:#475467}.btn-success{background:var(--erp-success);border-color:var(--erp-success)}.btn-danger{background:var(--erp-danger);border-color:var(--erp-danger)}
-    .btn-info{background:#eaf2ff;border-color:#c9dcff;color:#1d4ed8}.btn-info:hover{background:#dbeafe;border-color:#aac7ff;color:#1e40af}.btn-warning{background:#f59e0b;border-color:#f59e0b;color:#fff}
-    html[data-ui-theme="dark"] .btn-info{background:var(--erp-primary-soft);border-color:var(--erp-border-strong);color:var(--erp-primary)}html[data-ui-theme="dark"] .btn-info:hover{background:#243147;color:var(--erp-primary-hover)}
-    @media (prefers-color-scheme: dark){html[data-ui-theme="system"] .btn-info{background:var(--erp-primary-soft);border-color:var(--erp-border-strong);color:var(--erp-primary)}html[data-ui-theme="system"] .btn-info:hover{background:#243147;color:var(--erp-primary-hover)}}
+    .btn-primary{background:var(--erp-btn-primary);border-color:var(--erp-btn-primary)}.btn-primary:hover,.btn-primary:focus{background:var(--erp-btn-primary-hover);border-color:var(--erp-btn-primary-hover)}
+    .btn-secondary{background:#475467;border-color:#475467}.btn-success{background:var(--erp-btn-success);border-color:var(--erp-btn-success)}.btn-danger{background:var(--erp-btn-danger);border-color:var(--erp-btn-danger)}
+    .btn-info{background:#eaf2ff;border-color:#c9dcff;color:#1d4ed8}.btn-info:hover{background:#dbeafe;border-color:#aac7ff;color:#1e40af}.btn-warning{background:var(--erp-btn-warning);border-color:var(--erp-btn-warning);color:var(--erp-btn-warning-ink)}.btn-warning:hover,.btn-warning:focus{background:var(--erp-btn-warning-hover);border-color:var(--erp-btn-warning-hover);color:var(--erp-btn-warning-ink)}
+    html[data-ui-theme="dark"] .btn-info{background:var(--erp-primary-soft);border-color:var(--erp-border-strong);color:var(--erp-outline-primary)}html[data-ui-theme="dark"] .btn-info:hover{background:#243147;color:var(--erp-primary-hover)}
+    @media (prefers-color-scheme: dark){html[data-ui-theme="system"] .btn-info{background:var(--erp-primary-soft);border-color:var(--erp-border-strong);color:var(--erp-outline-primary)}html[data-ui-theme="system"] .btn-info:hover{background:#243147;color:var(--erp-primary-hover)}}
     .btn-outline-secondary{color:var(--erp-muted);border-color:var(--erp-border-strong);background:var(--erp-glass-bg-strong)}.btn-outline-secondary:hover{background:var(--erp-surface-soft);color:var(--erp-ink);border-color:var(--erp-border-strong)}
+    /* 批次 1：outline 系在深色/跟随系统下曾沿用 Bootstrap 的浅色模式 hex（对比度 3.69–3.71）。
+       改用固定字面量使三套主题都可控（浅色>=4.79 / 深色>=8.40）。 */
+    .btn-outline-primary{color:var(--erp-outline-primary);border-color:var(--erp-outline-primary)}.btn-outline-primary:hover,.btn-outline-primary:focus{background:var(--erp-primary-soft);color:var(--erp-outline-primary);border-color:var(--erp-outline-primary)}
+    .btn-outline-success{color:var(--erp-outline-success);border-color:var(--erp-outline-success)}.btn-outline-success:hover,.btn-outline-success:focus{background:var(--erp-primary-soft);color:var(--erp-outline-success);border-color:var(--erp-outline-success)}
+    .btn-outline-danger{color:var(--erp-outline-danger);border-color:var(--erp-outline-danger)}.btn-outline-danger:hover,.btn-outline-danger:focus{background:var(--erp-surface-soft);color:var(--erp-outline-danger);border-color:var(--erp-outline-danger)}
+    .btn-outline-info{color:var(--erp-outline-info);border-color:var(--erp-outline-info)}.btn-outline-info:hover,.btn-outline-info:focus{background:var(--erp-surface-soft);color:var(--erp-outline-info);border-color:var(--erp-outline-info)}
     /* 行内操作失败的就地提示：不跳页、不用 alert，保留页面上下文。 */
     .row-action-error{
       display:flex;align-items:flex-start;gap:12px;margin:0 0 12px;padding:11px 14px;
@@ -237,13 +246,13 @@
     }
     .row-action-error-text{flex:1 1 auto;min-width:0;color:var(--erp-ink);overflow-wrap:anywhere}
     .row-action-error-close{
-      flex:0 0 auto;padding:2px 10px;border:1px solid var(--erp-border-strong);border-radius:4px;
+      flex:0 0 auto;padding:2px 10px;border:1px solid var(--erp-border-strong);border-radius:6px;
       background:var(--erp-surface);color:var(--erp-muted);font-size:12px;cursor:pointer;
     }
     .row-action-error-close:hover{color:var(--erp-ink);background:var(--erp-surface-soft)}
     /* inputs stay solid for readability on glass panels */
     .form-control,.form-select{min-height:40px;border:1px solid var(--erp-border-strong);border-radius:6px;background:var(--erp-surface);color:var(--erp-ink);font-size:14px;padding:8px 11px;box-shadow:none!important}
-    .form-control:focus,.form-select:focus{border-color:var(--erp-primary);box-shadow:0 0 0 3px rgba(37,99,235,.12)!important}.form-control-lg,.form-select-lg{min-height:46px;font-size:15px}.form-label{font-size:13px;font-weight:600;color:var(--erp-muted);margin-bottom:6px}
+    .form-control:focus,.form-select:focus{background-color:var(--erp-surface);color:var(--erp-ink);border-color:var(--erp-primary);box-shadow:0 0 0 3px rgba(37,99,235,.12)!important}.form-control-lg,.form-select-lg{min-height:46px;font-size:15px}.form-label{font-size:13px;font-weight:600;color:var(--erp-muted);margin-bottom:6px}
     form.row{
       background:var(--erp-glass-bg);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);padding:14px;margin-left:0;margin-right:0;
       box-shadow:var(--erp-glass-shadow);
@@ -306,6 +315,17 @@
     .table th{height:44px;background:var(--erp-glass-bg-strong);color:var(--erp-muted);font-size:calc(12px * var(--erp-scale));font-weight:650;letter-spacing:.03em;vertical-align:middle;white-space:nowrap}
     .table td{font-size:calc(14px * var(--erp-scale));vertical-align:middle;background:transparent}.table-striped>tbody>tr:nth-of-type(odd)>*{--bs-table-accent-bg:rgba(127,127,127,.04)}.table tbody tr:hover>*{background:rgba(37,99,235,.05)}
     .stable-table{table-layout:fixed;width:100%}.stable-table th,.stable-table td{height:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.stable-table .action-cell{width:380px;min-width:380px}.stable-table .action-wrap{display:flex;gap:6px;align-items:center;justify-content:flex-start;white-space:nowrap}.stable-table .action-wrap .btn{min-width:60px}.stable-table .deleting{opacity:.45;pointer-events:none}
+    /*
+      勾选框单元格（2026-10-16 批次 2 实测确诊）：单元格里只有一个裸 inline-block 复选框
+      （16px）时，Chrome 把它算成 55–56px 的溢出内容，而 `.stable-table` 带
+      `overflow:hidden` + `text-overflow:ellipsis` → **浏览器会在一个空白格子里凭空画出一个省略号**。
+      实测：单据管理 1 表头 + 21 数据行共 22 处，每行第一个格都多出三个白点。
+      修法用 `display:block;margin:0 auto` 而非 `text-overflow:clip`：溢出归零的同时
+      几何零位移（实测 dx/dy 与改前完全一致），且不依赖 `:has()`（老 WebView2 不一定支持）。
+      （商品管理页原先各自打了半套补丁：写死宽度 + 压 ::before/::after，现统一到这里。）
+    */
+    .stable-table .selection-cell,.stable-table th:has(>input[type="checkbox"]),.stable-table td:has(>input[type="checkbox"]){text-overflow:clip}
+    .stable-table .selection-cell>input[type="checkbox"],.stable-table th>input[type="checkbox"],.stable-table td>input[type="checkbox"]{display:block;margin:0 auto}
     .card{
       border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);box-shadow:var(--erp-glass-shadow);
       background:var(--erp-glass-bg);
@@ -330,13 +350,22 @@
     .filter-field-composite{flex:1.2 1 320px;min-width:0}
     .filter-field-plain{flex:1 1 220px}
     .filter-field-composite .dates{margin-top:10px}
+    /* 批次 2：字段内「标签 + 控件」同行 —— 原先标签独占一行，一条查询要素占三行、
+       六个查询要素把卡片顶到 133px。改为同行后同一条要素只占一行。 */
+    .filter-inline{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;min-width:0}
+    .filter-inline>.form-label{margin:0;white-space:nowrap}
+    /* 比 `.filter-field-composite .dates` 高一档特异度，压掉它的 margin-top。 */
+    .filter-field-composite .filter-inline>.dates{margin:0;flex:1 1 260px;min-width:0}
+    .filter-inline>.suggest-wrap,.filter-inline>.form-select,.filter-inline>.form-control{flex:1 1 180px;min-width:0}
     .filter-mode-options{display:flex;flex-wrap:wrap;gap:8px}
     .filter-mode-options .btn{white-space:nowrap;min-height:34px;padding:4px 12px;font-size:13px}
     .filter-field-date .date-range{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
     .filter-field-date[data-mode="year"] .form-control{max-width:220px}
     .filter-field-date[hidden]{display:none}
-    /* ② 条件多选 */
-    .filter-tier-conditions{display:grid;gap:14px;margin-top:16px;padding-top:16px;border-top:1px dashed var(--erp-border)}
+    /* ② 条件多选：订单类型 / 单据状态 —— 两页共用「左右两栏」骨架，
+       每类条件占一栏，栏间加竖分隔线（原先各占满宽一行、各只有 4 个按钮，白占 99px）。 */
+    .filter-tier-conditions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 24px;margin-top:16px;padding-top:16px;border-top:1px dashed var(--erp-border)}
+    .filter-field-type+.filter-field-type{border-left:1px solid var(--erp-border);padding-left:24px}
     .filter-type-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
     .filter-type-row .form-label{margin:0}
     .filter-type-options,.filter-type-bulk{display:flex;flex-wrap:wrap;gap:8px}
@@ -348,16 +377,30 @@
     .filter-chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;border:1px solid color-mix(in srgb,var(--erp-primary) 30%,var(--erp-border));background:var(--erp-primary-soft);color:var(--erp-primary);font-size:12.5px;text-decoration:none}
     .filter-chip:hover{background:color-mix(in srgb,var(--erp-primary) 16%,var(--erp-surface));text-decoration:none;color:var(--erp-primary)}
     .filter-chip .filter-chip-x{font-weight:700;opacity:.75}
-    /* 动作条 */
+    /* 动作条：按功能分三组，组间竖线隔开，全部常显（用户 2026-10-16：分类分区，不折叠）。
+       ①筛选类 ②单据类（新建/删除选中）③导出类（贴右）。
+       导出三按钮必须留在 `.filter-actions` 内且顺序固定 —— 契约见
+       tests/test_order_list_filter_layout.py:19-25，故用「贴右归一类」而非搬走。 */
     .filter-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:16px;padding-top:16px;border-top:1px solid var(--erp-border)}
-    .filter-actions-primary,.filter-actions-extra{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-    .filter-actions-extra{margin-left:auto}
+    .filter-actions-primary,.filter-actions-extra,.filter-actions-records{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+    .filter-actions-records{border-left:1px solid var(--erp-border);padding-left:10px}
+    .filter-actions-extra{margin-left:auto;border-left:1px solid var(--erp-border);padding-left:10px}
     .filter-hint{color:var(--erp-muted);font-size:12px;margin-top:10px}
     /* 条件多选行仍沿用 .filter-field-type 类名（两页模板按此行分组） */
     .filter-field-type{min-width:0}
-    @media(max-width:1100px){
+    @media(max-width:1180px){
+      /*
+        窄档（实测 1100px）：条件栏两列时每列仅约 450px，四个类型按钮占满一列、
+        「清空」被挤到第二行 → 筛选卡反弹到 390px（比改前的 357 还高）。
+        改回「每组独占一行」后每组按钮同排放得下，卡片回落。
+        阈值取 1180px：1440 档两列（216px）、1280 档两列（300px）都正常，
+        只有 ≤1100 需要落回单列，故留 1180 作为缓冲。
+      */
+      .filter-tier-conditions{grid-template-columns:minmax(0,1fr)}
+      .filter-field-type+.filter-field-type{border-left:0;padding-left:0}
       .filter-field-composite,.filter-field-plain{flex:1 1 100%}
-      .filter-actions-extra{margin-left:0}
+      .filter-actions-extra{margin-left:0;border-left:0;padding-left:0}
+      .filter-actions-records{border-left:0;padding-left:0}
     }
     /*
       基础资料列表页（商品管理 / 客户管理）顶部工具区：两页共用同一套类，只写一次。
@@ -551,7 +594,7 @@
       -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);
       backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);
     }
-    .alert{border-radius:7px;border-width:1px}.table-danger.return-order-row>*{background:#fff1f1!important;color:#a52a2a}.table-danger.return-order-row:hover>*{background:#ffe7e7!important}
+    .alert{border-radius:6px;border-width:1px}.table-danger.return-order-row>*{background:#fff1f1!important;color:#a52a2a}.table-danger.return-order-row:hover>*{background:#ffe7e7!important}
     /* F2（2026-10-14）：深色下必须连 Bootstrap 的「条纹覆盖层」一起置空。
        `.table-danger` 是浅色模式写死的变体（`--bs-table-striped-bg: #eccccf`），而 Bootstrap 用
        `box-shadow: inset 0 0 0 9999px var(--bs-table-bg-type, …)` 把那层色**盖在 background 之上**；

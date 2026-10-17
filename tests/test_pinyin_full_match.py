@@ -108,9 +108,13 @@ def test_entry_page_customer_autocomplete_matches_full_pinyin():
 
 
 def test_analytics_and_summary_customer_scope_match_full_pinyin():
+    """分析页客户筛选改联想输入后（2026-10-17）：全拼匹配落在候选接口上，页面引用该接口。"""
     _seed_customers()
     client = create_app().test_client()
-    assert "星辰宾馆" in client.get("/analytics/?customer=xingchen").get_data(as_text=True)
+    html = client.get("/analytics/").get_data(as_text=True)
+    assert "/orders/api/customers?q=" in html
+    names = [row["name"] for row in client.get("/orders/api/customers?q=xingchen").get_json()]
+    assert "星辰宾馆" in names
 
     from erp.utils.pdf import resolve_summary_customer_ids
 

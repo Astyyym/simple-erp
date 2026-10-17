@@ -88,7 +88,7 @@
   .product-table-shell .product-list-table{table-layout:auto;min-width:900px;width:100%}
   .product-table-shell .product-list-table th,.product-table-shell .product-list-table td{overflow:visible;text-overflow:clip;white-space:nowrap}
   .product-table-shell .product-list-table .selection-cell{width:44px;min-width:44px}
-  .product-table-shell .product-list-table .selection-cell::before,.product-table-shell .product-list-table .selection-cell::after{content:none;display:none}
+  /* 勾选框溢出的省略号已在 base.html 统一修（selection-cell + 裸复选框），此处不再各自打补丁。 */
   .product-table-shell .product-list-table .action-cell{width:auto;min-width:150px}
 </style>
 <section id="productsResults" data-refresh-fragment>

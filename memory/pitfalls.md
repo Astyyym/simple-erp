@@ -74,3 +74,96 @@
 必须 `git rm -r --cached <路径>` 显式移出索引（本地文件保留）再提交。
 核对：`git ls-files <路径>` 与 `git ls-tree -r HEAD` 都应为空。
 
+## 勾选框单元格里凭空出现的省略号
+
+`.stable-table th,td` 带 `overflow:hidden` + `text-overflow:ellipsis`。当一个单元格里只有
+一个 16px 的**裸 inline-block 复选框**、且该格可用内容宽只有 16px（44px 减左右 padding 各 14px）时，
+Chrome 把这个控件算成 **55–56px 的溢出内容**，于是在一个**内容完全为空的格子里画出一个省略号**。
+2026-10-16 实测：单据管理 1 个表头 + 21 个数据行 = 22 处，每行第一个格都多出三个白点。
+
+- **确诊**：注入 `text-overflow:clip` 做对照——`ellipsis` 下白点出现、`clip` 下消失。不要靠肉眼/模型描述下结论。
+- **修法与判据**：`display:block;margin:0 auto`（实测溢出 `scrollWidth 56` → `44` = `clientWidth`，且复选框
+  几何**逐像素零位移**）。不要用 `text-overflow:clip`（那是让溢出消失、不是消除溢出），也别依赖 `:has()`
+  （老 WebView2 不一定支持）。
+- **判据查询**：遍历 `th,td`，`cell.querySelector('input[type=checkbox]')` 且 `scrollWidth > clientWidth + 0.5` 即中招。
+- 商品管理页原先各自打了半套补丁（写死宽度 + 压 `::before/::after`），统一到 `base.html` 后已删除。
+
+## 段导航/目录脚本必须放在被引用分区之后
+
+页内「吸顶段导航 / 左侧目录」的滚动高亮脚本要 `document.getElementById` 拿各分区算当前位置。
+若脚本排在分区**之前**（模板中间），`getElementById` 拿到 `null`，`.filter(Boolean)` 后数组为空
+→ 直接 `return`，**静默失效**：不报错、无控制台异常、类名就是不出现（2026-10-16 实测踩过一次）。
+→ 这类脚本一律置于所有分区之后（模板末尾）。验证要看 `classList` 是否真被加上，不能只看脚本在不在页面里。
+
+## 段导航高亮不能在初始化时闭包捕获分区节点
+
+就地刷新（`refreshInPlace` → `importNode + replaceWith`）会**整块替换**结果分区，
+初始化时捕获的节点随即 `isConnected=false`、`getBoundingClientRect()` **全为 0**；
+若逐段比较写成 `el.top - paneTop <= 8`，则**每一段都成立**，循环走完停在最后一段 ——
+表现为「高亮永久卡在最后一项」，且监听绑在内层滚动容器上不会重绑，刷新一次就再也不恢复。
+2026-10-16 实测：分析页首次加载正常，点一次「查询」后恒亮「具体产品」。
+→ `sync()` 内每次重新 `getElementById`，并监听 `erp:refreshed` 在刷新后补算一次。
+
+## headless Chrome 的 setDeviceMetricsOverride 不改 window.innerWidth
+
+本机实测（Chrome 141 / Windows）：CDP `Emulation.setDeviceMetricsOverride` 之后
+`window.innerWidth` 仍报 **1578**，`matchMedia('(max-width:1100px)')` 恒为 `false`，
+于是所有窄档媒体查询都不命中 → 会把「窄档 CSS 没生效」当成真缺陷去改代码（假失败）。
+→ 窄档验证必须用 `--window-size=1100,900` 开**独立浏览器实例**，并先打印 `window.innerWidth` 自证。
+
+## 窄档 UI 回归必须「同档位」对比改前基线
+
+判断「窄档是不是变差了」不能拿宽档改前值去比窄档改后值。2026-10-16 实测：单据管理筛选卡
+1440 改前 357px、1100 改前 **439px**；我误用 357 对 1100 的改后 366，得出「窄档反弹」的**错误结论**，
+并按错误结论把条件栏改成两列，结果 1100 档实际恶化到 390px。
+→ 改前基线用 `git stash push -- <paths>` 取已提交状态实测（测完 `git stash pop`），
+并注意 stash 的 `LF will be replaced by CRLF` 只是 autocrlf 提示，恢复后要按字节核对行尾仍是 CRLF 无混合。
+
+## 改结构后要连旧容器的布局属性一起删，否则容器属性会「接管」新子元素
+
+2026-10-17 实测：分析页「金额汇总」段的结构早已从「三张卡直接铺在容器里」改成
+「`.section-heading` 标题 + `.analytics-amount-grid` 卡片网格」两个子元素，
+但容器 `.analytics-summary` 上的 `display:grid;grid-template-columns:repeat(3,...)` **没删**。
+于是标题与卡片网格各自变成一个 grid item、各占一列：标题只占 1/3 宽，
+六张卡被压进 391px（每张 **90.25px**），`¥24012.03` 实需 110px → **溢出 52px**、退货金额折两行。
+
+**为什么当时的验收没发现**：只核了「列数=4」与「页面级横向溢出=0」——后者恒成立，
+因为卡片带 `min-width:0`，会**把溢出吃进自己内部**，`document.scrollWidth` 一点不涨。
+
+→ 判据要落在**卡片自身**：`el.scrollWidth > el.clientWidth`（数值元素与卡片各测一次），
+不能只看页面级 `scrollWidth`。
+→ 改版时把「结构」与「容器布局属性」当成一件事：结构变了就 grep 旧容器类名的残余规则，
+本轮同时清掉了已无模板使用的 `.analytics-flow-grid` 死规则。
+
+## sticky 元素的包含块是父级盒，中间加一层容器就会让它失效
+
+设置页左栏原本是 `nav.settings-toc{position:sticky;top:0}` 直接挂在 grid item 上（包含块 = 高的内容区）。
+2026-10-17 为了让「保存设置」成为独立卡片，外面包了一层 `.settings-side`（flex column，高仅两卡之和 280px），
+sticky 的包含块随之变成这一层 → 滚动超过 280px 后整列滚出视口
+（实测：滚 600px 时 toc 的 `top` 由 192 掉到 **−320**，「左栏常驻」静默失效，页面不报错）。
+
+→ 加包裹层时，sticky 要跟着**上移到包裹层**（`.settings-side{position:sticky;top:0}`），
+窄档改横排时再关掉（`position:static`）。
+→ 验证方式：滚动到两个不同位置读 `getBoundingClientRect().top`，**两次相同才算粘住**；
+注意 sticky 粘的是容器 padding 内边缘（本页 `.page-body` padding-top 20px），
+别拿 `pane.getBoundingClientRect().top` 当基准去比，那会得出假的「没生效」。
+
+## refreshInPlace 只替换「当前文档里已有」的同 id 区块
+
+`page-refresh.mjs:refreshInPlace` 遍历**新页面**的 `[data-refresh-fragment]`，再 `doc.getElementById(id)`——
+**当前文档里没有这个 id 时既不插入也不报错**（`replaced` 计数没人检查）。
+文件头注释写着「新页面多出的区块会被插入」，实现里没有这条。
+
+后果：从「无结果区块」切到「有结果区块」时结果永远不出现，而 URL 已被 `pushState` 更新
+→ 用户看到的就是「点了查询没反应」。2026-10-17 实测复现：**未改动的旧代码**账款管理页
+（`/accounts/` 未选中客户 → 下拉选客户 → 点「查询流水」）提交后 `#accountsResults` 仍不存在、流水 0 行，
+地址栏却已变成 `?customer_id=28`；往来对账页「未选中 → 选对象 → 查询」同样中招。
+
+→ 同一块 UI 的**空态与结果态必须共用同一个 fragment id**（本轮：账款页空态 section 也用
+`id="accountsResults"`；对账页空态 div 用 `id="reconPanel"`），id 一一对应后两个方向都能就地替换。
+→ 新增「未选中 / 空态」分支时，别给它新 id，也别漏掉 `data-refresh-fragment`。
+→ 同源的第二处：**「已选条件」chip 行**原先只在有 chip 时才渲染，于是「首次筛选 → chip 从无到有」
+同样不出现（2026-10-17 分析页实测：筛了客户却看不到 chip，也就没有一键移除入口）。
+修法同样是让容器常驻：`<div class="filter-chips{% if not filter_chips %} is-empty{% endif %}" data-refresh-fragment id="analyticsChips">`
++ `.erp-analytics .filter-chips.is-empty{display:none}`。
+→ 对照实验做法：拿**未改动的旧代码实例**跑同一条路径，能干净地区分「既存缺陷」与「本次引入的回归」。

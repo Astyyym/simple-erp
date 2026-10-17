@@ -37,6 +37,11 @@ accounts_bp = Blueprint("accounts", __name__, url_prefix="/accounts")
 @accounts_bp.get("/")
 def accounts():
     customer_id = request.args.get("customer_id", type=int)
+    # 客户字段 2026-10-17 由原生下拉改「输入即模糊匹配 + 候选点选」：
+    # 可见输入框只负责回显名称，真正定位客户仍靠 hidden `customer_id`
+    # （页面下方的收款 / 调整 / 作废 / 对账入口都按 id 工作）。
+    # 只输入名称、没点候选时不猜是谁（半截名可能命中别的客户），直接提示去候选里选。
+    customer_query = request.args.get("customer", "").strip()
     start_date = request.args.get("start_date", "").strip()
     end_date = request.args.get("end_date", "").strip()
     type_filter = [t for t in request.args.getlist("type") if t]
@@ -96,9 +101,14 @@ def accounts():
 
     ledger = None
     selected_customer = None
+    customer_error = ""
     if selected_row is not None:
         ledger = get_customer_account_ledger(customer_id, start_date, end_date, type_filter)
         selected_customer = ledger["customer"]
+    elif customer_id:
+        customer_error = "该客户不存在或已删除，请重新从候选里选择。"
+    elif customer_query:
+        customer_error = "请从下拉候选里选择客户后再查询流水。"
 
     return render_template(
         "accounts/index.html",
@@ -106,6 +116,8 @@ def accounts():
         balances=balances,
         selected_customer=selected_customer,
         ledger=ledger,
+        customer_query=customer_query,
+        customer_error=customer_error,
         start_date=start_date,
         end_date=end_date,
         type_filter=type_filter,
@@ -244,6 +256,9 @@ def reconciliation():
     with get_db() as conn:
         customers = conn.execute("SELECT * FROM customers WHERE deleted_at IS NULL ORDER BY name").fetchall()
     customer_id = request.args.get("customer_id", type=int)
+    # 往来对象字段 2026-10-17 由原生下拉改「输入即模糊匹配 + 候选点选」，与账款管理同源；
+    # 真正定位对象仍靠 hidden `customer_id`（快照、返回链接、分页都按 id 工作）。
+    customer_query = request.args.get("customer", "").strip()
     start_date = request.args.get("start_date", "").strip()
     end_date = request.args.get("end_date", "").strip()
     order_type_filter = request.args.get("order_type", "all").strip() or "all"
@@ -267,6 +282,8 @@ def reconciliation():
             snapshot = get_reconciliation_snapshot(snapshot_id)
         except ValueError as exc:
             error = str(exc)
+    elif customer_query:
+        error = "请从下拉候选里选择往来对象后再查询。"
     display_rows = []
     total_pages = 0
     if snapshot:
@@ -274,12 +291,14 @@ def reconciliation():
         page = min(page, total_pages)
         start = (page - 1) * page_size
         display_rows = snapshot["rows"][start : start + page_size]
+    customer_name = next((row["name"] for row in customers if row["id"] == customer_id), "")
     return render_template(
         "accounts/reconciliation.html",
         customers=customers,
         snapshot=snapshot,
         error=error,
         customer_id=customer_id,
+        customer_name=customer_name,
         start_date=start_date,
         end_date=end_date,
         order_type_filter=order_type_filter,

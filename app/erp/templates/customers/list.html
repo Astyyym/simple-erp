@@ -88,11 +88,11 @@
 <form id="bulkCustomersForm" method="post" action="/customers/bulk_delete"></form>
 <table class="table table-striped align-middle stable-table">
   <colgroup><col style="width:44px"><col style="width:22%"><col style="width:15%"><col style="width:26%"><col style="width:100px"><col style="width:90px"><col style="width:190px"></colgroup>
-  <thead><tr><th><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>名称</th><th>电话</th><th>地址</th><th>期初</th><th>来源</th><th class="action-cell">操作</th></tr></thead>
+  <thead><tr><th class="selection-cell"><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>名称</th><th>电话</th><th>地址</th><th>期初</th><th>来源</th><th class="action-cell">操作</th></tr></thead>
   <tbody>
   {% for c in customers %}
   <tr>
-    <td><input form="bulkCustomersForm" type="checkbox" name="ids" value="{{c.id}}"></td><td title="{{c.name}}">{{c.name}}{% if customer_needs_completion(c) %}<span class="badge text-bg-warning ms-1" title="缺联系方式：请补全电话或地址，便于后续对账联系">待补全</span>{% endif %}</td><td title="{{c.phone}}">{{c.phone}}</td><td title="{{c.address}}">{{c.address}}</td><td>¥{{cents_to_yuan(c.opening_balance_cents)}}</td><td>{{ origin_label(c.origin) }}</td>
+    <td class="selection-cell"><input form="bulkCustomersForm" type="checkbox" name="ids" value="{{c.id}}"></td><td title="{{c.name}}">{{c.name}}{% if customer_needs_completion(c) %}<span class="badge text-bg-warning ms-1" title="缺联系方式：请补全电话或地址，便于后续对账联系">待补全</span>{% endif %}</td><td title="{{c.phone}}">{{c.phone}}</td><td title="{{c.address}}">{{c.address}}</td><td>¥{{cents_to_yuan(c.opening_balance_cents)}}</td><td>{{ origin_label(c.origin) }}</td>
     <td class="action-cell"><div class="action-wrap"><a class="btn btn-sm btn-primary" href="/customers/{{c.id}}/edit">编辑</a><form class="d-inline ajax-delete-form" method="post" action="/customers/{{c.id}}/delete"><button class="btn btn-sm btn-danger">删除</button></form></div></td>
   </tr>
   {% endfor %}

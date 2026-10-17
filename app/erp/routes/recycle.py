@@ -17,11 +17,23 @@ from erp.utils.money import cents_to_yuan
 
 recycle_bp = Blueprint("recycle", __name__, url_prefix="/recycle")
 
-# 回收站类型 → 展示标签/徽标色。四类单据共用一张列表，但清理规则各自不同。
+# 回收站类型 → 展示标签。四类单据共用一张列表，但清理规则各自不同。
+# 类型不再吃颜色：原先退款/退货用 bg-danger、拿货用 bg-warning，与「状态」徽章
+# （已作废也是 bg-danger）撞色，扫一眼分不清「这是什么单」和「它什么状态」。
+# 现在类型=中性描边 chip，**只有状态**用颜色，两列语义一眼分开。
 _TYPE_LABELS = {"sale": "销售单", "return": "退货单", "purchase": "拿货单", "purchase_return": "退拿货单"}
-_TYPE_BADGES = {"sale": "bg-primary", "return": "bg-danger", "purchase": "bg-warning text-dark", "purchase_return": "bg-info text-dark"}
 _STATUS_LABELS = {"draft": "草稿", "saved": "正式保存", "printed": "已打印", "void": "已作废"}
 _STATUS_BADGES = {"draft": "bg-secondary", "saved": "bg-success", "printed": "bg-info text-dark", "void": "bg-danger"}
+
+
+def _amount_display(cents: int) -> str:
+    """金额符号放在 ¥ 前面（与账款管理页一致，避免出现「¥-1253.82」）。
+
+    accounts/index.html 的流水行早已统一成 `-¥` 前缀，回收站原先仍是 `¥-`，
+    同一个应用两套写法；这里收口到同一口径。
+    """
+    value = int(cents or 0)
+    return ("-¥" if value < 0 else "¥") + cents_to_yuan(abs(value))
 
 
 def _document_rows(conn):
@@ -61,13 +73,16 @@ def _document_rows(conn):
                 "order_no": row["order_no"],
                 "order_type": order_type,
                 "type_label": _TYPE_LABELS[order_type],
-                "type_badge": _TYPE_BADGES[order_type],
                 "customer_name": row["customer_name"],
                 "total_amount_cents": row["total_amount_cents"],
+                "amount_display": _amount_display(row["total_amount_cents"]),
                 "status": row["status"],
                 "status_label": _STATUS_LABELS.get(row["status"], row["status"]),
                 "status_badge": _STATUS_BADGES.get(row["status"], "bg-secondary"),
                 "deleted_at": row["deleted_at"],
+                # 表格只显示到分钟：秒对「什么时候删的」没有意义，却要占掉一整列的宽度
+                # （原先被省略号截断，用户反而看不到日期）。
+                "deleted_at_display": (row["deleted_at"] or "")[:16],
                 # 退拿货的恢复/清理都要带版本号做并发校验，其余类型没有版本字段。
                 "version": row["version"] if "version" in keys else "",
                 # 恢复对所有类型都可用；永久清理才按类型区分。

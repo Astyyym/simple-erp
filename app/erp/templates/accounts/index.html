@@ -7,6 +7,8 @@
 <style>
   .account-subtitle,.ledger-hint,.entry-note { color:var(--erp-muted);font-size:12px; }
   .account-filter { display:grid;grid-template-columns:minmax(210px,1.3fr) minmax(135px,.8fr) minmax(135px,.8fr) auto auto;align-items:end;gap:10px;margin-bottom:14px; }
+  /* 客户字段（2026-10-17）：输入框 + 候选浮层，浮层相对输入框定位（与列表页/开单页同源做法）。 */
+  .customer-field .suggest-wrap { position:relative; }
   .account-filter label,.entry-card label { display:block;margin-bottom:5px;color:var(--erp-muted);font-size:12px;font-weight:650; }
   .account-summary-grid,.entry-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:14px 0 20px; }
   .account-summary-card,.entry-card { padding:16px; }
@@ -54,10 +56,13 @@
 <h2>账款管理</h2>
 <p data-ui-hint class="account-subtitle">当前余额与筛选期间发生额分开展示；销售、退货、拿货、退拿货、收款和调整统一留在客户往来流水中。</p>
 <form class="card card-body account-filter" method="get" data-inplace action="{{ url_for('accounts.accounts') }}">
-  <div class="customer-field"><label for="ledgerCustomer">客户</label><select class="form-select" id="ledgerCustomer" name="customer_id" required>
-    <option value="" {% if not selected_customer %}selected{% endif %}>请选择客户</option>
-    {% for customer in customers %}<option value="{{ customer.id }}" {% if selected_customer and selected_customer.id == customer.id %}selected{% endif %}>{{ customer.name }}</option>{% endfor %}
-  </select></div>
+  <div class="customer-field"><label for="ledgerCustomerInput">客户</label>
+    <div class="suggest-wrap">
+      <input class="form-control" id="ledgerCustomerInput" name="customer" value="{{ selected_customer.name if selected_customer else customer_query }}" autocomplete="off" placeholder="输入客户名或拼音首字母" required>
+      <div class="suggest-list d-none" id="ledger_customer_suggestions" role="listbox" aria-label="客户建议"></div>
+    </div>
+    <input type="hidden" id="ledgerCustomer" name="customer_id" value="{{ selected_customer.id if selected_customer else '' }}">
+  </div>
   <div><label for="ledgerStartDate">开始日期</label><input class="form-control" id="ledgerStartDate" type="date" name="start_date" value="{{ start_date }}"></div>
   <div><label for="ledgerEndDate">结束日期</label><input class="form-control" id="ledgerEndDate" type="date" name="end_date" value="{{ end_date }}"></div>
   <button class="btn btn-primary" type="submit">查询流水</button><a class="btn btn-outline-secondary" href="{{ url_for('accounts.accounts') }}">清除筛选</a>
@@ -270,10 +275,43 @@
 })();
 </script>
 {% else %}
-<section class="mt-4" aria-labelledby="customerBalancesHeading"><h3 id="customerBalancesHeading">客户当前余额</h3>
+{# 未选中客户时的空态（2026-10-17）：**必须与结果区同 id**（`accountsResults`）。
+   page-refresh.mjs 的 refreshInPlace 只按 id 替换「当前文档里已存在」的 fragment：
+   「当前无 fragment → 新页面有 fragment」时既不插入也不报错，URL 却已被 pushState 更新。
+   旧版（else 分支不带 fragment）实测就是「选完客户点『查询流水』没反应」——用未改动的
+   旧代码实例（5099）做过对照实验复现。两个分支同 id 后，未选中 ⇄ 已选中都能就地替换。 #}
+<section class="mt-4" id="accountsResults" data-refresh-fragment aria-labelledby="customerBalancesHeading">
+  {% if customer_error %}<div class="alert alert-danger" role="alert">{{ customer_error }}</div>{% endif %}
+  <h3 id="customerBalancesHeading">客户当前余额</h3>
   {% if customers %}<div class="table-responsive"><table class="table align-middle"><thead><tr><th scope="col">客户</th><th scope="col">当前余额</th><th scope="col">操作</th></tr></thead><tbody>
     {% for customer in customers %}<tr><td>{{ customer.name }}</td><td class="amount">{{ balance_money(balances.get(customer.id, 0)) }}</td><td><a class="btn btn-sm btn-primary" href="{{ url_for('accounts.accounts', customer_id=customer.id) }}">查看流水</a></td></tr>{% endfor %}
   </tbody></table></div>{% else %}<p class="text-muted">还没有客户资料。</p>{% endif %}
 </section>
 {% endif %}
+<script src="{{ url_for('static', filename='order-entry-common.js') }}?v=2"></script>
+<script>
+/* 客户字段联想（2026-10-17 用户要求）：账款管理的客户由原生下拉改「输入即模糊匹配 + 候选点选」。
+   候选口径来自 /orders/api/customers（名称子串 / 拼音首字母 / 全拼，见 erp/utils/pinyin.py）。
+   提交值仍是 hidden `customer_id`：页面下方的收款、调整、作废与「往来对账」入口都按 id 工作，不能换成名称。
+   本脚本必须放在 data-refresh-fragment 之外 —— 被替换区块内的 <script> 不会重新执行（page-refresh.mjs:12-13）。 */
+(() => {
+  const input = document.getElementById('ledgerCustomerInput');
+  const box = document.getElementById('ledger_customer_suggestions');
+  const hidden = document.getElementById('ledgerCustomer');
+  if (!input || !box || !hidden) return;
+  ErpOrderEntry.bindAutocomplete(
+    input,
+    box,
+    async query => {
+      const response = await fetch('/orders/api/customers?q=' + encodeURIComponent(query));
+      const rows = await response.json();
+      return (Array.isArray(rows) ? rows : []).map(row => ({id: row.id, name: row.name}));
+    },
+    item => { const node = document.createElement('span'); node.textContent = item.name; return node; },
+    item => { hidden.value = item.id; },
+    // 改字即清空已选 id：否则「选了 A 再把名字改成 B」会带着 A 的 id 去查流水。
+    () => { hidden.value = ''; },
+  );
+})();
+</script>
 {% endblock %}

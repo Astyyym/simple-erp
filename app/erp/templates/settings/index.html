@@ -11,15 +11,45 @@
   {% endif %}
 {% endwith %}
 
+{#
+  批次 2：按功能分成 4 组，左侧常驻目录、右侧内容滚动。
+  分组依据是「改动什么时候生效」，不是行政分类：
+    ① 基本（保存生效） ② 打印（保存生效） ③ 数据与备份（一部分保存生效、一部分点击立即生效）
+    ④ 危险操作（点击立即生效、不可撤销）
+#}
+{# 左栏（2026-10-17 用户截图反馈）：目录卡片与保存卡是**两张独立卡片**，中间留空隙。
+   上一版把保存卡嵌在 nav.settings-toc 内部，而 toc 自带内边距与背景 —— 视觉上被读成
+   「同一张大卡片里又嵌了一层描边面板」，不是用户要的分离形态。现在两者是 .settings-side
+   下的兄弟节点，间隔由 gap 给出。 #}
+<div class="settings-layout">
+  <div class="settings-side">
+    <nav class="settings-toc" aria-label="设置分区">
+      <p class="settings-toc-cap">设置分区</p>
+      <a href="#groupBasic">基本</a>
+      <a href="#groupPrint">打印</a>
+      <a href="#groupData">数据与备份</a>
+      <a href="#groupPurgeLegacy">清空与留底</a>
+    </nav>
+    {# 保存设置：独立圆角卡片，按钮用 form 属性关联主表单提交，行为与原先一致。 #}
+    <div class="settings-save-card">
+      <button type="submit" form="settingsMainForm" class="btn btn-primary btn-lg" id="settingsSaveBtn">保存设置</button>
+      <span class="settings-dirty-hint d-none" id="settingsDirtyHint">有未保存的修改</span>
+    </div>
+  </div>{# /.settings-side #}
+  <div class="settings-main">
+
 <form method="post" action="{{ url_for('settings.save_settings') }}" class="settings-form" id="settingsMainForm" data-dirty-guard="1">
   <input type="hidden" name="next" id="settingsNextUrl" value="">
-  <section class="settings-card">
+  <section class="settings-group" id="groupBasic">
+    <div class="settings-group-head"><h2>基本</h2><span class="settings-group-note">公司名称与界面显示 —— 改完点左栏「保存设置」生效</span></div>
+  </section>
+  <section class="settings-card settings-card-wide">
     <h3>公司信息</h3>
     <label class="form-label" for="shop_name">公司名称</label>
     <input class="form-control form-control-lg" id="shop_name" name="shop_name" required maxlength="120" value="{{ config.shop_name }}">
   </section>
 
-  <section class="settings-card" id="displaySettings">
+  <section class="settings-card settings-card-wide" id="displaySettings">
     <h3>显示</h3>
     <div class="row g-3">
       <div class="col-md-6">
@@ -77,6 +107,10 @@
         </p>
       </div>
     </div>
+  </section>
+
+  <section class="settings-group" id="groupPrint">
+    <div class="settings-group-head"><h2>打印</h2><span class="settings-group-note">打印单信息、位置校准与版面预览 —— 改完点左栏「保存设置」生效</span></div>
   </section>
 
   <section class="settings-card settings-card-wide" id="printInfoSection">
@@ -194,14 +228,14 @@
       </table>
     </div>
   </section>
-
-  <div class="settings-actions">
-    <button type="submit" class="btn btn-primary btn-lg" id="settingsSaveBtn">保存设置</button>
-    <span class="settings-dirty-hint d-none" id="settingsDirtyHint">有未保存的修改</span>
-  </div>
 </form>
 
-<section class="settings-card mt-4" id="printInfoPromptSection">
+{# 「打印信息提示」是点了立即生效的操作（不在主 form 内），归到「数据与备份」组，语义与按钮一致。 #}
+<section class="settings-group" id="groupData">
+  <div class="settings-group-head"><h2>数据与备份</h2><span class="settings-group-note">下面这些卡片不在上面的表单里，<strong>点按钮当场生效，不需要先点「保存设置」</strong></span></div>
+</section>
+
+<section class="settings-card settings-instant" id="printInfoPromptSection">
   <h3>打印信息提示</h3>
   <p data-ui-hint class="text-muted small mb-2">
     工作台会在「订货电话 / 订货地址」为空时提示一次。补全后提示自动消失；不想再看到可以关掉。
@@ -217,7 +251,7 @@
   </form>
 </section>
 
-<section class="settings-card mt-4">
+<section class="settings-card settings-instant mt-4" id="dataLocationSection">
   <h3>数据存储位置</h3>
   <p data-ui-hint class="text-muted small">业务数据在数据根目录下的 <code>data/erp.db</code> 等文件夹。路径记忆在本机 LocalAppData，不跟程序安装包走。</p>
   <dl class="settings-dl">
@@ -246,7 +280,7 @@
   </form>
 </section>
 
-<section class="settings-card settings-card-wide mt-4" id="backupSection">
+<section class="settings-card settings-card-wide settings-instant mt-4" id="backupSection">
   <h3>备份与恢复</h3>
   <p data-ui-hint class="text-muted small">
     备份会把 <code>erp.db</code>、商品图片与旧账存档打包成一个 zip，保存在数据目录的 <code>backups/</code> 下。
@@ -302,7 +336,10 @@
   {% endif %}
 </section>
 
-<section class="settings-card settings-card-wide mt-4" id="purgeSection">
+<section class="settings-group" id="groupPurgeLegacy">
+  <div class="settings-group-head"><h2>清空与留底</h2><span class="settings-group-note">这两项都是点了当场生效的独立操作，不随「保存设置」提交</span></div>
+</section>
+<section class="settings-card settings-card-wide settings-instant mt-4" id="purgeSection">
   <h3>清空所有数据</h3>
   <p data-ui-hint class="text-muted small">
     把系统恢复到「刚装好、还没录任何单」的状态：<strong>清空所有单据、客户与商品资料、账款数据</strong>，
@@ -322,7 +359,7 @@
   </form>
 </section>
 
-<section class="settings-card settings-card-wide mt-4" id="legacyArchiveSection">
+<section class="settings-card settings-card-wide settings-instant mt-4" id="legacyArchiveSection">
   <h3>旧账留底存档</h3>
   <p data-ui-hint class="text-muted small">
     把旧软件导出的欠款清单（客户 / 单号 / 日期 / 金额等）<strong>原样保存为文件</strong>到数据目录的 <code>legacy_archive/</code>。
@@ -361,6 +398,14 @@
   {% endif %}
 </section>
 
+{#
+  保存条已移到左栏「设置分区」目录下方（2026-10-16 用户决策），不再用吸底条。
+  原因：吸底条会盖住打印卡片里正在编辑的字段（实测压住「订货电话」下的输入框），
+  且分区标题写着「改完点底部保存」而它其实悬浮在表单中段，语义与位置不符。
+#}
+
+  </div>{# /.settings-main #}
+</div>{# /.settings-layout #}
 <div class="settings-leave-modal d-none" id="settingsLeaveModal" role="dialog" aria-modal="true" aria-labelledby="settingsLeaveTitle">
   <div class="settings-leave-dialog">
     <h3 id="settingsLeaveTitle">设置尚未保存</h3>
@@ -374,17 +419,63 @@
 </div>
 
 <style>
-  .settings-form{display:flex;flex-direction:column;gap:18px;max-width:920px}
-  /* 宽屏：不再把单列拉到 920px 上限，改成两列卡片，把下方设置项放到右侧。
-     若某个卡片字段/说明太多、压窄后会换行难读，加 .settings-card-wide 保持整行。 */
+  /*
+    批次 2（2026-10-16）：设置页按功能分 4 组，左侧常驻目录 + 右侧内容滚动。
+    实测病根：整页约 2480px、10 节平权无导航，「保存设置」在首屏之下 682px（页面 1457px 高）。
+    另有一处语义坑：5 张卡片在主 form 之外，点了立即生效，却和「保存设置」混在同一条视觉流里
+    → 用户会以为它们也要先保存。现在独立成「立即生效的操作」区并显式说明。
+  */
+  .settings-layout{display:grid;grid-template-columns:200px minmax(0,1fr);gap:20px;align-items:start}
+  /* 左栏容器（2026-10-17）：目录卡片与保存卡是两张独立卡片，中间留出可见空隙。 */
+  /*
+    左栏容器承担「常驻」：sticky 的包含块是父级盒，若仍把 sticky 挂在 .settings-toc 上，
+    它的包含块就是本容器，而本容器高度只有两张卡片之和（约 280px）——
+    滚动超过这个高度后两块一起滚出视口，左栏「常驻」失效（实测：滚 600px 后 top=-320）。
+    故 sticky 上移到容器，toc 只负责自身外观。
+  */
+  .settings-side{position:sticky;top:0;display:flex;flex-direction:column;gap:14px;min-width:0}
+  .settings-toc{display:flex;flex-direction:column;gap:2px;
+    padding:12px;border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);
+    background:var(--erp-glass-bg);box-shadow:var(--erp-glass-shadow)}
+  .settings-toc-cap{margin:0 0 6px;padding:0 10px;color:var(--erp-muted);font-size:12px;font-weight:650;letter-spacing:.04em}
+  .settings-toc a{display:block;padding:7px 10px;border-radius:6px;color:var(--erp-ink);
+    font-size:13px;font-weight:600;text-decoration:none;transition:background .15s,color .15s}
+  .settings-toc a:hover{background:var(--erp-surface-soft)}
+  .settings-toc a.is-current{background:var(--erp-primary-soft);color:var(--erp-primary)}
+  /*
+    保存设置卡（2026-10-16 决策，2026-10-17 按用户截图反馈重做）：左栏里与「设置分区」目录
+    并列的**独立圆角卡片**，中间留 14px 空隙。
+    上一版把它嵌在 nav.settings-toc 内部，toc 自带内边距与玻璃背景，于是它看着像
+    「同一张卡片内又嵌了一层描边面板」，用户明确指出「你为什么还是把它们做到了一块儿」。
+    现在两者是 .settings-side 下的兄弟节点，不再有任何包含关系，也没有伪元素分隔线。
+  */
+  .settings-save-card{display:flex;flex-direction:column;align-items:stretch;gap:8px;
+    padding:14px;border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);
+    background:var(--erp-glass-bg);box-shadow:var(--erp-glass-shadow)}
+  .settings-save-card .btn{width:100%}
+  .settings-save-card .settings-dirty-hint{text-align:center}
+  .settings-group{margin-top:22px}
+  .settings-group:first-child{margin-top:0}
+  /* 组头在 form 内时也跨满两列（宽屏 1440 的网格布局） */
+  .settings-form>.settings-group{grid-column:1/-1;margin-top:6px}
+  /*
+    分区标题（2026-10-16 用户决策「右侧分区还是不太明显」）：
+    实测病根是**层级倒挂** —— 分区标题 15px，卡片标题 h3 却是 18px，分区标题反而
+    比它管的卡片还小；说明文字又与标题同行，视觉重心被拉平，只剩一条细横线撑着。
+    现在：分区标题升到 20px + 左侧 4px 主色竖条，说明文字下移一行独占，横线加重。
+  */
+  .settings-group-head{display:block;margin:0 0 14px;padding:0 0 10px 12px;border-bottom:2px solid var(--erp-border);border-left:4px solid var(--erp-primary)}
+  .settings-group-head h2{margin:0 0 4px;font-size:20px;font-weight:700;letter-spacing:-.01em}
+  .settings-group-head .settings-group-note{display:block;color:var(--erp-muted);font-size:12.5px;line-height:1.6}
+  .settings-form{display:flex;flex-direction:column;gap:16px;max-width:920px}
+  /* 宽屏：设置卡片改成两列，把下方设置项放到右侧。 */
   @media(min-width:1440px){
     .settings-form{
       display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
-      gap:18px;max-width:none;align-items:start;
+      gap:16px;max-width:none;align-items:start;
     }
     .settings-form>.settings-card{min-width:0}
     .settings-form>.settings-card.settings-card-wide{grid-column:1/-1}
-    .settings-form>.settings-actions{grid-column:1/-1}
   }
   .settings-card{
     background:var(--erp-glass-bg);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);padding:18px 18px 16px;box-shadow:var(--erp-glass-shadow);
@@ -396,13 +487,26 @@
   .settings-card h3{margin:0 0 10px;font-size:18px}
   .ui-font-weight-preview{display:flex;flex-direction:column;gap:3px;margin-top:12px;padding:10px 12px;border:1px solid var(--erp-border);border-radius:6px;background:var(--erp-surface-soft);font-size:12px}
   .ui-font-weight-preview strong{font-size:14px;font-weight:650}
-  .settings-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  /* 保存条已搬到左栏（见 .settings-save-card）；吸底样式随之下线。 */
   .settings-dirty-hint{color:#b45309;font-size:13px;font-weight:600}
   html[data-ui-theme="dark"] .settings-dirty-hint{color:#fcd34d}
   @media (prefers-color-scheme: dark){html[data-ui-theme="system"] .settings-dirty-hint{color:#fcd34d}}
   .settings-dl{display:grid;grid-template-columns:140px 1fr;gap:8px 12px;margin:0 0 16px}
   .settings-dl dt{color:var(--erp-muted);font-size:13px;font-weight:600}
   .settings-dl dd{margin:0;word-break:break-all}
+  /* 「立即生效」区：这些卡片不在主 form 内，点按钮当场生效，不需要先点「保存设置」。 */
+  .settings-instant{border-left:3px solid var(--erp-warn-border);background:var(--erp-warn-bg)}
+  @media(max-width:1100px){
+    .settings-layout{grid-template-columns:minmax(0,1fr)}
+    .settings-toc{position:static;flex-direction:row;flex-wrap:wrap}
+    .settings-toc-cap{width:100%}
+    /* 窄屏左栏落成横排：容器先横排，保存卡与目录卡并排；卡片内部按钮也改横排，
+       别撑成一整行的大方块。 */
+    .settings-side{position:static;flex-direction:row;flex-wrap:wrap;gap:12px;align-items:center}
+    .settings-side .settings-toc{flex:1 1 auto;min-width:0}
+    .settings-save-card{flex:0 0 auto;flex-direction:row;align-items:center;gap:12px}
+    .settings-save-card .btn{width:auto}
+  }
   .settings-migrate .form-control{flex:1 1 280px}
   .settings-leave-modal{position:fixed;inset:0;background:rgba(15,20,30,.45);display:flex;align-items:center;justify-content:center;z-index:2000;padding:20px}
   .settings-leave-modal.d-none{display:none!important}
@@ -558,6 +662,42 @@
       window.alert('当前不是桌面版窗口，无法打开系统选夹。请直接粘贴文件夹完整路径后点「一键迁移并切换」。');
     });
   }
+})();
+
+// 左侧目录：滚动时高亮当前所在分区（批次 2）。
+// 滚动容器是内层 .page-body，不是文档，所以监听它而不是 window。
+// 每次 sync 重新取节点：本页虽无就地刷新，但保持与数据分析页同一套写法，避免日后
+// 一旦给设置页加上 refreshInPlace 就复现「高亮卡在最后一项」（闭包捕获的节点会被换掉）。
+(function () {
+  const pane = document.querySelector('.page-body');
+  if (!pane) return;
+  const ids = Array.from(document.querySelectorAll('.settings-toc a[href^="#"]'))
+    .map(function (a) { return a.getAttribute('href').slice(1); });
+  if (!ids.length) return;
+
+  function sync() {
+    var links = Array.from(document.querySelectorAll('.settings-toc a[href^="#"]'));
+    var sections = ids.map(function (id) { return document.getElementById(id); }).filter(Boolean);
+    if (!links.length || !sections.length) return;
+    const paneTop = pane.getBoundingClientRect().top;
+    let current = sections[0];
+    for (const section of sections) {
+      // 分区标题已滚到容器顶部（留 8px 容差）即视为当前分区。
+      if (section.getBoundingClientRect().top - paneTop <= 8) current = section;
+    }
+    links.forEach(function (a) {
+      const on = a.getAttribute('href') === '#' + current.id;
+      a.classList.toggle('is-current', on);
+      if (on) a.setAttribute('aria-current', 'true'); else a.removeAttribute('aria-current');
+    });
+  }
+
+  pane.addEventListener('scroll', sync, {passive: true});
+  document.addEventListener('erp:refreshed', sync);
+  document.querySelectorAll('.settings-toc a[href^="#"]').forEach(function (a) {
+    a.addEventListener('click', function () { setTimeout(sync, 0); });
+  });
+  sync();
 })();
 </script>
 {% endblock %}

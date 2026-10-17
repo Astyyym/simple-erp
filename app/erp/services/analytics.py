@@ -193,9 +193,24 @@ def summarize_analytics(
             flow_params.extend(order_flow_params if "order_date AS" in part else purchase_flow_params)
         flow_rows = conn.execute("\n UNION ALL \n".join(flow_parts), flow_params).fetchall() if flow_parts else []
 
-        # 单据流水：拿货/退拿货金额与单据数。
+        # 单据流水：四类单据的金额与单据数。张数一律走**单据级**口径
+        # （跟随日期 / 往来对象 / 订单类型，排除已作废与回收站），与 flow_rows 的
+        # 净额算法同源，故卡片上的「N 张」与「流水净额」永远自洽。
         flow_totals = {"purchase_amount_cents": 0, "purchase_return_amount_cents": 0,
+                       "sale_count": 0, "return_count": 0,
                        "purchase_count": 0, "purchase_return_count": 0}
+        if type_allowed("sale"):
+            row = conn.execute(
+                f"SELECT COUNT(*) AS c FROM orders WHERE {order_flow_where} AND order_type='sale'",
+                order_flow_params,
+            ).fetchone()
+            flow_totals["sale_count"] = int(row["c"])
+        if type_allowed("return"):
+            row = conn.execute(
+                f"SELECT COUNT(*) AS c FROM orders WHERE {order_flow_where} AND order_type='return'",
+                order_flow_params,
+            ).fetchone()
+            flow_totals["return_count"] = int(row["c"])
         if type_allowed("purchase"):
             row = conn.execute(
                 f"SELECT COUNT(*) AS c, COALESCE(SUM(total_amount_cents),0) AS t FROM purchase_orders WHERE {purchase_flow_where}",
