@@ -139,7 +139,7 @@
       {% for item in rows %}
       <tr>
         <td class="text-center row-no">{{loop.index}}</td>
-        <td class="product-picker"><div class="picker-row"><input type="hidden" name="product_id" class="product-id" value="{{item.product_id if item else ''}}"><input type="hidden" name="source_item_id" class="source-item-id" value="{{item.source_item_id or ''}}"><input type="hidden" name="product_name" class="product-name" value="{{item.product_name if item else ''}}"><div class="suggest-wrap product-suggest-wrap"><input class="form-control form-control-sm picker-name-input" autocomplete="off" aria-label="第 {{loop.index}} 行产品名称" placeholder="输入或选择商品名" value="{{item.product_name if item else ''}}"><div class="suggest-list d-none product-suggestions" role="listbox" aria-label="商品建议"></div></div></div></td>
+        <td class="product-picker"><div class="picker-row"><input type="hidden" name="product_id" class="product-id" value="{{item.product_id if item else ''}}"><input type="hidden" name="source_item_id" class="source-item-id" value="{{item.source_item_id or ''}}"><input type="hidden" name="product_name" class="product-name" value="{{item.product_name if item else ''}}"><div class="suggest-wrap product-suggest-wrap"><input class="form-control form-control-sm picker-name-input" autocomplete="off" aria-label="第 {{loop.index}} 行产品名称" placeholder="输入或选择商品名" value="{{item.product_name if item else ''}}"><div class="suggest-list d-none product-suggestions" role="listbox" aria-label="商品建议"></div></div><div class="row-copy-tools"><button type="button" class="row-tool-btn" data-row-action="copy" title="复制本行（Ctrl+D）" aria-label="复制本行"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><rect x="5.5" y="1.5" width="8" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M3.5 4.5h-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button><button type="button" class="row-tool-btn" data-row-action="paste" title="粘贴本行" aria-label="粘贴本行"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><rect x="3" y="2.5" width="10" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="6" y="1" width="4" height="2.6" rx="1" fill="currentColor"/><path d="M5.5 7h5M5.5 10h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button></div></div></td>
         <td><div class="unit-cell suggest-wrap"><input name="unit" class="unit form-control form-control-sm" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="单位" aria-label="第 {{loop.index}} 行单位" aria-expanded="false" data-unit-options="{{ (unit_options or ['个','套','件'])|join('|') }}" value="{{item.unit if item else ''}}"><div class="suggest-list d-none unit-suggestions" role="listbox" aria-label="单位建议"></div></div></td>
         <td><input name="quantity" class="quantity" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0" value="{{item.quantity if item else ''}}"></td>
         <td class="price-cell"><input name="unit_price" class="unit-price" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.00" value="{{cents_to_yuan(item.unit_price_cents) if item else ''}}"></td>
@@ -373,7 +373,26 @@ function bindRow(tr) {
   const productNameField = tr.querySelector('.product-name');
   const priceInput = tr.querySelector('.unit-price');
   // v14/Phase 3 S2：行状态更新抽成命名函数，供「手输精确命中」与「联想点选」共用。
+  // 2026-10-17 行复制/粘贴：粘贴带过来的单价属于**上一行那个型号**。
+  // 规则：只要名称已经不同于「复制来源的名称」，这一行就是「换过型号」，
+  // 必须在算价之前把粘贴带来的旧价清掉 —— 否则旧价会被学成新型号的专属价。
+  function wasRetyped() {
+    if (!tr.__pastedFrom) return false;
+    // 注意：不能引用 bindRow 末尾才声明的 nameInput —— 那时它是 undefined。
+    // 直接读 DOM，任何调用时机都拿得到当前值。
+    const input = tr.querySelector('.picker-name-input');
+    const current = (input ? input.value : '').trim();
+    return current !== tr.__pastedFrom;
+  }
+  function dropPastedPriceIfRetyped() {
+    if (!wasRetyped()) return false;
+    if (priceInput) priceInput.value = '';
+    tr.__pastedFrom = null;
+    tr.__pastedPrice = null;
+    return true;
+  }
   function applyProductToRow(product) {
+    const droppedPastedPrice = dropPastedPriceIfRetyped();
     if (!product) {
       // 未命中已有商品：保留纯文本，交给后端自动建档；单位/价格按当前输入保留。
       productIdField.value = '';
@@ -389,6 +408,12 @@ function bindRow(tr) {
     // 点选商品只带单位：单价按**当前客户**的专属价取（refineProductRow 异步回填），
     // 没有专属价就留空手输。旧版在这里无条件写档案价（2026-10-15 下线）。
     priceInput.value = '';
+    // 粘贴来的行「名称没动、只是重新命中同一个商品」→ 保留复制过来的价；
+    // 换过型号（droppedPastedPrice）→ 保持清空，走下面按新客户取价。
+    if (!droppedPastedPrice && tr.__pastedPrice) {
+      priceInput.value = tr.__pastedPrice;
+      tr.__pastedPrice = null;
+    }
     recalc();
     refineProductRow(tr, product);
     tr.querySelector('.quantity').focus();
@@ -433,6 +458,16 @@ function bindRow(tr) {
   }
 }
 document.querySelectorAll('#orderBody tr:not(.slip-notice)').forEach(bindRow);
+/* 行复制 / 粘贴（2026-10-17）：按钮组在每一行的产品名称单元格内，事件委托挂在 tbody 上。 */
+ErpOrderEntry.bindRowCopyTools(document.getElementById('orderBody'), {
+  onAfterChange: tr => {
+    // picker 的隐藏字段在产品名称变化时同步；粘贴后立即同步一次，避免提交前是旧值。
+    const pname = tr.querySelector('.product-name');
+    const nameInput = tr.querySelector('.picker-name-input');
+    if (pname && nameInput) pname.value = nameInput.value.trim();
+    recalc();
+  },
+});
 /* 单价跟着客户走（2026-10-15 哥哥决策）：往来对象一变，就按**新客户**重写所有已命中
    商品档案的行 —— 有专属价取专属价，**没有专属价就清空**（不保留上一个客户的价），
    不保护手输过的值。

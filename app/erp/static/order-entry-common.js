@@ -344,6 +344,148 @@
     };
   }
 
+
+  // ---------------------------------------------------------------------------
+  // 行复制 / 粘贴（2026-10-17 用户需求）
+  //
+  // 场景：同种商品不同型号连续开单（一物一档，DN50 与 DN65 是两条商品记录）。
+  // 用户复制一行 → 粘贴到下一行 → 只改型号 → 该型号在该客户那里有专属价就自动带出。
+  //
+  // ★ 必须守住的最后一道线：粘贴过来的单价属于**上一行那个型号**，
+  //   而现有规则是「手输单价 > 0 会被学成该客户对该商品的专属价」。
+  //   如果用户改了型号却没重填单价，旧价就会被学进新型号，从此这家客户
+  //   对新型号永远显示错价。所以本模块给粘贴行打 __pastedFrom 标记，
+  //   一旦名称变了就**先把单价清空**再走正常的取价流程。
+  // ---------------------------------------------------------------------------
+  var copiedRow = null;   // {name, unit, quantity, price}
+  var ROW_SELECTOR = 'tr:not(.slip-notice)';
+
+  function cellValue(tr, selector) {
+    var el = tr.querySelector(selector);
+    return el ? String(el.value || '') : '';
+  }
+
+  function dataRows(tbody) {
+    return Array.prototype.slice.call(tbody.querySelectorAll(ROW_SELECTOR));
+  }
+
+  function notify(tr, message) {
+    var cell = tr.querySelector('.product-picker') || tr;
+    var prev = cell.querySelector('.row-copy-toast');
+    if (prev) prev.remove();
+    var toast = document.createElement('span');
+    toast.className = 'row-copy-toast';
+    toast.setAttribute('role', 'status');
+    toast.textContent = message;
+    cell.appendChild(toast);
+    setTimeout(function () { if (toast.parentNode) toast.remove(); }, 2200);
+  }
+
+  function clearCopiedMarks(tbody) {
+    tbody.querySelectorAll('.row-tool-btn.is-copied').forEach(function (b) {
+      b.classList.remove('is-copied');
+    });
+  }
+
+  function bindRowCopyTools(tbody, options) {
+    if (!tbody || tbody.__rowCopyBound) return;
+    tbody.__rowCopyBound = true;
+    var opts = options || {};
+    var onAfterChange = opts.onAfterChange || function () {};
+    var addRow = opts.addRow || function () { return null; };
+
+    tbody.addEventListener('click', function (event) {
+      var btn = event.target.closest('[data-row-action]');
+      if (!btn) return;
+      var tr = btn.closest('tr');
+      if (!tr) return;
+      event.preventDefault();
+
+      if (btn.dataset.rowAction === 'copy') {
+        // 空行不允许复制：否则「粘贴」会给出一个空操作，用户会以为按钮坏了。
+        var name = cellValue(tr, '.picker-name-input').trim();
+        var price = cellValue(tr, '.unit-price').trim();
+        if (!name && !price) {
+          notify(tr, '这一行还是空的，没有可复制的内容');
+          return;
+        }
+        copiedRow = {
+          name: cellValue(tr, '.picker-name-input'),
+          unit: cellValue(tr, '.unit'),
+          quantity: cellValue(tr, '.quantity'),
+          price: price,
+        };
+        clearCopiedMarks(tbody);
+        btn.classList.add('is-copied');
+        notify(tr, '已复制：' + (name || '（无名称）'));
+        return;
+      }
+
+      if (btn.dataset.rowAction === 'paste') {
+        if (!copiedRow) {
+          notify(tr, '还没有复制任何行（先点左边的复制）');
+          return;
+        }
+        pasteRowInto(tr, onAfterChange);
+      }
+    });
+  }
+
+  // 2026-10-18 用户决策（第二次收窄范围）：**纯剪贴板**。
+  // 之前这版会自动插入到下一行、末尾没行还会新建、粘完还全选名称 —— 用户明确说
+  // 「就只是复制 粘贴就可以了」。现在：把复制下来的内容写回**触发粘贴的这一行**，
+  // 不跳行、不建行、不抢焦点。
+  // 唯一保留的保护：粘贴带过来的单价属于「复制来源的那个型号」，而手输单价 > 0
+  // 会被学成该客户对该商品的专属价。所以打 __pastedFrom 标记，型号一改就先清价，
+  // 防止把上一个型号的价格永久学进新型号。
+  function pasteRowInto(tr, onAfterChange) {
+    var source = copiedRow;
+    if (!tr || !source) return;
+
+    var nameInput = tr.querySelector('.picker-name-input');
+    var unitInput = tr.querySelector('.unit');
+    var qtyInput = tr.querySelector('.quantity');
+    var priceInput = tr.querySelector('.unit-price');
+
+    if (nameInput) nameInput.value = source.name || '';
+    if (unitInput) unitInput.value = source.unit || '';
+    if (qtyInput) qtyInput.value = source.quantity || '';
+    if (priceInput) priceInput.value = source.price || '';
+
+    // picker 的隐藏字段立即同步；product_id 清空，避免把来源行的商品 id 带过来。
+    var pid = tr.querySelector('.product-id');
+    if (pid) pid.value = '';
+    var pname = tr.querySelector('.product-name');
+    if (pname) pname.value = (source.name || '').trim();
+
+    tr.__pastedFrom = (source.name || '').trim();
+    tr.__pastedPrice = source.price || '';
+
+    onAfterChange(tr);
+  }
+
+  // 名称变化时调用：若本行是粘贴来的、且名称已不是当初那个型号，先清掉旧价。
+  // 返回 true 表示已清价（调用方不必再做别的处理）。
+  function dropPastedPriceOnRename(tr) {
+    if (!tr || !tr.__pastedFrom) return false;
+    var nameInput = tr.querySelector('.picker-name-input');
+    var current = nameInput ? nameInput.value.trim() : '';
+    if (current === tr.__pastedFrom) return false;
+    var priceInput = tr.querySelector('.unit-price');
+    if (priceInput) priceInput.value = '';
+    tr.__pastedFrom = null;
+    tr.__pastedPrice = null;
+    return true;
+  }
+
+  function resetCopiedRow() {
+    copiedRow = null;
+  }
+
+  function hasCopiedRow() {
+    return !!copiedRow;
+  }
+
   window.ErpOrderEntry = {
     money: money,
     bindAutocomplete: bindAutocomplete,
@@ -352,5 +494,9 @@
     syncCounterparty: syncCounterparty,
     closeFloatingProductSuggestions: closeFloatingProductSuggestions,
     createPreviewApply: createPreviewApply,
+    bindRowCopyTools: bindRowCopyTools,
+    dropPastedPriceOnRename: dropPastedPriceOnRename,
+    resetCopiedRow: resetCopiedRow,
+    hasCopiedRow: hasCopiedRow,
   };
 })();
