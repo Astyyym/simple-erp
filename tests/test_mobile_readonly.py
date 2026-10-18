@@ -133,10 +133,24 @@ def test_order_list_filters_by_type_and_date(paired_client, seeded):
 
 
 def test_product_page_is_product_first(paired_client, seeded):
+    """商品优先：先搜商品，点进去才看每个客户的价格。
+
+    2026-10-18 改版（用户定稿 A 方案 + 蓝色药丸价格）：
+    - 卡片压成两行，去掉「客户专属价」「价格」两个每张卡都重复的标签；
+    - 去掉单位标签；
+    - 价格用 .price-pill 承载，客户数用 .p-count。
+    所以断言从「标签文字存在」改为「卡片结构存在」——原来的
+    "客户专属价" in html 已随标签一起被删除，属于契约变更，不是回归。
+    """
     html = paired_client.get("/m/products").get_data(as_text=True)
     assert "搜商品名" in html
     assert "手机端测试商品" in html
-    assert "客户专属价" in html
+    # 新结构：价格药丸 + 客户数
+    assert 'class="price-pill"' in html
+    assert 'class="p-count"' in html
+    assert 'class="p-name"' in html
+    # 旧的两组重复标签不再出现
+    assert "客户专属价" not in html
     assert "最近成交" not in html
     assert 'class="customer-switch"' not in html
 

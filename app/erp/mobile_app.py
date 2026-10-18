@@ -14,7 +14,7 @@
 """
 from __future__ import annotations
 
-from flask import Flask
+from flask import Flask, request
 
 from erp.config import load_config
 from erp.routes.mobile import mobile_bp
@@ -63,6 +63,29 @@ def create_mobile_app() -> Flask:
         shop_name=app.config["ERP_SHOP_NAME"],
         app_version=app.config["ERP_VERSION"],
     )
+
+    # 静态资源：长缓存 + 内容指纹地址（与主 app 的 static_url 同一实现）。
+    # 第二监听有自己的 Flask 实例，主 app 的 SEND_FILE_MAX_AGE_DEFAULT / 模板全局
+    # 都不会自动带过来 —— 之前切页慢就是因为这里发的是默认 no-cache，
+    # 每次导航都要重新验证 mobile.css(29KB) + mobile.js(22KB)。
+    from erp import _static_url
+
+    app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 31536000
+    app.jinja_env.globals["static_url"] = _static_url
+
+    @app.after_request
+    def _mobile_headers(response):
+        if request.path.startswith("/static/"):
+            # 地址里带内容指纹，内容变则 URL 变，可以放心长缓存。
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            # 页面是实时数据，不能缓存内容。
+            # 注意：**不要**在这里设 Connection 头 —— WSGI 规范（PEP 3333）把
+            # Connection 定义为 hop-by-hop 头，waitress 会直接抛 AssertionError
+            # （实测启动后每个请求 500）。连接复用是 waitress 自己的职责，
+            # 它默认就按 HTTP/1.1 保持长连接，不需要应用插手。
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     app.register_blueprint(mobile_bp)
     return app

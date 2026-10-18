@@ -288,7 +288,7 @@
   </tbody></table></div>{% else %}<p class="text-muted">还没有客户资料。</p>{% endif %}
 </section>
 {% endif %}
-<script src="{{ url_for('static', filename='order-entry-common.js') }}?v=2"></script>
+<script src="{{ url_for('static', filename='order-entry-common.js') }}?v=4"></script>
 <script>
 /* 客户字段联想（2026-10-17 用户要求）：账款管理的客户由原生下拉改「输入即模糊匹配 + 候选点选」。
    候选口径来自 /orders/api/customers（名称子串 / 拼音首字母 / 全拼，见 erp/utils/pinyin.py）。

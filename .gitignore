@@ -60,3 +60,4 @@ apk/**/build/
 apk/local.properties
 apk/keystore/
 apk/keystore.properties
+apk/.idea/

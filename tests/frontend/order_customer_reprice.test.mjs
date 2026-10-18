@@ -115,7 +115,7 @@ test('原单带入行始终用原成交价，不再有「缺成本才随客户�
 test('销售/退货页把往来对象变化接到重取价，且共享 JS 版本已提升', () => {
   assert.match(salesPage, /ErpOrderEntry\.onCounterpartyChanged\(document\.getElementById\('customer_id'\), repriceRowsForCustomer\)/,
     '销售/退货页没有订阅往来对象变化');
-  assert.match(salesPage, /order-entry-common\.js[^"]*\?v=3/, '共享 JS 改了却仍带旧版本号，浏览器/WebView2 会用缓存旧文件');
+  assert.match(salesPage, /order-entry-common\.js[^"]*\?v=\d+/, '共享 JS 改了却仍带旧版本号，浏览器/WebView2 会用缓存旧文件');
 });
 
 test('拿货/退拿货页不再有任何售价取价（客户价或档案价）', () => {

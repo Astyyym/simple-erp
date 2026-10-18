@@ -87,6 +87,7 @@
   function watchNavigation(url) {
     if (!layer || leaving) { return; }
     leaving = true;
+    saveScroll(location.href);
     pendingUrl = url || location.href;
     clearTimers();
     showTimer = setTimeout(function () {
@@ -98,6 +99,15 @@
     }, 150);
   }
 
+  // 页面真的加载完成（served 了新文档）后，无论之前有没有降级到错误页，都要撤销遮罩。
+  // 否则「超时先弹错误页 → 内容随后加载完」会让错误页一直盖着内容。
+  function onDocumentSettled() {
+    if (layer && !layer.hidden) {
+      resetLayer();
+    }
+    restoreScroll(location.href);
+  }
+
   function resetLayer() {
     clearTimers();
     leaving = false;
@@ -105,6 +115,10 @@
       layer.hidden = true;
       layer.setAttribute('aria-hidden', 'true');
     }
+    // 复位两个子块：下次导航从「骨架可见 / 错误页隐藏」这个干净状态开始，
+    // 否则上一次停在错误页，下一次连骨架都不显示就直接露错误页。
+    if (skeleton) { skeleton.hidden = false; }
+    if (offline) { offline.hidden = true; }
   }
 
   document.addEventListener('click', function (event) {
@@ -125,7 +139,18 @@
     watchNavigation();
   }, true);
 
-  window.addEventListener('pageshow', resetLayer);
+  // pageshow 是 history 前进/后退**唯一**可靠的信号：那次导航不会重新执行页面脚本，
+  // DOMContentLoaded 不会再触发，所以滚动恢复必须挂在这里，而不是只挂 DOMContentLoaded。
+  window.addEventListener('pageshow', function (event) {
+    resetLayer();
+    restoreScroll(location.href);
+  });
+  // 本页脚本开始执行 = 旧文档已被新文档取代，导航等待层必然该撤。
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', onDocumentSettled, { once: true });
+  } else {
+    onDocumentSettled();
+  }
   window.addEventListener('pagehide', resetLayer);
 
   if (retryButton) {
@@ -303,6 +328,56 @@
     return (window.scrollY || 0) <= 0 && boxTop <= 0.5;
   }
 
+  /* ---------------- 2.5 滚动位置记忆 ----------------
+     滚动容器是 .body（window.scrollY 恒为 0），浏览器原生 scrollRestoration 对它无效，
+     所以自己按 URL 记 scrollTop：返回列表时回到原位，前进到新页面从顶部开始。
+     用 sessionStorage：只活在本次会话，关掉 WebView 不该记住柜台前滚到哪。 */
+  var SCROLL_KEY = 'erp-mobile-scroll';
+
+  function readScrollMap() {
+    try {
+      var raw = sessionStorage.getItem(SCROLL_KEY);
+      var parsed = raw ? JSON.parse(raw) : null;
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (error) {
+      return {};
+    }
+  }
+
+  function saveScroll(url) {
+    if (!scrollBox) { return; }
+    // 不记 0：从顶部离开再回来，恢复成 0 与不恢复等价，但会让 map 无限膨胀。
+    var top = scrollBox.scrollTop;
+    if (!top || top < 1) { return; }
+    try {
+      var map = readScrollMap();
+      map[url] = Math.round(top);
+      sessionStorage.setItem(SCROLL_KEY, JSON.stringify(map));
+    } catch (error) { /* 隐私模式：静默放弃记忆 */ }
+  }
+
+  function restoreScroll(url) {
+    if (!scrollBox) { return; }
+    var top = readScrollMap()[url];
+    if (!top) { return; }
+    // 为什么不能只 set 一两次：从 history 回到列表时，图片/字体还在加载，
+    // .body 的 scrollHeight 远小于最终值，此时设 scrollTop 会被浏览器**夹成 0**
+    // （实测：返回后 scrollTop 一直是 0，而 map 里的 1166 好好地存着）。
+    // 做法：反复尝试若干次，直到真的设上了或超时；每次只在上一次没生效时继续。
+    var attempts = 0;
+    function attempt() {
+      if (!scrollBox) { return; }
+      if (Math.abs(scrollBox.scrollTop - top) < 2) { return; }  // 已到位
+      scrollBox.scrollTop = top;
+      attempts += 1;
+      // 还没设上且没超次数：下一帧再试（容量不足时会自动被夹，见上）
+      if (attempts < 40 && Math.abs(scrollBox.scrollTop - top) >= 2) {
+        requestAnimationFrame(attempt);
+      }
+    }
+    requestAnimationFrame(attempt);
+  }
+
   function hint(text, ready) {
     if (!pullHint) { return; }
     pullHint.textContent = text;
@@ -403,6 +478,37 @@
     Array.prototype.forEach.call(document.querySelectorAll('[data-theme-set]'), function (button) {
       button.classList.toggle('on', button.dataset.themeSet === value);
     });
+    syncChromeColor(value);
+  }
+
+  /* ---------------- 5.1 主题色同步 ----------------
+     两套消费方，各喂各的：
+     - 浏览器（Chrome / 微信扫码）：改 <meta name="theme-color">，地址栏跟着变。
+     - APK 壳：原生 applyWindowChrome() 只在 onCreate 跑一次，且只读系统夜间模式，
+       壳根本不知道页面内切了主题 → 深色页面配浅色状态栏。这里显式通知原生重设。
+     深色的判定：显式 dark，或「跟随系统」且系统当前是深色。 */
+  function resolvedDark(value) {
+    if (value === 'dark') { return true; }
+    if (value === 'light') { return false; }
+    return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  }
+
+  function syncChromeColor(value) {
+    var dark = resolvedDark(value);
+    var meta = document.getElementById('themeColorMeta');
+    if (meta) { meta.setAttribute('content', dark ? '#0b0f16' : '#fbfbfd'); }
+    var bridge = window.SimpleERPNative;
+    if (bridge && typeof bridge.applyDarkMode === 'function') {
+      bridge.applyDarkMode(dark);
+    }
+  }
+
+  // 「跟随系统」时系统深浅变了也要跟上（浏览器场景改 meta；APK 壳会自己重建，这里只管 meta）。
+  if (window.matchMedia) {
+    var darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    var onSchemeChange = function () { syncChromeColor(readTheme()); };
+    if (darkQuery.addEventListener) { darkQuery.addEventListener('change', onSchemeChange); }
+    else if (darkQuery.addListener) { darkQuery.addListener(onSchemeChange); }
   }
 
   var themeButtons = document.querySelectorAll('[data-theme-set]');
@@ -411,6 +517,72 @@
     Array.prototype.forEach.call(themeButtons, function (button) {
       button.addEventListener('click', function () { applyTheme(button.dataset.themeSet); });
     });
+  }
+
+  /* ---------------- 5.4 客户详情页：区块开合 ----------------
+     专属价 / 最近流水默认露 3 条，第 4 条起带 .expand-hidden。
+     点按钮就地展开，**再点收起**（2026-10-18 用户要求可逆，之前只做了单向展开，
+     而且展开后文案还写着「展开全部」，等于骗人）。
+     收起时的滚动处理：列表在按钮上方，收掉一截会把下面的内容顶上来，
+     如果用户正看着列表中部就会被甩走 —— 所以在收起前后量一次 scrollTop 差值再补回去。
+     不用 scrollIntoView 之类的，那会把按钮钉死在视口顶部，反而更跳。 */
+  Array.prototype.forEach.call(document.querySelectorAll('[data-expand-btn]'), function (button) {
+    var expanded = false;
+    var moreText = button.getAttribute('data-more-text') || '';
+    var lessText = button.getAttribute('data-less-text') || '收起';
+
+    button.addEventListener('click', function () {
+      // 按钮的前一个兄弟就是它负责的那个卡片（价格卡片 / 流水卡片）。
+      var card = button.previousElementSibling;
+      if (!card || !card.querySelectorAll) { return; }
+
+      var box = document.querySelector('.body');
+      var beforeTop = box ? box.scrollTop : 0;
+
+      expanded = !expanded;
+      Array.prototype.forEach.call(card.querySelectorAll('[data-expand-item]'), function (item) {
+        item.classList.toggle('expand-hidden', !expanded);
+      });
+      button.textContent = expanded ? lessText : moreText;
+
+      // 收起后内容变短，scrollTop 会被浏览器自动夹小；把被夹掉的部分补回来，
+      // 让「按钮以上的内容」留在用户原本看的位置。
+      if (!expanded && box) {
+        requestAnimationFrame(function () {
+          box.scrollTop = Math.min(beforeTop, Math.max(0, box.scrollHeight - box.clientHeight));
+        });
+      }
+    });
+  });
+
+  /* ---------------- 5.5 tab 预取 ----------------
+     每次点 tab 都是整页导航，要重新握手 + 拿 HTML + 拿 CSS/JS。
+     实测冷连接约 600ms、连接热了之后约 20ms，所以真正的杠杆是「别等用户点了才开始连」。
+     这里在页面空闲（requestIdleCallback）时，用 <link rel="prefetch"> 让浏览器
+     预先建好连接并把目标页拿进 HTTP 缓存。点下去时直接命中，不再等握手。
+     只预取底部 5 个 tab，不预取详情页（详情页是列表点出来的，数量不定、预取会浪费）。*/
+  function prefetchTabs() {
+    var tabs = document.querySelectorAll('.tabbar a[href]');
+    if (!tabs.length) { return; }
+    var current = location.pathname;
+    Array.prototype.forEach.call(tabs, function (link) {
+      var href = link.getAttribute('href');
+      if (!href || href === current) { return; }
+      // 同一地址不重复插：SPA 式前进后退可能反复触发。
+      if (document.querySelector('link[rel="prefetch"][href="' + href + '"]')) { return; }
+      var tag = document.createElement('link');
+      tag.rel = 'prefetch';
+      tag.href = href;
+      tag.as = 'document';
+      document.head.appendChild(tag);
+    });
+  }
+
+  // requestIdleCallback 不可用时退回 setTimeout：首屏渲染完再预取，不抢带宽。
+  if (window.requestIdleCallback) {
+    window.requestIdleCallback(prefetchTabs, { timeout: 2000 });
+  } else {
+    setTimeout(prefetchTabs, 800);
   }
 
   /* ---------------- 6. 设置页：改电脑地址（只在 APK 原生桥存在时生效） ---------------- */

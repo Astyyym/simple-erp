@@ -187,6 +187,12 @@ def test_customer_price_list_is_reverse_of_product_query():
 
 
 def test_customer_detail_shows_top_three_prices_and_a_see_all_link(paired_client):
+    """2026-10-18 改版：专属价默认只露 3 条，第 4 条起带 .expand-hidden，
+    由「展开全部 N 个专属价」按钮**在页内**揭开；不再跳独立页面。
+
+    用例名里的 see_all 仍成立（确实有「看全部」入口），但载体从 <a href> 变成
+    <button data-expand-btn>，所以断言跟着契约改，不是删用例。
+    """
     data = _seed_prices()
     extra_products = [
         accounting.create_product(f"专属价商品{index}", "个") for index in (1, 2, 3)
@@ -196,10 +202,15 @@ def test_customer_detail_shows_top_three_prices_and_a_see_all_link(paired_client
 
     html = paired_client.get(f"/m/customers/{data['customer_id']}").get_data(as_text=True)
     assert "专属价" in html
-    # 4 个专属价 → 只列前 3 条，给「看全部」
-    assert "看全部 4 个专属价" in html
+    # 4 个专属价 → 前 3 条直出，按钮文案改成「展开全部」
+    assert "展开全部 4 个专属价" in html
+    assert 'data-expand-btn="prices"' in html
     assert "专属价商品3" in html and "专属价商品2" in html
-    assert "专属价商品1" not in html
+    # 第 4 条仍在 HTML 里（页内展开要靠前端取），但必须带隐藏标记
+    assert "专属价商品1" in html
+    assert "expand-hidden" in html
+    # 不再有跳独立页的链接
+    assert f'/m/customers/{data["customer_id"]}/prices' not in html
     assert "手机端测试商品 MFZ/ABC4" in html
 
     # 点进去的商品详情，价格与客户详情里那一行一致
@@ -242,7 +253,10 @@ def test_customer_detail_see_all_opens_customer_prices_page(paired_client):
         accounting.set_customer_price(data["customer_id"], product_id, 1000 + offset)
 
     detail_html = paired_client.get(f"/m/customers/{data['customer_id']}").get_data(as_text=True)
-    assert f'/m/customers/{data["customer_id"]}/prices' in detail_html
+    # 2026-10-18：详情页不再链到这个独立页（改成页内展开），但**该路由本身保留**——
+    # 旧链接、书签、以及将来可能的外部入口继续可用，所以下面继续验证它的内容。
+    assert f'/m/customers/{data["customer_id"]}/prices' not in detail_html
+    assert 'data-expand-btn="prices"' in detail_html
 
     response = paired_client.get(f"/m/customers/{data['customer_id']}/prices")
     assert response.status_code == 200

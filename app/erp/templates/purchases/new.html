@@ -34,6 +34,16 @@
   .unit-cell .unit-suggestions[popover] { min-width: 0; max-width: 220px; }
   /* 单位可自由输入：没有匹配项时不显示那条空的「无匹配项」占位。 */
   .unit-suggestions .suggest-item[aria-disabled="true"] { display: none; }
+  /* 单位候选行：单位名靠左 + 右侧「×」清除（2026-10-18 用户需求）。 */
+  .unit-suggestions .suggest-item { display: flex; align-items: center; gap: 6px; }
+  .unit-suggestions .suggest-item-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .unit-suggestions .suggest-clear {
+    flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px;
+    background: transparent; color: var(--erp-muted); cursor: pointer;
+  }
+  .unit-suggestions .suggest-clear:hover { background: var(--erp-border); color: var(--erp-ink); }
+  .unit-suggestions .suggest-clear:focus-visible { outline: 2px solid var(--erp-primary); outline-offset: -2px; }
   .price-cell { padding: 4px !important; }
   .price-cell input { border: 0; width: 100%; padding: 4px 6px; background: transparent; }
   .today-history{margin-top:24px;padding:18px;background:var(--erp-glass-bg);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);box-shadow:var(--erp-glass-shadow)}
@@ -100,7 +110,7 @@
       {% for row in form_rows %}
       <tr>
         <td class="text-center row-no">{{ loop.index }}</td>
-        <td class="product-picker"><div class="picker-row"><input type="hidden" name="product_id" class="product-id" value="{{ row.product_id or '' }}"><input type="hidden" name="product_name" class="product-name" value="{{ row.product_name or '' }}"><div class="suggest-wrap product-suggest-wrap"><input class="form-control form-control-sm picker-name-input" autocomplete="off" aria-label="第 {{loop.index}} 行产品名称" placeholder="输入或选择商品名" value="{{ row.product_name or '' }}"><div class="suggest-list d-none product-suggestions" role="listbox" aria-label="商品建议"></div></div><div class="row-copy-tools"><button type="button" class="row-tool-btn" data-row-action="copy" title="复制本行（Ctrl+D）" aria-label="复制本行"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><rect x="5.5" y="1.5" width="8" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M3.5 4.5h-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button><button type="button" class="row-tool-btn" data-row-action="paste" title="粘贴本行" aria-label="粘贴本行"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><rect x="3" y="2.5" width="10" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="6" y="1" width="4" height="2.6" rx="1" fill="currentColor"/><path d="M5.5 7h5M5.5 10h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button></div><div class="picker-missing d-none" role="status"></div></div></td>
+        <td class="product-picker"><div class="picker-row"><div class="row-copy-tools"><button type="button" class="row-tool-btn" data-row-action="copy" title="复制本行（Ctrl+D）" aria-label="复制本行"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><rect x="5.5" y="1.5" width="8" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M3.5 4.5h-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button><button type="button" class="row-tool-btn" data-row-action="paste" title="粘贴本行" aria-label="粘贴本行"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><rect x="3" y="2.5" width="10" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="6" y="1" width="4" height="2.6" rx="1" fill="currentColor"/><path d="M5.5 7h5M5.5 10h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button></div><span class="row-copy-sep" aria-hidden="true"></span><input type="hidden" name="product_id" class="product-id" value="{{ row.product_id or '' }}"><input type="hidden" name="product_name" class="product-name" value="{{ row.product_name or '' }}"><div class="suggest-wrap product-suggest-wrap"><input class="form-control form-control-sm picker-name-input" autocomplete="off" aria-label="第 {{loop.index}} 行产品名称" placeholder="输入或选择商品名" value="{{ row.product_name or '' }}"><div class="suggest-list d-none product-suggestions" role="listbox" aria-label="商品建议"></div></div><div class="picker-missing d-none" role="status"></div></div></td>
         <td><div class="unit-cell suggest-wrap"><input name="unit" class="unit form-control form-control-sm" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="单位" aria-label="第 {{loop.index}} 行单位" aria-expanded="false" data-unit-options="{{ (unit_options or ['个','套','件'])|join('|') }}" value="{{ row.unit or '' }}"><div class="suggest-list d-none unit-suggestions" role="listbox" aria-label="单位建议"></div></div></td>
         <td><input name="quantity" class="quantity" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.000" value="{{ row.quantity or '' }}"></td>
         <td class="price-cell"><input name="unit_cost_yuan" class="unit-price" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.00" value="{{ row.unit_cost_yuan or '' }}"></td>
@@ -172,7 +182,7 @@
 
 <script type="application/json" id="productCatalog">{{ product_catalog|tojson }}</script>
 <script src="{{ url_for('static', filename='order-product-picker.js') }}?v=1"></script>
-<script src="{{ url_for('static', filename='order-entry-common.js') }}?v=3"></script>
+<script src="{{ url_for('static', filename='order-entry-common.js') }}?v=4"></script>
 <script>
 const money = ErpOrderEntry.money;
 const catalog = JSON.parse(document.getElementById('productCatalog').textContent || '[]');

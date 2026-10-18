@@ -237,9 +237,33 @@
         return needle ? pool.filter(unit => unit.indexOf(needle) >= 0) : pool;
       },
       unit => {
+        // 渲染函数只能返回**一个**节点（showSuggestions 用 appendChild 挂它），
+        // 所以这里用 fragment 把「单位名 + 右侧叉号」一起带出去。
+        const frag = document.createDocumentFragment();
         const node = document.createElement('span');
+        node.className = 'suggest-item-label';
         node.textContent = unit;
-        return node;
+        // 「×」放在候选行右侧（2026-10-18 用户需求）：只清空当前输入框的值，
+        // 不动候选池 —— 候选来自库内历史数据，这里只是不想选它。
+        const clear = document.createElement('button');
+        clear.type = 'button';
+        clear.className = 'suggest-clear';
+        clear.setAttribute('aria-label', '清除单位「' + unit + '」');
+        clear.title = '清除';
+        clear.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">'
+          + '<path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+        // 候选行本身是 button，且 mousedown 已被 preventDefault；
+        // 叉号必须拦下事件，否则点它会连带选中这一项并关闭候选。
+        clear.addEventListener('mousedown', event => { event.preventDefault(); event.stopPropagation(); });
+        clear.addEventListener('click', event => {
+          event.preventDefault();
+          event.stopPropagation();
+          input.value = '';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.focus();
+        });
+        frag.append(node, clear);
+        return frag;
       },
       unit => { input.value = unit; },
       () => { const value = input.value.trim(); if (value) unitExtras.add(value); },

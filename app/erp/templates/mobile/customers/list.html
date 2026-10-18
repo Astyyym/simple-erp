@@ -5,7 +5,7 @@
 {% block page_key %}customers{% endblock %}
 
 {% block header %}
-{{ hd("客户", "按欠款从多到少", customers|length ~ " 位") }}
+{{ hd("客户", "按拼音 A-Z" if sort == "pinyin" else "按欠款从多到少", customers|length ~ " 位") }}
 {% endblock %}
 
 {% block toolbar %}
@@ -15,9 +15,20 @@
          enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false">
   {% if only_debt %}<input type="hidden" name="filter" value="debt">{% endif %}
 </form>
+{#
+  排序切换**一行三个**（2026-10-18 用户定稿）：
+    全部（=拼音 A-Z，默认） / 欠款多少
+  原本做成两行（「全部/有欠款」一行、「拼音/欠款」一行），又高又散。
+  「有欠款」已按用户判断移除 —— 欠款多少排序本身就把欠款多的排前面，
+  每行还都标着金额，再单独做一个隐藏零欠款的筛选收益太小。
+  保留 filter 参数兼容旧链接（老书签带 filter=debt 时仍按欠款过滤），
+  只是页面上不再提供这个入口。
+#}
 <div class="chip-bar">
-  <a class="chip{{ '' if only_debt else ' on' }}" href="{{ url_for('mobile.customers', q=query) }}">全部</a>
-  <a class="chip{{ ' on' if only_debt }}" href="{{ url_for('mobile.customers', q=query, filter='debt') }}">有欠款</a>
+  <a class="chip{{ ' on' if sort == 'pinyin' }}"
+     href="{{ url_for('mobile.customers', q=query, sort='pinyin') }}">拼音 A-Z</a>
+  <a class="chip{{ ' on' if sort == 'debt' }}"
+     href="{{ url_for('mobile.customers', q=query, sort='debt') }}">欠款多少</a>
 </div>
 {% endblock %}
 
@@ -30,7 +41,7 @@
       <span class="t">{{ customer.name }}</span>
       <span class="s">{{ customer.pinyin }}{% if customer.phone %} · {{ customer.phone }}{% endif %}</span>
     </span>
-    <span class="tail"><span class="num{{ ' neg' if customer.balance_cents < 0 }}">{{ money_short(customer.balance_cents) }}</span></span>
+    <span class="tail"><span class="num{{ ' negamount' if customer.balance_cents < 0 }}">{{ money_short(customer.balance_cents) }}</span></span>
     <span class="chev">{{ chev() }}</span>
   </a>
   {% endfor %}

@@ -1,4 +1,5 @@
 import os
+import hashlib
 from pathlib import Path
 from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlsplit
@@ -78,6 +79,30 @@ def _normalized_origin(value: str | None) -> tuple[str, str, int] | None:
     return scheme, parsed.hostname.lower(), port
 
 
+_STATIC_FINGERPRINTS: dict[str, str] = {}
+
+
+def _static_url(filename: str) -> str:
+    """带内容指纹的静态资源地址。
+
+    为什么要指纹而不是直接手写版本串：手写串会忘、会撞（两个文件共用
+    一个 v），而这里按文件**内容**算 sha1，改一个字节地址就变，没改就一直命中
+    浏览器缓存。配合 SEND_FILE_MAX_AGE_DEFAULT（一年）才能真正省掉往返。
+    """
+    from flask import url_for
+
+    stamp = _STATIC_FINGERPRINTS.get(filename)
+    if stamp is None:
+        path = Path(__file__).with_name("static").joinpath(*filename.split("/"))
+        try:
+            stamp = hashlib.sha1(path.read_bytes()).hexdigest()[:10]
+        except OSError:
+            # 文件不存在时退回时间戳 0：地址稳定、不抛错，页面照常渲染。
+            stamp = "0"
+        _STATIC_FINGERPRINTS[filename] = stamp
+    return url_for("static", filename=filename, v=stamp)
+
+
 def create_app() -> Flask:
     ensure_data_location_initialized()
     setup_logging()
@@ -94,6 +119,11 @@ def create_app() -> Flask:
     app.config["ERP_VERSION"] = app_version()
     app.config["SECRET_KEY"] = os.environ.get("ERP_SECRET_KEY", "local-fire-erp-dev-secret")
     app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
+    # 静态资源长缓存：默认 Flask 发的是 Cache-Control: no-cache，
+    # 手机端每次切页都要把 mobile.css(29KB) / mobile.js(22KB) 重新验证一遍，
+    # 多两次往返 ≈ 多 300ms。这里给静态资源打长缓存 + 内容指纹（URL 里的 ?v=）。
+    # 模板一律用 static_url() 生成地址，指纹变了地址就变，不会让老缓存挡住新样式。
+    app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 31536000
     init_db()
 
     @app.context_processor
@@ -115,6 +145,7 @@ def create_app() -> Flask:
             "ui_show_hints": bool(cfg_now.get("ui_show_hints", True)),
             "current_user": current_username(),
             "is_desktop": is_desktop_shell(),
+            "static_url": _static_url,
             # Permanent no-login product default.
             "auth_enabled": False,
             "format_quantity": format_quantity,

@@ -56,7 +56,7 @@
     <div class="ev">
       <div class="l1">
         <span class="who">{{ event.customer_name }}</span>
-        <span class="amt{{ ' neg' if event.amount_cents < 0 }}">{{ money_short(event.amount_cents) }}</span>
+        <span class="amt{{ ' negamount' if event.amount_cents < 0 }}">{{ money_short(event.amount_cents) }}</span>
       </div>
       <div class="l2">{{ order_type_labels[event.order_type] }} · {{ event.order_no }}</div>
     </div>

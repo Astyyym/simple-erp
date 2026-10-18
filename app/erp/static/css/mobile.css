@@ -188,18 +188,39 @@ a { color: inherit; text-decoration: none; }
   padding: var(--pad-card);
   transition: background .18s ease, border-color .18s ease, box-shadow .18s ease;
 }
-.card.tap { display: block; cursor: pointer; }
-.card.tap:active { transform: scale(.995); }
+.card.tap {
+  display: block;
+  cursor: pointer;
+  /* 第3条：按下要「跟手」——不加过渡时 scale 是瞬间跳变、松手瞬间弹回，手感发硬。 */
+  transition: transform .12s ease, background-color .12s ease, border-color .12s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.card.tap:active { transform: scale(.992); background-color: var(--soft); }
 
-/* 「看全部」文字链（客户详情专属价段） */
+/* 「看全部 / 展开全部」文字链（客户详情三个区块共用） */
 .more-link {
   display: block;
-  padding: 2px;
+  width: 100%;
+  /* 视觉上仍是一条文字链（字号/颜色不动），但热区必须是 44px：
+     之前 8px/2px 内边距 + 13px 行高 = 26px，是全页最难点的一处。 */
+  padding: 15px 2px 4px;
+  min-height: 44px;
   text-align: center;
   font-size: 13px;
   font-weight: 560;
   color: var(--primary);
+  background: transparent;
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity .12s ease;
 }
+.more-link:active { opacity: .6; }
+
+/* 页内展开：第 4 条起先藏起来，点「展开全部」由 JS 去掉这个类。
+   用 display:none 而不是 visibility —— 后者仍占位，列表会留白。 */
+.expand-hidden { display: none !important; }
 
 .group-label {
   display: flex;
@@ -246,7 +267,10 @@ a { color: inherit; text-decoration: none; }
 .row .s {
   display: block;
   margin-top: 2px;
-  font-size: 12px;
+  /* 12px 在 320px 窄屏上「拼音 · 手机号」必被截断（实测 andyfiresupply · 13…）；
+     11.5px + 1.4 行高把长拼音客户的副标题收进一行，字号视觉上几乎没变。 */
+  font-size: 11.5px;
+  line-height: 1.4;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -258,6 +282,21 @@ a { color: inherit; text-decoration: none; }
   font-weight: 600;
   white-space: nowrap;
 }
+/* 单据列表的主行：「客户名 …… 金额」同一行，金额靠右。
+   名字太长时省略号收在名字上，金额永远完整（金额是这一行最不能截的信息）。 */
+.row .line1 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.row .line1 .who {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row .line1 .num { flex: none; }
 .row .tail {
   flex: none;
   display: flex;
@@ -267,8 +306,16 @@ a { color: inherit; text-decoration: none; }
 }
 .chev { flex: none; color: var(--border-strong); display: grid; place-items: center; }
 
-.pos { color: var(--ink); }
-.neg { color: var(--danger); }
+/* 金额色分两套语义，别混用（2026-10-18）：
+   - .pos / .neg  = 「这笔对欠款的增减方向」，用于客户详情的最近流水。
+                     红增绿减：pos=增加欠款(红)，neg=减少欠款(绿)。
+   - .negamount    = 「这个数字本身是负数」，用于单据/客户列表等纯金额展示。
+                     保持红色，与钱的“支出/损失”直觉一致。
+   拆开的原因：若直接把 .neg 改成绿色，单据列表里 -¥503.13 这类**负金额**
+   会跟着变绿，那是错的 —— 两件事语义不同，只是以前共用过一个类名。 */
+.pos { color: var(--danger); }
+.neg { color: var(--success); }
+.negamount { color: var(--danger); }
 .mut { color: var(--muted); }
 
 /* ---------- 今日概览：两个净额小卡 ---------- */
@@ -418,6 +465,21 @@ a { color: inherit; text-decoration: none; }
   flex: none;
 }
 .chip-bar::-webkit-scrollbar { display: none; }
+/* 排序栏：只做「按什么排」，不是筛选。用更轻的视觉重量（小字、无描边），
+   免得跟上面「全部 / 有欠款」那排筛选 chip 抢注意力、让人以为是一件事。 */
+.sort-bar { padding-top: 6px; }
+.sort-bar .chip {
+  border-color: transparent;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 520;
+  color: var(--muted);
+}
+.sort-bar .chip.on {
+  color: var(--primary);
+  font-weight: 620;
+  background: transparent;
+}
 .chip {
   flex: none;
   border: 1px solid var(--border);
@@ -426,7 +488,9 @@ a { color: inherit; text-decoration: none; }
   font: inherit;
   font-size: 13px;
   padding: 8px 14px;
-  min-height: 38px;
+  /* 44px 是文件头第 3 条硬约束（触控目标 ≥44px）的下限；38px 时手指按不准，
+     实测 320px 窄屏上「拼音 A-Z / 欠款多少」两枚 chip 也明显偏小。 */
+  min-height: 44px;
   border-radius: 12px;
   cursor: pointer;
   white-space: nowrap;
@@ -601,6 +665,7 @@ a { color: inherit; text-decoration: none; }
 .skel .b.w70 { width: 70%; }
 @keyframes sk { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
 
+#navSkeleton[hidden] { display: none; }
 .sk-row {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -614,6 +679,7 @@ a { color: inherit; text-decoration: none; }
 .sk-row .b.t2 { grid-column: 1 / -1; width: 66%; }
 .sk-row .b.amt { width: 52px; height: 14px; }
 
+.offline-wrap[hidden] { display: none; }
 .offline-wrap {
   display: flex;
   flex-direction: column;
@@ -912,7 +978,8 @@ a { color: inherit; text-decoration: none; }
 }
 .seg-inline button {
   flex: 1;
-  min-height: 38px;
+  /* 同 chip：主题三选一是设置页最常点的控件，必须守住 44px。 */
+  min-height: 44px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -955,6 +1022,11 @@ a { color: inherit; text-decoration: none; }
   font-weight: 600;
   cursor: pointer;
 }
+.btn {
+  transition: transform .12s ease, filter .12s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn:active { transform: scale(.98); filter: brightness(.94); }
 .btn.ghost { background: var(--soft); color: var(--ink); border: 1px solid var(--border); }
 .meta-line {
   display: flex;
@@ -975,6 +1047,48 @@ a { color: inherit; text-decoration: none; }
 }
 
 /* ---------- 商品价：专属价与最近成交横向并排 ---------- */
+/* ---------- 商品价卡片（2026-10-18 改版） ---------- */
+/* 商品名：主角但克制，两行内截断，别把卡片撑高 */
+.p-name {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--ink);
+  margin-bottom: 7px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.p-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+/* 价格药丸：主色为主、浅主色作底。
+   用 --primary / --primary-soft 而不是写死色值，深色主题自动跟着换，
+   不会出现「深色下浅蓝底白字看不清」。 */
+.price-pill {
+  display: inline-block;
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.2px;
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-radius: 7px;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+.p-count {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+  flex: none;
+}
+
 .price-row {
   display: flex;
   align-items: baseline;
@@ -1065,7 +1179,7 @@ a { color: inherit; text-decoration: none; }
 @media (prefers-reduced-motion: reduce) {
   .skel .b, .sk-row .b { animation: none; }
   .sheet { animation: none; }
-  .app, .card { transition: none; }
+  .app, .card, .row, .card.tap, .btn { transition: none; }
   .pull-hint { transition: none; }
-  .row:active, .card.tap:active { transform: none; }
+  .row:active, .card.tap:active, .btn:active { transform: none; filter: none; }
 }

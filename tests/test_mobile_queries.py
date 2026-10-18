@@ -89,11 +89,15 @@ def test_customer_detail_has_balance_three_parts_and_recent_entries():
     assert detail["opening_balance_cents"] == 10000
     assert detail["change_cents"] == detail["current_balance_cents"] - 10000
     assert detail["entries"], "客户详情必须有最近流水"
-    assert len(detail["entries"]) <= 10
-    # 历史单据要覆盖四类，否则「余额欠 1200 但单据里没有拿货」会被当成 bug
-    assert {document["order_type"] for document in detail["documents"]} == {
-        "sale", "return", "purchase", "purchase_return"
-    }
+    # 2026-10-18：页面默认露 3 条、其余页内展开，所以后端一次取 30 条（原来是 10）。
+    assert len(detail["entries"]) <= 30
+    # 2026-10-18：历史单据改成"只露 3 条 + 跳单据页看全部"，后端只取 3 条。
+    assert len(detail["documents"]) <= 3
+    # 单据类型不再可能覆盖四类（3 条装不下四类），但要保证取的是**最新**的几张：
+    # 按业务日期倒序，且首条不早于末条。
+    if len(detail["documents"]) >= 2:
+        dates = [document["business_date"] for document in detail["documents"]]
+        assert dates == sorted(dates, reverse=True), "历史单据必须按业务日期倒序"
     assert readonly_queries.customer_detail(999999) is None
 
 

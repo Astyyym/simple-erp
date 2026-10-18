@@ -571,6 +571,9 @@
     /* 行复制 / 粘贴（2026-10-17）：常显 icon 按钮，贴在产品名称输入框右缘，
        不新增表格列、不加宽操作列。宽屏只显示图标，窄屏收到 300px 内不挤坏输入框。 */
     .product-picker .row-copy-tools{display:flex;gap:2px;flex:0 0 auto;align-items:center}
+    /* 2026-10-18 用户决策：按钮组从输入框右缘移到单元格最左侧，
+       与人直接开始打字的输入框之间加一道竖线分隔，避免「名字框左边是什么」的错觉。 */
+    .product-picker .row-copy-sep{flex:0 0 auto;align-self:center;width:2px;height:18px;border-radius:1px;background:currentColor;opacity:.32;color:var(--erp-muted);margin:0 3px}
     .product-picker .row-tool-btn{
       display:inline-flex;align-items:center;justify-content:center;
       width:26px;height:26px;padding:0;

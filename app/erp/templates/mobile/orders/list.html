@@ -28,11 +28,19 @@
   {% for document in documents %}
   <a class="row" href="{{ url_for('mobile.order_detail', order_type=document.order_type, document_id=document.id) }}">
     <span class="grow">
-      <span class="t">{{ document.customer_name }}</span>
-      <span class="s">{{ document.order_no }}{% if date_range.mode != 'day' %} · {{ document.day_label }}{% endif %}{% if document.time_label %} {{ document.time_label }}{% endif %}</span>
+      {# 2026-10-18 按用户要求：单号退到第二行，日期时间提到最前；
+         右侧从「金额在上、标签在下」改成「标签在上、金额在下」。 #}
+      <span class="s">{# 时间信息优先：先看到「什么日期什么时间」，再确认是哪张单 #}
+        {%- if date_range.mode != 'day' %}{{ document.day_label }} · {% endif -%}
+        {%- if document.time_label %}{{ document.time_label }} · {% endif -%}
+        {{ document.order_no }}</span>
+      {# 2026-10-18：主行给「谁 + 多少」——用户在这一页是来核对客户的。
+         客户名与金额放同一行、名字吃空白并把金额顶到右边，扫一眼就是对应关系；
+         单号退成上面那行小字（原先单号夹在时间与客户名之间，一条行读下来要跳三次）。 #}
+      <span class="t line1"><span class="who">{{ document.customer_name }}</span>
+        <span class="num{{ ' negamount' if document.amount_cents < 0 }}">{{ money_short(document.amount_cents) }}</span></span>
     </span>
     <span class="tail">
-      <span class="num{{ ' neg' if document.amount_cents < 0 }}">{{ money_short(document.amount_cents) }}</span>
       <span class="tag t-{{ document.order_type }}">{{ document.type_label }}</span>
     </span>
     <span class="chev">{{ chev() }}</span>

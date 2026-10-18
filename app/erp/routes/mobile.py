@@ -112,7 +112,12 @@ def today():
 def customers():
     q = (request.args.get("q") or "").strip()
     only_debt = (request.args.get("filter") or "") == "debt"
-    result = readonly_queries.list_customers(q, only_debt=only_debt)
+    # 排序：默认拼音（用户 2026-10-18 定稿），另一个选项是按欠款。
+    # 只认这两个值，别的任何输入都退回默认，避免被拼错的 query 弄出空列表。
+    sort = (request.args.get("sort") or "").strip()
+    if sort not in {"pinyin", "debt"}:
+        sort = "pinyin"
+    result = readonly_queries.list_customers(q, only_debt=only_debt, sort=sort)
     return render_template(
         "mobile/customers/list.html",
         nav_key="customers",
@@ -120,6 +125,7 @@ def customers():
         truncated=result["truncated"],
         query=q,
         only_debt=only_debt,
+        sort=sort,
     )
 
 

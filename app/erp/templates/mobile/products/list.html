@@ -20,27 +20,21 @@
 {% block body %}
 {% if result.products %}
 {% for product in result.products %}
+{# 2026-10-18 用户定稿（A 方案 + 蓝色药丸价格）：
+   1) 卡片压成两行：商品名一行、价格行一行 —— 原来三行等宽，一屏只能看 4 个。
+   2) 去掉「客户专属价」「价格」两个重复标签（每张卡都写一遍，纯占地方）。
+   3) 去掉单位标签（用户明确不需要）；也因此价格药丸成了卡里唯一的胶囊，不会打架。
+   4) 价格用主色药丸底（.price-pill）：柜台前第一眼看的就是钱，给它最高视觉权重。 #}
 <a class="card tap" href="{{ url_for('mobile.product_detail', product_id=product.id) }}">
-  <div style="display:flex;align-items:flex-start;gap:8px">
-    <div style="flex:1;min-width:0">
-      <div class="t" style="font-size:14px;font-weight:600;line-height:1.45">{{ product.name }}</div>
-    </div>
-    <span class="tag">{{ product.unit }}</span>
+  <div class="p-name">{{ product.name }}</div>
+  {% if product.price_count %}
+  <div class="p-row">
+    <span class="price-pill">{{ money_short(product.min_price_cents) }}{% if product.max_price_cents != product.min_price_cents %} – {{ money_short(product.max_price_cents) }}{% endif %}</span>
+    <span class="p-count">{{ product.price_count }} 个客户</span>
   </div>
-  <div class="price-row">
-    {% if product.price_count %}
-    <span class="pg">
-      <span class="lab">客户专属价</span>
-      <span class="val">{{ product.price_count }} 个客户</span>
-    </span>
-    <span class="pg">
-      <span class="lab">价格</span>
-      <span class="val">{{ money_short(product.min_price_cents) }}{% if product.max_price_cents != product.min_price_cents %} – {{ money_short(product.max_price_cents) }}{% endif %}</span>
-    </span>
-    {% else %}
-    <span class="muted-note">还没有客户专属价</span>
-    {% endif %}
-  </div>
+  {% else %}
+  <div class="p-row"><span class="muted-note">还没有客户专属价</span></div>
+  {% endif %}
 </a>
 {% endfor %}
 {% else %}

@@ -116,8 +116,15 @@ def customer_balances(ids: list[int]) -> dict[int, int]:
 # 客户
 # ---------------------------------------------------------------------------
 
-def list_customers(q: str = "", *, only_debt: bool = False, limit: int = 400) -> dict:
-    """客户列表：按当前欠款从多到少；欠款只用批量 SQL 算一次。"""
+def list_customers(
+    q: str = "", *, only_debt: bool = False, limit: int = 400, sort: str = "pinyin"
+) -> dict:
+    """客户列表。
+
+    sort="pinyin"（默认，2026-10-18 用户定稿）：按拼音首字母 A→Z，同首字母再按名称，
+        找不到拼音的排最后 —— 柜台前按店名首字母找客户是最快的路径。
+    sort="debt"：按当前欠款从多到少，用于「谁欠得多」的追问场景。
+    两种排序都在 SQL 里做名次，欠款另用批量 SQL 只算一次。"""
     q = (q or "").strip()
     where = ["c.deleted_at IS NULL"]
     params: list = []
@@ -143,7 +150,11 @@ def list_customers(q: str = "", *, only_debt: bool = False, limit: int = 400) ->
         }
         for row in rows
     ]
-    customers.sort(key=lambda item: (-item["balance_cents"], item["name"]))
+    if sort == "debt":
+        customers.sort(key=lambda item: (-item["balance_cents"], item["name"]))
+    else:
+        # 拼音排序：空拼音垫底（否则空串会排到最前，把「没填拼音」的客户顶到 A 之前）。
+        customers.sort(key=lambda item: (item["pinyin"] == "", item["pinyin"], item["name"]))
     if only_debt:
         customers = [item for item in customers if item["balance_cents"] > 0]
     return {"customers": customers, "truncated": truncated, "query": q}
@@ -160,7 +171,7 @@ def customer_brief(customer_id: int) -> dict | None:
 
 
 def customer_detail(
-    customer_id: int, *, ledger_limit: int = 10, document_limit: int = 5
+    customer_id: int, *, ledger_limit: int = 30, document_limit: int = 3
 ) -> dict | None:
     """客户详情：余额三段 + 最近流水 + 最近单据（含拿货/退拿货）。
 

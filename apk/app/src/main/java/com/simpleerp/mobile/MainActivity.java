@@ -49,6 +49,12 @@ public class MainActivity extends Activity {
     private FrameLayout root;
     private WebView web;
     private ViewGroup errorPanel;
+    /**
+     * 页面内选的主题（浅色/深色）显式覆盖系统夜间模式。
+     * null = 跟随系统；TRUE/FALSE = 页面设置页里选定的那个。
+     * 没有它的话，壳只在 onCreate 读一次系统 uiMode，用户在页面里切主题后状态栏永远不变。
+     */
+    private Boolean themeForceDark = null;
     private TextView errorDetail;
     private String baseUrl = "";
     private long lastBackPress = 0L;
@@ -76,6 +82,9 @@ public class MainActivity extends Activity {
 
     /** 页面底色：与 mobile.css 的 --bg 对齐（浅 #fbfbfd / 深 #0b0f16）。 */
     private boolean nightMode() {
+        if (themeForceDark != null) {
+            return themeForceDark;
+        }
         int mode = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
         return mode == Configuration.UI_MODE_NIGHT_YES;
     }
@@ -222,7 +231,7 @@ public class MainActivity extends Activity {
         input.setImeOptions(EditorInfo.IME_ACTION_DONE);
         input.setTextColor(inkColor());
         input.setHintTextColor(mutedColor());
-        input.setText(baseUrl.isEmpty() ? "" : pretty(baseUrl));
+        if (!baseUrl.isEmpty()) { input.setText(pretty(baseUrl)); }
         box.addView(input);
 
         LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(
@@ -234,7 +243,13 @@ public class MainActivity extends Activity {
         save.setTextColor(Color.WHITE);
         save.setBackgroundColor(0xFF2563EB);
         save.setOnClickListener(v -> {
-            String url = normalize(input.getText().toString());
+            String rawInput = input.getText().toString();
+            if (rawInput.trim().isEmpty()) {
+                CharSequence hint = input.getHint();
+                if (hint != null) { rawInput = hint.toString(); }
+            }
+            String url = normalize(rawInput);
+            android.util.Log.i("SimpleERP", "save click raw=[" + rawInput + "] norm=[" + url + "] len=" + rawInput.length());
             if (url.isEmpty()) {
                 Toast.makeText(this, "地址不对，形如 192.168.10.5:5001", Toast.LENGTH_LONG).show();
                 return;
@@ -352,6 +367,21 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void openAddressDialog() {
             runOnUiThread(MainActivity.this::showAddressDialog);
+        }
+
+        /**
+         * 页面告诉我们它现在是深色还是浅色：重设 window / 状态栏 / 导航栏 / 图标明暗。
+         * 必须 runOnUiThread —— setStatusBarColor 只能在 UI 线程调。
+         */
+        @JavascriptInterface
+        public void applyDarkMode(final boolean dark) {
+            runOnUiThread(() -> {
+                if (themeForceDark != null && themeForceDark == dark) {
+                    return;
+                }
+                themeForceDark = dark;
+                applyWindowChrome();
+            });
         }
     }
 
