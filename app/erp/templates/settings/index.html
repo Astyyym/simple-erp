@@ -205,7 +205,6 @@
             <td>销售单 / 退货单 / 拿货单 / 退拿货单</td>
             <td>241mm 连续纸（每联 {{ slip_size }} 行）</td>
             <td class="text-end">
-              <a class="btn btn-sm btn-info" id="settingsPrintPreview" data-print-preview href="{{ url_for('settings.print_preview') }}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>预览打印效果</a>
               <a class="btn btn-sm btn-outline-info" id="settingsPrintPreviewPdf" data-print-preview href="{{ url_for('settings.print_preview_pdf', desktop_preview=1, return_to=request.full_path) if is_desktop else url_for('settings.print_preview_pdf') }}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>生成预览 PDF</a>
             </td>
           </tr>
@@ -213,7 +212,6 @@
             <td>客户货款汇总表</td>
             <td>A4 竖版（210×297mm）</td>
             <td class="text-end">
-              <a class="btn btn-sm btn-info" id="settingsSummaryPreview" data-print-preview href="{{ url_for('settings.summary_print_preview') }}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>预览打印效果</a>
               <a class="btn btn-sm btn-outline-info" id="settingsSummaryPreviewPdf" data-print-preview href="{{ url_for('settings.summary_print_preview_pdf', desktop_preview=1, return_to=request.full_path) if is_desktop else url_for('settings.summary_print_preview_pdf') }}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>生成预览 PDF</a>
             </td>
           </tr>
@@ -221,7 +219,6 @@
             <td>往来交易对账单</td>
             <td>A4 竖版（210×297mm）</td>
             <td class="text-end">
-              <a class="btn btn-sm btn-info" id="settingsReconPreview" data-print-preview href="{{ url_for('settings.reconciliation_print_preview') }}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>预览打印效果</a>
               <a class="btn btn-sm btn-outline-info" id="settingsReconPreviewPdf" data-print-preview href="{{ url_for('settings.reconciliation_print_preview_pdf', desktop_preview=1, return_to=request.full_path) if is_desktop else url_for('settings.reconciliation_print_preview_pdf') }}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>生成预览 PDF</a>
             </td>
           </tr>
@@ -597,9 +594,53 @@
     比它管的卡片还小；说明文字又与标题同行，视觉重心被拉平，只剩一条细横线撑着。
     现在：分区标题升到 20px + 左侧 4px 主色竖条，说明文字下移一行独占，横线加重。
   */
-  .settings-group-head{display:block;margin:0 0 14px;padding:0 0 10px 12px;border-bottom:2px solid var(--erp-border);border-left:4px solid var(--erp-primary)}
-  .settings-group-head h2{margin:0 0 4px;font-size:20px;font-weight:700;letter-spacing:-.01em}
-  .settings-group-head .settings-group-note{display:block;color:var(--erp-muted);font-size:12.5px;line-height:1.6}
+  /*
+    分区标题 · 2026-10-17 用户第二次反馈「右侧大标题还是不太清晰，分区边界不明显」。
+    上一版只把字号提到 20px，问题在于：① 深/浅两套主题下 20px 与卡片 h3(18px) 仍只差 2px，
+    缩放下更接近；② 标题只是漂在卡片之间的文字，没有「这一整块属于它」的视觉归属。
+    本版改成：整条标题条 = 主色实心色条 + 浅色底块 + 序号徽标 + 24px 主色标题，
+    并 sticky 吸在 .page-body 顶部（设置页滚动时始终知道自己在哪个分区）。
+  */
+  /* 锚点跳转要停在标题条下方，不能被 sticky 标题条盖住。 */
+  /*
+    锚点/highlight 归属（2026-10-17）：分区标题条本身 sticky 在顶部，高度 83px。
+    如果只留 8px 的判定容差，标题条会**盖住下一个分区的顶部 83px** —— 于是
+    左栏目录高亮永远慢一格（实测滚到「打印」仍亮「基本」）。
+    scroll-margin-top 必须等于标题条高度再加原来那 8px 容差。
+  */
+  .settings-group{scroll-margin-top:97px}
+  /*
+    2026-10-18 用户第三次反馈：标题条做成**圆角矩形卡片**（四角全圆，不再是
+    「左边一条竖线 + 右边圆角」的半条样式）。为了让「圆角矩形」真的看得出来：
+    ① 四边都留出圆角，不再贴左边界；
+    ② 加 1px 描边，让边缘在浅色底上也能看清轮廓；
+    ③ 左侧色条改由 inset box-shadow 画在卡片内部，不再用 border-left 破坏圆角。
+    渐变仍按上一版「明显看得见」的浓度：主色 22% → 9%(42%) → 透明(72%)。
+  */
+  .settings-group-head{
+    position:sticky;top:0;z-index:6;
+    display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;
+    margin:0 0 16px;
+    padding:12px 18px;
+    border:1px solid color-mix(in srgb,var(--erp-primary) 22%,var(--erp-border));
+    border-radius:12px;
+    background:linear-gradient(90deg,
+      color-mix(in srgb,var(--erp-primary) 22%,transparent) 0%,
+      color-mix(in srgb,var(--erp-primary) 9%,transparent) 42%,
+      transparent 72%);
+    box-shadow:inset 5px 0 0 0 var(--erp-primary);
+  }
+  .settings-group-head h2{
+    margin:0;flex:0 0 auto;
+    padding-left:6px;
+    font-size:calc(24px * var(--erp-scale));font-weight:750;letter-spacing:-.015em;
+    color:var(--erp-primary);line-height:1.2;
+  }
+  .settings-group-head .settings-group-note{
+    flex:1 1 100%;display:block;
+    padding-left:6px;margin-top:2px;
+    color:var(--erp-muted);font-size:12.5px;line-height:1.6;
+  }
   .settings-form{display:flex;flex-direction:column;gap:16px;max-width:920px}
   /* 宽屏：设置卡片改成两列，把下方设置项放到右侧。 */
   @media(min-width:1440px){
@@ -813,10 +854,19 @@
     var sections = ids.map(function (id) { return document.getElementById(id); }).filter(Boolean);
     if (!links.length || !sections.length) return;
     const paneTop = pane.getBoundingClientRect().top;
+    // 2026-10-17：分区标题条本身 sticky 在顶部（高约 83px）。原来只看「分区顶部
+    // 是否到达容器顶部」，可标题条会把下一个分区顶下去 83px，判定永远慢一格
+    // （实测滚到「打印」仍亮「基本」）。改为按「上一个标题条贴在顶部」判定：
+    // 分区头一旦吸住，就等于用户已经进入这个分区。
+    const headH = (function () {
+      const h = document.querySelector('.settings-group-head');
+      return h ? h.getBoundingClientRect().height : 0;
+    })();
+    // 容差要盖住 scroll-margin（92px）本身带来的整数误差：取「标题条高 + 20」。
+    const threshold = headH + 20;
     let current = sections[0];
     for (const section of sections) {
-      // 分区标题已滚到容器顶部（留 8px 容差）即视为当前分区。
-      if (section.getBoundingClientRect().top - paneTop <= 8) current = section;
+      if (section.getBoundingClientRect().top - paneTop <= threshold) current = section;
     }
     links.forEach(function (a) {
       const on = a.getAttribute('href') === '#' + current.id;

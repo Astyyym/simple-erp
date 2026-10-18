@@ -43,11 +43,9 @@ def test_summary_and_print_preview_open_without_login(monkeypatch):
     for path in (
         f"/accounts/summary_pdf?customer_id={customer_id}",
         "/orders/summary_pdf",
-        "/settings/print-preview",
+        # 2026-10-17：三个 HTML 样张路由已删除（用户决策），只保留 PDF 版本。
         "/settings/print-preview.pdf",
-        "/settings/print-preview/summary",
         "/settings/print-preview/summary.pdf",
-        "/settings/print-preview/reconciliation",
         "/settings/print-preview/reconciliation.pdf",
         "/",
     ):

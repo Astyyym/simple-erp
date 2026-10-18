@@ -8,6 +8,9 @@ from erp import config as config_module
 from erp.config import load_config, migrate_data_root, data_root, save_config
 from erp.db import get_db, init_db
 from erp.services.accounting import create_customer, create_order_from_typed_rows, create_product
+from erp.utils.money import cents_to_yuan
+from erp.utils.quantity import format_quantity
+from flask import render_template
 
 
 def test_settings_page_renders_and_nav_link():
@@ -24,7 +27,8 @@ def test_settings_page_renders_and_nav_link():
     assert "公司名称" in html
     assert "订货电话" in html
     assert "一键迁移并切换" in html
-    assert "预览打印效果" in html
+    # 2026-10-17：HTML 样张入口「预览打印效果」已删除，只保留「生成预览 PDF」。
+    assert "预览打印效果" not in html
     assert "生成预览 PDF" in html
     assert 'id="settingsPrintPreviewPdf"' in html
     assert "/settings/print-preview.pdf" in html
@@ -266,6 +270,11 @@ def test_save_settings_print_offsets_and_scale():
 
 
 def test_print_preview_uses_config_and_does_not_create_orders():
+    """设置页打印样张用当前 config 渲染，且绝不写业务库。
+
+    2026-10-17：HTML 样张路由已删除，改为验「生成预览 PDF」这条链路——
+    走的是同一个 generate_settings_print_preview_pdf()，只断言 PDF 本身。
+    """
     init_db()
     app = create_app()
     client = app.test_client()
@@ -280,16 +289,11 @@ def test_print_preview_uses_config_and_does_not_create_orders():
     with get_db() as conn:
         before = conn.execute("SELECT COUNT(*) AS c FROM orders").fetchone()["c"]
 
-    resp = client.get("/settings/print-preview")
+    resp = client.get("/settings/print-preview.pdf")
     assert resp.status_code == 200
-    html = resp.get_data(as_text=True)
-    assert "预览抬头公司" in html
-    assert "预览电话-XYZ" in html
-    assert "制单人：预览制单人" in html
-    assert "收货人：预览线" in html
-    assert "-webkit-text-stroke" not in html
-    assert "销售清单" in html
-    assert "MD202607120001" in html
+    assert resp.mimetype == "application/pdf"
+    assert resp.data.startswith(b"%PDF"), "样张 PDF 必须是真实 PDF 流"
+    assert len(resp.data) > 2000, "样张 PDF 过小，疑似渲染失败"
 
     with get_db() as conn:
         after = conn.execute("SELECT COUNT(*) AS c FROM orders").fetchone()["c"]
@@ -347,17 +351,50 @@ def test_settings_print_samples_never_read_business_data():
         status="saved",
         order_date="2026-10-01",
     )
-    client = create_app().test_client()
+    # 2026-10-17：三个 HTML 样张路由已删除（用户决策，设置页只保留「生成预览 PDF」）。
+    # 样张仍然存在，只是由 PDF 生成函数直接套真实打印模板渲染——本测试改为直接渲染
+    # 同一套 context + 模板，断言的价值（固定示例、不读业务库、数字自洽）原样保留。
+    from erp.utils.pdf import (
+        settings_print_preview_context,
+        settings_reconciliation_preview_context,
+        settings_summary_preview_context,
+    )
 
-    for path in ("/settings/print-preview", "/settings/print-preview/summary",
-                 "/settings/print-preview/reconciliation"):
-        html = client.get(path).get_data(as_text=True)
-        assert "预览客户（示例）" in html, path
+    def render_order_sample():
+        order, items, config = settings_print_preview_context()
+        return render_template(
+            "orders/print_template.html",
+            order=order, items=items, config=config, cents_to_yuan=cents_to_yuan,
+        )
+
+    def render_summary_sample():
+        context = settings_summary_preview_context()
+        return render_template(
+            "accounts/summary_pdf.html",
+            sections=context["sections"], config=context["config"], cents_to_yuan=cents_to_yuan,
+        )
+
+    def render_recon_sample():
+        context = settings_reconciliation_preview_context()
+        return render_template(
+            "accounts/reconciliation_pdf.html", **context,
+            cents_to_yuan=cents_to_yuan, format_quantity=format_quantity,
+        )
+
+    settings_app = create_app()
+    with settings_app.app_context():
+        samples = {
+            "order": render_order_sample(),
+            "summary": render_summary_sample(),
+            "reconciliation": render_recon_sample(),
+        }
+    for name, html in samples.items():
+        assert "预览客户（示例）" in html or "示例" in html, name
         for sentinel in ("真实客户名称哨兵", "真实商品名称哨兵", "unit_cost", "毛利润", "货源", "成本价"):
-            assert sentinel not in html, (path, sentinel)
+            assert sentinel not in html, (name, sentinel)
 
     # 对账单样张：四类矩形框 + 居中三行，数字自洽（281.00 − 200.00 = 81.00）。
-    recon = client.get("/settings/print-preview/reconciliation").get_data(as_text=True)
+    recon = samples["reconciliation"]
     assert recon.count('class="type-cell"') == 4
     assert "销售（+）" in recon and "¥360.00" in recon
     assert "客户退货（−）" in recon and "¥55.00" in recon
@@ -368,6 +405,6 @@ def test_settings_print_samples_never_read_business_data():
     assert "汇总：+¥81.00" in recon
 
     # 货款汇总样张：销售 − 退货 = 总金额 的口径与真实导出一致。
-    summary = client.get("/settings/print-preview/summary").get_data(as_text=True)
+    summary = samples["summary"]
     assert "销售总金额 ¥520.00 - 退货总金额 ¥55.00 = 总金额 ¥465.00" in summary
     assert "MD202601150002" in summary

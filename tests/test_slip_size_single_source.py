@@ -66,7 +66,18 @@ def test_config_slip_size_moves_entry_pages_and_settings_sample_together(slip_si
         html = client.get(path).get_data(as_text=True)
         assert f"const slipSize = {slip_size};" in html, path
 
-    sample = client.get("/settings/print-preview").get_data(as_text=True)
+    # 2026-10-17：HTML 样张路由已删除，改为直接渲染同一个样张模板（PDF 走的也是它）。
+    from flask import render_template
+
+    from erp.utils.money import cents_to_yuan
+    from erp.utils.pdf import settings_print_preview_context
+
+    with create_app().app_context():
+        order, items, config = settings_print_preview_context()
+        sample = render_template(
+            "orders/print_template.html",
+            order=order, items=items, config=config, cents_to_yuan=cents_to_yuan,
+        )
     assert f"padding: {slip_row_padding_mm(slip_size)}mm 1.2mm" in sample, "样张没拿到该档位的行内边距"
 
     # 设置页要真的能看到并选中当前档位（用户 2026-10-14 反馈过「设置界面找不到」）

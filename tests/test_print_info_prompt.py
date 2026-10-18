@@ -182,7 +182,20 @@ def test_print_preview_renders_the_filled_shop_info():
     """端到端：填了打印信息后，设置页样张真的印出来（不是只改了配置）。"""
     client = _client()
     _fill_print_info(client, phone="0571-88886666", address="杭州市西湖区文三路 100 号")
-    html = client.get("/settings/print-preview").get_data(as_text=True)
+    # 2026-10-17：HTML 样张路由已删除，改为直接渲染同一个样张模板
+    #（PDF 生成函数 generate_settings_print_preview_pdf 走的也是这一套 context + 模板）。
+    from flask import render_template
+
+    from erp.utils.money import cents_to_yuan
+    from erp.utils.pdf import settings_print_preview_context
+
+    app = create_app()
+    with app.app_context():
+        order, items, config = settings_print_preview_context()
+        html = render_template(
+            "orders/print_template.html",
+            order=order, items=items, config=config, cents_to_yuan=cents_to_yuan,
+        )
 
     assert "0571-88886666" in html
     assert "杭州市西湖区文三路 100 号" in html

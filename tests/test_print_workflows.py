@@ -327,6 +327,25 @@ def test_print_defaults_are_continuous_paper_and_summary_a4():
     assert config["order_pdf_page_height_mm"] == 139.7
 
 
+def _render_settings_order_sample(app):
+    """渲染设置页「四类开单」样张模板（HTML 样张路由已于 2026-10-17 删除）。
+
+    PDF 生成函数 generate_settings_print_preview_pdf() 用的是同一个 context + 同一个模板，
+    因此这里断言纸型/偏移口径仍然等价。
+    """
+    from flask import render_template
+
+    from erp.utils.money import cents_to_yuan
+    from erp.utils.pdf import settings_print_preview_context
+
+    with app.app_context():
+        order, items, config = settings_print_preview_context()
+        return render_template(
+            "orders/print_template.html",
+            order=order, items=items, config=config, cents_to_yuan=cents_to_yuan,
+        )
+
+
 def test_order_print_preview_and_sample_pdf_use_continuous_paper():
     from erp.config import load_config, save_config
 
@@ -347,7 +366,8 @@ def test_order_print_preview_and_sample_pdf_use_continuous_paper():
     assert float(cfg["order_pdf_page_height_mm"]) == 139.7
     app = create_app()
     client = app.test_client()
-    html = client.get("/settings/print-preview").get_data(as_text=True)
+    # 2026-10-17：HTML 样张路由已删除，改为直接渲染同一套样张模板（PDF 生成走的也是它）。
+    html = _render_settings_order_sample(app)
     assert "size: 215.9mm 139.7mm" in html or "size:215.9mm 139.7mm" in html
     # 连续纸版心占满页框，不再有 A4 的 186mm 上限
     assert "max-width: 186mm" not in html and "max-width:186mm" not in html
@@ -396,8 +416,8 @@ def test_order_print_preview_html_includes_configured_offsets():
     init_db()
     save_config({"print_offset_x_mm": 8, "print_offset_y_mm": -10, "print_scale": 1.0})
     app = create_app()
-    client = app.test_client()
-    html = client.get("/settings/print-preview").get_data(as_text=True)
+    # 2026-10-17：HTML 样张路由已删除，改为直接渲染同一套样张模板。
+    html = _render_settings_order_sample(app)
     assert "translate(8mm, -10mm)" in html or "translate(8.0mm, -10.0mm)" in html
     assert "scale(1.0)" in html or "scale(1)" in html
 
@@ -528,23 +548,19 @@ def test_desktop_print_links_stay_in_shell_without_blank_target(monkeypatch):
     assert f'href="/orders/{order_id}/pdf?desktop_preview=1" target="_blank"' not in detail_html
 
     settings_html = client.get("/settings/").get_data(as_text=True)
-    # 2026-10-15：三个版面的样张入口并进同一张表，属性顺序变了但契约不变——
-    # 桌面壳内每个链接都必须留在壳里（无 target="_blank"）并携带来源页。
+    # 2026-10-17：三个版面的 HTML 样张入口（预览打印效果）已删除，只留生成预览 PDF。
+    # 契约不变的部分：桌面壳内每个 PDF 链接都必须留在壳里（无 target="_blank"）并携带来源页。
     for entry, base in (
-        ("settingsPrintPreview", "/settings/print-preview"),
         ("settingsPrintPreviewPdf", "/settings/print-preview.pdf"),
-        ("settingsSummaryPreview", "/settings/print-preview/summary"),
         ("settingsSummaryPreviewPdf", "/settings/print-preview/summary.pdf"),
-        ("settingsReconPreview", "/settings/print-preview/reconciliation"),
         ("settingsReconPreviewPdf", "/settings/print-preview/reconciliation.pdf"),
     ):
         tag = re.search(rf'<a[^>]*id="{entry}"[^>]*>', settings_html)
         assert tag, entry
         assert 'target="_blank"' not in tag.group(0), entry
-        if base.endswith(".pdf"):
-            assert f'href="{base}?desktop_preview=1&amp;return_to=/settings/?"' in tag.group(0), entry
-        else:
-            assert f'href="{base}"' in tag.group(0), entry
+        assert f'href="{base}?desktop_preview=1&amp;return_to=/settings/?"' in tag.group(0), entry
+    for removed in ("settingsPrintPreview", "settingsSummaryPreview", "settingsReconPreview"):
+        assert f'id="{removed}"' not in settings_html, removed
 
     accounts_html = client.get(f"/accounts/?customer_id={customer_id}").get_data(as_text=True)
     # 2026-10-14：打印账款流水 PDF 已删除（内容并入往来对账），页面只剩对账入口。

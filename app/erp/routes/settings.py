@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from flask import Blueprint, flash, redirect, render_template, request, session, url_for, current_app, Response
+from flask import Blueprint, flash, redirect, render_template, request, session, url_for, current_app
 
 from erp.config import (
     UI_FONT_WEIGHT_CHOICES,
@@ -30,7 +30,6 @@ from erp.utils.backup import (
     read_backup_schema_version,
     restore_backup,
 )
-from erp.utils.money import cents_to_yuan
 from erp.utils.quantity import format_quantity
 from erp.utils.legacy_archive import archive_dir, list_archives, save_archive
 from erp.mobile_server import mobile_url, port_in_use, start_mobile_listener, status as mobile_status, stop_mobile_listener
@@ -43,9 +42,6 @@ from erp.utils.pdf import (
     generate_settings_summary_preview_pdf,
     render_desktop_preview,
     send_pdf_for_preview,
-    settings_print_preview_context,
-    settings_reconciliation_preview_context,
-    settings_summary_preview_context,
     wants_desktop_preview,
 )
 from typing import Any
@@ -213,20 +209,6 @@ def restore_print_info_prompt():
     return redirect(url_for("settings.settings_page") + "#printInfoSection")
 
 
-@settings_bp.get("/print-preview")
-def print_preview():
-    """Sample print HTML — does not read or write business orders."""
-    order, items, config = settings_print_preview_context()
-    html = render_template(
-        "orders/print_template.html",
-        order=order,
-        items=items,
-        config=config,
-        cents_to_yuan=cents_to_yuan,
-    )
-    return Response(html, mimetype="text/html; charset=utf-8")
-
-
 @settings_bp.get("/print-preview.pdf")
 def print_preview_pdf():
     """Render the Settings sample through the normal PDF preview/save workflow."""
@@ -240,38 +222,12 @@ def print_preview_pdf():
 # 另外两个版面的样张（2026-10-15）：同样是固定示例数据，不读业务库。
 # 桌面壳里「预览 PDF」走统一预览页（返回/保存），浏览器直接返回真实 PDF。
 
-@settings_bp.get("/print-preview/summary")
-def summary_print_preview():
-    """Sample 客户货款汇总 HTML — fixed sample data, never reads business rows."""
-    context = settings_summary_preview_context()
-    html = render_template(
-        "accounts/summary_pdf.html",
-        sections=context["sections"],
-        config=context["config"],
-        cents_to_yuan=cents_to_yuan,
-    )
-    return Response(html, mimetype="text/html; charset=utf-8")
-
-
 @settings_bp.get("/print-preview/summary.pdf")
 def summary_print_preview_pdf():
     if wants_desktop_preview():
         return render_desktop_preview("货款汇总样张.pdf", "货款汇总样张 PDF")
     path = generate_settings_summary_preview_pdf()
     return send_pdf_for_preview(path, "货款汇总样张.pdf", "货款汇总样张 PDF")
-
-
-@settings_bp.get("/print-preview/reconciliation")
-def reconciliation_print_preview():
-    """Sample 往来交易对账单 HTML — fixed sample data, never reads business rows."""
-    context = settings_reconciliation_preview_context()
-    html = render_template(
-        "accounts/reconciliation_pdf.html",
-        **context,
-        cents_to_yuan=cents_to_yuan,
-        format_quantity=format_quantity,
-    )
-    return Response(html, mimetype="text/html; charset=utf-8")
 
 
 @settings_bp.get("/print-preview/reconciliation.pdf")

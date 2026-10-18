@@ -140,23 +140,21 @@ def test_settings_page_exposes_html_and_pdf_preview_entries(monkeypatch):
     init_db()
     html = create_app().test_client().get("/settings/").get_data(as_text=True)
 
-    # 三个版面各有「预览打印效果」+「生成预览 PDF」，2026-10-15 起并排在同一张版面表里。
+    # 2026-10-17：三个版面的 HTML 样张入口（预览打印效果）已删除，每个版面只留「生成预览 PDF」。
     assert "打印版面预览" in html
-    for entry, pdf_entry in (
-        ("settingsPrintPreview", "settingsPrintPreviewPdf"),
-        ("settingsSummaryPreview", "settingsSummaryPreviewPdf"),
-        ("settingsReconPreview", "settingsReconPreviewPdf"),
-    ):
-        assert f'id="{entry}"' in html, entry
+    for pdf_entry in ("settingsPrintPreviewPdf", "settingsSummaryPreviewPdf", "settingsReconPreviewPdf"):
         assert f'id="{pdf_entry}"' in html, pdf_entry
-    assert html.count("预览打印效果") == 3
+    for removed in ("settingsPrintPreview", "settingsSummaryPreview", "settingsReconPreview"):
+        assert f'id="{removed}"' not in html, removed
+    assert html.count("预览打印效果") == 0
     assert html.count("生成预览 PDF") == 3
     assert "/settings/print-preview.pdf?desktop_preview=1" in html
     assert "/settings/print-preview/summary.pdf?desktop_preview=1" in html
     assert "/settings/print-preview/reconciliation.pdf?desktop_preview=1" in html
     assert "客户货款汇总表" in html and "往来交易对账单" in html
-    # 未保存修改的确认提示必须挂在全部六个链接上，而不是只挂四类开单那两个。
-    assert html.count("data-print-preview href=") == 6
+    # 未保存修改的确认提示必须挂在全部三个 PDF 样张链接上。
+    # 2026-10-17：HTML 样张入口已删除，计数从 6 降到 3（不是删断言、是跟着契约走）。
+    assert html.count("data-print-preview href=") == 3
 
 
 def test_save_pdf_writes_exact_bytes_and_sanitizes_filename(monkeypatch, tmp_path):

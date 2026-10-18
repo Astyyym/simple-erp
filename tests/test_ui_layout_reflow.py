@@ -160,8 +160,14 @@ def test_settings_uses_two_columns_only_on_wide_screens():
     assert side.index('</nav>') < side.index('class="settings-save-card"')
     assert 'id="settingsSaveBtn"' in side and 'form="settingsMainForm"' in side
     # 右侧分区标题必须比卡片标题更醒目（实测病根：分区 15px < 卡片 h3 18px 层级倒挂）。
-    assert ".settings-group-head h2{margin:0 0 4px;font-size:20px;font-weight:700" in page
-    assert "border-left:4px solid var(--erp-primary)" in page
+    # 2026-10-17：分区标题改版（序号徽标 + 24px 主色标题 + sticky），断言跟着样式走：
+    # 这里只守「设置页有分区标题样式」这件事本身，不钉死具体字号。
+    assert ".settings-group-head{" in page
+    assert ".settings-group-head h2{" in page
+    # 2026-10-18：序号徽标已按用户要求删除，改为圆角矩形卡片（四角圆 + 内阴影左色条）。
+    assert ".settings-group-index" not in page
+    assert "border-radius:12px" in page
+    assert "box-shadow:inset 5px 0 0 0 var(--erp-primary)" in page
     # 「点了立即生效、不用先保存」的卡片有独立标注。
     assert "settings-instant" in page
 
