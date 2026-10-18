@@ -22,10 +22,68 @@ from erp.utils.quantity import format_quantity
 # test/caller override seam `monkeypatch.setattr(utils.pdf, "HTML", ...)` still works.
 HTML = None
 
+# ---------------------------------------------------------------------------
+# WeasyPrint 的 GTK 运行库（2026-10-17）
+#
+# WeasyPrint 依赖 Pango/Cairo/GObject（Windows 上由 GTK3 Runtime 提供）。系统即使
+# 装过 GTK 并写进了 PATH，**已经启动的进程不会继承后改的 PATH** —— 表现就是
+# `OSError: cannot load library 'gobject-2.0-0'`，所有 PDF 导出 500。
+# 这里在首次导入前自己把 GTK 的 bin 目录找出来挂上，不依赖调用方的 PATH：
+#   1. 已被其他地方设置过的（打包产物旁边、用户手动加的）——先尊重，能导入就完事；
+#   2. 常见安装位置（与 简单ERP.spec 里 gtk_bin 同一套约定）；
+#   3. 环境变量 ERP_GTK_BIN 显式指定。
+# ---------------------------------------------------------------------------
+_GTK_BIN_CANDIDATES = (
+    "C:/Program Files/GTK3-Runtime Win64/bin",
+    "C:/Program Files (x86)/GTK3-Runtime Win64/bin",
+    "C:/Program Files/GTK3-Runtime/bin",
+)
+
+
+def _ensure_gtk_on_path() -> None:
+    """把 GTK 的 bin 目录加入 DLL 搜索路径（幂等；非 Windows 直接跳过）。"""
+    import os
+    import sys
+
+    if not sys.platform.startswith("win"):
+        return
+    if getattr(_ensure_gtk_on_path, "_done", False):
+        return
+    _ensure_gtk_on_path._done = True
+
+    candidates = []
+    explicit = os.environ.get("ERP_GTK_BIN")
+    if explicit:
+        candidates.append(explicit)
+    candidates.extend(_GTK_BIN_CANDIDATES)
+    # 打包产物：GTK 的 DLL 被 PyInstaller 收在 EXE 同级目录。
+    if getattr(sys, "frozen", False):
+        candidates.insert(0, str(Path(sys.executable).parent))
+
+    for raw in candidates:
+        try:
+            folder = Path(raw)
+        except (TypeError, ValueError):
+            continue
+        if not (folder / "libgobject-2.0-0.dll").exists():
+            continue
+        # os.add_dll_directory 是 Python 3.8+ 的正规做法（3.8 起 PATH 不再参与
+        # 扩展模块的 DLL 搜索）；同时补 PATH，兼容仍按旧规则查找的依赖。
+        if hasattr(os, "add_dll_directory"):
+            try:
+                os.add_dll_directory(str(folder))
+            except OSError:
+                pass
+        current = os.environ.get("PATH", "")
+        if str(folder).lower() not in current.lower():
+            os.environ["PATH"] = str(folder) + os.pathsep + current
+        return
+
 
 def _html_class():
     global HTML
     if HTML is None:
+        _ensure_gtk_on_path()
         from weasyprint import HTML as _HTML
         HTML = _HTML
     return HTML
