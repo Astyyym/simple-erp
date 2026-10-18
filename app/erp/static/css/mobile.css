@@ -282,28 +282,32 @@ a { color: inherit; text-decoration: none; }
   font-weight: 600;
   white-space: nowrap;
 }
-/* 单据列表的主行：「客户名 …… 金额」同一行，金额靠右。
-   名字太长时省略号收在名字上，金额永远完整（金额是这一行最不能截的信息）。 */
-.row .line1 {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
+/* 单据列表主行：只承载客户名。金额在右侧 .tail 里（标签在上、金额在下），
+   两者右边缘都贴 .tail 的右缘，所以整列看上去是一条竖线。 */
+.row .line1 { display: block; }
 .row .line1 .who {
-  flex: 1;
+  display: block;
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.row .line1 .num { flex: none; }
+/* 右列「标签 / 金额」：保持竖向成组、右对齐。
+   gap 让标签与金额之间留一点气口，不再靠 flex 居中把标签甩到中间高度上。 */
 .row .tail {
   flex: none;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+  justify-content: center;
   gap: 3px;
+  /* 大金额（六位数以上）允许在这一列里按内容收缩：
+     不截断、不换行——金额截断比字号小一号严重得多。
+     档位由模板按字符长度加类（.amt-m / .amt-l），不靠 vw 猜。 */
+  max-width: 40%;
 }
+.row .tail .num.amt-m { font-size: 13px; }
+.row .tail .num.amt-l { font-size: 12px; }
 .chev { flex: none; color: var(--border-strong); display: grid; place-items: center; }
 
 /* 金额色分两套语义，别混用（2026-10-18）：

@@ -34,14 +34,19 @@
         {%- if date_range.mode != 'day' %}{{ document.day_label }} · {% endif -%}
         {%- if document.time_label %}{{ document.time_label }} · {% endif -%}
         {{ document.order_no }}</span>
-      {# 2026-10-18：主行给「谁 + 多少」——用户在这一页是来核对客户的。
-         客户名与金额放同一行、名字吃空白并把金额顶到右边，扫一眼就是对应关系；
-         单号退成上面那行小字（原先单号夹在时间与客户名之间，一条行读下来要跳三次）。 #}
-      <span class="t line1"><span class="who">{{ document.customer_name }}</span>
-        <span class="num{{ ' negamount' if document.amount_cents < 0 }}">{{ money_short(document.amount_cents) }}</span></span>
+      {# 主行只放「谁」：金额回到右侧那一列（用户定案：标签在上、金额在下）。
+         2026-10-18 修：上一版把金额拉到客户名这一行，右侧只剩一个孤立小标签，
+         它按自身 23px 高度居中，而左边是 42px 的两行内容 —— 标签就浮在
+         「单号那一行」的高度上，比客户名和金额都高 10px，看着是错开的。
+         金额回右列后，「标签 / 金额」重新成为同一个纵向组，右边缘才对得齐。 #}
+      <span class="t line1"><span class="who">{{ document.customer_name }}</span></span>
     </span>
     <span class="tail">
       <span class="tag t-{{ document.order_type }}">{{ document.type_label }}</span>
+      {# 金额按长度分档缩字号：右列宽度有限，六位数的 ¥17,188.66 会挤掉客户名。
+         阈值按「数字位数」而不是像素猜：≤5 位正常、6 位 13px、≥7 位 12px。 #}
+      {%- set _num_len = document.amount_cents|abs|string|length -%}
+      <span class="num{{ ' negamount' if document.amount_cents < 0 }}{{ ' amt-l' if _num_len >= 7 else (' amt-m' if _num_len >= 6 else '') }}">{{ money_short(document.amount_cents) }}</span>
     </span>
     <span class="chev">{{ chev() }}</span>
   </a>

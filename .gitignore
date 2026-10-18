@@ -61,3 +61,6 @@ apk/local.properties
 apk/keystore/
 apk/keystore.properties
 apk/.idea/
+
+# Alma 本地工作目录（临时 QA 脚本/截图，不入库）
+.alma/
