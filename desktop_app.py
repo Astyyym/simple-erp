@@ -241,6 +241,22 @@ def _wait_for_server(
     raise RuntimeError("简单ERP启动超时，请重新打开或联系维护人员。")
 
 
+def _verify_database_or_raise() -> None:
+    """启动前确认业务库能打开。
+
+    `main()` 在「端口已被占用」分支里不会调用 `_create_app()`，于是这个校验
+    是那条路径上**唯一**能发现数据库损坏的地方。失败时抛 RuntimeError（带原始原因），
+    文案与 `_create_app()` 失败时保持同一口径，用户看到的仍是可读的故障说明。
+    """
+    try:
+        from erp import create_app as _create_erp_app
+
+        _create_erp_app()
+    except Exception as exc:
+        logging.getLogger(__name__).exception("本地服务启动失败")
+        raise RuntimeError(f"简单ERP启动失败：{exc}") from exc
+
+
 def _window_title() -> str:
     try:
         from erp.config import load_config
@@ -298,6 +314,21 @@ def main() -> None:
     try:
         import webview
     except Exception:
+        # 没有桌面壳（缺 pywebview / WebView2 不可用）：回退到系统浏览器。
+        #
+        # 2026-10-17 修复（两条都是真缺陷，不是测试凑数）：
+        # ① 原来无条件 `webbrowser.open` + `while True: sleep(3600)`。当 `app is None`
+        #    时根本没有任何服务在跑，开出来的只是一个「无法访问」的空页，然后进程
+        #    永远挂着 —— 测试里表现为卡满超时（faulthandler 定位到这一行）。
+        # ② 更要紧的是：`already_running=True` 时 app 会保持 None。端口被别的程序
+        #    占着（甚至被一个残留的旧实例占着）也会被当成「已经启动」，
+        #    于是既不去校验数据库、也不报错，直接把用户扔进一个不相干的页面。
+        # 现在：**先确认数据库可用**（这是启动必须做的事，与端口无关），
+        # 再决定是打开浏览器等待，还是把真实故障抛回去。
+        _verify_database_or_raise()
+        webbrowser.open(app_url)
+        while True:
+            time.sleep(3600)
         webbrowser.open(app_url)
         while True:
             time.sleep(3600)
