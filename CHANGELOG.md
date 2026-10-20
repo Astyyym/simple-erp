@@ -18,6 +18,8 @@
 - **手机端同步**：手机端路由无一行自写 SQL，全部走 `readonly_queries` 的同一套匹配函数，因此自动同步；已用真实手机端 app + 真实配对流程实测客户/商品全拼搜索与全角完整名搜索均命中。第二监听不调 `init_db()`（避免重复迁移），回填由主应用先完成，两端共用同一数据根。
 - **回归**：新增 `tests/test_name_norm_search.py`（29 项，覆盖 `PVC管（厚）`、`水龙头（铜）`、`软密封闸阀 DN100`、`４分弯头`、`电缆ＹＪＶ２２`、`螺栓 M8×40` 六类形态的点选回查取价、换客户重算、全拼搜索、老库回填）与 `tests/test_name_norm_mobile.py`（5 项，手机端配对后搜索）。
 - **验证**：全量 `pytest tests/ -q` = **1053 passed / 1 skipped / 0 failed**；前端 `node --test tests/frontend/*.test.mjs` = **103 passed / 0 failed**。
+- **打包（2026-10-20，`打包Windows安装包.bat` 一次出齐）**：`dist/simple-erp-setup-v4.6.2.exe` 41,400,125 B（SHA256 `6865711312…`）、`dist/simple-erp-windows-v4.6.2.zip` 55,269,415 B（`2c5abea96a…`）、`dist/local-v4.6.2/简单ERP/`。**产物门**：ZIP 623 条目、顶层唯一 `简单ERP/`、无 `.db` / `demo_data` / 日志、包内 `VERSION` = `v4.6.2`；两个 EXE 的 PE 版本均为 `4.6.2.0` / `v4.6.2`；绿色版演示数据 **200 条**（`orders` 125 = 销售 90 + 退货 35，`purchase_orders` 45，`purchase_return_orders` 30，`integrity_check`=ok）。
+- **隔离冒烟（分发产物，非源码）**：直接启动 `dist/local-v4.6.2/简单ERP/简单ERP.exe`（`ERP_PORT=5098`），`/health` = `v4.6.2`。冒烟库内插入一条带全角括号的商品 `PVC管（厚）冒烟`（客户专属价 88.88）后实测：**按完整名称（全角括号）回查拿到 `88.88`**、全拼 `pvcguanhoumaoyan` 同样命中、换成无专属价的客户则 `unit_price` 正确为 `null` —— 用户报的那个现象在**打包产物**上确认修复。
 - **仍未做**：目标打印机实打本版不需要（不动打印版式）；桌面壳 WebView2 内的点击链路未在本次改动范围内。
 
 ## v4.6.1 - 开单行按钮位置调整 + 单位候选清除 + 手机端交互收口（2026-10-18，已发版）
