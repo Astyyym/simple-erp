@@ -301,7 +301,7 @@ function bindRow(tr) {
   // 点选候选不会触发输入框的 input 事件（picker.set 只写值），所以命中/未命中都走这一个入口。
   // 2026-10-17 行复制/粘贴：粘贴带来的单价属于**上一行那个型号**。
   // 名称一旦不同于复制来源，就是「换过型号」，必须先把旧价清掉 ——
-  // 拿货/退拿货填的是入库成本价，旧价串到新型号上会直接算错账。
+  // 拿货/退拿货的单价是手输的单据金额，旧价串到新型号上会把这行金额算错。
   function dropPastedPriceIfRetyped() {
     if (!tr.__pastedFrom) return false;
     const current = (tr.querySelector('.picker-name-input')?.value || '').trim();

@@ -32,7 +32,7 @@ ALLOWED_TABLES = {
 # v15 现有列：商品档案只保留名称 / 品牌 / 单位，销售明细只保留业务字段。
 ALLOWED_PRODUCT_COLUMNS = {
     "id", "name", "unit", "notes", "is_active", "usage_count", "pinyin_initials",
-    "pinyin_full", "origin", "brand", "created_at", "updated_at", "deleted_at",
+    "pinyin_full", "name_norm", "origin", "brand", "created_at", "updated_at", "deleted_at",
     "delete_reason", "image_path",
 }
 ALLOWED_ORDER_ITEM_COLUMNS = {

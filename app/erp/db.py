@@ -77,10 +77,12 @@ def init_db() -> None:
         ensure_product_brand_field(conn)
         ensure_customer_pinyin_field(conn)
         ensure_pinyin_full_fields(conn)
+        ensure_name_norm_fields(conn)
         backfill_product_pinyin_initials(conn)
         backfill_customer_pinyin_initials(conn)
         backfill_product_pinyin_full(conn)
         backfill_customer_pinyin_full(conn)
+        backfill_name_norm(conn)
         purge_expired_recycle_bin(conn)
         row = conn.execute("PRAGMA integrity_check").fetchone()
         if row[0] != "ok":
@@ -259,6 +261,63 @@ def backfill_customer_pinyin_full(conn: sqlite3.Connection) -> None:
         full = pinyin_full(row["name"])
         if full:
             conn.execute("UPDATE customers SET pinyin_full=? WHERE id=?", (full, row["id"]))
+
+
+def ensure_name_norm_fields(conn: sqlite3.Connection) -> None:
+    """名称归一副本列（商品 + 客户），2026-10-20 加。
+
+    为什么单独存一列，而不是在 SQL 里现场归一：名称检索是热路径，
+    在 SQL 里对每行跑一串 REPLACE 会让 20000 行从 1ms 涨到 109ms（实测 81 倍），
+    索引也彻底用不上。存成列后就是普通 `LIKE`，代价回到原样。
+
+    归一口径与 `normalize_name_query()` 完全一致（NFKC + 去分隔符/空白），
+    这样「库里存什么形态」和「检索串被归一成什么形态」永远是同一套规则。
+
+    **幂等加列，不推进 schema 版本**（与既有 `ensure_*` 一致）。
+    """
+    for table in ("products", "customers"):
+        if "name_norm" not in _columns(conn, table):
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN name_norm TEXT DEFAULT ''")
+
+
+def backfill_name_norm(conn: sqlite3.Connection) -> None:
+    """回填 `name_norm`，并把**旧规则生成的拼音列**一起重算。
+
+    不能只补空值：老库里 `name_norm` 整列是空的（新加列），但更关键的是
+    **名称被改过的行**其 name_norm 会过期；`pinyin_full` 同理——
+    2026-10-20 之前它是用原始名称生成的（`PVC管（厚）` → `pvcguan（hou）`，
+    括号保持全角），不重算的话老库升级后全拼依旧搜不到。
+    判断口径都是「与按当前 name 推导的值不一致」，一致就跳过（幂等、可重复执行）。
+    """
+    from erp.utils.pinyin import (
+        normalize_name_for_store,
+        pinyin_full,
+        pinyin_initials,
+        pinyin_needs_repair,
+    )
+
+    for table in ("products", "customers"):
+        rows = conn.execute(
+            f"SELECT id, name, COALESCE(name_norm, '') AS name_norm, "
+            f"COALESCE(pinyin_initials, '') AS pinyin_initials, "
+            f"COALESCE(pinyin_full, '') AS pinyin_full FROM {table}"
+        ).fetchall()
+        for row in rows:
+            name = row["name"]
+            norm = normalize_name_for_store(name)
+            if row["name_norm"] != norm:
+                conn.execute(f"UPDATE {table} SET name_norm=? WHERE id=?", (norm, row["id"]))
+            # 拼音列只在「必然带着旧规则产物」时才重算：纯半角无括号的名称新旧一致，
+            # 没必要动它（人工维护过的非空值也不会被无谓覆盖）。
+            if not pinyin_needs_repair(name):
+                continue
+            expected_initials = pinyin_initials(name)
+            expected_full = pinyin_full(name)
+            if row["pinyin_initials"] != expected_initials or row["pinyin_full"] != expected_full:
+                conn.execute(
+                    f"UPDATE {table} SET pinyin_initials=?, pinyin_full=? WHERE id=?",
+                    (expected_initials, expected_full, row["id"]),
+                )
 
 
 def ensure_product_identity_constraint(conn: sqlite3.Connection) -> None:
@@ -1041,7 +1100,11 @@ CREATE TABLE IF NOT EXISTS products (
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TEXT,
     delete_reason TEXT DEFAULT '',
-    image_path TEXT NOT NULL DEFAULT ''
+    image_path TEXT NOT NULL DEFAULT '',
+    -- name_norm 是本版新增的派生列。声明在**末尾**是为了与老库
+    -- `ALTER TABLE ADD COLUMN` 的追加位置一致：新装库与升级库的物理列序相同，
+    -- 迁移前后可逐列比对（tests/test_drop_inventory_migration.py 会锁这一点）。
+    name_norm TEXT DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS purchase_orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1139,7 +1202,8 @@ CREATE TABLE IF NOT EXISTS customers (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TEXT,
-    delete_reason TEXT DEFAULT ''
+    delete_reason TEXT DEFAULT '',
+    name_norm TEXT DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS customer_prices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

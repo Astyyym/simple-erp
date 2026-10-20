@@ -8,7 +8,7 @@ from uuid import uuid4
 from erp.db import get_db
 from erp.services.accounting import create_product, update_product_record
 from erp.utils.errors import error_response, not_found
-from erp.utils.pinyin import name_match_clause, name_match_params, pinyin_fields as build_pinyin_fields
+from erp.utils.pinyin import name_match_clause, name_match_params, normalize_name_for_store, pinyin_fields as build_pinyin_fields
 from erp.utils.exporting import (
     export_filename,
     product_export_headers,
@@ -219,9 +219,9 @@ def import_products_confirm():
                     continue
                 initials, full = build_pinyin_fields(name)
                 conn.execute(
-                    "INSERT INTO products(name, brand, unit, pinyin_initials, pinyin_full, origin) VALUES (?, ?, ?, ?, ?, 'import')",
+                    "INSERT INTO products(name, brand, unit, pinyin_initials, pinyin_full, name_norm, origin) VALUES (?, ?, ?, ?, ?, ?, 'import')",
                     (name, row.payload.get("brand") or None, row.payload.get("unit", "个"),
-                     initials, full),
+                     initials, full, normalize_name_for_store(name)),
                 )
                 existing.add(identity)
                 result.added += 1
@@ -234,9 +234,9 @@ def import_products_confirm():
                     continue
                 initials, full = build_pinyin_fields(name)
                 conn.execute(
-                    "UPDATE products SET brand=?, unit=?, pinyin_initials=?, pinyin_full=?, updated_at=CURRENT_TIMESTAMP WHERE TRIM(name)=? AND deleted_at IS NULL",
+                    "UPDATE products SET brand=?, unit=?, pinyin_initials=?, pinyin_full=?, name_norm=?, updated_at=CURRENT_TIMESTAMP WHERE TRIM(name)=? AND deleted_at IS NULL",
                     (row.payload.get("brand") or None, row.payload.get("unit", "个"),
-                     initials, full, name),
+                     initials, full, normalize_name_for_store(name), name),
                 )
                 result.added += 1
             else:

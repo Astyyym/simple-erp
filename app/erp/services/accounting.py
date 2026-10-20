@@ -10,7 +10,7 @@ from typing import Iterable
 from erp.db import get_db
 from erp.utils.audit import log_action
 from erp.utils.money import cents_to_yuan, line_subtotal_cents, yuan_to_cents
-from erp.utils.pinyin import pinyin_fields as build_pinyin_fields
+from erp.utils.pinyin import normalize_name_for_store, pinyin_fields as build_pinyin_fields
 from erp.utils.quantity import format_quantity_3dp
 
 
@@ -105,8 +105,8 @@ def create_customer(name: str, phone: str = "", address: str = "", opening_balan
     initials, full = build_pinyin_fields(name)
     with get_db() as conn:
         cur = conn.execute(
-            "INSERT INTO customers(name, phone, address, opening_balance_cents, pinyin_initials, pinyin_full, origin) VALUES (?, ?, ?, ?, ?, ?, 'manual')",
-            (name, phone, address, opening_balance_cents, initials, full),
+            "INSERT INTO customers(name, phone, address, opening_balance_cents, pinyin_initials, pinyin_full, name_norm, origin) VALUES (?, ?, ?, ?, ?, ?, ?, 'manual')",
+            (name, phone, address, opening_balance_cents, initials, full, normalize_name_for_store(name)),
         )
         customer_id = cur.lastrowid
     log_action("create_customer", "customer", customer_id, f"新增客户: {name}")
@@ -142,8 +142,8 @@ def create_product(name: str, unit: str, pinyin_initials: str = "", *, pinyin_fu
     with get_db() as conn:
         try:
             cur = conn.execute(
-                "INSERT INTO products(name, unit, pinyin_initials, pinyin_full, origin, brand) VALUES (?, ?, ?, ?, 'manual', ?)",
-                (name, unit, pinyin_initials, pinyin_full, normalize_product_brand(brand)),
+                "INSERT INTO products(name, unit, pinyin_initials, pinyin_full, name_norm, origin, brand) VALUES (?, ?, ?, ?, ?, 'manual', ?)",
+                (name, unit, pinyin_initials, pinyin_full, normalize_name_for_store(name), normalize_product_brand(brand)),
             )
         except sqlite3.IntegrityError as exc:
             if "idx_products_business_identity" in str(exc) or "UNIQUE constraint failed: index" in str(exc):
@@ -175,19 +175,19 @@ def update_product_record(product_id: int, name: str, unit: str, *, brand=_BRAND
                 cursor = conn.execute(
                     """
                     UPDATE products
-                    SET name=?, unit=?, pinyin_initials=?, pinyin_full=?, updated_at=CURRENT_TIMESTAMP
+                    SET name=?, unit=?, pinyin_initials=?, pinyin_full=?, name_norm=?, updated_at=CURRENT_TIMESTAMP
                     WHERE id=? AND deleted_at IS NULL
                     """,
-                    (name, unit, initials, full, product_id),
+                    (name, unit, initials, full, normalize_name_for_store(name), product_id),
                 )
             else:
                 cursor = conn.execute(
                     """
                     UPDATE products
-                    SET name=?, unit=?, pinyin_initials=?, pinyin_full=?, brand=?, updated_at=CURRENT_TIMESTAMP
+                    SET name=?, unit=?, pinyin_initials=?, pinyin_full=?, name_norm=?, brand=?, updated_at=CURRENT_TIMESTAMP
                     WHERE id=? AND deleted_at IS NULL
                     """,
-                    (name, unit, initials, full, normalize_product_brand(brand), product_id),
+                    (name, unit, initials, full, normalize_name_for_store(name), normalize_product_brand(brand), product_id),
                 )
         except sqlite3.IntegrityError as exc:
             if "idx_products_business_identity" in str(exc) or "UNIQUE constraint failed: index" in str(exc):
@@ -273,8 +273,8 @@ def _upsert_product_and_customer_price(conn, customer_id: int, product_name: str
         initials, full = build_pinyin_fields(product_name)
         cur_product = conn.execute(
             # 2026-10-16 v15：`default_price_cents` 列已随库存系统删除，建档不再写它。
-            "INSERT INTO products(name, unit, pinyin_initials, pinyin_full, usage_count, origin) VALUES (?, ?, ?, ?, 1, 'order')",
-            (product_name, unit, initials, full),
+            "INSERT INTO products(name, unit, pinyin_initials, pinyin_full, name_norm, usage_count, origin) VALUES (?, ?, ?, ?, ?, 1, 'order')",
+            (product_name, unit, initials, full, normalize_name_for_store(product_name)),
         )
         new_id = int(cur_product.lastrowid)
         # G-0b：自动建档必须留痕，否则事后无法追溯是谁/哪张单建出来的。

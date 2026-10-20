@@ -49,6 +49,51 @@ MAX_INITIALS_LENGTH = 32
 MAX_FULL_LENGTH = 96
 
 
+def _pinyin_source(name: str) -> str:
+    """拼音派生列的**唯一**输入形态：NFKC + 去括号。
+
+    2026-10-20（用户实测：带括号的商品名点选后专属价带不出来）：
+    派生列原先直接用原始名称生成，`PVC管（厚）` → `pvcguan（hou）`，括号保持**全角**；
+    而检索串经 `normalize_name_query()` 归一后是 `pvcguanhou` / `pvcguan(hou)`，
+    两边形态不同 → `LIKE` 打不中，用户表现为「首字母能搜、全拼搜不到」。
+    把生成端也归一，读写两侧才对得齐。
+    """
+    text = unicodedata.normalize("NFKC", str(name or "")).strip()
+    for char in ("(", ")"):
+        text = text.replace(char, "")
+    return text
+
+
+def normalize_name_for_store(name: str) -> str:
+    """`name` 的**归一副本**，写进 `name_norm` 列，供检索直接比较。
+
+    与 `normalize_name_query()` 必须是**同一个实现**（直接委托过去），
+    否则又会回到「库里存一套、检索串另一套」的老问题。
+
+    单独存一列而不是在 SQL 里现场归一：后者对每行都要跑几十个 REPLACE，
+    20000 行实测慢 81 倍，且索引完全用不上。
+    """
+    return normalize_name_query(name)
+
+
+def pinyin_needs_repair(name: str) -> bool:
+    """该名称的拼音派生列是否**必然**带着旧规则产物、需要重算。
+
+    只有会被 `_pinyin_source()` 改写的名称才需要修：含全角字符（NFKC 会变）或含括号。
+    纯半角、无括号的名称新旧规则产出一致，没必要动它 —— 这样人工维护过的非空派生值
+    也不会被无谓覆盖。
+    """
+    text = str(name or "")
+    if not text:
+        return False
+    if text != unicodedata.normalize("NFKC", text):
+        return True
+    for char in ("(", ")"):
+        if char in text:
+            return True
+    return False
+
+
 def pinyin_initials(name: str) -> str:
     """返回商品名的拼音首字母（小写、去空白、截断）。
 
@@ -56,7 +101,7 @@ def pinyin_initials(name: str) -> str:
     - 非中文（字母/数字）直接保留并小写
     - 任何异常或缺少 pypinyin → 返回空串，绝不让派生字段阻断主流程
     """
-    text = (name or "").strip()
+    text = _pinyin_source(name)
     if not text or not _ensure_pypinyin():
         return ""
     try:
@@ -73,7 +118,7 @@ def pinyin_full(name: str) -> str:
     - 中文 → 完整拼音（不取首字母），非中文（字母/数字/符号）原样保留并小写
     - 与 `pinyin_initials` 同一套容错：异常或缺包 → 空串
     """
-    text = (name or "").strip()
+    text = _pinyin_source(name)
     if not text or not _ensure_pypinyin():
         return ""
     try:
@@ -89,12 +134,15 @@ def pinyin_fields(name: str) -> tuple[str, str]:
     return pinyin_initials(name), pinyin_full(name)
 
 
-# 名称模糊匹配的三列：名称本身、拼音首字母、拼音全拼。
-NAME_MATCH_COLUMNS = ("name", "pinyin_initials", "pinyin_full")
+# 名称模糊匹配的三列：**归一副本**、拼音首字母、拼音全拼。
+# 2026-10-20：原名第一列是 `name`，而参数已被 normalize_name_query() 归一，
+# 库里存的却是全角括号/空格 → `name LIKE` 必然落空（点选带括号商品后单价空白）。
+# 改为比较 `name_norm`（写入时按同一规则归一的那一列），两侧形态才一致。
+NAME_MATCH_COLUMNS = ("name_norm", "pinyin_initials", "pinyin_full")
 
 
 def name_match_clause(prefix: str = "") -> str:
-    """三列同参的匹配片段：`(name LIKE ? OR pinyin_initials LIKE ? OR pinyin_full LIKE ?)`。
+    """三列同参的匹配片段：`(name_norm LIKE ? OR pinyin_initials LIKE ? OR pinyin_full LIKE ?)`。
 
     `prefix` 是表别名（`"p."` / `"c."`）；参数值三列相同，配 `name_match_params()` 使用。
     """

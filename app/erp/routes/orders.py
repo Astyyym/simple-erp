@@ -15,7 +15,7 @@ from erp.utils.errors import error_response, not_found
 from erp.utils.audit import log_action
 from erp.utils.filter_chips import order_filter_chips
 from erp.utils.money import cents_to_yuan, line_subtotal_cents, micro_to_yuan, yuan_to_cents
-from erp.utils.pinyin import name_like_pattern, name_match_clause, name_match_params, pinyin_fields as build_pinyin_fields
+from erp.utils.pinyin import name_like_pattern, name_match_clause, name_match_params, normalize_name_for_store, pinyin_fields as build_pinyin_fields
 from erp.services.units import unit_options
 from erp.utils.pdf import (
     ensure_order_printable,
@@ -911,8 +911,8 @@ def _resolve_customer_id(*, order_no: str = "") -> int:
             return customer_id
         customer_initials, customer_full = build_pinyin_fields(customer_name)
         cur = conn.execute(
-            "INSERT INTO customers(name, pinyin_initials, pinyin_full, origin) VALUES (?, ?, ?, 'order')",
-            (customer_name, customer_initials, customer_full),
+            "INSERT INTO customers(name, pinyin_initials, pinyin_full, name_norm, origin) VALUES (?, ?, ?, ?, 'order')",
+            (customer_name, customer_initials, customer_full, normalize_name_for_store(customer_name)),
         )
         new_id = int(cur.lastrowid)
         # G-0b：自动建档必须留痕，摘要写明来源单据号。

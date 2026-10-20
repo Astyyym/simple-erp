@@ -11,7 +11,7 @@ from erp.utils.audit import log_action
 from erp.utils.errors import error_response, not_found, RecordNotFound
 from erp.utils.money import cents_to_yuan, micro_to_yuan
 from erp.utils.order_numbering import next_nh_order_no, peek_nh_order_no
-from erp.utils.pinyin import name_like_pattern, name_match_clause, name_match_params, pinyin_fields as build_pinyin_fields
+from erp.utils.pinyin import name_like_pattern, name_match_clause, name_match_params, normalize_name_for_store, pinyin_fields as build_pinyin_fields
 from erp.services.units import unit_options
 from erp.services.purchases import (
     create_purchase_order,
@@ -57,7 +57,8 @@ def _products():
 def _purchase_catalog(products) -> list[dict]:
     """Compact product list for the entry-page picker.
 
-    拿货 / 退拿货页的单价是**入库成本**，与售价无关。2026-10-15 起商品档案已不再保存售价
+    拿货 / 退拿货页的单价是**手工填写的单据金额**，只参与该单据的汇总，不进入任何库存或成本口径
+    （库存系统已删除，无入库动作）。2026-10-15 起商品档案也不再保存售价
     （售价唯一来源 = 开单学习出的客户专属价），所以这里既不带档案价、也不带客户价
     —— 早前借 `/orders/api/products?customer_id=…` 是错的：那个参数语义是**客户**，
     而拿货页同名字段存的是**供应商**（客户与供应商共用 `customers` 档案）。
@@ -107,8 +108,8 @@ def _resolve_purchase_customer_id() -> int:
             return customer_id
         customer_initials, customer_full = build_pinyin_fields(name)
         cur = conn.execute(
-            "INSERT INTO customers(name, pinyin_initials, pinyin_full, origin) VALUES (?, ?, ?, 'order')",
-            (name, customer_initials, customer_full),
+            "INSERT INTO customers(name, pinyin_initials, pinyin_full, name_norm, origin) VALUES (?, ?, ?, ?, 'order')",
+            (name, customer_initials, customer_full, normalize_name_for_store(name)),
         )
         new_id = int(cur.lastrowid)
         log_action("auto_create_customer", "customer", new_id, f"拿货自动建档对象：{name}", conn=conn)
