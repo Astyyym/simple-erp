@@ -48,6 +48,51 @@ for v in v4.6.1 v4.6.0 v4.5.0; do echo "$v -> $(grep -c "^## $v " CHANGELOG.md)"
 
 全部命中才可以把段落删掉，只留一句指向 `CHANGELOG` + `Releases`。**核对不过就不要删** —— 那说明 CHANGELOG 有洞，先补 CHANGELOG。
 
+## 「X 是哪个版本加的」必须查 git，不要读 CHANGELOG 猜
+
+CHANGELOG 的正文是叙述，同一段里可能同时出现「本版交付」「沿用上版」「现为」「未做」，凭阅读推断**极易把完成版本和当前版本搞混**。用目录首次出现的 tag 来定位，这是硬事实。
+
+**查某个文件/目录首次随哪个 tag 入库**：
+
+```bash
+for t in v4.3.0 v4.4.0 v4.5.0; do
+  echo -n "$t: "; git ls-tree -r --name-only $t 2>/dev/null | grep -c "^apk/"
+done
+# v4.3.0: 0   v4.4.0: 0   v4.5.0: 18   → 壳随 v4.5.0 交付
+```
+
+**查首次引入该目录的提交**：
+
+```bash
+git log --oneline --all -- apk/ | tail -1
+# 5c52901 feat(mobile): 安卓 APK 壳（原生 WebView 单 Activity，v1.0.0）
+```
+
+**查当时的组件版本**（子组件的 `VERSION` 与主仓 `VERSION` 是两个东西）：
+
+```bash
+git show 5c52901:apk/VERSION     # 1.0.0  ← 当时的壳版本
+cat apk/VERSION                  # 1.2.0  ← 现在的壳版本
+```
+
+### 表格里别混用两套口径
+
+真实犯过的错（2026-10-21，用户一眼看出）：
+
+```markdown
+| 一、浏览器直连 | ✅ v4.3.0          |   ← 完成时的版本
+| 二、包 APK 壳  | ✅ v4.6.1（壳 1.2.0） |   ← 壳的当前版本，不是完成版本
+```
+
+两行语义不同，读起来就成了「v4.6.1 才包上壳」。**正确做法是把时间点和现状拆成两列**：
+
+```markdown
+| 步骤 | 完成于 | 现状 |
+| 二、包 APK 壳 | ✅ v4.5.0（壳 1.0.0） | 壳现为 1.2.0（v4.6.1 交互收口） |
+```
+
+规则：**「完成于」列只放这一步做完时的版本；组件后来升级写在「现状」列。** 一张表里所有行必须用同一种语义。
+
 ## 截图怎么拍
 
 ### 首选：跑脚本（2026-10-21 起）
@@ -97,7 +142,7 @@ const r = await send('Page.captureScreenshot',{format:'png',captureBeyondViewpor
 - 存 `docs/images/shot-<页面>.jpg`，README 用 `<table>` 两列 + `<sub>` 写说明
 
 
-## 四个必踩的坑
+## 必踩的坑
 
 | 坑 | 现象 | 解法 |
 |---|---|---|
@@ -111,6 +156,7 @@ const r = await send('Page.captureScreenshot',{format:'png',captureBeyondViewpor
 ...')` 里的 `
 ` 变成真实换行，`node --check` 报 `Invalid or unexpected token` | **别用 heredoc 写含转义的 JS**：改用 Edit 工具或 Python 脚本精确替换；写完必须 `node --check` |
 | 2 倍图没缩回 | 截图 2880px 宽、单张 300KB、9 张 2.7MB | 采样 2x 后统一 `downscale()` 缩回 1440/390 |
+| CHANGELOG 读出版本号 | 把「壳现为 1.2.0」当成「v4.6.1 才包壳」，实际首交是 v4.5.0 | 一律 `git ls-tree -r --name-only <tag> | grep -c <目录>` 定位首次入库的 tag |
 
 ## 顺手要修的失实描述
 
@@ -126,6 +172,8 @@ const r = await send('Page.captureScreenshot',{format:'png',captureBeyondViewpor
 - [ ] 所有 `docs/` 链接目标存在
 - [ ] 图片未被 `.gitignore` 排除（`git check-ignore -v <path>`）
 - [ ] 版本号与 `VERSION` 一致
+- [ ] 表里出现的每个版本号都用 `git ls-tree` 核过（哪个 tag 首次带进这个文件/目录），不是凭 CHANGELOG 叙述推断
+- [ ] 同一张表不混用「完成版本」和「当前版本」两套口径
 - [ ] 截图来自演示数据，图注已声明这一点
 - [ ] 没有把 `开发短计划/` 的私有路径写成可点击链接
 - [ ] **UI 改版后重拍过 `docs/images/`**：跑了 `node tools/shots.mjs`，并逐张看过图（不是只看命令退出码）
