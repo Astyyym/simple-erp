@@ -4,6 +4,8 @@
 
 改 `README.md`、调整 GitHub 仓库门面、补界面截图时。也用于回答「这个仓库第一眼看起来像什么」。
 
+**硬性触发**：任何改变用户可见界面的改动（布局、配色、新增页面/区块、手机端外观），完成后都要重跑 `node tools/shots.mjs`。截图是最容易悄悄过期的东西 —— 过期截图比没有截图更误导人。
+
 ## 三条判断原则
 
 1. **README 服务三类读者，按顺序**：路过的人（30 秒决定要不要看下去）→ 想装的人（找对产物）→ 改代码的人（找文档与命令）。段落顺序必须服从这个顺序。
@@ -46,20 +48,37 @@ for v in v4.6.1 v4.6.0 v4.5.0; do echo "$v -> $(grep -c "^## $v " CHANGELOG.md)"
 
 全部命中才可以把段落删掉，只留一句指向 `CHANGELOG` + `Releases`。**核对不过就不要删** —— 那说明 CHANGELOG 有洞，先补 CHANGELOG。
 
-## 截图怎么拍（实测可用）
+## 截图怎么拍
 
-### 1. 起隔离实例，用绿色版自带的演示数据
+### 首选：跑脚本（2026-10-21 起）
 
-绝不拿真实账本截图，也绝不污染正式 `data/erp.db`。
+`tools/shots.mjs` 已把这些步骤全部自动化，**优先用它，不要手搓**：
 
 ```bash
-ERP_PORT=5099 ERP_DATA_ROOT="<仓库>/dist/local-v<版本>/简单ERP/demo_data"   .venv/Scripts/python.exe app/app.py
-curl -s http://127.0.0.1:5099/health    # 确认 data_root 指向 demo_data
+node tools/shots.mjs                      # 全套重拍，约 55 秒
+node tools/shots.mjs --only entry,orders  # 只重拍改动过的页
+node tools/shots.mjs --skip-mobile        # 只拍桌面页
 ```
 
-### 2. 桌面页用 CDP 逐页截（每次独立进程）
+脚本自己完成：生成演示数据（`dist/` 被 gitignore，克隆后没有现成的）→ 起隔离实例（端口 5199）→ 逐页独立 CDP 截图 → 手机端真实配对 → 2 倍采样缩回 1440/390 宽 → 打印每张体积。
 
-`--headless=new --screenshot` 连续跑多个 URL 会产出**拼贴图**（多页叠在一张里）。必须每页独立 CDP 会话 + 独立 `--user-data-dir`：
+两条硬护栏，别绕过：
+
+1. **数据根核对**：`waitHealth()` 会读 `/health` 的 `data_root`，不含 `/.alma/shots/demo_data` 就直接抛「拒绝截图」。这是刻意的 —— 截图是最容易被顺手对着真实账本做的事。
+2. **手机端必须真配**：脚本在隔离库里现生成 6 位码、填 `#pairCode` 提交、确认停在 `/m/` 才截图。若报「配对后没停在 /m/」，多半是码过期，重跑一次即可。
+
+改脚本里的页面清单就看 `DESKTOP_SHOTS` 数组；加页面只要追加 `['名字', '/路径/']`（**路径尾斜杠不能省**，否则 Flask 308 跳转、截到空白）。
+
+### 手工兜底（脚本坏掉时）
+
+1. 起隔离实例，绝不用真实账本：
+
+```bash
+ERP_PORT=5099 ERP_DATA_ROOT="<仓库>/.alma/shots/demo_data"   .venv/Scripts/python.exe app/app.py
+curl -s http://127.0.0.1:5099/health    # 确认 data_root 是隔离目录
+```
+
+2. 桌面页用 CDP 逐页截，**每页独立进程 + 独立 `--user-data-dir`**（共用会出拼贴图）：
 
 ```javascript
 await send('Emulation.setDeviceMetricsOverride', {width:1440,height:900,deviceScaleFactor:2,mobile:false});
@@ -68,21 +87,15 @@ await sleep(4000);                                  // 等 JS 渲染完，2.6s �
 const r = await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
 ```
 
-### 3. 手机端必须先真实配对
+3. 手机端 `/m/` 未配对会 302 到 `/m/pair`：主应用里 `mobile_pairing.generate_pair_code()` 取码，起第二监听，CDP 填 `#pairCode` 后 `form.submit()`，确认跳到 `/m/` 再截。
 
-`/m/` 未配对会 302 到 `/m/pair`，直接截会截到配对页。真实流程：
+### 规格与体积
 
-1. 主应用里生成配对码：`from erp.services import mobile_pairing` → `mobile_pairing.generate_pair_code()`
-2. 起第二监听（`erp.mobile_app.create_mobile_app()`，端口 5098 避开 5001 占用检测）
-3. CDP 打开 `/m/pair`，填 `#pairCode` 隐藏域后 `form.submit()`
-4. 等待跳转到 `/m/` 再截图
+- 桌面 1440×900、手机 390×844，都用 `deviceScaleFactor: 2` 采样
+- **必须缩回**：2 倍原图 9 张能到 2.7 MB，缩到 1440 宽后约 1 MB
+- JPG `quality=86`（手机 88）；落盘直接截 JPG，省掉转格式
+- 存 `docs/images/shot-<页面>.jpg`，README 用 `<table>` 两列 + `<sub>` 写说明
 
-### 4. 规格与体积
-
-- 桌面：1440×900，`deviceScaleFactor: 2`（2 倍图），落盘后缩到 1440 宽
-- 手机：390×844，同样 2 倍
-- 统一转 JPG `quality=86, optimize=True`；9 张桌面 + 1 张手机 ≈ 1.1 MB，仓库不会臃肿
-- 存 `docs/images/shot-<页面>.jpg`，README 用 `<table>` 2 列排布 + `<sub>` 写说明
 
 ## 四个必踩的坑
 
@@ -92,6 +105,12 @@ const r = await send('Page.captureScreenshot',{format:'png',captureBeyondViewpor
 | heredoc 截断 | 一次性 `cat > README.md <<EOF` 写 16KB，文件只写到一半，`<<EOF` 标记都没闭合 | 分段写 `.alma/p1.md p2.md p3.md` 再 `cat` 合并；或直接用 Python `io.open(...).write()` |
 | headless 截图拼贴 | 一张图里出现 2×2 个半页 | 每页独立进程 + 独立 `user-data-dir` |
 | 前台命令被 3s 掐断 | `node ...` 秒退但退出码 1 | 长任务一律 `run_in_background: true` + `BashOutput` 等 |
+| heredoc 吃掉转义 | `join('
+')` / `split('
+')` / `console.log('
+...')` 里的 `
+` 变成真实换行，`node --check` 报 `Invalid or unexpected token` | **别用 heredoc 写含转义的 JS**：改用 Edit 工具或 Python 脚本精确替换；写完必须 `node --check` |
+| 2 倍图没缩回 | 截图 2880px 宽、单张 300KB、9 张 2.7MB | 采样 2x 后统一 `downscale()` 缩回 1440/390 |
 
 ## 顺手要修的失实描述
 
@@ -109,3 +128,4 @@ const r = await send('Page.captureScreenshot',{format:'png',captureBeyondViewpor
 - [ ] 版本号与 `VERSION` 一致
 - [ ] 截图来自演示数据，图注已声明这一点
 - [ ] 没有把 `开发短计划/` 的私有路径写成可点击链接
+- [ ] **UI 改版后重拍过 `docs/images/`**：跑了 `node tools/shots.mjs`，并逐张看过图（不是只看命令退出码）

@@ -46,6 +46,7 @@
 - **README 不放逐版本流水账**：只回答「现在是什么」，交付内容进 `CHANGELOG.md`。往 README 顶部堆版本说明会变成一整段无法分行的文字，这是曾经真实发生过的事故。
 - **必须有真实截图**：`docs/images/` 存真程序跑出来的 JPG；截图只能用绿色版演示数据（`ERP_DATA_ROOT` 指向 `demo_data`）或隔离实例，**不得用真实账本、不得污染正式 `data/erp.db`**，图注要声明是演示数据。
 - **改 README 必须逐条对源码核事实**（设置页按钮数、配对锁定次数、分页条数、纸型尺寸、版本号），不照抄旧文字。
+- **改完 UI 必须重拍截图**：任何用户可见的界面改动（布局/配色/新页面/手机端外观）完成后跑 `node tools/shots.mjs`，并逐张看图确认。过期截图比没有截图更误导人。
 - 结构、截图方法与已知坑见 `skills/simple-business-erp-development/references/readme-and-repo-presentation.md`。
 
 ## 不要动 / 不要做
