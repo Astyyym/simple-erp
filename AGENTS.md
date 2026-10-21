@@ -41,6 +41,13 @@
 - `docs/`、`开发短计划/`、本项目 `skills/simple-business-erp-development/`
 - `CHANGELOG.md`、`VERSION`、`README.md`：仅在需求和发版范围明确时更新
 
+## README 铁律（2026-10-21 用户要求重写后定）
+
+- **README 不放逐版本流水账**：只回答「现在是什么」，交付内容进 `CHANGELOG.md`。往 README 顶部堆版本说明会变成一整段无法分行的文字，这是曾经真实发生过的事故。
+- **必须有真实截图**：`docs/images/` 存真程序跑出来的 JPG；截图只能用绿色版演示数据（`ERP_DATA_ROOT` 指向 `demo_data`）或隔离实例，**不得用真实账本、不得污染正式 `data/erp.db`**，图注要声明是演示数据。
+- **改 README 必须逐条对源码核事实**（设置页按钮数、配对锁定次数、分页条数、纸型尺寸、版本号），不照抄旧文字。
+- 结构、截图方法与已知坑见 `skills/simple-business-erp-development/references/readme-and-repo-presentation.md`。
+
 ## 不要动 / 不要做
 
 - 不要将正式目录复制成第二套长期“真源”；不要将 WSL 当权威源码树。

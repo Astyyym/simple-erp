@@ -16,7 +16,7 @@
 
 | 内容类型 | 归属 |
 |---|---|
-| 可复用的业务规则 / 操作流程 / 实测方法 | `skills/simple-business-erp-development/references/` |
+| 可复用的业务规则 / 操作流程 / 实测方法（含 README 与截图方法） | `skills/simple-business-erp-development/references/` |
 | 产品规格、当前实现事实 | `docs/需求/` |
 | 一次性执行过程、阶段状态 | `开发短计划/`、根目录 `task_plan.md` / `findings.md` / `progress.md` |
 | 每轮必须遵守的硬规则 | `AGENTS.md` 正文（本目录不会被自动加载，硬规则不能只放这里） |

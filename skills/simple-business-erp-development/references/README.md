@@ -43,6 +43,7 @@
 | [portable-demo-package.md](./portable-demo-package.md) | 绿色版自带 200 条演示数据的五步打包流程、顺序硬约束、ZIP/安装包不得含演示数据、验收与两个坑（验收动作会弄脏包、`.bat` 行尾） |
 | [versioning-github-backup.md](./versioning-github-backup.md) | 版本、备份、推送、打包和 GitHub Release 的分离核验 |
 | [pywebview-save-print.md](./pywebview-save-print.md) | 桌面端异步保存后打开 PDF 的已落地模式 |
+| [readme-and-repo-presentation.md](./readme-and-repo-presentation.md) | README/仓库门面：已验证的段落顺序、版本流水账该去 CHANGELOG、截图用隔离实例+CDP 的实操与四个坑、失实描述核对清单 |
 
 ## 历史经验（阅读时不得当作当前缺陷/当前功能）
 
