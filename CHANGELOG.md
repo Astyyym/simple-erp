@@ -2,9 +2,7 @@
 
 > 各版本条目按当时发布口径保留。v0.8.0 永久免登录已经取代早期版本中记录的本机登录门；历史凭据不在更新记录中保存。
 
-## v4.6.3 - 空开单页误弹「未保存」+ 打印抬头换位 + 首次使用引导弹窗（2026-10-21，未发版）
-
-> 本版尚未打 tag、未打包、未推送远端；下方「验证」一节只包含已实际执行的测试与真机探针结果。
+## v4.6.3 - 空开单页误弹「未保存」+ 打印抬头换位 + 首次使用引导弹窗（2026-10-21，已发版）
 
 - **用户报的现象（4.6.2 反馈）**：开单页里**没有任何东西**，切换到别的页面却弹出「未保存」提醒，点「离开」后本页信息被清空；**重启应用后该现象消失**。
 - **根因一：脏标记只置位、永不复位**。四类开单页都是 `let formDirty = false; form.addEventListener('input', () => formDirty = true)` —— 只要脏过一次就再也洗不掉。用户把内容全删干净、点「一键清空」清空后，页面明明是空的，切页照样拦人，并诱导用户确认离开而**真的丢掉内容**。重启之所以「好了」，只是换了一份干净的页面内存，并非修复了什么。
@@ -29,7 +27,10 @@
   - 重写 `tests/test_print_info_prompt.py`（14 项）：从旧提示卡行为改为弹窗行为，并**反向断言旧卡 `printInfoNotice` 必须彻底消失**。
   - **真实 WebView2（Edge 155，pywebview 6.2.1 + 远程调试端口）实测 6 个场景**：输入后删空 `true→false`；点单位「×」`false`；一键清空后切页 `false` 且无弹框；**有内容时切页仍弹框**（未改坏）；新增行再删除 `true→false`；行内清空但客户名仍在 → 仍判脏（本该如此）。
   - 弹窗链路实测：初始弹 → 「稍后再说」不弹且冷却到 `2026-10-28` → 冷却改过期后重新弹 → 保存后不弹且 `shop_name`/电话/地址落库，同时**主营业务、法律句、`ui_theme`、`ui_scale` 均未被清空**。
-- **仍未做**：打 tag、打包、推送远端、发版证据回填；桌面壳内的截图验收（本次改动未触及打印版式几何，只改抬头三格顺序）。
+- **打包（2026-10-21，`打包Windows安装包.bat` 一次出齐）**：`dist/simple-erp-setup-v4.6.3.exe` 41,404,401 B（SHA256 `cbf4f05e…`）、`dist/simple-erp-windows-v4.6.3.zip` 55,274,257 B（`8cba2fc5…`）、`dist/local-v4.6.3/简单ERP/`。**产物门**：ZIP 623 条目、顶层唯一 `简单ERP/`、无 `.db` / `.log` / `demo_data`、包内 `VERSION` = `v4.6.3`；两个 EXE 的 PE 版本均为 `4.6.3.0` / `v4.6.3`；绿色版演示数据 **200 条**（`orders` 125 = 销售 90 + 退货 35，`purchase_orders` 45，`purchase_return_orders` 30，`integrity_check`=ok）。
+- **隔离冒烟（分发产物，非源码）**：直接启动 `dist/local-v4.6.3/简单ERP/简单ERP.exe`（`ERP_PORT=5097`），`/health` = `v4.6.3`、`database` = `ok`。四项开单页全部确认用上新判脏机制（`createDirtyTracker` 各 3 处、`formDirty` 残留 0）；包内打印模板抬头顺序为「客户 / 日期 / 单号」。首次引导弹窗在演示版**正确地不弹**（演示店铺名已种成「演示数据专用门店」而非出厂默认值）；临时把店名改回「简单ERP」后弹窗立即出现、三个字段齐全，验完已恢复原配置。
+- **发版证据（2026-10-21）**：4 个提交推 `main`（`12a3d67..0d1e248`，`git ls-remote origin refs/heads/main` = `0d1e248c` 与本地 HEAD 一致）；annotated tag `v4.6.3`（tag 对象 `98151bd3` 解引用回 `0d1e248`）；[GitHub Release v4.6.3](https://github.com/Astyyym/simple-erp/releases/tag/v4.6.3)（draft=false、prerelease=false、target=`main`）挂三个资产：`simple-erp-setup-v4.6.3.exe`（41,404,401 B，SHA256 `cbf4f05e…`）、`simple-erp-windows-v4.6.3.zip`（55,274,257 B，`8cba2fc5…`）、`simple-erp-mobile-v1.2.0.apk`（43,608 B，`4a7e3c50…`；本版未改手机壳，沿用 1.2.0）—— Release API 的 `digest` 与本地 SHA256 一致，`gh release download` 取回后与本地产物 `cmp` **三个全部字节一致**。旧 v4.6.2 三产物与 `local-v4.6.2` 目录已清理，`dist/` 只留 v4.6.3。
+- **仍未做**：桌面壳内的截图验收（本次改动未触及打印版式几何，只改抬头三格顺序）。
 
 ## v4.6.2 - 带括号/空格的商品点选后专属价带不出来（2026-10-20）
 
