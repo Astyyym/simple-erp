@@ -256,7 +256,7 @@ docs/                     需求、开发、打包说明、界面截图
 
 ## 版本
 
-当前源码版本以根目录 [`VERSION`](VERSION) 为准：**v4.6.2**。
+当前源码版本以根目录 [`VERSION`](VERSION) 为准：**v4.6.3**。
 
 逐版本的交付内容、验收证据与已知边界见 [CHANGELOG](CHANGELOG.md)；已发布版本见 [Releases](https://github.com/Astyyym/simple-erp/releases)。
 
