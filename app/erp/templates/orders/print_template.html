@@ -185,10 +185,12 @@
       <div class="header">
         <h1>{{config.shop_name}}</h1>
         <div class="subtitle">{{document_title or ('退货清单' if order.order_type == 'return' else '销售清单')}}</div>
+        {# 2026-10-21 用户要求：客户贴左、单号贴右，日期居中不变（四类单据共用本模板）。
+           顺序一变，.meta 的 nth-child 对齐规则也要跟着换，见下方样式。 #}
         <div class="meta">
-          <span>单号: {{order.order_no}}</span>
-          <span>日期: {{order.order_date}}</span>
           <span>{{object_role|default('客户')}}: {{order.customer_name}}</span>
+          <span>日期: {{order.order_date}}</span>
+          <span>单号: {{order.order_no}}</span>
         </div>
         {% if document_direction %}<div class="legal-note">交易方向：{{document_direction}} · 业务金额按本单正金额展示</div>{% endif %}
       </div>
