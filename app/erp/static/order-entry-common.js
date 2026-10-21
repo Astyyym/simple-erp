@@ -272,6 +272,51 @@
     );
   }
 
+  /* 未保存修改判定（2026-10-21 修复四类开单页「空页面照样拦人」）。
+
+     原实现是 `let formDirty = false; form.addEventListener('input', () => formDirty = true)`：
+     只置位、永不复位。于是**只要脏过一次就再也洗不掉** —— 用户把内容全删干净、
+     点「一键清空」清空后，页面明明是空的，切页照样弹「尚未保存」，还会诱导用户
+     确认离开而真的丢掉内容。重启程序之所以「好了」，只是换了一份干净的页面内存。
+
+     连带修掉一个更隐蔽的同类缺陷：单位候选里的「×」清除按钮
+     （见本文件 bindUnitCell）会派发合成 `input` 事件，
+     用户一个字都没输入、只点了一下叉号，也会把旧标记打脏。
+
+     现在改为**实时比对快照**：记下表单打开时的值指纹，任何时刻只比
+     「当前指纹 vs 初始指纹」。值回到初始状态（删空、一键清空、新增行又删掉）
+     就自动不算脏，不需要每个入口各自记得复位。
+     合成事件天然免疫：它把值从「空」写成「空」，指纹没变。
+
+     指纹按 DOM 顺序收集**具名控件**的 name=value，因此：
+       - 动态增删行会体现在指纹里（加行算脏、加完再删回原样则不算）；
+       - 不带 name 的控件（换页提示行、按钮组）不参与。 */
+  function createDirtyTracker(form) {
+    if (!form) return {isDirty: () => false, reset() {}, markSaved() {}};
+    let baseline = "";
+    let saved = false;
+    const snapshot = () => {
+      const parts = [];
+      form.querySelectorAll("input, select, textarea").forEach(field => {
+        if (!field.name) return;
+        if (field.type === "checkbox" || field.type === "radio") {
+          if (field.checked) parts.push(field.name + "=" + (field.value == null ? "" : field.value));
+          return;
+        }
+        parts.push(field.name + "=" + (field.value == null ? "" : field.value));
+      });
+      return parts.join("");
+    };
+    baseline = snapshot();
+    return {
+      // 保存成功后（或用户明确要离开）不再拦人。
+      isDirty: () => !saved && snapshot() !== baseline,
+      // 重新以当前值作为基准（例如保存成功后继续开单）。
+      reset() { baseline = snapshot(); saved = false; },
+      markSaved() { saved = true; },
+    };
+  }
+
   /* 往来对象（hidden `customer_id`）变化监听（2026-10-15，修复「换客户后单价不跟」）。
      为什么不是 addEventListener('change')：hidden 输入框上的赋值有三类来源——
        1. 候选点选 / 手输清空（bindAutocomplete 的 onPick / onInputChange）→ 直接 `.value =`，无事件；
@@ -514,6 +559,7 @@
     money: money,
     bindAutocomplete: bindAutocomplete,
     bindUnitCell: bindUnitCell,
+    createDirtyTracker: createDirtyTracker,
     onCounterpartyChanged: onCounterpartyChanged,
     syncCounterparty: syncCounterparty,
     closeFloatingProductSuggestions: closeFloatingProductSuggestions,

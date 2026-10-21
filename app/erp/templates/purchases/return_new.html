@@ -677,19 +677,19 @@ const continueOrderLink = document.getElementById('continueOrderLink');
 const originalButtonText = submitButton.textContent;
 const todayHistoryRows = document.getElementById('todayHistoryRows');
 const saveButton = document.getElementById('saveButton');
-let formDirty = false;
+// 2026-10-21：改「只置位永不复位」的布尔标记为实时快照比对 —— 内容删空/一键清空后
+// 不该再拦人。见 order-entry-common.js 的 createDirtyTracker。
+const dirtyTracker = ErpOrderEntry.createDirtyTracker(returnForm);
 let orderSaved = false;
 let allowHistoryNavigation = false;
-returnForm.addEventListener('input', () => { formDirty = true; });
-returnForm.addEventListener('change', () => { formDirty = true; });
 window.addEventListener('beforeunload', event => {
-  if (!formDirty || orderSaved || allowHistoryNavigation) return;
+  if (!dirtyTracker.isDirty() || orderSaved || allowHistoryNavigation) return;
   event.preventDefault();
   event.returnValue = '';
 });
 todayHistoryRows.addEventListener('click', event => {
   const link = event.target.closest('a');
-  if (!link || !todayHistoryRows.contains(link) || !formDirty || orderSaved) return;
+  if (!link || !todayHistoryRows.contains(link) || !dirtyTracker.isDirty() || orderSaved) return;
   if (!confirm('当前单据尚未保存，离开后填写内容将丢失。确定继续吗？')) event.preventDefault();
   else allowHistoryNavigation = true;
 });
@@ -755,6 +755,7 @@ returnForm.addEventListener('submit', async event => {
     const result = contentType.includes('application/json') ? await response.json() : {ok: response.ok, message: ''};
     if (!response.ok || !result.ok) throw new Error(result.message || '请检查对象、日期、商品、数量与单价后重试');
     orderSaved = true;
+    dirtyTracker.markSaved();
     successMessage.textContent = `退拿货单 ${result.order_no} 已保存成功`;
     openPrintLink.href = result.pdf_url;
     viewOrderLink.href = result.detail_url;
@@ -782,14 +783,12 @@ returnForm.addEventListener('submit', async event => {
 {% if is_edit %}
 // B4：编辑模式补未保存离开提醒。
 (() => {
-  const editForm = document.getElementById('purchaseReturnForm');
-  let editDirty = false;
+  // 2026-10-21：与新建模式同源，改为快照比对（改完又改回原值不算脏）。
+  const editTracker = ErpOrderEntry.createDirtyTracker(document.getElementById('purchaseReturnForm'));
   let editSaved = false;
-  editForm.addEventListener('input', () => { editDirty = true; });
-  editForm.addEventListener('change', () => { editDirty = true; });
-  editForm.addEventListener('submit', () => { editSaved = true; });
+  document.getElementById('purchaseReturnForm').addEventListener('submit', () => { editSaved = true; });
   window.addEventListener('beforeunload', event => {
-    if (!editDirty || editSaved) return;
+    if (!editTracker.isDirty() || editSaved) return;
     event.preventDefault();
     event.returnValue = '';
   });
