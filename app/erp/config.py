@@ -2,7 +2,7 @@ import json
 import os
 import shutil
 import sys
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -82,6 +82,10 @@ CONFIG_DEFAULTS: dict[str, Any] = {
     "print_receiver_label": "收货人：____________",
     # E-5：打印用店铺信息的「首次使用提示」是否已被用户关掉。
     "print_info_prompt_dismissed": False,
+    # 2026-10-21：首次使用引导弹窗（公司名称 + 打印单信息）。
+    # 「稍后再说」记一个时间戳，7 天内不再弹；用户填好公司名称或点「不再提示」则彻底关掉。
+    "first_run_prompt_snoozed_until": "",
+    "first_run_prompt_dismissed": False,
 }
 
 # E-5：打印件上会真的印成空白的字段。
@@ -217,6 +221,50 @@ def missing_print_info_fields(config: dict[str, Any]) -> list[str]:
     return missing
 
 
+DEFAULT_SHOP_NAME = "简单ERP"
+FIRST_RUN_SNOOZE_DAYS = 7
+
+
+def shop_name_needs_setup(config: dict[str, Any]) -> bool:
+    """公司名称是否还是出厂默认值。
+
+    2026-10-21：首次使用引导弹窗的触发条件之一。`shop_name` 有出厂默认
+    「简单ERP」，所以「字段为空」永远不成立 —— 必须按**是否仍等于默认值**判定，
+    否则老用户升级后一次都看不到引导，打印单上会一直印着「简单ERP」。
+    """
+    return str(config.get("shop_name") or "").strip() in {"", DEFAULT_SHOP_NAME}
+
+
+def first_run_prompt_due(config: dict[str, Any], *, today: date | None = None) -> bool:
+    """首次使用引导弹窗现在该不该弹。
+
+    三个条件同时成立才弹：
+      1. 用户没有明确「不再提示」（`first_run_prompt_dismissed`）；
+      2. 公司名称仍是出厂默认值（填过一次就不再打扰）；
+      3. 不在「稍后再说」的 7 天冷却期内。
+
+    冷却用 ISO 日期字符串存储，比时间戳更好读、也不会因时区漂移。
+    日期解析失败一律视为「不在冷却期」——配置被人手改坏了不该把弹窗永久关掉。
+    """
+    if bool(config.get("first_run_prompt_dismissed")):
+        return False
+    if not shop_name_needs_setup(config):
+        return False
+    snoozed_until = str(config.get("first_run_prompt_snoozed_until") or "").strip()
+    if not snoozed_until:
+        return True
+    try:
+        until = date.fromisoformat(snoozed_until)
+    except ValueError:
+        return True
+    return (today or date.today()) >= until
+
+
+def snooze_first_run_prompt(days: int = FIRST_RUN_SNOOZE_DAYS) -> str:
+    """把首次引导推迟 `days` 天，返回写进配置的 ISO 日期。"""
+    return (date.today() + timedelta(days=max(1, int(days)))).isoformat()
+
+
 def ensure_data_location_initialized() -> Path:
     """
     Resolve data root, create subdirs, and remember path when appropriate.
@@ -262,6 +310,8 @@ def _merge_defaults(raw: dict[str, Any]) -> dict[str, Any]:
         font_weight = "standard"
     merged["ui_font_weight"] = font_weight
     merged["print_info_prompt_dismissed"] = bool(merged.get("print_info_prompt_dismissed"))
+    merged["first_run_prompt_dismissed"] = bool(merged.get("first_run_prompt_dismissed"))
+    merged["first_run_prompt_snoozed_until"] = str(merged.get("first_run_prompt_snoozed_until") or "").strip()
     return merged
 
 

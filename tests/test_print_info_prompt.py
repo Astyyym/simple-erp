@@ -21,7 +21,11 @@ from erp import create_app
 from erp.config import CONFIG_DEFAULTS, PRINT_INFO_REQUIRED_FIELDS, load_config, missing_print_info_fields, save_config
 from erp.db import init_db
 
-NOTICE_ID = 'id="printInfoNotice"'
+# 2026-10-21：工作台顶部那张「打印单上还有空白」提示卡已按用户要求废弃，
+# 改由首次使用引导弹窗承担（同一件事不再提示两次）。这里保留旧常量仅用于
+# **反向断言**：旧卡必须彻底消失，不能和新弹窗同时出现。
+LEGACY_NOTICE_ID = 'id="printInfoNotice"'
+NOTICE_ID = 'id="firstRunModal"'
 
 
 def _client():
@@ -69,78 +73,96 @@ def test_out_of_box_defaults_do_not_include_the_two_required_fields():
 
 # --------------------------- 工作台提示 ---------------------------
 
-def test_workbench_shows_print_info_notice_when_blank():
+def test_workbench_shows_first_run_modal_when_shop_name_is_default():
+    """公司名称仍是出厂默认值时，工作台要弹首次使用引导。"""
     client = _client()
     html = client.get("/").get_data(as_text=True)
 
     assert NOTICE_ID in html
-    notice = html.split(NOTICE_ID, 1)[1].split("</section>", 1)[0]
-    assert "打印单上还有空白" in notice
-    assert "订货电话" in notice and "订货地址" in notice
-    assert 'href="/settings/#printInfoSection"' in notice
-    assert "不再提示" in notice
+    modal = html.split(NOTICE_ID, 1)[1].split("</form>", 1)[0]
+    # 三个字段都要在：公司名称 + 订货电话 + 订货地址。
+    assert 'name="shop_name"' in modal
+    assert 'name="print_order_phone"' in modal
+    assert 'name="print_order_address"' in modal
+    # 旧提示卡必须彻底消失，不能两处都提示。
+    assert LEGACY_NOTICE_ID not in html
+    # 三个出口都在：保存、稍后再说、不再提示。
+    assert "保存并开始使用" in modal
+    assert "稍后再说" in modal
+    assert "不再提示" in modal
 
 
-def test_workbench_notice_disappears_after_filling_print_info():
+def test_first_run_modal_disappears_after_saving_shop_name():
     client = _client()
     assert NOTICE_ID in client.get("/").get_data(as_text=True)
 
-    _fill_print_info(client)
+    client.post("/settings/first-run/save", data={
+        "shop_name": "虚构消防器材门店",
+        "print_order_phone": "0571-88886666",
+        "print_order_address": "杭州市西湖区文三路 100 号",
+    }, follow_redirects=True)
+
     html = client.get("/").get_data(as_text=True)
     assert NOTICE_ID not in html
     # 真的落到了配置里（走用户 POST 路径，不是直接改文件）。
     cfg = load_config()
+    assert cfg["shop_name"] == "虚构消防器材门店"
     assert cfg["print_order_phone"] == "0571-88886666"
     assert cfg["print_order_address"] == "杭州市西湖区文三路 100 号"
 
 
-def test_workbench_notice_reports_only_the_field_still_missing():
+def test_first_run_modal_stays_when_shop_name_kept_as_default():
+    """只填打印信息、公司名仍是默认值 → 引导仍要弹（公司名才是触发条件）。"""
     client = _client()
-    _fill_print_info(client, phone="0571-88886666", address="")
-    html = client.get("/").get_data(as_text=True)
+    client.post("/settings/first-run/save", data={
+        "shop_name": "简单ERP",
+        "print_order_phone": "0571-88886666",
+        "print_order_address": "",
+    }, follow_redirects=True)
 
+    html = client.get("/").get_data(as_text=True)
     assert NOTICE_ID in html
-    notice = html.split(NOTICE_ID, 1)[1].split("</section>", 1)[0]
-    assert "订货地址" in notice
-    assert "订货电话" not in notice
+    assert load_config()["print_order_phone"] == "0571-88886666"
 
 
 # --------------------------- 关闭 / 重新打开 ---------------------------
 
-def test_dismiss_hides_notice_without_touching_print_fields():
+def test_dismiss_hides_modal_without_touching_print_fields():
     client = _client()
-    response = client.post("/settings/print-info/dismiss", follow_redirects=True)
+    response = client.post("/settings/first-run/dismiss", follow_redirects=True)
     assert response.status_code == 200
 
     assert NOTICE_ID not in client.get("/").get_data(as_text=True)
     cfg = load_config()
-    assert cfg["print_info_prompt_dismissed"] is True
+    assert cfg["first_run_prompt_dismissed"] is True
     # 关提示不能顺手把打印字段写掉。
     assert cfg["print_order_phone"] == ""
     assert cfg["print_order_address"] == ""
     assert cfg["print_main_business"] == CONFIG_DEFAULTS["print_main_business"]
 
 
-def test_restore_reopens_notice_and_is_idempotent():
+def test_snooze_hides_modal_then_returns_after_cooldown():
+    """「稍后再说」= 推迟 7 天：当天不再弹，冷却期过后重新弹。"""
     client = _client()
-    client.post("/settings/print-info/dismiss", follow_redirects=True)
+    client.post("/settings/first-run/snooze", follow_redirects=True)
     assert NOTICE_ID not in client.get("/").get_data(as_text=True)
 
-    client.post("/settings/print-info/restore", follow_redirects=True)
+    cfg = load_config()
+    assert cfg["first_run_prompt_snoozed_until"]
+    # 冷却期内不弹。
+    from erp.config import first_run_prompt_due
+    assert first_run_prompt_due(cfg) is False
+    # 把冷却改成已过期 → 重新弹（模拟 7 天后）。
+    save_config({"first_run_prompt_snoozed_until": "2020-01-01"})
     assert NOTICE_ID in client.get("/").get_data(as_text=True)
-    assert load_config()["print_info_prompt_dismissed"] is False
-
-    # 重复打开/关闭都不应报错或翻转成反状态。
-    client.post("/settings/print-info/restore", follow_redirects=True)
-    assert load_config()["print_info_prompt_dismissed"] is False
 
 
-def test_filled_fields_win_over_dismiss_flag():
-    """补全后即使提示没被关，也不该再出现（关闭开关不是显示的唯一条件）。"""
+def test_filled_shop_name_wins_over_dismiss_flag():
+    """填了公司名后即使没关提示，也不该再弹（关闭开关不是显示的唯一条件）。"""
     client = _client()
     _fill_print_info(client)
     assert NOTICE_ID not in client.get("/").get_data(as_text=True)
-    assert load_config()["print_info_prompt_dismissed"] is False
+    assert load_config()["first_run_prompt_dismissed"] is False
 
 
 # --------------------------- 设置页 ---------------------------
@@ -204,12 +226,14 @@ def test_print_preview_renders_the_filled_shop_info():
     assert re.search(r"订货地址：</strong>杭州市西湖区文三路 100 号", html)
 
 
-def test_workbench_notice_never_prints_raw_config_keys():
-    """提示文案是给人看的中文名，不能漏出内部键名。"""
+def test_first_run_modal_never_prints_raw_config_keys():
+    """弹窗文案是给人看的中文名，不能把内部键名当标签漏出来。"""
     html = _client().get("/").get_data(as_text=True)
-    notice = html.split(NOTICE_ID, 1)[1].split("</section>", 1)[0]
+    modal = html.split(NOTICE_ID, 1)[1].split("</form>", 1)[0]
     for key, _label in PRINT_INFO_REQUIRED_FIELDS:
-        assert key not in notice
+        # 键名只允许出现在 name= 属性里，不允许出现在可见文案中。
+        assert f">{key}<" not in modal
+        assert f">{key}:" not in modal
 
 
 def test_dismiss_flag_survives_config_reload_and_merge():

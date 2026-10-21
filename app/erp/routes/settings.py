@@ -11,6 +11,7 @@ from erp.config import (
     UI_SCALE_CHOICES,
     UI_THEME_CHOICES,
     data_root,
+    snooze_first_run_prompt,
     default_data_root_display,
     ensure_runtime_dirs,
     load_config,
@@ -204,6 +205,68 @@ def restore_print_info_prompt():
         save_config({"print_info_prompt_dismissed": False})
         _reload_app_config()
         flash("已重新打开打印信息提示。", "success")
+    except Exception as exc:  # noqa: BLE001
+        flash(f"操作失败：{exc}", "danger")
+    return redirect(url_for("settings.settings_page") + "#printInfoSection")
+
+
+@settings_bp.post("/first-run/save")
+def save_first_run():
+    """首次使用引导弹窗的「保存并开始使用」。
+
+    **不能复用 `/settings/save`**：那个路由把表单里缺失的字段一律写成空串
+    （`print_main_business`、`print_legal_note`、`ui_theme` …），
+    而弹窗只提交公司名称与两项打印信息 —— 走通用保存会把主营业务、
+    法律句、主题、缩放等配置**全部清空**。这里只写自己负责的三个键。
+
+    公司名称填成出厂默认值时不算完成引导：弹窗会继续按「稍后再说」的
+    冷却规则出现，避免用户点一下保存却等于什么都没设。
+    """
+    form = request.form
+    shop_name = (form.get("shop_name") or "").strip()
+    if not shop_name:
+        flash("公司名称不能为空。", "danger")
+        return redirect(url_for("index"))
+    try:
+        save_config({
+            "shop_name": shop_name,
+            "print_order_phone": (form.get("print_order_phone") or "").strip(),
+            "print_order_address": (form.get("print_order_address") or "").strip(),
+        })
+        _reload_app_config()
+        flash("已保存，打印单会带上这些信息。", "success")
+    except Exception as exc:  # noqa: BLE001
+        flash(f"保存失败：{exc}", "danger")
+    return redirect(url_for("index"))
+
+
+@settings_bp.post("/first-run/snooze")
+def snooze_first_run():
+    """首次使用引导弹窗的「稍后再说」：推迟 7 天，下次启动不再立刻弹。
+
+    2026-10-21 用户要求：允许稍后再说，但要冷却，否则公司名一直没改的话
+    每次开程序都弹一次，反而变成骚扰。
+    """
+    try:
+        save_config({"first_run_prompt_snoozed_until": snooze_first_run_prompt()})
+        _reload_app_config()
+        flash("好的，7 天后如果公司名称还没设置，会再提醒一次。", "success")
+    except Exception as exc:  # noqa: BLE001
+        flash(f"操作失败：{exc}", "danger")
+    # 弹窗从工作台（应用根路由 index）发起，回跳到那里继续使用。
+    return redirect(url_for("index"))
+
+
+@settings_bp.post("/first-run/dismiss")
+def dismiss_first_run():
+    """首次使用引导弹窗的「不再提示」：彻底关掉，不再自动出现。
+
+    用户以后想重新看到引导，可在设置页的「打印单信息」卡片里手动重新打开。
+    """
+    try:
+        save_config({"first_run_prompt_dismissed": True})
+        _reload_app_config()
+        flash("已关闭首次使用引导。以后可在「系统设置 → 打印单信息」重新打开。", "success")
     except Exception as exc:  # noqa: BLE001
         flash(f"操作失败：{exc}", "danger")
     return redirect(url_for("settings.settings_page") + "#printInfoSection")

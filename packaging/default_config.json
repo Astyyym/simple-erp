@@ -29,5 +29,7 @@
   "print_legal_note": "本销售单等同于合同，具有法律效力，收货人签字或附托运物流单号生效，直至货款结清",
   "print_maker_name": "",
   "print_receiver_label": "收货人：____________",
-  "print_info_prompt_dismissed": false
+  "print_info_prompt_dismissed": false,
+  "first_run_prompt_snoozed_until": "",
+  "first_run_prompt_dismissed": false
 }

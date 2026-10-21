@@ -45,12 +45,17 @@
   .recent-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding:14px 15px 11px}.recent-head h2{margin:0;font-size:16px}.recent-link{display:inline-flex;min-height:32px;align-items:center;gap:5px;padding:4px 7px;color:var(--erp-primary);border-radius:5px;font-size:12px;font-weight:650;text-decoration:none;white-space:nowrap}.recent-link:hover{background:var(--erp-primary-soft)}
   .recent-table-wrap{overflow-x:auto;overflow-y:hidden}.recent-table{width:100%;min-width:700px;border-collapse:collapse;color:var(--erp-ink);font-variant-numeric:tabular-nums}.recent-table th,.recent-table td{padding:9px 11px;border-top:1px solid var(--erp-border);text-align:left;vertical-align:middle}.recent-table th{color:var(--erp-muted);background:var(--erp-glass-bg-strong);font-size:12px;font-weight:650;white-space:nowrap}.recent-table td{font-size:13px}.recent-table tbody tr:hover td{background:rgba(37,99,235,.045)}
   .recent-order-cell{display:flex;min-width:160px;align-items:center;gap:8px}.recent-type{display:inline-flex;min-height:21px;align-items:center;padding:2px 7px;border:1px solid var(--erp-border);border-radius:4px;font-size:11px;font-weight:650;white-space:nowrap}.recent-type.sale{color:var(--erp-primary);background:var(--erp-primary-soft);border-color:color-mix(in srgb,var(--erp-primary) 18%,var(--erp-border))}.recent-type.return{color:var(--erp-danger);background:rgba(199,53,53,.07);border-color:rgba(199,53,53,.18)}.recent-order-no{color:var(--erp-primary);font-family:Consolas,"Courier New",monospace;font-size:12px;text-decoration:none;white-space:nowrap}.recent-order-no:hover{text-decoration:underline}.recent-muted{color:var(--erp-muted);white-space:nowrap}.recent-amount{font-weight:680;white-space:nowrap}.recent-amount.negative{color:var(--erp-danger)}.recent-view{color:var(--erp-primary);font-weight:650;text-decoration:none;white-space:nowrap}.recent-view:hover{text-decoration:underline}.recent-empty{padding:20px 12px!important;color:var(--erp-muted);text-align:center!important}
-  /* E-5：打印信息引导卡。克制样式，不抢指标卡的视觉重量。 */
-  .print-info-notice{display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px;margin-bottom:16px;padding:14px 16px;border:1px solid color-mix(in srgb,var(--erp-primary) 30%,var(--erp-border));border-left:4px solid var(--erp-primary);border-radius:var(--erp-radius);background:var(--erp-surface);box-shadow:var(--erp-shadow)}
-  .print-info-notice-body{flex:1 1 320px;min-width:0}
-  .print-info-notice h2{margin:0 0 4px;font-size:15px}
-  .print-info-notice p{margin:0;color:var(--erp-muted);font-size:12px;line-height:1.5}
-  .print-info-notice-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  /* 2026-10-21：首次使用引导弹窗（取代原先工作台顶部那张「打印单上还有空白」提示卡，
+     避免同一件事提示两次）。表单直接 POST 到设置保存路由，字段名与设置页一致。 */
+  .firstrun-modal{position:fixed;inset:0;z-index:2100;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(15,20,30,.45)}
+  .firstrun-modal.d-none{display:none!important}
+  .firstrun-dialog{width:min(560px,100%);max-height:calc(100vh - 40px);overflow:auto;padding:22px 22px 16px;border:1px solid var(--erp-border);border-radius:12px;background:var(--erp-surface);color:var(--erp-ink);box-shadow:0 20px 56px rgba(0,0,0,.24)}
+  .firstrun-dialog h2{margin:0 0 6px;font-size:19px}
+  .firstrun-lead{margin:0 0 16px;color:var(--erp-muted);font-size:13px;line-height:1.6}
+  .firstrun-dialog .form-label{margin-bottom:4px;font-size:13px;font-weight:650}
+  .firstrun-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:16px}
+  .firstrun-actions .firstrun-spacer{flex:1 1 auto}
+  .firstrun-tip{margin:10px 0 0;color:var(--erp-muted);font-size:12px;line-height:1.5}
   @media(max-width:1100px){.dashboard-main{grid-template-columns:minmax(0,1fr) 220px;grid-template-areas:"head actions" "metrics actions" "recent actions" "flow actions";gap:14px}.quick-actions{padding:14px}.dashboard-head{align-items:flex-start;flex-direction:column;gap:8px}.day-chip{align-items:flex-start;text-align:left}.metric-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.flow{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.flow-step,.flow-step:first-child,.flow-step:last-child{border:1px solid var(--erp-border);border-radius:7px}}
   @media(max-width:760px){.sidebar{display:none}.content{height:calc(100% - 20px);margin:10px;border-radius:18px}.page-topbar{padding:0 12px}.page-topbar .company{min-width:0;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.page-body{padding:15px 11px 22px}.dashboard-main{grid-template-columns:minmax(0,1fr);grid-template-areas:"head" "metrics" "actions" "recent" "flow";gap:14px}.quick-actions{position:static}.quick-action-list{grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-head{align-items:flex-start;flex-direction:column;gap:8px}.day-chip{align-items:flex-start}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.metric-card{min-height:108px;padding:12px}.metric-card.net-card{grid-column:1/-1}.metric-value{font-size:24px}.recent-head{align-items:flex-start;flex-direction:column}.recent-table-wrap{overflow:visible}.recent-table{min-width:0}.recent-table thead{display:none}.recent-table,.recent-table tbody{display:block;width:100%}.recent-table tbody tr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 9px;padding:10px;border-top:1px solid var(--erp-border)}.recent-table tbody td{min-width:0;padding:2px 0;border:0}.recent-table tbody td:nth-child(1){grid-column:1/-1}.recent-table tbody td:nth-child(2){grid-column:1/-1;color:var(--erp-muted)}.recent-table tbody td:nth-child(3){grid-column:1;color:var(--erp-muted);font-size:12px}.recent-table tbody td:nth-child(4){grid-column:2;color:var(--erp-muted);text-align:right;font-size:12px}.recent-table tbody td:nth-child(5){grid-column:1}.recent-table tbody td:nth-child(6){grid-column:2;text-align:right}}
   @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
@@ -59,24 +64,50 @@
   }
 </style>
 <div class="dashboard-layout">
-  {# E-5：迁移用户首次使用时引导填写打印用店铺信息，否则打印件对应位置是空白。
-     只在缺字段且未被关掉时出现；补全后自动消失。 #}
-  {% if print_info_missing and not erp_config.print_info_prompt_dismissed %}
-  <section class="print-info-notice" id="printInfoNotice" aria-label="打印信息待补全">
-    <div class="print-info-notice-body">
-      <h2>打印单上还有空白</h2>
-      <p data-ui-hint>
-        还没填<strong>{{ print_info_missing | join('、') }}</strong>，打印销售单时这两处会留空。
-        在「系统设置 → 打印单信息」填一次，之后每张单都会带上。
+  {# 2026-10-21：首次使用引导弹窗。
+     触发口径（见 config.first_run_prompt_due）：公司名称仍是出厂默认值、
+     用户没点过「不再提示」、且不在「稍后再说」的 7 天冷却期内。
+     原先那张「打印单上还有空白」的提示卡已按用户要求废弃，避免同一件事提示两次。 #}
+  {% if first_run_prompt_due %}
+  <div class="firstrun-modal" id="firstRunModal" role="dialog" aria-modal="true" aria-labelledby="firstRunTitle" aria-describedby="firstRunLead">
+    <div class="firstrun-dialog">
+      <h2 id="firstRunTitle">先花一分钟，把单据抬头设好</h2>
+      <p class="firstrun-lead" id="firstRunLead">
+        这三项会印在每一张销售单、退货单、拿货单的抬头和页脚上。现在填一次，以后不用再管；
+        留空的项在打印件上会是空白，不影响开单。
       </p>
-    </div>
-    <div class="print-info-notice-actions">
-      <a class="btn btn-primary" href="/settings/#printInfoSection">去填写</a>
-      <form method="post" action="{{ url_for('settings.dismiss_print_info_prompt') }}">
-        <button type="submit" class="btn btn-outline-secondary">不再提示</button>
+      {# 专用保存路由：只写公司名与两项打印信息。绝不能走 /settings/save ——
+         那个路由会把缺失字段写成空串，清掉主营业务/法律句/主题等配置。 #}
+      <form method="post" action="{{ url_for('settings.save_first_run') }}" id="firstRunForm">
+        <div class="mb-3">
+          <label class="form-label" for="firstRunShopName">公司名称</label>
+          <input class="form-control form-control-lg" id="firstRunShopName" name="shop_name" required maxlength="120"
+                 value="{{ erp_config.shop_name }}" placeholder="例如：鑫源阀门经营部">
+          <div class="firstrun-tip">现在印的是出厂默认「简单ERP」，改成你的店名即可。</div>
+        </div>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label" for="firstRunPhone">订货电话</label>
+            <input class="form-control" id="firstRunPhone" name="print_order_phone" value="{{ erp_config.print_order_phone }}" placeholder="客户打过来找你的号码">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label" for="firstRunAddress">订货地址</label>
+            <input class="form-control" id="firstRunAddress" name="print_order_address" value="{{ erp_config.print_order_address }}" placeholder="门店或仓库地址">
+          </div>
+        </div>
+        <div class="firstrun-actions">
+          <button type="submit" class="btn btn-primary">保存并开始使用</button>
+          <span class="firstrun-spacer"></span>
+          <button type="submit" class="btn btn-outline-secondary" form="firstRunSnoozeForm">稍后再说</button>
+          <button type="submit" class="btn btn-link text-muted" form="firstRunDismissForm">不再提示</button>
+        </div>
+        <p class="firstrun-tip">「稍后再说」会在 7 天后再次提醒；「不再提示」则不再自动出现。</p>
       </form>
+      {# 两个次要动作各自独立成表单：避免嵌套 form（HTML 不允许），也不改动主表单的字段。 #}
+      <form method="post" action="{{ url_for('settings.snooze_first_run') }}" id="firstRunSnoozeForm"></form>
+      <form method="post" action="{{ url_for('settings.dismiss_first_run') }}" id="firstRunDismissForm"></form>
     </div>
-  </section>
+  </div>
   {% endif %}
   <section class="dashboard-main" aria-label="工作台概况、快捷操作与最近业务">
     <div class="dashboard-head">
