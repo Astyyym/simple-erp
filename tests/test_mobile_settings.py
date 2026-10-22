@@ -247,3 +247,25 @@ def test_pair_code_response_scrolls_itself_into_view():
     # 普通 GET 不该带这段脚本（不改变别的页面滚动行为）
     plain = client.get("/settings/").get_data(as_text=True)
     assert "mobilePairCode" not in plain
+
+
+def test_devices_json_endpoint_returns_devices():
+    """设置页轮询接口必须真的能返回 JSON。
+
+    这个接口是给「已配对设备」自动刷新用的（2026-10-22）：设置页是服务端渲染，
+    配对成功后页面不会自己变，前端每 4 秒拉一次这里。
+
+    之所以专门加这条测试：第一版写完漏了 `from flask import jsonify`，
+    接口直接 500，而**页面看起来只是「不刷新」**，跟「功能没做」一模一样，
+    排查时白花了很多时间。这条测试能在打包前就把它拦住。
+    """
+    from erp import create_app
+
+    client = create_app().test_client()
+    response = client.get("/settings/mobile/devices", headers={"Accept": "application/json"})
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload is not None, "必须返回 JSON，不能是 HTML 或错误页"
+    assert payload["ok"] is True
+    assert isinstance(payload["devices"], list)
+    assert payload["count"] == len(payload["devices"])

@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- 局域网直连用的是明文 http，必须显式放行；不放行时 Android 9+ 会直接拒绝连接 -->
-<network-security-config>
-    <base-config cleartextTrafficPermitted="true">
-        <trust-anchors>
-            <certificates src="system" />
-        </trust-anchors>
-    </base-config>
-</network-security-config>

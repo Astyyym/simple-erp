@@ -277,3 +277,201 @@ Inno 不报错，日志里能看到 `Setup command line: ... /DIR=D:\u0007pp\简
    `HKCU\Software\简单ERP\LastAppDir` 指向哪；`config.json` 哈希不变不等于装对了；
 → 装错目录的善后：先用正确 `/DIR` 重装一次（会重写卸载键与 `LastAppDir`），
    再手工删掉误写在仓库根的 `_internal/`、`unins000.dat`、`unins000.exe`、`简单ERP.exe`。
+
+## 原生端视觉层级：卡片必须有投影（2026-10-22）
+
+用户报「颜色太单调了，分不清楚主次，看哪里都一样」。根因不是配色丑，是**层级缺失**：
+
+- 网页版 `.card` 有 `--card-shadow`，原生 `ErpCard` 只有一道 `border alpha 0.07`。
+- `bg #FBFBFD` 与 `surface #FFFFFF` 亮度差不到 2% → 卡片、卡片间隙、页面背景三者视觉等价。
+- 结果：整屏是一张平铺的白纸，眼睛找不到结构。
+
+修法与约定：
+1. `ErpColors` 新增 `cardShadow`，`ErpCard` 默认 `elevated = true` 加 `shadow(6.dp)`。
+2. `ErpColors` 新增 `debt`（暖色）专给欠款金额用 —— **不要用 danger**，danger 是「出错了」语义。
+3. 列表行必须三级：主标题 16sp Medium / 金额 19sp SemiBold + debt 色 / 辅助 11.5sp muted。
+4. 分段选择器用 `SegmentedChips`（并排、选中项标蓝），**不要用「文字互变的单开关」**：
+   单开关在「未激活」状态看起来跟普通按钮一样，用户不知道当前选的是哪个（用户 2026-10-22 报的第一个问题）。
+5. 筛选 chip 未选中态用 `soft` 灰底，不用 `surface` 白底 —— 白底落在浅灰页面上没有边界。
+
+## 离线缓存：先给缓存，再走网络（2026-10-22）
+
+原实现「先网络、超时才回落缓存」，电脑关机时切页面要等满 connectTimeout。
+实测：**8.7 秒**白屏转圈。
+
+修法（`AppViewModel.load`）：
+- 新增 `publish` 参数，命中缓存时**立刻**推 `UiState.Ready(fromCache = true)`，界面秒开 + 离线横幅；
+- 网络请求继续跑，成功了覆盖成在线数据；
+- `UiState.Loading` 只在 `!is UiState.Ready` 时才设，否则每次切 tab 先闪骨架，有了缓存反而更卡；
+- `connectTimeout` 8s → 2500ms（局域网内超过 2.5s 基本就是连不上，多等无益）；
+  `readTimeout` 保持 15s（那是服务端在算，大数据量需要时间）。
+
+实测结果：**8.7 秒 → 1.05 秒**。
+
+## 商品页排序（2026-10-22）
+
+- 商品没有「欠款」概念，所以第二档排序用**最低价**（`sort=price`），与客户页「拼音/欠款」结构对应。
+- 无专属价的商品（`MIN(cp.price_cents) IS NULL`）**永远垫底**，两档排序都垫。
+- 空拼音垫底那一项必须固定 `ASC`，**不能跟 direction 翻转**：写成 `f"p.pinyin_initials = '' {direction}"` 时，
+  倒序会把空拼音翻到最前面，看起来像排序坏了。
+- 排序条件必须进缓存键（`products:$sort:$order:$q`），否则离线时看到另一个排序的结果，像「排序没生效」。
+
+## 排序切换要回顶（2026-10-22 用户要求）
+
+客户页/商品页都加了 `rememberLazyListState()` + `LaunchedEffect(sortDebt, descending) { scrollToItem(0) }`。
+不回顶的话，用户滚到第 30 行再切排序，看到的是新排序的第 30 行 —— 完全不知道排的是哪一段。
+
+## 圆角矩形描边（2026-10-22）
+
+用户要求「全加黑色描边」。实现要点：
+- `ErpColors` 新增 `outline`：浅色 `#000000`，深色 `#FFFFFF`。
+- **深色模式不能也写纯黑** —— 深色背景上的黑描边等于没画，用户会以为没生效。
+- 已覆盖：`ErpCard` / 搜索框 / `SegmentedChips` / `OrderChip` / `PrimaryButton` / `FilterChip` / 净额卡 / tab 条分隔线。
+
+## adb 点击坐标：别按截图比例换算（2026-10-22 又踩一次）
+
+模拟器 `wm size` 是 `Physical 1080x1920` / `Override 945x2100`。
+`screencap` 出的是 **945×2100**（override），但 `input tap` 走的是**物理 1080×1920**。
+按截图比例换算会系统性偏掉，表现为「点了没反应」，很容易误判成 App 的 bug（这次连点三次日期面板都以为坏了）。
+
+**正确做法：直接问系统要真实坐标**，不要算：
+```bash
+ADB shell uiautomator dump //sdcard/ui.xml
+ADB shell cat //sdcard/ui.xml | tr '>' '\n' | grep -oE 'text="确定"[^/]*bounds="[^"]*"'
+# 再取可点击容器（TextView 的 clickable 是 false，点它没用）：
+ADB shell cat //sdcard/ui.xml | tr '<' '\n' | grep 'clickable="true"' | grep -oE 'bounds="[^"]*"'
+```
+点 bounds 的**中心**。注意 Git Bash 会把 `/sdcard` 改写成 `D:/app/Git/sdcard`，必须写 `//sdcard`。
+
+## 原生端详情页层次（2026-10-22）
+
+用户连报两次「没有层次、颜色字体大小没主次」。规律很明确：**问题不在配色，在「每一块都长得一样重」**。
+
+两条可直接复用的规则：
+1. **一张卡内分行，不要一项一张卡。** 明细 5 项 = 5 张等大白卡，跟抬头卡同权 → 整页一片方块。
+   改成一卡多行 + 发丝线分隔，「明细」才成为一个整体块，跟抬头/合计形成三段结构。
+2. **每页只能有一个「最大字号」。** 单据详情定为：金额 27sp Bold > 客户名 21sp SemiBold > 单号 12.5sp muted。
+   原来客户名 18sp 对明细 14sp，差距太小，等于没有主次。
+
+## tab 条不要分隔线（2026-10-22）
+
+之前给 tab 条顶部加过 `outline` 1px 线，浅色下像硬边框、深色下像亮线，两种模式都抢眼，用户要求删掉。
+tab 条与内容区的分界靠 tab 条自己的底色。**别再往这里加线。**
+
+## tab 选中态用「胶囊底色」而不是细横线
+
+原来 3dp 细横线 + 文字变蓝，用户报「不明显」。5 个 tab 平分屏宽后每格很窄，细线几乎看不见。
+改成选中项整格铺 `primarySoft` 圆角底 + 文字 `primary` SemiBold：**面积差异**比线条好认得多。
+
+## 详情页折叠：默认 3 条 + 原地展开（2026-10-22 用户要求）
+
+- 三段（最近单据 / 专属价 / 最近流水）各用一个 `rememberSaveable` 布尔，**互不联动**。
+  一个总开关会让专属价那几十行一起铺开，把流水顶到很下面。
+- 展开只改本地布尔，**不发请求**，所以不回顶、不闪屏（用户明确要求「不要回顶刷新」）。
+- 「展开」放在**段末**而不是段首：段首右侧已有「看全部」（跳页），两个操作挤一行会混淆。
+
+## 「展开」按钮出不来 = 后端切太早（2026-10-22 实测 bug）
+
+客户详情页「展开全部」一直不显示。原因不在前端：
+`readonly_queries.customer_detail(document_limit=3)` 硬切 3 条，
+前端条件是 `data.documents.size > COLLAPSED_ROWS`（3 > 3 = false），永远不成立。
+
+**规则：折叠是显示层的事，接口要给足数据。**
+- 后端 `document_limit` 3 → 20（上限而非无限，防老客户几千张单撑大响应）。
+- 前端 `take(3)` + 「展开全部 N 条」按钮。
+- `tests/test_mobile_queries.py` 里那条 `<= 3` 断言同步改成 `<= 20`（它测的是旧契约）。
+
+## 详情页「还是太丑」的两次迭代（2026-10-22）
+
+第一版只调了字号和卡内分行，用户仍说丑。第二版才抓住真正原因：
+**同宽白卡上下叠 = 没有主次**。可复用做法：
+
+- 客户详情：余额卡和电话/地址卡**合并成一张**。上半铺淡色底（欠款=暖色/多付=红/结清=灰）
+  放 32sp Bold 余额；下半白底放联系方式，标签做成灰底小方块。
+  低频信息（期初、本期变动）压成右上角小字，不跟主数字抢位置。
+- 单据详情：抬头卡按单据类型着色（sale 蓝 / return 红 / purchase 琥珀，alpha 0.06）；
+  明细行加 20dp 序号徽章（长单子防看串行）；合计改成「本单合计」小标题 + 25sp Bold 的色块。
+
+## 别再自己发明列表样式 —— 先读网页版定稿（2026-10-22 反复被骂「丑」的根因）
+
+用户连说三次「丑」。我一直在调字号、加投影、加底色，但**结构是错的**，怎么调都救不回来。
+
+真正的根因：**网页版早就定稿了，原生端从没照做。**
+
+| | 网页版（定稿） | 原生端（我做的） |
+|---|---|---|
+| 列表结构 | **一整张 card + 内部 row + 发丝线分隔** | 每行一张独立卡片 |
+| 商品行 | 两行：名字 / 蓝色价格药丸 + N 个客户 | 三行：名字 / 客户数 / 价格悬空 + 单位 |
+| 客户行 | 名字 + 拼音·电话 / 金额 / chevron | 名字 + 电话 / 金额 + 欠款徽章 |
+| 控件描边 | 透明或极淡 | 纯黑 1px（像线框图） |
+
+「每行一张卡」的后果：几十张**一样高、一样白、一样圆角**的方块排下去是一堵墙，
+眼睛没有任何落点。这就是「丑」的本质 —— 不是配色，是**节奏**。
+
+**规则：改原生端 UI 前，必须先读对应的网页版模板和 CSS。**
+- 列表：`app/erp/templates/mobile/{customers,orders,products}/list.html`
+- 样式：`app/erp/static/css/mobile.css`（`.row` `.p-name` `.price-pill` `.card`）
+- 定稿注释都写在模板里（「2026-10-18 用户定稿」），照做即可，不要重新设计。
+
+## 黑色 1px 描边 = 线框图观感（2026-10-22）
+
+用户先说「全加黑色描边」，我加完发现整屏像没做完的线框图，用户随后要求删掉。
+最终结论：**黑描边不要用在控件和卡片上**。控件用 `colors.border`（极淡）或靠底色区分，
+卡片靠投影。`outline` 这个 token 目前只在必要时用，别默认套。
+
+## 扫码「对着电脑扫不出来、相册能扫出来」（2026-10-22 真机反馈）
+
+根因不是解析器，是**相机对焦**：zxing 的 `CameraSettings` 默认
+`autoFocusEnabled=true` 但 `continuousFocusEnabled=false` —— 只对焦一次就停了。
+手机对着电脑屏幕时第一次对焦往往落在背景（键盘、桌面），之后画面再清楚也不会
+重新对焦，于是永远解不出码；相册里是清晰原图，所以那条路一直好使。
+
+修法：`cameraSettings = CameraSettings().apply { isContinuousFocusEnabled = true;
+isAutoFocusEnabled = false; isBarcodeSceneModeEnabled = true; isMeteringEnabled = true }`。
+同时关掉 autoFocus —— 一次性对焦和连续对焦同时开会互相打架。
+
+测法：模拟器相机是彩条测试图，**验不了真机对焦**，只能验「从相册选」。真机必须实扫。
+
+## 扫码提示文字别用 zxing 自带的 status view（2026-10-22）
+
+`zxing_status_view` 在库的布局里是 `layout_gravity="bottom|center_horizontal"` 硬编码，
+永远贴屏幕最底边，离扫描框很远。要放到框下方就自己加一个 TextView，
+用 `barcodeView.barcodeView.framingRect.bottom` 定位 —— **它已经是 View 坐标系**
+（ViewfinderView 直接拿它 `canvas.drawRect`），不要再乘预览比例，多乘一次会把提示
+推到屏幕中间、和相册按钮重叠（踩过）。相机起来前 framingRect 是 null，要等
+`onGlobalLayout` 再算。
+
+## 断网时三级页面「连不上电脑」= 这单从没联网打开过（2026-10-22）
+
+缓存是**按接口逐条**落的：列表页缓存了，不代表里面每一张单据详情也缓存了。
+用户从「最近单据」点进去，那张单可能一次都没被联网打开过 → 没缓存 → 断网必失败。
+
+修法：`openDocument` 失败时用**列表里已有的摘要**降级渲染（`fallbackDocumentDetail`），
+单号/日期/客户/金额/类型全在摘要里，只缺明细行；页面明确写「明细需要联网才能看」。
+不要显示成「单据不存在」，也不要假装明细为空。
+
+## 配对态丢失的坑（2026-10-22）
+
+配对态是 **cookie**（`simple_erp_cookies` SharedPreferences，键是 `host:port`），
+服务端设备登记在 `<data_root>/data/mobile_devices.json`。两边一旦不同步
+（比如服务端那条设备被删了、或换了 IP/端口），App 里 cookie 还在但服务端不认，
+表现是**每次启动都退回配对页**，而设置页看着一切正常。
+排查命令：`adb shell su 0 cat /data/data/com.simpleerp.mobile/shared_prefs/simple_erp_cookies.xml`
+拿到 `device_id:token`，再用 `mobile_pairing.device_from_cookie()` 验证。
+
+## 设置页「已配对设备 0 台」不刷新（2026-10-22）
+
+设置页是**服务端渲染**，HTML 只在打开那一刻生成一次。店主开着这个页面、拿手机
+扫码配对 —— 服务端 `mobile_devices.json` 已经写进去了，但页面不会自己变，
+「已配对设备 0 台」一直挂着，看起来像配对失败。
+
+修法：加 `GET /settings/mobile/devices` 返回 JSON，前端每 4 秒拉一次，
+**只在设备签名变化时才重绘**（否则每 4 秒重建整张表，鼠标选中的文字会被清掉）。
+排查时要分清「服务端没记」和「页面没刷」：先 `mobile_pairing.device_count()`，
+数字对得上就一定是页面的事。改完后端**必须重启桌面端进程**，否则路由不生效（404）。
+
+## 照片扫码失败：MultiFormatReader 要给 hints（2026-10-22）
+
+`MultiFormatReader()` 不带参数时是「所有格式都试」，在没有 TRY_HARDER 的情况下
+反而容易在噪声上失败。修法是多轮尝试：只认 QR_CODE → 只认 QR_CODE + TRY_HARDER →
+全格式 + TRY_HARDER → 图放大 2 倍再试（截图缩放过、码只有 100px 时靠这步救）。

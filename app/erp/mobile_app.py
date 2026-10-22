@@ -18,6 +18,7 @@ from flask import Flask, request
 
 from erp.config import load_config
 from erp.routes.mobile import mobile_bp
+from erp.routes.mobile_api import mobile_api_bp
 from erp.utils.filter_chips import ORDER_TYPE_LABELS
 from erp.utils.mobile_format import (
     amount_band,
@@ -88,4 +89,7 @@ def create_mobile_app() -> Flask:
         return response
 
     app.register_blueprint(mobile_bp)
+    # JSON 接口：给原生安卓客户端用。与 HTML 蓝图共用同一套只读查询，
+    # 口径不分叉；蓝图外仍然天然 404（第二监听只挂这两个蓝图）。
+    app.register_blueprint(mobile_api_bp)
     return app

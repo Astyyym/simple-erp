@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  局域网明文放行。
+  电脑端是 http://192.168.x.x:5001，没有证书，也不该为内网自签一套 CA
+  （自签证书在 Android 上要装到用户证书区，店主做不到，且会让防火墙排障更复杂）。
+  风险边界由服务端的只读连接与设备配对承担，不靠传输层。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

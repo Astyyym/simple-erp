@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from flask import Blueprint, flash, redirect, render_template, request, session, url_for, current_app
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, session, url_for, current_app
 
 from erp.config import (
     UI_FONT_WEIGHT_CHOICES,
@@ -474,6 +474,16 @@ def mobile_panel_context() -> dict:
         "last_success_label": timestamp_label(mobile_pairing.last_success_at()),
         # 二维码只在「真的在监听 + 地址看起来手机能连」时才给：给一个 127 或代理网卡
         # 地址的二维码，等于让店主扫一张永远连不上的图。
+        #
+        # 二维码内容是 `http://<ip>:<port>/m/`，两种用法都成立：
+        # - 手机 App 扫 → 解析出主机地址，直接进配对页（App 侧会去掉路径）
+        # - 手机浏览器扫 → 打开配对页，可以走浏览器只读端
+        #
+        # 2026-10-21 试过改成 `/m/download`（扫码直接下 APK），**实测走不通**：
+        # Chrome 对「HTTP 明文 + 可执行文件」有两道强制拦截
+        # （File can't be downloaded securely → File might be harmful），
+        # 两次都确认后文件仍停在 `.pending-*.apk` 临时态，装不上。
+        # 局域网没有 HTTPS，这条路没有绕法，所以退回「传文件安装 + 扫码配对」。
         "qr": (
             qr_png_data_uri(status["url"])
             if status["listening"] and status.get("lan_usable")
@@ -543,6 +553,26 @@ def mobile_revoke():
     else:
         session["mobile_notice"] = ("danger", "没找到这台设备，可能已经被撤销。")
     return redirect(url_for("settings.settings_page") + "#mobileAccessSection")
+
+
+@settings_bp.get("/mobile/devices")
+def mobile_devices():
+    """已配对设备列表（JSON），给设置页轮询用。
+
+    为什么需要这个接口：设置页是服务端渲染的，HTML 只在打开时生成一次。
+    店主在电脑上开着设置页、拿手机扫码配对 —— 配对成功了，但那个页面不会自己变，
+    「已配对设备 0 台」一直挂着，看起来像配对失败（2026-10-22 用户实测报这个）。
+    这里返回当前设备列表 + 诊断时间，前端每几秒拉一次，变了就局部更新。
+    """
+    devices = mobile_pairing.list_devices()
+    return jsonify(
+        {
+            "ok": True,
+            "count": len(devices),
+            "devices": devices,
+            "last_success_label": timestamp_label(mobile_pairing.last_success_at()),
+        }
+    )
 
 
 @settings_bp.post("/mobile/revoke-all")

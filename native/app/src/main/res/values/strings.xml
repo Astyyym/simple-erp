@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 加后缀是为了和电脑端区分：两个都叫「简单ERP」时，桌面图标上根本认不出
+         哪个是手机只读端。手机上只有一个 ERP，所以不加「手机」二字更简洁。 -->
+    <string name="app_name">简单ERP·手机</string>
+</resources>

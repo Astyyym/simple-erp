@@ -404,8 +404,15 @@
     </div>
     <div class="col-md-5 text-md-end">
       {% if mobile.qr %}
+      {# 二维码编的是 `http://<ip>:5001/m/`：App 扫它拿主机地址进配对页，
+         浏览器扫它开只读端。注意**不能**改成扫码下载 APK —— 局域网是 HTTP，
+         Chrome 对明文可执行文件有两道强制拦截，实测下不下来。 #}
       <img src="{{ mobile.qr }}" width="176" height="176" alt="手机访问二维码"
            style="background:#fff;border-radius:10px;padding:8px;border:1px solid var(--erp-border)">
+      <div class="text-muted small mt-2" style="line-height:1.7">
+        手机 App 点「扫二维码」扫这张<br>
+        <span style="opacity:.8">第一次装 App：用微信/QQ 把 APK 传到手机</span>
+      </div>
       {% elif mobile.status.lan_warning %}
       <span class="text-muted small">没有可用的局域网地址，二维码不显示；先检查这台电脑的 Wi-Fi。</span>
       {% else %}
@@ -426,7 +433,7 @@
     </dd>
     <dt>最后一次手机成功请求</dt><dd>{{ mobile.last_success_label }}</dd>
     <dt>上次错误</dt><dd>{{ mobile.status.error or '无' }}</dd>
-    <dt>已配对设备</dt><dd>{{ mobile.devices|length }} 台</dd>
+    <dt>已配对设备</dt><dd id="mobileDeviceCount">{{ mobile.devices|length }} 台</dd>
   </dl>
   <p data-ui-hint class="text-muted small">
     首次打开手机访问时 Windows 防火墙会弹窗，<strong>必须点「允许」</strong>；点「取消」后规则会被记成阻止且不再询问，
@@ -436,13 +443,20 @@
           data-copy-target="mobileDiagnostics">复制诊断信息</button>
 
   <h4 class="mt-4">已配对设备</h4>
-  {% if mobile.devices %}
-  <table class="table align-middle">
-    <thead><tr><th>设备</th><th>配对时间</th><th>最后访问</th><th>来源 IP</th><th>操作</th></tr></thead>
+  <table class="table align-middle" id="mobileDevicesTable"
+         {% if not mobile.devices %}style="display: none;"{% endif %}>
+    <thead><tr><th>设备</th><th>接入方式</th><th>配对时间</th><th>最后访问</th><th>来源 IP</th><th>操作</th></tr></thead>
     <tbody>
       {% for device in mobile.devices %}
       <tr>
         <td>{{ device.label }}</td>
+        <td>
+          {% if device.platform == 'app' %}
+          <span class="badge text-bg-primary">手机 App</span>
+          {% else %}
+          <span class="badge text-bg-secondary">浏览器</span>
+          {% endif %}
+        </td>
         <td>{{ device.paired_label }}</td>
         <td>{{ device.last_seen_label }}</td>
         <td><code>{{ device.last_ip or '—' }}</code></td>
@@ -461,9 +475,10 @@
         onsubmit="return confirm('撤销全部手机？撤销后都要重新配对。');">
     <button type="submit" class="btn btn-sm btn-outline-danger">撤销全部</button>
   </form>
-  {% else %}
-  <p data-ui-hint class="text-muted small mb-0">还没有配对过手机。打开手机访问后，用手机扫码并输入配对码即可。</p>
-  {% endif %}
+  <p data-ui-hint class="text-muted small mb-0" id="mobileDevicesEmpty"
+     {% if mobile.devices %}style="display: none;"{% endif %}>
+    还没有配对过手机。打开手机访问后，用手机扫码并输入配对码即可。
+  </p>
 </section>
 
 <section class="settings-group" id="groupPurgeLegacy">
@@ -917,6 +932,80 @@
         window.prompt('复制下面的诊断信息：', text);
       }
     });
+  })();
+</script>
+<script>
+  // 已配对设备自动刷新。
+  //
+  // 为什么必须有：设置页是服务端渲染，HTML 只在打开那一刻生成。店主开着这个页面，
+  // 拿手机扫码配对 —— 服务端记录已经写进去了，但页面不会自己变，
+  // 「已配对设备 0 台」一直挂着，看起来就像配对失败（2026-10-22 实测）。
+  //
+  // 策略：每 4 秒拉一次；**只在数量或最后访问时间变化时才重绘**，
+  // 否则每 4 秒整张表重建一次，鼠标选中的文字会被清掉，很烦。
+  (function () {
+    var section = document.getElementById('mobileAccessSection');
+    if (!section) { return; }
+    var lastSignature = null;
+
+    function signature(payload) {
+      return (payload.devices || []).map(function (d) {
+        return [d.id, d.label, d.platform, d.paired_at, d.last_seen_at, d.last_ip].join('|');
+      }).join('#') + '@' + payload.count;
+    }
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value).replace(/[&<>"']/g, function (ch) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+      });
+    }
+
+    function renderDevices(payload) {
+      var table = document.getElementById('mobileDevicesTable');
+      var empty = document.getElementById('mobileDevicesEmpty');
+      var countNode = document.getElementById('mobileDeviceCount');
+      if (countNode) { countNode.textContent = payload.count + ' 台'; }
+      if (!table) { return; }
+      if (!payload.count) {
+        table.style.display = 'none';
+        if (empty) { empty.style.display = ''; }
+        return;
+      }
+      table.style.display = '';
+      if (empty) { empty.style.display = 'none'; }
+      var body = table.tBodies[0];
+      body.innerHTML = (payload.devices || []).map(function (d) {
+        var isApp = d.platform === 'app';
+        var badge = isApp
+          ? '<span class="badge text-bg-primary">手机 App</span>'
+          : '<span class="badge text-bg-secondary">浏览器</span>';
+        var action = isApp ? '' : '';
+        return '<tr>'
+          + '<td>' + escapeHtml(d.label) + '</td>'
+          + '<td>' + badge + '</td>'
+          + '<td>' + escapeHtml(d.paired_at || '—') + '</td>'
+          + '<td>' + escapeHtml(d.last_seen_at || '—') + '</td>'
+          + '<td><code>' + escapeHtml(d.last_ip || '—') + '</code></td>'
+          + '<td>' + action + '</td>'
+          + '</tr>';
+      }).join('');
+    }
+
+    function poll() {
+      fetch('{{ url_for("settings.mobile_devices") }}', { headers: { 'Accept': 'application/json' } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (payload) {
+          if (!payload || !payload.ok) { return; }
+          var sig = signature(payload);
+          if (sig === lastSignature) { return; }
+          lastSignature = sig;
+          renderDevices(payload);
+        })
+        .catch(function () { /* 网络抖动就跳过这一轮，不打断用户 */ });
+    }
+
+    poll();
+    setInterval(poll, 4000);
   })();
 </script>
 {% endblock %}

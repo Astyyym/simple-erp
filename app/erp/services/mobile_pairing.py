@@ -157,12 +157,16 @@ def _register_failure(store: dict) -> str:
     return f"配对码不正确，还可以再试 {remaining} 次。"
 
 
-def _new_device(label: str, ip: str) -> tuple[dict, str]:
+def _new_device(label: str, ip: str, platform: str = "") -> tuple[dict, str]:
     token = secrets.token_urlsafe(32)
     device = {
         "id": secrets.token_hex(8),
         "token_sha256": _sha256(token),
         "label": (label or "").strip()[:40] or "手机",
+        # platform 决定设置页怎么称呼它：`app` = 原生客户端，`browser` = 浏览器。
+        # 没有它的话，设置页只能从 UA 猜，而原生端的 UA 里同样带 "android"，
+        # 于是一个 App 和一个浏览器会显示成两条一模一样的「Android 手机」。
+        "platform": normalize_platform(platform),
         "paired_at": _iso(_now()),
         "last_seen_at": "",
         "last_ip": (ip or "").strip()[:64],
@@ -170,7 +174,27 @@ def _new_device(label: str, ip: str) -> tuple[dict, str]:
     return device, token
 
 
-def verify_pair_code(code: str, *, label: str = "", ip: str = "") -> tuple[str, str]:
+PLATFORM_APP = "app"
+PLATFORM_BROWSER = "browser"
+
+
+def normalize_platform(value: str) -> str:
+    """把各种来源的平台标识收敛成两个值。
+
+    配对端（原生 App / HTML 页面）自己报，服务端不信任何花哨输入：
+    只认 `app`，其余一律当 `browser`。这样即使有人伪造，也只会被归到浏览器，
+    不会伪造出「这是店主的手机 App」这种更危险的身份。
+    """
+    return PLATFORM_APP if str(value or "").strip().lower() == PLATFORM_APP else PLATFORM_BROWSER
+
+
+def platform_label(platform: str) -> str:
+    return "手机 App" if normalize_platform(platform) == PLATFORM_APP else "浏览器"
+
+
+def verify_pair_code(
+    code: str, *, label: str = "", ip: str = "", platform: str = ""
+) -> tuple[str, str]:
     """校验配对码。返回 `(cookie_value, error)`：成功时 error 为空串。"""
     cleaned = "".join(ch for ch in str(code or "") if ch.isdigit())
     store = load_store()
@@ -192,7 +216,7 @@ def verify_pair_code(code: str, *, label: str = "", ip: str = "") -> tuple[str, 
         save_store(store)
         return "", message
 
-    device, token = _new_device(label, ip)
+    device, token = _new_device(label, ip, platform)
     store["devices"].append(device)
     store["code"] = None
     store["failures"] = {"count": 0, "locked_until": ""}
@@ -252,6 +276,10 @@ def list_devices() -> list[dict]:
             {
                 "id": device.get("id", ""),
                 "label": device.get("label", "手机"),
+                # 老记录（本次改动之前配对的）没有 platform 字段，按浏览器算 ——
+                # 那是当时唯一存在的客户端，猜成 App 会给出错误信息。
+                "platform": normalize_platform(device.get("platform", "")),
+                "platform_label": platform_label(device.get("platform", "")),
                 "paired_at": device.get("paired_at", ""),
                 "last_seen_at": device.get("last_seen_at", ""),
                 "last_ip": device.get("last_ip", ""),

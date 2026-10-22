@@ -54,13 +54,8 @@ Thumbs.db
 .env.*
 .alma-snapshots
 
-# 安卓 APK 壳：构建产物与签名私密文件都不入库
-apk/.gradle/
-apk/**/build/
-apk/local.properties
-apk/keystore/
-apk/keystore.properties
-apk/.idea/
+# 安卓原生客户端（native/）：构建产物与签名私密文件都不入库
+# 细则见 native/.gitignore —— 这里不重复写，避免两处规则漂移。
 
 # Alma 本地工作目录（临时 QA 脚本/截图，不入库）
 .alma/

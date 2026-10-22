@@ -117,14 +117,23 @@ def customer_balances(ids: list[int]) -> dict[int, int]:
 # ---------------------------------------------------------------------------
 
 def list_customers(
-    q: str = "", *, only_debt: bool = False, limit: int = 400, sort: str = "pinyin"
+    q: str = "",
+    *,
+    only_debt: bool = False,
+    limit: int = 400,
+    sort: str = "pinyin",
+    order: str = "",
 ) -> dict:
     """客户列表。
 
     sort="pinyin"（默认，2026-10-18 用户定稿）：按拼音首字母 A→Z，同首字母再按名称，
         找不到拼音的排最后 —— 柜台前按店名首字母找客户是最快的路径。
     sort="debt"：按当前欠款从多到少，用于「谁欠得多」的追问场景。
-    两种排序都在 SQL 里做名次，欠款另用批量 SQL 只算一次。"""
+    两种排序都在 SQL 里做名次，欠款另用批量 SQL 只算一次。
+
+    order=""（默认）/ "asc" / "desc"：同一种排序的正倒序（2026-10-21 用户要求加切换）。
+        **不传时保持各自的历史默认方向**（拼音 A→Z、欠款多→少），
+        这样老调用方和缓存里的旧行为完全不变；只有显式传了才反转。"""
     q = (q or "").strip()
     where = ["c.deleted_at IS NULL"]
     params: list = []
@@ -155,6 +164,14 @@ def list_customers(
     else:
         # 拼音排序：空拼音垫底（否则空串会排到最前，把「没填拼音」的客户顶到 A 之前）。
         customers.sort(key=lambda item: (item["pinyin"] == "", item["pinyin"], item["name"]))
+
+    # 正倒序：只在显式传了 order 时反转。默认方向保持各自历史语义，
+    # 避免老调用方（网页版、已有缓存）行为漂移。
+    if order == "desc":
+        customers.reverse()
+    elif order == "asc" and sort == "debt":
+        # 欠款的历史默认是「多→少」，asc 要的就是「少→多」，反转即可。
+        customers.reverse()
     if only_debt:
         customers = [item for item in customers if item["balance_cents"] > 0]
     return {"customers": customers, "truncated": truncated, "query": q}
@@ -171,9 +188,13 @@ def customer_brief(customer_id: int) -> dict | None:
 
 
 def customer_detail(
-    customer_id: int, *, ledger_limit: int = 30, document_limit: int = 3
+    customer_id: int, *, ledger_limit: int = 30, document_limit: int = 20
 ) -> dict | None:
     """客户详情：余额三段 + 最近流水 + 最近单据（含拿货/退拿货）。
+
+    `document_limit` 从 3 提到 20（2026-10-22）：原来服务端只给 3 条，
+    手机端「展开全部」永远点不出来（3 条不比 3 条多）。折叠是**显示层**的事，
+    接口该给足数据；上限 20 而不是无限，是防止一个老客户几千张单把响应撑大。
 
     余额与流水只走 `get_customer_account_ledger()`（桌面端在用的权威实现），
     这里通过 `conn=` 传入只读连接，保证手机端**没有**可写连接。
@@ -634,7 +655,13 @@ CUSTOMER_PRICE_LIMIT = 200
 NO_PRICE_NAME_LIMIT = 10
 
 
-def product_price_summary(q: str = "", *, limit: int = PRODUCT_LIST_LIMIT) -> dict:
+def product_price_summary(
+    q: str = "",
+    *,
+    limit: int = PRODUCT_LIST_LIMIT,
+    sort: str = "pinyin",
+    order: str = "",
+) -> dict:
     """商品优先的商品价列表：每个商品有多少客户价、价格区间（精确值）。
 
     2026-10-17 用户反馈：商品价页不应先选客户，应该直接搜商品名，
@@ -647,6 +674,26 @@ def product_price_summary(q: str = "", *, limit: int = PRODUCT_LIST_LIMIT) -> di
     if q:
         conditions.append(name_match_clause("p."))
         params.extend(name_match_params(q))
+    # 排序：两档，与客户页「拼音 / 欠款」的结构对应（2026-10-22 用户要求）。
+    # 商品没有「欠款」概念，所以第二档用**最低价** —— 店主查商品主要就是看价格。
+    # 没有专属价的商品（min_price_cents IS NULL）永远垫底：它们没有可比的价格，
+    # 混在价格序列里会打断「从便宜到贵」的阅读（同客户页空拼音垫底的思路）。
+    if sort == "price":
+        direction = "DESC" if order == "desc" else "ASC"
+        order_by = (
+            "CASE WHEN MIN(cp.price_cents) IS NULL THEN 1 ELSE 0 END, "
+            f"MIN(cp.price_cents) {direction}, p.name COLLATE NOCASE ASC"
+        )
+    else:
+        # 拼音：空拼音**始终垫底**，所以这一项固定 ASC、不跟 direction 翻转。
+        # 写成 f"... {direction}" 是个真踩过的坑：倒序时空串会翻到最前，
+        # 把「没填拼音」的商品顶到 Z 之后（看起来像排序坏了）。
+        direction = "DESC" if order == "desc" else "ASC"
+        order_by = (
+            "p.pinyin_initials = '' ASC, "
+            f"p.pinyin_initials COLLATE NOCASE {direction}, "
+            "p.name COLLATE NOCASE ASC"
+        )
     sql = f"""
         SELECT p.id, p.name, p.unit,
                COUNT(cp.id) AS price_count,
@@ -656,8 +703,7 @@ def product_price_summary(q: str = "", *, limit: int = PRODUCT_LIST_LIMIT) -> di
           LEFT JOIN customer_prices cp ON cp.product_id = p.id
          WHERE {' AND '.join(conditions)}
          GROUP BY p.id
-         ORDER BY CASE WHEN COUNT(cp.id)=0 THEN 1 ELSE 0 END,
-                  p.usage_count DESC, p.name COLLATE NOCASE ASC
+         ORDER BY {order_by}
          LIMIT ?
     """
     with connect_readonly() as conn:

@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- 深色：与 mobile.css 深色主题的页面底色一致 -->
-    <color name="page_bg">#0B0F16</color>
-</resources>

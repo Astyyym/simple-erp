@@ -56,24 +56,26 @@ CHANGELOG 的正文是叙述，同一段里可能同时出现「本版交付」�
 
 ```bash
 for t in v4.3.0 v4.4.0 v4.5.0; do
-  echo -n "$t: "; git ls-tree -r --name-only $t 2>/dev/null | grep -c "^apk/"
+  echo -n "$t: "; git ls-tree -r --name-only $t 2>/dev/null | grep -c "^native/"
 done
-# v4.3.0: 0   v4.4.0: 0   v4.5.0: 18   → 壳随 v4.5.0 交付
+# 安卓端随哪个 tag 交付，用这个数一遍就有答案
 ```
 
 **查首次引入该目录的提交**：
 
 ```bash
-git log --oneline --all -- apk/ | tail -1
-# 5c52901 feat(mobile): 安卓 APK 壳（原生 WebView 单 Activity，v1.0.0）
+git log --oneline --all -- native/ | tail -1
 ```
 
 **查当时的组件版本**（子组件的 `VERSION` 与主仓 `VERSION` 是两个东西）：
 
 ```bash
-git show 5c52901:apk/VERSION     # 1.0.0  ← 当时的壳版本
-cat apk/VERSION                  # 1.2.0  ← 现在的壳版本
+git show <首个提交>:native/VERSION   # 当时的安卓端版本
+cat native/VERSION                   # 现在的安卓端版本
 ```
+
+> 安卓端历史分两代：`apk/`（WebView 壳，v1.0.0–v1.2.0，2026-10-17 引入）已被 **2026-10-21 删除**，现为 `native/`（Compose 原生，从 v1.3.0 起，包名沿用 `com.simpleerp.mobile` 以支持覆盖升级）。
+> 查历史版本时要对**对应时代的目录**数，别拿 `native/` 去数 v4.5.0 那个 tag —— 那时它还不存在。
 
 ### 表格里别混用两套口径
 

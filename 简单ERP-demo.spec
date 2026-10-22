@@ -63,6 +63,8 @@ a = Analysis(
         'qrcode',
         # demo_entry 的导入目标：分析器通常能自己抓到，显式列出防止漏打包。
         'desktop_app',
+        # 原生安卓端用的 JSON 接口蓝图（同上，漏了装出来的 EXE 上 /m/api/* 全 404）。
+        'erp.routes.mobile_api',
     ],
     hookspath=[],
     hooksconfig={},

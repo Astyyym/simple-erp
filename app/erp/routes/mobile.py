@@ -318,7 +318,11 @@ def pair_submit():
     code = request.form.get(PAIR_FORM_FIELD, "")
     label = (request.form.get("label") or "").strip()
     cookie_value, error = mobile_pairing.verify_pair_code(
-        code, label=label or _device_label_from_agent(request.headers.get("User-Agent", "")), ip=request.remote_addr or ""
+        code,
+        label=label or _device_label_from_agent(request.headers.get("User-Agent", "")),
+        ip=request.remote_addr or "",
+        # 这个蓝图只服务浏览器页面，所以固定报 browser。
+        platform=mobile_pairing.PLATFORM_BROWSER,
     )
     if error:
         return (
