@@ -1,5 +1,30 @@
 # 踩过的坑
 
+## 下拉刷新「图标不转、转完不消失」= ViewModel 里 launch 套 launch（2026-10-23）
+
+`PullToRefreshBox` 的 `isRefreshing` 由 ViewModel 的 `_refreshing` 驱动。原来的写法：
+
+```kotlin
+fun pullRefresh(tab: Tab) {
+    viewModelScope.launch {
+        _refreshing.value = true
+        try { refreshToday() }   // ← 它自己只是 viewModelScope.launch{} 就返回
+        finally { _refreshing.value = false }
+    }
+}
+```
+
+`refreshToday()` 立刻返回 → `finally` 在**网络请求发出之前**就把 `refreshing` 置回 false。
+指示器的动画状态机被拦腰打断，表现为：不转、也不消失，只有切 tab 重建整棵树才清掉。
+
+**规矩**：任何「用户可见的进行中状态」（下拉刷新、保存、上传）都必须在**能 await 到
+真实结束**的那一层置位/复位。把 `refreshXxx()` 拆成「suspend `loadXxx()` + 外层
+`launch` 包装」，`pullRefresh` 直接 await `loadXxx()`；再补一个最短可见时长
+（`MIN_REFRESH_VISIBLE_MS`），否则局域网 50ms 就回来，指示器一闪而过同样像没反应。
+
+**自证方法**：`adb shell input swipe` 造下拉手势，紧接着 `screencap` 抓 mid 帧 —— 必须能
+截到 spinner；再等 1s 抓一帧，spinner 必须已消失。
+
 ## 备份与恢复的范围
 
 `utils/backup.py:create_backup` 覆盖 `erp.db` + `config.json` + `product_images/` + `legacy_archive/`。

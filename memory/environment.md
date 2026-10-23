@@ -81,5 +81,10 @@
 | 配对码怎么来 | `PYTHONPATH=app .venv-win/Scripts/python.exe -c "from erp.services import mobile_pairing as mp; print(mp.generate_pair_code())"`，码只活 120 秒 |
 | 配对设备/数据根 | `C:\Users\czk\Documents\简单ERP数据\data\mobile_devices.json`（跟 `data_location.json` 走，不是项目根 `data/`） |
 | 离线缓存慢 | 断网回落要等满 `connectTimeout`（`ApiClient.kt` 8 秒），不是缓存读取慢 |
+| 模拟器重启后 App 报「离线 连不上电脑」，但服务确实在监听 | 上次是用 `adb reverse` 连的 `127.0.0.1:5001`，**adb 重启后映射丢失**。跑 `adb reverse tcp:5001 tcp:5001` 恢复；`adb reverse --list` 确认。也可改用 App 设置页填 `10.0.2.2:5001` 免依赖映射 |
+| material3 日历/选择器显示英文 | 组件文案取自**系统 Locale**，不是 App 资源。已在 `MainActivity` 用 `Locale.setDefault` + `resources.updateConfiguration` 钉死简体中文（仅 App 内生效） |
+| 用 PowerShell `>> file.png` 存 `adb exec-out screencap` 得到坏图 | PS 重定向会转 UTF-16。改用 `adb shell screencap -p /sdcard/x.png` + `adb pull` |
+| 想给「今天」页造数据做 UI 验收 | 直接用 `UPDATE ... SET order_date/business_date = 今天` 改**隔离演示库**（销售/退货在 `orders.order_date`，拿货/退拿货在 `purchase_orders` / `purchase_return_orders.business_date`）。绝不对真实库这么干 |
+| `git commit -m` 带多行中文 here-string | PowerShell 里 `$msg = @"..."@` 的终止符必须在**行首**，否则消息被截断、报 `pathspec ... did not match`。多行提交信息写进文件用 `git commit -F 文件` |
 
 脚本命令：`bash tools/mobile-env.sh`（起环境）/ `--install`（重装 dist 最新 APK）/ `--status` / `--stop`。
