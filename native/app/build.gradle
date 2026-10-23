@@ -25,7 +25,7 @@ android {
         applicationId "com.simpleerp.mobile"
         minSdk 24
         targetSdk 36
-        versionCode 12
+        versionCode 13
         versionName nativeVersionName
     }
 

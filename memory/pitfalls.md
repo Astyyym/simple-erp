@@ -649,3 +649,44 @@ tab 条与内容区的分界靠 tab 条自己的底色。**别再往这里加线
 模拟器 `persist.sys.timezone` 是 `GMT`，`adb shell "su 0 date MMDDhhmmYYYY.ss"` 用**本地时间**填会偏 8 小时
 （想验 10-24 结果变成 10-23 晚 8 点）。先把 `(Get-Date).ToUniversalTime()` 格式化再填。
 **验完必须拨回真实时间**，否则用户后续在每个页面看到的「今天」都是错的。
+
+改时区同理：`setprop persist.sys.timezone Asia/Shanghai` 对 `date` 立刻生效，
+但**状态栏/SystemUI 不会变**，而且 `adb reboot` 会从快照恢复、时区又回 GMT。
+两步都要：`am broadcast -a android.intent.action.TIMEZONE_CHANGED --es time-zone Asia/Shanghai`
+再 `su 0 pkill -f com.android.systemui`。不要靠重启模拟器。
+
+## 扫码框的「激光线」是固定的，要动画得自己画（2026-10-23）
+
+zxing `ViewfinderView` 那条横线**位置写死**在 `framingRect` 垂直中央，只做 alpha 闪烁 ——
+看起来像「卡在屏幕中间」。要「从上往下扫」只能：
+
+1. `barcodeView.viewFinder?.setLaserVisibility(false)` 关掉库那条；
+2. 自己画一条线，动画用 `ValueAnimator`（`repeat INFINITE`）驱动 `invalidate()`，
+   **不要**用 `postInvalidateDelayed` 递归（onPause 停不掉，回来位置随机）；
+3. 位置必须和提示文字共用同一份 `framingRect`（同一个计算入口），否则相机异步初始化后
+   会出现「线在框里、提示在框外」。
+
+验证动画在动：连续截图取线所在 y 坐标比对（本项目用 `System.Drawing` 逐像素找蓝色行），
+不要只看一张图说「有变色」。
+
+## 设置页的表格会叠成「卡片套卡片」（2026-10-23）
+
+全局 `table.table`（`base.html`）自带玻璃背景 + 描边 + 投影。塞进 `settings-card` 后
+屏幕上就是两张同心圆角卡片，用户原话「大卡片上再叠加一个这样子的表格卡片，这个太丑了」。
+修法是给设置页表格加 `.settings-plain-table` 把自身玻璃全去掉，**不要**改全局规则
+（单据/客户那些页是裸表格，靠它才有边界）。
+
+**相关三个 CSS 坑**：
+
+1. **绝对定位弹层会被 `overflow` 裁掉。** 卡片里有 `overflow:hidden` 的容器时，
+   `position:absolute` 的展开面板直接看不见（截图里完全没渲染）。展开内容一律走**行内铺开**。
+2. **`details:not([open]) > *:not(summary){display:none}` 是 UA 样式，作者样式能盖掉它。**
+   给折叠内容写 `display:flex` 后，收起状态下内容仍然占位
+   （判据：`getBoundingClientRect().height` 不为 0）。必须写成
+   `默认 display:none` + `[open] > 内容 {display:flex}`。
+3. **`details` 塞在 flex 行里会撑坏同级。** 展开时它变宽，同级摘要被挤成两行、
+   按钮跑到上方。要 `details` 包住整行、`summary` 就是那一行。
+
+**去掉表头要补标签。** 表格改扁平行后，`v15` 这种裸值没人看得懂 ——
+`tests/test_backup_restore.py` 断言 `"数据库版本" in html` 会先红，说明语义真的丢了，
+写成 `数据库版本 v15`，别去改测试。

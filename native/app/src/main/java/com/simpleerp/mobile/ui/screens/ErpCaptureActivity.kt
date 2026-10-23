@@ -1,7 +1,13 @@
 package com.simpleerp.mobile.ui.screens
 
+import android.animation.ValueAnimator
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.Shader
 import android.graphics.drawable.GradientDrawable
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -9,6 +15,7 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.LinearInterpolator
 import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -46,6 +53,7 @@ class ErpCaptureActivity : ComponentActivity() {
 
     private lateinit var barcodeView: DecoratedBarcodeView
     private lateinit var hint: TextView
+    private lateinit var scanLine: ScanLineView
     private lateinit var captureManager: CaptureManager
 
     /**
@@ -115,6 +123,12 @@ class ErpCaptureActivity : ComponentActivity() {
         // 深色药丸提示（见 buildOverlayControls），于是屏幕上同时出现两条一样的字，
         // 最底下那条还紧贴屏幕底边、跟取景框完全脱节（用户 2026-10-23 要求删掉）。
         barcodeView.statusView?.visibility = View.GONE
+
+        // 库自带的「激光线」固定在取景框**垂直中央**画一条静态横条，只是一个 alpha
+        // 渐变闪烁，没有位置移动 —— 用户 2026-10-23 明确说「它固定在屏幕中间，
+        // 没有一个从上往下的扫码动画」。关掉它，换成我们自己画的移动扫描线
+        // （见 ScanLineView；在 placeHintBelowFrame 里与取景框对齐）。
+        barcodeView.viewFinder?.setLaserVisibility(false)
 
         // ⚠️ **必须用连续对焦**，这是「对着电脑扫不出来、从相册选就能扫出来」的真正根因。
         //
@@ -230,6 +244,19 @@ class ErpCaptureActivity : ComponentActivity() {
             }
         }
 
+        // 移动扫描线：自上而下循环移动（用户 2026-10-23 要求）。
+        //
+        // 位置与大小在 `placeHintBelowFrame` 里按取景框算，和提示文字共用同一份
+        // framingRect —— 两处都自己算一遍，迟早会出现「线在框里、提示在框外」。
+        scanLine = ScanLineView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            )
+            visibility = View.INVISIBLE
+        }
+
+        overlay.addView(scanLine)
         overlay.addView(close)
         overlay.addView(gallery)
         overlay.addView(hint)
@@ -284,6 +311,13 @@ class ErpCaptureActivity : ComponentActivity() {
         val parentHeight = (hint.parent as? View)?.height ?: return
         if (parentHeight <= 0 || hint.height <= 0) return
 
+        // 扫描线与取景框对齐：只在框内移动，两端各留 2dp，避免压在框边上。
+        scanLine.setFrame(frame)
+        if (scanLine.visibility != View.VISIBLE) {
+            scanLine.visibility = View.VISIBLE
+            scanLine.start()
+        }
+
         var top = frame.bottom + dp(18)
 
         // 兜底：给相册按钮留位置。按钮底边距 = 96dp + 导航条，自身高约 48dp，
@@ -308,6 +342,94 @@ class ErpCaptureActivity : ComponentActivity() {
     private fun returnResult(text: String) {
         setResult(RESULT_OK, Intent().putExtra(Intents.Scan.RESULT, text))
         finish()
+    }
+
+    // ---------------------------------------------------------------------
+    // 扫描线：自上而下循环移动
+    // ---------------------------------------------------------------------
+
+    /**
+     * 取景框内的移动扫描线。
+     *
+     * 为什么不用库自带的激光线：`ViewfinderView` 那条约 2px 的横线**位置是固定的**
+     * （永远画在 `framingRect` 垂直中央），只做 alpha 闪烁。用户 2026-10-23 的原话是
+     * 「它固定在屏幕中间的，没有一个从上往下的扫码动画」。
+     *
+     * 为什么自己画而不是去改库：库的 `onDraw` 里激光位置写死，改不了；继承
+     * `ViewfinderView` 又要跟它的 mask 绘制耦合。这里只画一条线，独立成 View 最省事。
+     *
+     * 动画用 `ValueAnimator` + `repeat`：不能用 `postInvalidateDelayed` 递归，
+     * 那样在 onPause 后仍可能跑一帧，而且不好统一取消。
+     */
+    private inner class ScanLineView(context: Context) : View(context) {
+
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private var frameLeft = 0f
+        private var frameTop = 0f
+        private var frameRight = 0f
+        private var frameBottom = 0f
+        /** 当前扫描线中心 Y（View 坐标系），0 表示还没开始动。 */
+        private var lineY = -1f
+        private var animator: ValueAnimator? = null
+
+        init {
+            // 主色（与桌面端二维码蓝一致）：在深色相机画面上仍然看得清。
+            val accent = 0xFF3B82F6.toInt()
+            paint.strokeWidth = dp(2).toFloat()
+            paint.strokeCap = Paint.Cap.ROUND
+            // 渐变：中间实、两端淡出，像一盏向下扫的光带。
+            paint.shader = LinearGradient(
+                0f, 0f, 1f, 0f,
+                intArrayOf(0x00FFFFFF, accent, accent, 0x00FFFFFF),
+                floatArrayOf(0f, 0.18f, 0.82f, 1f),
+                Shader.TileMode.CLAMP,
+            )
+        }
+
+        /** 由 `placeHintBelowFrame` 在拿到 framingRect 后调用（同一份矩形，不再各算一遍）。 */
+        fun setFrame(frame: android.graphics.Rect) {
+            val inset = dp(2).toFloat()
+            frameLeft = frame.left + inset
+            frameRight = frame.right - inset
+            // 上下各留 1/3 行高：线是画「中心」，太贴边会有一半画在框外。
+            frameTop = frame.top + dp(6).toFloat()
+            frameBottom = frame.bottom - dp(6).toFloat()
+            invalidate()
+        }
+
+        fun start() {
+            if (animator?.isRunning == true) return
+            if (frameBottom <= frameTop) return
+            animator = ValueAnimator.ofFloat(frameTop, frameBottom).apply {
+                duration = SCAN_LINE_DURATION_MS
+                interpolator = LinearInterpolator()
+                repeatCount = ValueAnimator.INFINITE
+                repeatMode = ValueAnimator.RESTART
+                addUpdateListener {
+                    lineY = it.animatedValue as Float
+                    invalidate()
+                }
+                start()
+            }
+        }
+
+        fun stop() {
+            animator?.cancel()
+            animator = null
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            if (lineY < 0f) return
+            // shader 是按 0..1 定义的，这里把它铺到整条线宽上。
+            paint.shader?.setLocalMatrix(
+                android.graphics.Matrix().apply {
+                    setScale(frameRight - frameLeft, 1f)
+                    postTranslate(frameLeft, 0f)
+                }
+            )
+            canvas.drawLine(frameLeft, lineY, frameRight, lineY, paint)
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -433,10 +555,15 @@ class ErpCaptureActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         captureManager.onResume()
+        // 从相册选图回来会走 onResume：动画若已在跑，start() 内部会直接返回。
+        if (::scanLine.isInitialized) scanLine.start()
     }
 
     override fun onPause() {
         super.onPause()
+        // 停止扫描线动画：Activity 不可见时 ValueAnimator 仍在跑会白耗电，
+        // 而且回来时 lineY 会停在一个随机位置。onResume 重新 start()。
+        if (::scanLine.isInitialized) scanLine.stop()
         captureManager.onPause()
     }
 
@@ -456,5 +583,8 @@ class ErpCaptureActivity : ComponentActivity() {
     private companion object {
         /** 解码时的最长边上限。二维码在这个尺寸内完全够识别。 */
         const val MAX_DECODE_SIDE = 1600
+
+        /** 扫描线走完一趟取景框的时长。1.9 秒 ≈ 常见扫码 App 的节奏，太快晃眼。 */
+        const val SCAN_LINE_DURATION_MS = 1900L
     }
 }

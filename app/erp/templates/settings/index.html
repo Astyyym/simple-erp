@@ -290,45 +290,70 @@
   </form>
 
   {% if backups %}
-  <table class="table align-middle">
-    <thead><tr><th>备份时间</th><th>大小</th><th>数据库版本</th><th>原因</th><th>操作</th></tr></thead>
-    <tbody>
+  {#
+    2026-10-23 用户反馈：上一版是「玻璃大卡片里再套一张玻璃表格」——
+    表格自带背景 + 描边 + 投影，叠在卡片上就是「大卡片上又叠一个小卡片」；
+    加上每行并排塞两组表单（另存目录 + 恢复确认），整块又乱又丑。
+
+    这一版不用表格，改成**扁平行列表**：
+      每行 = 一行摘要（时间 / 大小 / 版本标签 / 原因）+ 右侧一个「另存 / 恢复」；
+      两个表单收进 `<details>`，**展开后行内铺开**（不是绝对定位弹层 ——
+      弹层会被卡片和 .settings-table-shell 的 overflow 裁掉，实测直接看不见）。
+    这样整块只有外层卡片一层，行与行之间一条发丝线，用不到的操作完全不出现在屏幕上。
+  #}
+  <ul class="backup-list">
     {% for b in backups %}
-      <tr>
-        <td>{{ b.created_at_display }}</td>
-        <td>{{ b.size_display }}</td>
-        <td>
-          {{ b.schema_version_display }}
-          {% if b.is_legacy %}<span class="badge bg-warning text-dark">旧版结构</span>{% endif %}
-        </td>
-        <td>{{ b.reason }}</td>
-        <td>
-          <form method="post" action="{{ url_for('settings.backup_copy') }}" class="d-flex flex-wrap gap-2 mb-2">
+    <li class="backup-row">
+      {#
+        `details` 包住**整行**：summary 就是摘要行，展开内容落在它下面。
+        第一版把 details 塞进摘要行的右侧，结果展开时那个 details 一撑宽，
+        flex 直接把摘要挤成两行、按钮跑到摘要上方去了（截图确认过）。
+      #}
+      <details class="backup-item">
+        <summary class="backup-summary">
+          <span class="backup-when">{{ b.created_at_display }}</span>
+          <span class="backup-size">{{ b.size_display }}</span>          {#
+            标签必须写出来：改成扁平行后没有表头了，孤零零一个 `v15`
+            用户根本不知道是什么版本（备份里库的结构版本）。
+          #}
+          <span class="backup-schema">
+            数据库版本 {{ b.schema_version_display }}
+            {% if b.is_legacy %}<span class="badge bg-warning text-dark">旧版结构</span>{% endif %}
+          </span>
+          <span class="backup-reason">{{ b.reason }}</span>
+          <span class="backup-toggle btn btn-sm btn-outline-secondary">另存 / 恢复</span>
+        </summary>
+        <div class="backup-more-body">
+          <form method="post" action="{{ url_for('settings.backup_copy') }}" class="settings-inline-form">
             <input type="hidden" name="backup_name" value="{{ b.name }}">
-            <input class="form-control form-control-sm" style="max-width:240px" name="destination_dir" placeholder="另存目录，例如 D:\备份">
-            <button type="submit" class="btn btn-sm btn-outline-secondary">另存到…</button>
+            <label class="settings-inline-label">另存到
+              <input class="form-control form-control-sm" name="destination_dir" placeholder="例如 D:\备份">
+            </label>
+            <button type="submit" class="btn btn-sm btn-outline-secondary">另存</button>
           </form>
           {% if b.is_legacy %}
-          <p class="text-danger small mb-2">
-            旧版结构备份：恢复后重新打开程序会自动升级到当前版本（v15），
+          <p class="settings-row-warn">
+            旧版结构备份：恢复后重开程序会自动升级到当前版本（v15），
             <strong>库存与成本数据将被永久删除、无法回退</strong>。
           </p>
           {% endif %}
-          <form method="post" action="{{ url_for('settings.backup_restore') }}" class="d-flex flex-wrap gap-2 align-items-center"
+          <form method="post" action="{{ url_for('settings.backup_restore') }}" class="settings-inline-form"
                 onsubmit="return confirm('{% if b.is_legacy %}这份备份是{{ b.schema_version_display }}旧版结构：恢复并重开程序后会自动升级到 v15，库存与成本数据将被永久删除、无法回退。{% endif %}将用这份备份覆盖当前数据库。恢复前会自动备份当前库。确定继续？');">
             <input type="hidden" name="backup_name" value="{{ b.name }}">
-            <input class="form-control form-control-sm" style="max-width:120px" name="confirm_text" placeholder="输入 恢复">
-            <label class="form-check form-check-inline mb-0">
+            <label class="settings-inline-label">恢复确认
+              <input class="form-control form-control-sm" name="confirm_text" placeholder="输入 恢复">
+            </label>
+            <label class="settings-inline-check">
               <input class="form-check-input" type="checkbox" name="include_config" value="1">
-              <span class="form-check-label small">同时恢复设置</span>
+              <span>同时恢复设置</span>
             </label>
             <button type="submit" class="btn btn-sm btn-danger">恢复此备份</button>
           </form>
-        </td>
-      </tr>
+        </div>
+      </details>
+    </li>
     {% endfor %}
-    </tbody>
-  </table>
+  </ul>
   {% else %}
   <p data-ui-hint class="text-muted small mb-0">还没有任何备份。迁移旧数据前，请先点上面的「立即备份」。</p>
   {% endif %}
@@ -462,46 +487,61 @@
             data-copy-target="mobileDiagnostics">复制诊断信息</button>
   </details>
 
-  <h4 class="mt-4">已配对设备</h4>
-  <table class="table align-middle" id="mobileDevicesTable"
-         {% if not mobile.devices %}style="display: none;"{% endif %}>
-    <thead><tr><th>设备</th><th>接入方式</th><th>配对时间</th><th>最后访问</th><th>来源 IP</th><th>操作</th></tr></thead>
-    <tbody>
-      {% for device in mobile.devices %}
-      <tr>
-        <td>{{ device.label }}</td>
-        <td>
-          {% if device.platform == 'app' %}
-          <span class="badge text-bg-primary">手机 App</span>
-          {% else %}
-          <span class="badge text-bg-secondary">浏览器</span>
-          {% endif %}
-        </td>
-        <td>{{ device.paired_label }}</td>
-        <td>{{ device.last_seen_label }}</td>
-        <td><code>{{ device.last_ip or '—' }}</code></td>
-        <td>
-          <form method="post" action="{{ url_for('settings.mobile_revoke') }}"
-                onsubmit="return confirm('撤销后这台手机下次请求会回到配对页，数据不在手机本地，确定撤销？');">
-            <input type="hidden" name="device_id" value="{{ device.id }}">
-            <button type="submit" class="btn btn-sm btn-outline-danger">撤销这台</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  <form method="post" action="{{ url_for('settings.mobile_revoke_all') }}"
-        onsubmit="return confirm('撤销全部手机？撤销后都要重新配对。');"
-        {% if not mobile.devices %}style="display:none"{% endif %}>
-    <button type="submit" class="btn btn-sm btn-outline-danger">撤销全部</button>
-  </form>
+  {#
+    已配对设备（2026-10-23 用户反馈「大卡片上再叠加一个小卡片就很丑」）。
+
+    上一版：外层玻璃卡片里再摆一张自带玻璃背景 + 描边 + 投影的 table，
+    视觉上是「卡片套卡片」；「撤销全部」还单独占一行、贴在表格左下方，
+    与表格底边只隔 0（用户截图圈出来的就是这里）。
+
+    现在：① 表格去掉自身玻璃（`.settings-plain-table`），只靠行间发丝线，
+    整块只有外层卡片这一层；② 数量、「撤销全部」收进同一标题行，右对齐；
+    ③ 表格与标题行之间留出明确间隙，不再贴边。
+  #}
+  <div class="mobile-devices-head">
+    <h4>已配对设备<span class="mobile-devices-count" data-device-count>{{ mobile.devices|length }} 台</span></h4>
+    <form method="post" action="{{ url_for('settings.mobile_revoke_all') }}" class="m-0" id="mobileRevokeAllForm"
+          onsubmit="return confirm('撤销全部手机？撤销后都要重新配对。');"
+          {% if not mobile.devices %}style="display:none"{% endif %}>
+      <button type="submit" class="btn btn-sm btn-outline-danger">撤销全部</button>
+    </form>
+  </div>
+  <div class="settings-table-shell">
+    <table class="table align-middle settings-plain-table" id="mobileDevicesTable"
+           {% if not mobile.devices %}style="display: none;"{% endif %}>
+      <thead><tr><th>设备</th><th>接入方式</th><th>配对时间</th><th>最后访问</th><th>来源 IP</th><th class="settings-col-action">操作</th></tr></thead>
+      <tbody>
+        {% for device in mobile.devices %}
+        <tr>
+          <td>{{ device.label }}</td>
+          <td>
+            {% if device.platform == 'app' %}
+            <span class="badge text-bg-primary">手机 App</span>
+            {% else %}
+            <span class="badge text-bg-secondary">浏览器</span>
+            {% endif %}
+          </td>
+          <td class="settings-nowrap">{{ device.paired_label }}</td>
+          <td class="settings-nowrap">{{ device.last_seen_label }}</td>
+          <td><code>{{ device.last_ip or '—' }}</code></td>
+          <td class="settings-col-action">
+            <form method="post" action="{{ url_for('settings.mobile_revoke') }}"
+                  onsubmit="return confirm('撤销后这台手机下次请求会回到配对页，数据不在手机本地，确定撤销？');">
+              <input type="hidden" name="device_id" value="{{ device.id }}">
+              <button type="submit" class="btn btn-sm btn-outline-danger">撤销这台</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
   {#
     空态文案**不能**用 `data-ui-hint`：关掉「界面说明文字」后它会被隐藏，
     于是这一节只剩一个孤零零的「撤销全部」按钮 —— 看起来像坏了。
     空态是状态信息（「现在还没有设备」），不是提示小字。
   #}
-  <p class="text-muted small mb-0" id="mobileDevicesEmpty"
+  <p class="text-muted small settings-devices-empty" id="mobileDevicesEmpty"
      {% if mobile.devices %}style="display: none;"{% endif %}>
     还没有配对过手机。打开手机访问后，用手机扫码并输入配对码即可。
   </p>
@@ -549,21 +589,24 @@
     <button class="btn btn-outline-primary">存档（仅留底）</button>
   </form>
   {% if archives %}
-  <table class="table align-middle">
-    <thead><tr><th>存档时间</th><th>文件</th><th>大小</th><th>行数</th><th>备注</th><th>操作</th></tr></thead>
-    <tbody>
-    {% for a in archives %}
-      <tr>
-        <td>{{ a.saved_at_display }}</td>
-        <td>{{ a.original_name }}</td>
-        <td>{{ a.size_display }}</td>
-        <td>{{ a.line_count if a.line_count is not none else '—' }}</td>
-        <td>{{ a.note }}</td>
-        <td><a class="btn btn-sm btn-outline-secondary" href="{{ url_for('settings.legacy_archive_download', name=a.name) }}">下载回看</a></td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+  {# 同上一块：表格只是卡片里的内容，不再自带一层玻璃（否则又是「卡片套卡片」）。 #}
+  <div class="settings-table-shell">
+    <table class="table align-middle settings-plain-table">
+      <thead><tr><th>存档时间</th><th>文件</th><th>大小</th><th>行数</th><th>备注</th><th class="settings-col-action">操作</th></tr></thead>
+      <tbody>
+      {% for a in archives %}
+        <tr>
+          <td class="settings-nowrap">{{ a.saved_at_display }}</td>
+          <td>{{ a.original_name }}</td>
+          <td class="settings-nowrap">{{ a.size_display }}</td>
+          <td class="settings-nowrap">{{ a.line_count if a.line_count is not none else '—' }}</td>
+          <td>{{ a.note }}</td>
+          <td class="settings-col-action"><a class="btn btn-sm btn-outline-secondary" href="{{ url_for('settings.legacy_archive_download', name=a.name) }}">下载回看</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
   {% else %}
   <p data-ui-hint class="text-muted small mb-0">还没有存档。迁移时若有旧欠款明细，可存这里留底。</p>
   {% endif %}
@@ -784,6 +827,92 @@
     .mobile-pair-code{font-size:28px;letter-spacing:8px;margin-right:-8px}
     .mobile-panel-qr{flex:1 1 100%;text-align:left}
   }
+
+  /* ===== 设置页里的表格不再「卡片套卡片」（2026-10-23 用户反馈）=====
+     病根：设置卡片本身是一层玻璃（背景 + 描边 + 投影），而全局 `table.table`
+     也自带一层玻璃。表格塞进卡片后，屏幕上就出现两张同心圆角卡片 ——
+     用户原话「大卡片上再叠加一个这样子的表格卡片，这个太丑了」。
+
+     修法：设置页里的表格统一加 `.settings-plain-table`，把表格自身的玻璃、
+     描边、投影全部去掉，只保留表头底色与行间发丝线；外层卡片是唯一一层。
+     不改全局 `table.table`，避免影响单据/客户那些「裸表格」页。 */
+  .settings-table-shell{min-width:0}
+  table.settings-plain-table,
+  table.settings-plain-table:not(.order-table){
+    background:transparent;border:0;border-radius:0;box-shadow:none;
+    -webkit-backdrop-filter:none;backdrop-filter:none;
+  }
+  table.settings-plain-table thead th{
+    background:transparent;border-bottom:1px solid var(--erp-border-strong);
+    padding-top:0;
+  }
+  table.settings-plain-table>tbody>tr>td{
+    border-bottom:1px solid var(--erp-border);vertical-align:middle;
+  }
+  table.settings-plain-table>tbody>tr:last-child>td{border-bottom:0}
+  table.settings-plain-table>tbody>tr:hover>td{background:transparent}
+  .settings-nowrap{white-space:nowrap}
+  .settings-col-action{white-space:nowrap;text-align:right}
+  table.settings-plain-table th.settings-col-action{text-align:right}
+  table.settings-plain-table td.settings-col-action{text-align:right}
+
+  /* ===== 备份列表：不用表格，改成可展开的扁平行（2026-10-23）=====
+     为什么不用 <table>：① 表格自带一层玻璃，与卡片叠成「卡片套卡片」；
+     ② 每行的操作表单塞不进单元格，展开后会把列撑破、出现横向滚动条。
+     现在每行是 `<details>`：summary 即摘要行，展开内容落在它下面。 */
+  .backup-list{list-style:none;margin:0;padding:0}
+  .backup-row{border-bottom:1px solid var(--erp-border)}
+  .backup-row:last-child{border-bottom:0}
+  .backup-item>summary{list-style:none;cursor:pointer}
+  .backup-item>summary::-webkit-details-marker{display:none}
+  .backup-summary{
+    display:flex;align-items:center;gap:14px;flex-wrap:nowrap;
+    padding:11px 2px;border-radius:6px;
+  }
+  .backup-summary:hover{background:var(--erp-surface-soft)}
+  .backup-item[open]>summary{background:var(--erp-surface-soft)}
+  .backup-when{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+  .backup-size{color:var(--erp-muted);font-size:13px;white-space:nowrap;min-width:64px}
+  .backup-schema{color:var(--erp-muted);font-size:13px;white-space:nowrap;display:flex;align-items:center;gap:6px}
+  .backup-reason{color:var(--erp-muted);font-size:12.5px;flex:1 1 auto;min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* 右侧那个「另存 / 恢复」只是视觉按钮，真正可点的是整行 summary。 */
+  .backup-toggle{flex:0 0 auto;pointer-events:none}
+  .backup-item[open] .backup-toggle{background:var(--erp-primary-soft);color:var(--erp-primary);border-color:var(--erp-primary)}
+  /* 展开后在行内铺开。
+     ⚠️ `display` 必须写成「默认 none + [open] 才 flex」：
+     浏览器 UA 样式是 `details:not([open]) > *:not(summary){display:none}`，
+     而**作者样式优先级更高** —— 直接给 .backup-more-body 写 display:flex，
+     收起状态下内容仍然占位（实测 getBoundingClientRect 高度不为 0）。 */
+  .backup-more-body{display:none}
+  .backup-item[open]>.backup-more-body{
+    display:flex;flex-direction:column;gap:10px;
+    margin:2px 0 12px;padding:12px 14px;
+    border:1px solid var(--erp-border);border-radius:10px;
+    background:var(--erp-surface);
+  }
+  .settings-inline-form{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px;margin:0}
+  .settings-inline-label{display:flex;flex-direction:column;gap:4px;flex:1 1 160px;min-width:0;
+    font-size:12px;font-weight:600;color:var(--erp-muted)}
+  .settings-inline-label .form-control{min-width:0}
+  .settings-inline-check{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--erp-muted);margin:0 0 8px}
+  .settings-inline-check .form-check-input{margin:0}
+  .settings-row-warn{margin:0;font-size:12px;line-height:1.6;color:var(--erp-danger,#c0392b)}
+  /* 窄屏：原因另起一行，按钮仍靠右。 */
+  @media(max-width:720px){
+    .backup-summary{flex-wrap:wrap;gap:6px 12px}
+    .backup-reason{flex:1 1 100%;white-space:normal;order:5}
+  }
+
+  /* 已配对设备：标题 + 数量 + 「撤销全部」同一行，表格下方留出明确间隙。 */
+  .mobile-devices-head{
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    margin:22px 0 10px;padding-top:14px;border-top:1px solid var(--erp-border);
+  }
+  .mobile-devices-head h4{margin:0;font-size:16px;display:flex;align-items:baseline;gap:8px}
+  .mobile-devices-count{font-size:12.5px;font-weight:600;color:var(--erp-muted)}
+  .mobile-devices-head form{margin-left:auto}
+  .settings-devices-empty{margin:0 0 2px}
 </style>
 
 <script>
@@ -1181,9 +1310,15 @@
     function renderDevices(payload) {
       var table = document.getElementById('mobileDevicesTable');
       var empty = document.getElementById('mobileDevicesEmpty');
-      var countNode = document.getElementById('mobileDeviceCount');
+      var revokeAll = document.getElementById('mobileRevokeAllForm');
+      // 数量节点改成 data 属性选择器：它现在在标题行里（`已配对设备 2 台`），
+      // 不再是 dl 里那个 `#mobileDeviceCount`。用 id 的话这行会静默失效，
+      // 页面开了十分钟还显示「0 台」，看起来像配对失败。
+      var countNode = document.querySelector('[data-device-count]');
       if (countNode) { countNode.textContent = payload.count + ' 台'; }
       if (!table) { return; }
+      // 「撤销全部」跟着有没有设备走：0 台时它没有意义，留着像坏按钮。
+      if (revokeAll) { revokeAll.style.display = payload.count ? '' : 'none'; }
       if (!payload.count) {
         table.style.display = 'none';
         if (empty) { empty.style.display = ''; }
@@ -1197,14 +1332,19 @@
         var badge = isApp
           ? '<span class="badge text-bg-primary">手机 App</span>'
           : '<span class="badge text-bg-secondary">浏览器</span>';
-        var action = isApp ? '' : '';
         return '<tr>'
           + '<td>' + escapeHtml(d.label) + '</td>'
           + '<td>' + badge + '</td>'
-          + '<td>' + escapeHtml(d.paired_at || '—') + '</td>'
-          + '<td>' + escapeHtml(d.last_seen_at || '—') + '</td>'
+          + '<td class="settings-nowrap">' + escapeHtml(d.paired_at || '—') + '</td>'
+          + '<td class="settings-nowrap">' + escapeHtml(d.last_seen_at || '—') + '</td>'
           + '<td><code>' + escapeHtml(d.last_ip || '—') + '</code></td>'
-          + '<td>' + action + '</td>'
+          + '<td class="settings-col-action">'
+          + '<form method="post" action="{{ url_for("settings.mobile_revoke") }}"'
+          + ' onsubmit="return confirm(\'撤销后这台手机下次请求会回到配对页，数据不在手机本地，确定撤销？\');">'
+          + '<input type="hidden" name="device_id" value="' + escapeHtml(d.id) + '">'
+          + '<button type="submit" class="btn btn-sm btn-outline-danger">撤销这台</button>'
+          + '</form>'
+          + '</td>'
           + '</tr>';
       }).join('');
     }
