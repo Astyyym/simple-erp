@@ -343,11 +343,17 @@
   <p data-ui-hint class="text-muted small">
     手机与这台电脑连<strong>同一个 WiFi</strong>，用手机<strong>相机或 Chrome 扫码</strong>打开；
     不要用微信「扫一扫」——微信内置浏览器的 cookie 与系统浏览器隔离，通常也无法添加到主屏幕。
-    手机端只用只读连接查库，不会改账目；电脑关机或手机不在同一 WiFi 时打不开，这是当前版本的已知限制。
+    手机端只用只读连接查库，不会改账目。
   </p>
 
-  <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
-    <form method="post" action="{{ url_for('settings.mobile_toggle') }}">
+  {# 状态行：一眼看清「开没开」，并把两个动作按钮放在同一行。 #}
+  <div class="mobile-status-row">
+    <span class="mobile-status{{ ' is-on' if mobile.enabled else '' }}">
+      <span class="mobile-status-dot"></span>
+      {{ '已打开' if mobile.enabled else '未打开' }}{% if mobile.enabled and not mobile.status.listening %}（监听未起来，见下方诊断）{% endif %}
+    </span>
+    <span class="mobile-status-spacer"></span>
+    <form method="post" action="{{ url_for('settings.mobile_toggle') }}" class="m-0">
       <input type="hidden" name="enabled" value="{{ '0' if mobile.enabled else '1' }}">
       {% if mobile.enabled %}
       <button type="submit" class="btn btn-outline-danger">关闭手机访问</button>
@@ -356,30 +362,52 @@
       {% endif %}
     </form>
     {% if mobile.enabled %}
-    <form method="post" action="{{ url_for('settings.mobile_pair_code') }}">
-      <button type="submit" class="btn btn-outline-primary">生成配对码</button>
+    {# 配对码按钮：有 JS 时走 fetch（不整页重载），没有 JS 时退化成普通表单提交。 #}
+    <form method="post" action="{{ url_for('settings.mobile_pair_code') }}" class="m-0" id="mobilePairForm">
+      <button type="submit" class="btn btn-outline-primary" id="mobilePairBtn">生成配对码</button>
     </form>
     {% endif %}
-    <span class="text-muted small">
-      当前：{{ '已打开' if mobile.enabled else '未打开' }}{% if mobile.enabled and not mobile.status.listening %}（监听未起来，见下方诊断）{% endif %}
-    </span>
   </div>
 
   {# 反馈与配对码就地显示在这里：这些按钮在页面下半部，放 page 顶部的 flash 用户看不见。 #}
   {% if mobile_notice %}
   <div class="alert alert-{{ mobile_notice[0] }} py-2" role="alert">{{ mobile_notice[1] }}</div>
   {% endif %}
-  {% if mobile_code %}
-  <div class="alert alert-success py-3" role="alert" id="mobilePairCode">
-    <div class="small text-muted mb-1">配对码 · {{ mobile_code_seconds }} 秒内有效 · 只能用一次</div>
-    <div style="font-size:32px;font-weight:700;letter-spacing:10px;font-variant-numeric:tabular-nums;line-height:1.1">{{ mobile_code }}</div>
-    <div class="small text-muted mt-2">现在在手机上输入这 6 位数字。过期了就再点一次「生成配对码」。</div>
+
+  {% if mobile.enabled or mobile_code %}
+  {#
+    配对码面板：**一个自洽的小卡**，不是飘在页面里的绿色 alert。
+    - 码 + 倒计时 + 「换一个」在同一行，动作就在它旁边（上一版按钮在顶上、
+      码在下面、dl 里又写一遍「点上方生成配对码」，同一件事说了三遍）；
+    - 倒计时由前端每秒刷新（`/settings/mobile/pair-code` JSON），不是静态文字；
+    - 过期后码变成占位符、按钮文字变成「生成配对码」，不会留一个永远无效的 6 位数。
+
+    `or mobile_code` 不是多余的：开关关着但监听还在（测试/排障时会这样）时，
+    刚生成的码仍然要能看见，否则用户点了按钮却「什么也没出现」。
+  #}
+  <div class="mobile-pair{% if mobile_code %} is-live{% endif %}" id="mobilePairPanel"
+       data-state-url="{{ url_for('settings.mobile_pair_code_state') }}">
+    <div class="mobile-pair-head">
+      <span class="mobile-pair-cap">配对码</span>
+      <span class="mobile-pair-timer" id="mobilePairTimer" hidden></span>
+    </div>
+    <div class="mobile-pair-body">
+      <div class="mobile-pair-code" id="mobilePairCode" aria-live="polite">
+        {%- if mobile_code -%}{{ mobile_code }}{%- else -%}——————{%- endif -%}
+      </div>
+      <div class="mobile-pair-side">
+        <button type="button" class="btn btn-sm btn-outline-primary" id="mobilePairRefresh" disabled>
+          生成配对码
+        </button>
+        <span class="mobile-pair-hint" id="mobilePairHint">点这里生成 6 位数字，120 秒内有效、只能用一次。</span>
+      </div>
+    </div>
   </div>
   {% endif %}
 
   {% if mobile.enabled %}
-  <div class="row g-3 align-items-start mb-3">
-    <div class="col-md-7">
+  <div class="mobile-panel">
+    <div class="mobile-panel-main">
       <dl class="settings-dl mb-2">
         <dt>手机访问地址</dt>
         <dd><code>{{ mobile.status.url }}</code></dd>
@@ -387,27 +415,17 @@
       {% if mobile.status.lan_warning %}
       <div class="alert alert-warning py-2" role="alert">{{ mobile.status.lan_warning }}</div>
       {% endif %}
-      <dl class="settings-dl mb-2">
-        <dt>配对码</dt>
-        <dd>
-          {% if mobile.pending.active %}
-          已生成，<strong>{{ mobile.pending.seconds_left }} 秒</strong>内有效（只在这块显示一次；没记下来就重新生成）
-          {% else %}
-          点上方「生成配对码」，码会显示在按钮下面
-          {% endif %}
-        </dd>
-      </dl>
       <p data-ui-hint class="text-muted small mb-0">
         地址里的 IP 由路由器分配。<strong>IP 一变，手机上存的快捷方式就失效</strong>——建议在路由器上把这个 Wi-Fi 网卡绑成固定 IP（DHCP 保留），
         进不去路由器时也可以先这样用（租约通常会把同一地址续给同一台机器）。
       </p>
     </div>
-    <div class="col-md-5 text-md-end">
+    <div class="mobile-panel-qr">
       {% if mobile.qr %}
       {# 二维码编的是 `http://<ip>:5001/m/`：App 扫它拿主机地址进配对页，
          浏览器扫它开只读端。注意**不能**改成扫码下载 APK —— 局域网是 HTTP，
          Chrome 对明文可执行文件有两道强制拦截，实测下不下来。 #}
-      <img src="{{ mobile.qr }}" width="176" height="176" alt="手机访问二维码"
+      <img src="{{ mobile.qr }}" width="168" height="168" alt="手机访问二维码"
            style="background:#fff;border-radius:10px;padding:8px;border:1px solid var(--erp-border)">
       <div class="text-muted small mt-2" style="line-height:1.7">
         手机 App 点「扫二维码」扫这张<br>
@@ -422,25 +440,27 @@
   </div>
   {% endif %}
 
-  <h4 class="mt-4">诊断信息</h4>
-  <dl class="settings-dl" id="mobileDiagnostics">
-    <dt>监听地址</dt><dd><code>{{ mobile.status.host }}:{{ mobile.status.port }}</code></dd>
-    <dt>局域网地址</dt><dd><code>{{ mobile.status.lan_ip }}</code>{{ '（看起来不是手机能连的地址）' if not mobile.status.lan_usable }}</dd>
-    <dt>是否在监听</dt>
-    <dd>
-      {% if mobile.status.listening %}正在监听{% if mobile.reachable %}，端口自检通过{% else %}，但端口探测失败{% endif %}
-      {% else %}未监听{% endif %}
-    </dd>
-    <dt>最后一次手机成功请求</dt><dd>{{ mobile.last_success_label }}</dd>
-    <dt>上次错误</dt><dd>{{ mobile.status.error or '无' }}</dd>
-    <dt>已配对设备</dt><dd id="mobileDeviceCount">{{ mobile.devices|length }} 台</dd>
-  </dl>
-  <p data-ui-hint class="text-muted small">
-    首次打开手机访问时 Windows 防火墙会弹窗，<strong>必须点「允许」</strong>；点「取消」后规则会被记成阻止且不再询问，
-    表现就是「手机永远连不上、电脑看不出异常」。端口 5001 被占用时这里会给出明确报错，不会自动换端口。
-  </p>
-  <button type="button" class="btn btn-sm btn-outline-secondary" id="mobileCopyDiagnostics"
-          data-copy-target="mobileDiagnostics">复制诊断信息</button>
+  <details class="mobile-diag" id="mobileDiagnosticsWrap"{% if mobile.status.error %} open{% endif %}>
+    <summary>诊断信息{% if mobile.status.error %}<span class="mobile-diag-badge">有错误</span>{% endif %}</summary>
+    <dl class="settings-dl mb-2" id="mobileDiagnostics">
+      <dt>监听地址</dt><dd><code>{{ mobile.status.host }}:{{ mobile.status.port }}</code></dd>
+      <dt>局域网地址</dt><dd><code>{{ mobile.status.lan_ip }}</code>{{ '（看起来不是手机能连的地址）' if not mobile.status.lan_usable }}</dd>
+      <dt>是否在监听</dt>
+      <dd>
+        {% if mobile.status.listening %}正在监听{% if mobile.reachable %}，端口自检通过{% else %}，但端口探测失败{% endif %}
+        {% else %}未监听{% endif %}
+      </dd>
+      <dt>最后一次手机成功请求</dt><dd>{{ mobile.last_success_label }}</dd>
+      <dt>上次错误</dt><dd>{{ mobile.status.error or '无' }}</dd>
+      <dt>已配对设备</dt><dd id="mobileDeviceCount">{{ mobile.devices|length }} 台</dd>
+    </dl>
+    <p data-ui-hint class="text-muted small">
+      首次打开手机访问时 Windows 防火墙会弹窗，<strong>必须点「允许」</strong>；点「取消」后规则会被记成阻止且不再询问，
+      表现就是「手机永远连不上、电脑看不出异常」。端口 5001 被占用时这里会给出明确报错，不会自动换端口。
+    </p>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="mobileCopyDiagnostics"
+            data-copy-target="mobileDiagnostics">复制诊断信息</button>
+  </details>
 
   <h4 class="mt-4">已配对设备</h4>
   <table class="table align-middle" id="mobileDevicesTable"
@@ -472,10 +492,16 @@
     </tbody>
   </table>
   <form method="post" action="{{ url_for('settings.mobile_revoke_all') }}"
-        onsubmit="return confirm('撤销全部手机？撤销后都要重新配对。');">
+        onsubmit="return confirm('撤销全部手机？撤销后都要重新配对。');"
+        {% if not mobile.devices %}style="display:none"{% endif %}>
     <button type="submit" class="btn btn-sm btn-outline-danger">撤销全部</button>
   </form>
-  <p data-ui-hint class="text-muted small mb-0" id="mobileDevicesEmpty"
+  {#
+    空态文案**不能**用 `data-ui-hint`：关掉「界面说明文字」后它会被隐藏，
+    于是这一节只剩一个孤零零的「撤销全部」按钮 —— 看起来像坏了。
+    空态是状态信息（「现在还没有设备」），不是提示小字。
+  #}
+  <p class="text-muted small mb-0" id="mobileDevicesEmpty"
      {% if mobile.devices %}style="display: none;"{% endif %}>
     还没有配对过手机。打开手机访问后，用手机扫码并输入配对码即可。
   </p>
@@ -702,6 +728,62 @@
   .settings-leave-dialog{width:min(440px,100%);background:var(--erp-surface);color:var(--erp-ink);border:1px solid var(--erp-border);border-radius:10px;box-shadow:0 16px 48px rgba(0,0,0,.18);padding:20px 20px 16px}
   .settings-leave-dialog h3{margin:0 0 8px;font-size:18px}
   .settings-leave-actions{display:flex;flex-wrap:wrap;gap:8px}
+
+  /* ===== 手机访问分区（2026-10-23 重做）=====
+     上一版的病：同一件事说了三遍（顶部按钮 / 绿色 alert / dl 里再写一句），
+     倒计时是静态文字，刷新页面码就没了。现在收成三块：
+       ① 状态行：开没开 + 开关 + 生成按钮，一行说完；
+       ② 配对码面板：码 + 实时倒计时 + 「换一个」，一个自洽的小卡；
+       ③ 地址与二维码：左地址、右二维码，同一张卡里分栏；
+       ④ 诊断信息折进 <details>：它是排障时才看的东西，平时不该占半屏。 */
+  .mobile-status-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 14px}
+  .mobile-status{display:inline-flex;align-items:center;gap:7px;
+    padding:5px 12px 5px 10px;border-radius:999px;
+    background:var(--erp-surface-soft);color:var(--erp-muted);
+    font-size:13px;font-weight:650;white-space:nowrap}
+  .mobile-status-dot{width:8px;height:8px;border-radius:50%;background:var(--erp-muted);flex:none}
+  .mobile-status.is-on{background:color-mix(in srgb,var(--erp-success,#16794a) 12%,transparent);color:var(--erp-success,#16794a)}
+  .mobile-status.is-on .mobile-status-dot{background:var(--erp-success,#16794a)}
+  .mobile-status-spacer{flex:1 1 auto}
+
+  .mobile-pair{border:1px solid var(--erp-border);border-radius:10px;
+    background:var(--erp-surface);padding:12px 14px;margin:0 0 16px}
+  .mobile-pair.is-live{border-color:color-mix(in srgb,var(--erp-primary) 45%,var(--erp-border));
+    box-shadow:0 0 0 3px color-mix(in srgb,var(--erp-primary) 10%,transparent)}
+  .mobile-pair-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .mobile-pair-cap{font-size:12.5px;font-weight:650;color:var(--erp-muted);letter-spacing:.03em}
+  .mobile-pair-timer{margin-left:auto;font-size:12.5px;font-weight:650;
+    color:var(--erp-primary);font-variant-numeric:tabular-nums}
+  .mobile-pair-timer.is-expired{color:var(--erp-danger,#c0392b)}
+  .mobile-pair-body{display:flex;flex-wrap:wrap;align-items:center;gap:14px}
+  /* 码本身：等宽数字 + 大字距。占位符与真码同字号，换码时不会「跳一下」。 */
+  .mobile-pair-code{font-size:34px;font-weight:750;letter-spacing:11px;line-height:1.05;
+    font-variant-numeric:tabular-nums;color:var(--erp-ink);
+    /* 字距会把最后一个字右边也留出 11px，补回来才真的居中 */
+    margin-right:-11px;user-select:all;cursor:text}
+  .mobile-pair-code.is-empty{color:var(--erp-muted);opacity:.45;letter-spacing:7px;margin-right:-7px}
+  .mobile-pair-side{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .mobile-pair-hint{font-size:12px;color:var(--erp-muted);line-height:1.55}
+
+  /* 地址在左、二维码在右。用 center 对齐：左边常常只有一行地址（关掉界面说明时
+     连那行小字都没有），顶对齐会在二维码旁边留一大块空白，看着像内容没加载完。 */
+  .mobile-panel{display:flex;flex-wrap:wrap;gap:18px;align-items:center;margin:0 0 6px}
+  .mobile-panel-main{flex:1 1 320px;min-width:0}
+  .mobile-panel-qr{flex:0 0 auto;text-align:center;font-size:12px;color:var(--erp-muted)}
+
+  .mobile-diag{margin:16px 0 0;border-top:1px solid var(--erp-border);padding-top:10px}
+  .mobile-diag>summary{cursor:pointer;font-size:15px;font-weight:650;color:var(--erp-ink);
+    padding:4px 0;list-style:none;display:flex;align-items:center;gap:8px}
+  .mobile-diag>summary::-webkit-details-marker{display:none}
+  .mobile-diag>summary::before{content:'▸';color:var(--erp-muted);font-size:11px;transition:transform .15s}
+  .mobile-diag[open]>summary::before{transform:rotate(90deg)}
+  .mobile-diag-badge{padding:1px 8px;border-radius:999px;font-size:11px;font-weight:650;
+    background:var(--erp-danger,#c0392b);color:#fff}
+  .mobile-diag>summary+*{margin-top:10px}
+  @media(max-width:720px){
+    .mobile-pair-code{font-size:28px;letter-spacing:8px;margin-right:-8px}
+    .mobile-panel-qr{flex:1 1 100%;text-align:left}
+  }
 </style>
 
 <script>
@@ -900,16 +982,152 @@
 </script>
 {% if mobile_code %}
 <script>
-  // 生成配对码是 POST 后整页重渲染，浏览器会把滚动位置重置到页面顶部；
-  // 码就在刚点的按钮下面，但用户会看到「页面回到顶部」。这一次把码滚进视野。
+  // 生成配对码是 POST 后整页重渲染（仅无 JS 的兜底路径），浏览器会把滚动位置
+  // 重置到页面顶部；码就在刚点的按钮下面，但用户会看到「页面回到顶部」。
+  // 这一次把码滚进视野。
   (function () {
-    var box = document.getElementById('mobilePairCode');
+    var box = document.getElementById('mobilePairPanel');
     if (box && box.scrollIntoView) {
       box.scrollIntoView({block: 'center'});
     }
   })();
 </script>
 {% endif %}
+<script>
+  /*
+   * 配对码：实时倒计时 + 「换一个」。
+   *
+   * 上一版有三个真问题（用户 2026-10-23 报「没有刷新按钮、120 秒不能刷新」）：
+   *   ① 码只在 POST 响应里出现一次，之后**没有任何入口能再看一眼或换一个**；
+   *   ② 有效期是渲染那一刻算出的静态文字，不会倒数 —— 用户看不出还剩几秒；
+   *   ③ 想换码只能重新提交表单 → 整页重载 → 页面滚回顶部、刚输入的其他设置也没了。
+   *
+   * 现在：码的**真值在服务端**（`GET /settings/mobile/pair-code` 返回明文 + 剩余秒数），
+   * 前端只做两件事 —— 每秒把剩余秒数减一用于显示，以及按需 POST 换码。
+   * 定时器以「服务端返回的秒数」为准重新校准，不会因为标签页切后台漂移。
+   */
+  (function () {
+    var panel = document.getElementById('mobilePairPanel');
+    if (!panel) { return; }
+    var stateUrl = panel.dataset.stateUrl;
+    var codeNode = document.getElementById('mobilePairCode');
+    var timerNode = document.getElementById('mobilePairTimer');
+    var refreshBtn = document.getElementById('mobilePairRefresh');
+    var hintNode = document.getElementById('mobilePairHint');
+    var pairForm = document.getElementById('mobilePairForm');
+
+    var EMPTY = '——————';
+    var secondsLeft = 0;
+    var ticking = null;
+
+    function paint() {
+      var hasCode = secondsLeft > 0;
+      // 按钮文案跟着状态走：有码时「换一个」，没码时「生成配对码」。
+      // 放在 paint 里而不是只写在 fetch 回调里 —— 否则首屏那个「生成配对码」
+      // 会一直挂着，即使码已经在旁边显示了（用户会以为点了没反应）。
+      if (!refreshBtn.disabled) {
+        refreshBtn.textContent = hasCode ? '换一个' : '生成配对码';
+      }
+      if (hasCode) {
+        codeNode.classList.remove('is-empty');
+        timerNode.hidden = false;
+        timerNode.classList.remove('is-expired');
+        timerNode.textContent = '剩余 ' + secondsLeft + ' 秒';
+        panel.classList.add('is-live');
+        hintNode.textContent = '在手机上输入这 6 位数字，过期了就点「换一个」。';
+      } else {
+        codeNode.classList.add('is-empty');
+        timerNode.hidden = false;
+        timerNode.classList.add('is-expired');
+        timerNode.textContent = '已过期';
+        panel.classList.remove('is-live');
+        hintNode.textContent = '点「生成配对码」重新生成，120 秒内有效、只能用一次。';
+      }
+    }
+
+    function apply(payload) {
+      if (!payload || !payload.ok) { return; }
+      secondsLeft = payload.seconds_left || 0;
+      if (secondsLeft > 0 && payload.code) {
+        codeNode.textContent = payload.code;
+        codeNode.classList.remove('is-empty');
+      } else if (secondsLeft <= 0) {
+        // 没码 / 已过期：清成占位符。别留一个服务端已经不认的 6 位数。
+        codeNode.textContent = EMPTY;
+      }
+      paint();
+    }
+
+    function startTicking() {
+      if (ticking) { clearInterval(ticking); }
+      ticking = setInterval(function () {
+        if (secondsLeft <= 0) { return; }
+        secondsLeft -= 1;
+        paint();
+      }, 1000);
+    }
+
+    function loadState() {
+      fetch(stateUrl, {headers: {'Accept': 'application/json'}})
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (payload) {
+          if (!payload || !payload.ok) { return; }
+          apply(payload);
+          startTicking();
+        })
+        .catch(function () { /* 网络抖动：保持现状，下一轮再说 */ });
+    }
+
+    function regenerate() {
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = '生成中…';
+      fetch(pairForm ? pairForm.action : stateUrl, {
+        method: 'POST',
+        headers: {'X-Requested-With': 'fetch', 'Accept': 'application/json'}
+      })
+        .then(function (r) { return r.json().then(function (body) { return {ok: r.ok, body: body}; }); })
+        .then(function (result) {
+          if (!result.ok || !result.body || !result.body.ok) {
+            var message = (result.body && result.body.error) || '生成失败，请稍后再试。';
+            timerNode.hidden = false;
+            timerNode.classList.add('is-expired');
+            timerNode.textContent = message;
+            return;
+          }
+          apply(result.body);
+          startTicking();
+        })
+        .catch(function () {
+          timerNode.hidden = false;
+          timerNode.classList.add('is-expired');
+          timerNode.textContent = '生成失败，请检查程序是否还在运行。';
+        })
+        .finally(function () {
+          refreshBtn.disabled = false;
+          refreshBtn.textContent = secondsLeft > 0 ? '换一个' : '生成配对码';
+        });
+    }
+
+    // 有 JS 时拦下表单提交，改走 fetch：页面不重载、其他设置不丢、滚动位置不动。
+    if (pairForm) {
+      pairForm.addEventListener('submit', function (event) {
+        event.preventDefault();
+        regenerate();
+      });
+    }
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', regenerate);
+      refreshBtn.disabled = false;
+      refreshBtn.textContent = '生成配对码';
+    }
+    // 首屏：服务端已经把码渲染进 HTML 了（无 JS 也能看到），这里只补倒计时。
+    loadState();
+    document.addEventListener('visibilitychange', function () {
+      // 切回标签页时立刻对一次服务端时间，避免后台节流导致的秒数漂移。
+      if (!document.hidden) { loadState(); }
+    });
+  })();
+</script>
 <script>
   // 「复制诊断信息」：把诊断 dl 的文本拼起来放剪贴板（失败就全选提示手抄）。
   (function () {

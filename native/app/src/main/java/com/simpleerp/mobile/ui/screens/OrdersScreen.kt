@@ -333,30 +333,49 @@ private fun OrdersFilterBar(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .clickable(onClick = onOpenTime)
                         .padding(start = Dimens.pageGap, end = Dimens.pageGap, top = 5.dp, bottom = 1.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = dateLabel,
-                        color = colors.ink,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.width(7.dp))
-                    // 「时间筛选」是这一行的**说明**，不是标题：它跟在数值后面做注脚。
-                    // （原来叫「日期」，但这里筛的还有整月/整年/自定义区间。）
-                    Text(
-                        "时间筛选",
-                        color = colors.muted,
-                        fontSize = 12.5.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Spacer(Modifier.width(3.dp))
-                    Text("▾", color = colors.muted, fontSize = 11.sp)
+                    /*
+                     * 时间筛选做成**一个圆角矩形按钮**（用户 2026-10-23 要求）。
+                     *
+                     * 原来是整行 `fillMaxWidth().clickable(...)` 且**没有背景**：
+                     * Material 的按压水波纹会铺满整行宽度，点下去看起来是「整行变深」，
+                     * 用户原话「点中的时候整行都会有被点中的深色提醒」。
+                     * 现在把点击范围收进这一块，给 soft 底 + 圆角，按压反馈只落在这里。
+                     *
+                     * 整块内部就是「10 月 · 时间筛选 ▾」这一组，数量留在外面 ——
+                     * 数量是结果，不是筛选条件的一部分，不该跟着按钮一起变色。
+                     */
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(11.dp))
+                            .background(colors.soft)
+                            .clickable(onClick = onOpenTime)
+                            .padding(horizontal = 11.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = dateLabel,
+                            color = colors.ink,
+                            fontSize = 19.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        // 「时间筛选」是这一行的**说明**，不是标题：它跟在数值后面做注脚。
+                        // （原来叫「日期」，但这里筛的还有整月/整年/自定义区间。）
+                        Text(
+                            "时间筛选",
+                            color = colors.muted,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                        )
+                        Spacer(Modifier.width(3.dp))
+                        Text("▾", color = colors.muted, fontSize = 10.sp)
+                    }
                     if (count != null) {
                         Spacer(Modifier.width(10.dp))
                         Text("$count 张", color = colors.muted, fontSize = 12.5.sp)

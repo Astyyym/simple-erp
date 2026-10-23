@@ -21,15 +21,19 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
@@ -51,6 +55,9 @@ import com.simpleerp.mobile.ui.components.TypeBadge
 import com.simpleerp.mobile.ui.theme.Dimens
 import com.simpleerp.mobile.ui.theme.LocalErpColors
 import com.simpleerp.mobile.ui.util.formatCacheTime
+import com.simpleerp.mobile.ui.util.localTodayIso
+import com.simpleerp.mobile.ui.util.monthDayLabel
+import com.simpleerp.mobile.ui.util.weekdayLabel
 
 /**
  * 今日概览（首屏）。
@@ -121,6 +128,31 @@ private fun TodayContent(
     }
 
     /*
+     * 页头的「今天」用**手机本地日期**，不用服务端返回的 `date_label`。
+     *
+     * 2026-10-23 用户报：「电脑断开之后，连首页的当天日期都不能刷新，不觉得很离谱么？
+     * APK 不能什么都依赖桌面端啊」。原实现直接用 `overview.dateLabel`，断网走缓存时
+     * 那是**上次联网那天**的字符串 —— 一个写着「今天」的标题却显示昨天的日期，
+     * 而且无论放多久都不动，跨零点也不动。
+     *
+     * 日期是设备本地事实：业务数据（单据、金额）确实只能来自桌面端，离线要标「旧数据」；
+     * 但「今天是几号」手机自己就知道，不该被网络状态绑架。
+     *
+     * 每 30 秒对一次表，这样跨零点时不用杀进程重开也会自动翻页。
+     */
+    var localToday by remember { mutableStateOf(localTodayIso()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            localToday = localTodayIso()
+            kotlinx.coroutines.delay(30_000)
+        }
+    }
+    // 服务端这份数据是哪天的？断网时它可能不是「今天」，要如实告诉用户。
+    val dataDay = overview.date
+    val staleDayLabel =
+        if (dataDay.isNotEmpty() && dataDay != localToday) monthDayLabel(dataDay) else ""
+
+    /*
      * 折叠进度：0 = 回顶展开（现状），1 = 滑动后收成一行。
      *
      * 为什么把页头放在列表**外面**、而不是做成 stickyHeader：
@@ -145,7 +177,10 @@ private fun TodayContent(
 
     Column(modifier = modifier.fillMaxSize()) {
         TodayHeader(
-            overview = overview,
+            dateLabel = monthDayLabel(localToday),
+            weekday = weekdayLabel(localToday),
+            documentCount = overview.documentCount,
+            staleDayLabel = staleDayLabel,
             progress = animatedProgress,
         )
 
@@ -225,7 +260,13 @@ private fun TodayContent(
  * 后者切换时会换一套布局，滚动过程中来回跨阈值会「跳」，肉眼像卡顿。
  */
 @Composable
-private fun TodayHeader(overview: TodayOverview, progress: Float) {
+private fun TodayHeader(
+    dateLabel: String,
+    weekday: String,
+    documentCount: Int,
+    staleDayLabel: String,
+    progress: Float,
+) {
     val colors = LocalErpColors.current
     val height = lerp(HeaderExpandedHeight, HeaderCollapsedHeight, progress)
     val expandedAlpha = (1f - progress * 1.6f).coerceIn(0f, 1f)
@@ -253,14 +294,14 @@ private fun TodayHeader(overview: TodayOverview, progress: Float) {
             Spacer(Modifier.height(3.dp))
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
-                    text = overview.dateLabel,
+                    text = dateLabel,
                     color = colors.ink,
                     fontSize = 22.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = overview.weekday,
+                    text = weekday,
                     color = colors.muted,
                     fontSize = 13.sp,
                     modifier = Modifier.padding(bottom = 3.dp),
@@ -268,9 +309,17 @@ private fun TodayHeader(overview: TodayOverview, progress: Float) {
             }
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "共 ${overview.documentCount} 张单据",
-                color = colors.muted,
+                // 断网时服务端数据可能不是今天的：必须写明是哪天的，
+                // 否则「今天 共 12 张单据」会让人以为今天真的开了 12 张。
+                text = if (staleDayLabel.isEmpty()) {
+                    "共 $documentCount 张单据"
+                } else {
+                    "共 $documentCount 张单据 · 数据是 $staleDayLabel 的"
+                },
+                color = if (staleDayLabel.isEmpty()) colors.muted else colors.warn,
                 fontSize = 12.5.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
 
@@ -282,16 +331,16 @@ private fun TodayHeader(overview: TodayOverview, progress: Float) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = overview.dateLabel,
+                text = dateLabel,
                 color = colors.ink,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
             )
             Spacer(Modifier.width(7.dp))
-            Text(text = overview.weekday, color = colors.muted, fontSize = 12.5.sp)
+            Text(text = weekday, color = colors.muted, fontSize = 12.5.sp)
             Spacer(Modifier.width(8.dp))
             Text(
-                text = "共 ${overview.documentCount} 张单据",
+                text = "共 $documentCount 张单据",
                 color = colors.muted,
                 fontSize = 12.5.sp,
             )

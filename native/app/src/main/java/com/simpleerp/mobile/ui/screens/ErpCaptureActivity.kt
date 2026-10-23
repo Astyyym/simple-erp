@@ -90,6 +90,32 @@ class ErpCaptureActivity : ComponentActivity() {
         captureManager = CaptureManager(this, barcodeView)
         captureManager.initializeFromIntent(intent, savedInstanceState)
 
+        // ⚠️ **必须调 `decode()`，否则永远扫不出结果** —— 这是 2026-10-23 找到的真根因。
+        //
+        // 反编译 zxing-android-embedded 4.3.0 的字节码确认：
+        //   · `BarcodeView` 构造函数把 `decodeMode` 初始化成 `DecodeMode.NONE`；
+        //   · `BarcodeView.startDecoderThread()` 第一句就是
+        //       `if (decodeMode == NONE) return;`
+        //     —— 也就是说**解码线程根本没被启动**；
+        //   · 只有 `decodeSingle(cb)` / `decodeContinuous(cb)` 才会把 decodeMode 改掉，
+        //     而 `CaptureManager.decode()` 内部正是 `DecoratedBarcodeView.decodeSingle(callback)`。
+        //   · 官方 `CaptureActivity.onCreate()` 的顺序是
+        //       `initializeFromIntent(...)` → **`decode()`** → `onResume()` 里开相机。
+        //
+        // 我们这一版自己组装 View 时漏了中间那一步，表现就是：相机预览正常、
+        // 取景框正常、✕ 与「从相册选」都正常，**就是对着二维码永远没反应**。
+        // 「从相册选」之所以能成功，是因为它走我们自己写的 MultiFormatReader，
+        // 跟这条解码线程毫无关系 —— 所以那个假象曾经把排查引向「对焦」。
+        captureManager.decode()
+
+        // 隐藏库自带的底部状态条（`zxing_status_view`）。
+        //
+        // 它在库的布局里写死 `layout_gravity="bottom|center_horizontal"`，文案来自
+        // `ScanOptions.setPrompt(...)`。我们自己已经画了一条**贴在取景框正下方**的
+        // 深色药丸提示（见 buildOverlayControls），于是屏幕上同时出现两条一样的字，
+        // 最底下那条还紧贴屏幕底边、跟取景框完全脱节（用户 2026-10-23 要求删掉）。
+        barcodeView.statusView?.visibility = View.GONE
+
         // ⚠️ **必须用连续对焦**，这是「对着电脑扫不出来、从相册选就能扫出来」的真正根因。
         //
         // 这里有**两层坑**，2026-10-22 逐层挖出来的（v4.6.5 那次「修复」两层都踩了）：

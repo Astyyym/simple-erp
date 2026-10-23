@@ -522,17 +522,76 @@ def mobile_toggle():
     return redirect(url_for("settings.settings_page") + "#mobileAccessSection")
 
 
+@settings_bp.get("/mobile/pair-code")
+def mobile_pair_code_state():
+    """当前配对码状态（JSON），给设置页倒计时与「换一个」用。
+
+    为什么要这个接口：配对码是**服务端生成、120 秒过期**的东西，而设置页是
+    服务端渲染的静态 HTML。没有它就只能靠整页刷新 —— 用户一刷新码就没了
+    （上一版的真实表现），倒计时更是根本不存在（`seconds_left` 只在渲染那一刻算一次，
+    之后永远显示同一个数字）。
+
+    返回明文码：这是**本机单用户**的桌面程序，同一个 HTTP 端口只服务本机浏览器，
+    明文在这里不构成额外暴露面；磁盘上仍然只有 sha256。
+    """
+    status = mobile_status()
+    if not status["listening"]:
+        return jsonify({"ok": True, "listening": False, "code": "", "seconds_left": 0, "ttl": 0})
+    code, seconds_left = mobile_pairing.current_plaintext_code()
+    return jsonify(
+        {
+            "ok": True,
+            "listening": True,
+            "code": code,
+            "seconds_left": seconds_left,
+            "ttl": mobile_pairing.PAIR_CODE_TTL_SECONDS,
+        }
+    )
+
+
 @settings_bp.post("/mobile/pair-code")
 def mobile_pair_code():
+    """生成配对码。
+
+    两种响应形态，同一个地址：
+    - 前端带 `Accept: application/json`（或 `X-Requested-With`）→ 返回 JSON，
+      页面不重载，倒计时从 120 秒开始走；
+    - 普通表单直提交（禁用了 JS 的极端情况）→ 整页重渲染，码仍在正文里。
+
+    为什么保留后者：这是唯一的兜底路径。JS 挂了还能配对，比「按钮点了没反应」强。
+    """
+    wants_json = (
+        request.headers.get("X-Requested-With") == "fetch"
+        or "application/json" in (request.headers.get("Accept") or "")
+    )
+
+    def _json(payload: dict, status: int = 200):
+        return jsonify(payload), status
+
     if not mobile_status()["listening"]:
-        session["mobile_notice"] = ("danger", "请先打开「手机访问」开关，再生成配对码。")
+        message = "请先打开「手机访问」开关，再生成配对码。"
+        if wants_json:
+            return _json({"ok": False, "error": message}, 409)
+        session["mobile_notice"] = ("danger", message)
         return redirect(url_for("settings.settings_page") + "#mobileAccessSection")
+
     code, error = mobile_pairing.generate_pair_code()
     if error:
+        if wants_json:
+            return _json({"ok": False, "error": error}, 429)
         session["mobile_notice"] = ("danger", error)
         return redirect(url_for("settings.settings_page") + "#mobileAccessSection")
-    # 就地渲染，不 redirect：码只活 120 秒，必须出现在用户正在看的这一屏上。
-    # 不放 URL（会进浏览器历史/访问日志），也不放 session（session cookie 客户端可读）。
+
+    if wants_json:
+        return _json(
+            {
+                "ok": True,
+                "code": code,
+                "seconds_left": mobile_pairing.PAIR_CODE_TTL_SECONDS,
+                "ttl": mobile_pairing.PAIR_CODE_TTL_SECONDS,
+            }
+        )
+    # 不带 JS 的老路径：就地渲染，不 redirect（码必须出现在用户正在看的这一屏上）。
     return render_template(
         "settings/index.html",
         **_settings_template_context(

@@ -196,6 +196,9 @@ def test_pair_code_is_rendered_inline_and_actually_works():
 
     用户在页面下半部点按钮，redirect + 顶部 flash 的形态他根本看不见 —— 这条是用户实测
     反馈后补的回归：点完只会「页面刷了一下、什么也没出现」。
+
+    这条同时守住「无 JS 兜底路径」：前端有 JS 时会走 fetch 拿 JSON，
+    但表单直提交（JS 挂了）必须仍然渲染出一个能用的码。
     """
     import re
 
@@ -212,7 +215,8 @@ def test_pair_code_is_rendered_inline_and_actually_works():
     assert response.status_code == 200
     assert "秒内有效" in body
 
-    match = re.search(r"letter-spacing:10px[^>]*>(\d{6})<", body)
+    # 从配对码元素里取码（不要匹配内联样式：样式一改测试就红，那是脆断言）。
+    match = re.search(r'id="mobilePairCode"[^>]*>\s*(\d{6})\s*<', body)
     assert match, "POST 响应里找不到 6 位配对码"
     cookie_value, pair_error = mobile_pairing.verify_pair_code(match.group(1))
     assert pair_error == ""
@@ -231,7 +235,13 @@ def test_mobile_actions_report_inside_the_section_not_at_page_top():
 
 
 def test_pair_code_response_scrolls_itself_into_view():
-    """生成配对码后浏览器会把滚动位置重置到顶部 —— 响应里必须带「把码滚进视野」的脚本。"""
+    """生成配对码后浏览器会把滚动位置重置到顶部 —— 响应里必须带「把码滚进视野」的脚本。
+
+    注意断言的是**滚动脚本本身**，不是 `mobilePairCode` 这个 id：2026-10-23 起
+    配对码面板是常驻的（刷新页面还能看到同一个码、倒计时每秒走），
+    所以 id 在普通 GET 里当然也在。这条测试真正要守的是
+    「只有刚生成码的那一次响应才自动滚过去」。
+    """
     from erp import create_app
 
     init_db()
@@ -244,9 +254,78 @@ def test_pair_code_response_scrolls_itself_into_view():
     assert 'id="mobilePairCode"' in body
     assert "scrollIntoView" in body
 
-    # 普通 GET 不该带这段脚本（不改变别的页面滚动行为）
+    # 普通 GET 不该带这段自动滚动（否则每次打开设置页都会被拽到手机访问那一节）。
     plain = client.get("/settings/").get_data(as_text=True)
-    assert "mobilePairCode" not in plain
+    assert "scrollIntoView({block: 'center'})" not in plain
+
+
+def test_pair_code_state_endpoint_reports_live_countdown():
+    """配对码状态接口：设置页倒计时与「换一个」都靠它。
+
+    上一版的真缺陷：码只在 POST 响应里出现一次，有效期是渲染那一刻算出的静态文字，
+    既不会倒数也没有任何入口能再看一眼或换一个（用户 2026-10-23 明确报了这一条）。
+    """
+    from erp import create_app
+
+    init_db()
+    port = _free_port()
+    ok, error = mobile_server.start_mobile_listener(port=port)
+    assert ok, error
+
+    client = create_app().test_client()
+
+    # 还没生成时：ok 但空码
+    payload = client.get(
+        "/settings/mobile/pair-code", headers={"Accept": "application/json"}
+    ).get_json()
+    assert payload["ok"] is True
+    assert payload["code"] == ""
+    assert payload["seconds_left"] == 0
+
+    # 生成后：明文码 + 剩余秒数都能再取到（不是「只显示一次」）
+    generated = client.post(
+        "/settings/mobile/pair-code",
+        headers={"Accept": "application/json", "X-Requested-With": "fetch"},
+    ).get_json()
+    assert generated["ok"] is True
+    assert len(generated["code"]) == 6
+    assert generated["seconds_left"] == mobile_pairing.PAIR_CODE_TTL_SECONDS
+
+    state = client.get(
+        "/settings/mobile/pair-code", headers={"Accept": "application/json"}
+    ).get_json()
+    assert state["code"] == generated["code"], "同一个码必须能反复取到，用户才能回头看一眼"
+    assert 0 < state["seconds_left"] <= mobile_pairing.PAIR_CODE_TTL_SECONDS
+
+
+def test_pair_code_json_regeneration_replaces_previous_code():
+    """「换一个」必须真的换：新码生效，旧码立刻作废。"""
+    from erp import create_app
+
+    init_db()
+    port = _free_port()
+    ok, error = mobile_server.start_mobile_listener(port=port)
+    assert ok, error
+
+    client = create_app().test_client()
+    headers = {"Accept": "application/json", "X-Requested-With": "fetch"}
+    first = client.post("/settings/mobile/pair-code", headers=headers).get_json()["code"]
+    second = client.post("/settings/mobile/pair-code", headers=headers).get_json()["code"]
+    assert first != second
+
+    # 旧码不能再配对（服务端只存最新一个 hash）
+    _, old_error = mobile_pairing.verify_pair_code(first)
+    assert old_error != ""
+    cookie_value, new_error = mobile_pairing.verify_pair_code(second)
+    assert new_error == ""
+    assert mobile_pairing.device_from_cookie(cookie_value) is not None
+
+    # 码用掉之后，状态接口不能还吐一个永远无效的明文码
+    state = client.get(
+        "/settings/mobile/pair-code", headers={"Accept": "application/json"}
+    ).get_json()
+    assert state["code"] == ""
+    assert state["seconds_left"] == 0
 
 
 def test_devices_json_endpoint_returns_devices():

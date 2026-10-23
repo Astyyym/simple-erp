@@ -109,6 +109,56 @@ def lock_remaining_seconds() -> int:
     return _lock_remaining(load_store())
 
 
+# ---------------------------------------------------------------------------
+# 明文码的进程内短缓存（只为「设置页能反复显示同一个码」）
+# ---------------------------------------------------------------------------
+# 为什么需要它：磁盘上只存 sha256（这是对的，别改）。但设置页要能：
+#   ① 刷新页面后仍看到同一个码（否则用户一刷新就「码没了」，还得再点一次）；
+#   ② 倒计时每秒走一格、走完变成「已过期」；
+#   ③ 点「换一个」当场换码，不整页重渲染。
+# 这三件事都要求**明文**在有效期内可再次取出。所以只放在内存里，不落盘、
+# 不进 session cookie（session cookie 客户端可读），进程退出即消失。
+#
+# ⚠️ 缓存必须**跟磁盘上的那条码对得上**才允许返回。这是踩出来的：
+# 测试里每个用例换一个数据根（`mobile_devices.json` 是新的、没有码），
+# 而模块级缓存还留着上一个用例的明文 —— 于是「没生成过码」的用例读到了别人的码。
+# 生产上同样成立：换数据根、备份恢复、手工删 `mobile_devices.json` 之后，
+# 缓存里的旧码必须立刻失效，否则设置页会显示一个**服务端根本不认**的 6 位数，
+# 用户输进去只会得到「配对码已过期」，而屏幕上明明写着还剩 90 秒。
+_plaintext: dict = {"code": "", "expires_at": None, "created_at": ""}
+
+
+def _remember_plaintext(code: str, expires_at: datetime | None, created_at: str = "") -> None:
+    _plaintext["code"] = str(code or "")
+    _plaintext["expires_at"] = expires_at
+    _plaintext["created_at"] = str(created_at or "")
+
+
+def current_plaintext_code() -> tuple[str, int]:
+    """当前仍有效的明文配对码与剩余秒数；没有/已过期/与磁盘对不上返回 `("", 0)`。"""
+    code = str(_plaintext.get("code") or "")
+    expires = _plaintext.get("expires_at")
+    created_at = str(_plaintext.get("created_at") or "")
+    if not code or not isinstance(expires, datetime):
+        return "", 0
+
+    # 与磁盘上的那条码核对：hash 与 created_at 都得对上，否则缓存作废。
+    stored = load_store().get("code") or {}
+    if (
+        not stored.get("hash")
+        or str(stored.get("created_at", "")) != created_at
+        or not hmac.compare_digest(_sha256(code), str(stored.get("hash")))
+    ):
+        _remember_plaintext("", None)
+        return "", 0
+
+    left = int((expires - _now()).total_seconds())
+    if left <= 0:
+        _remember_plaintext("", None)
+        return "", 0
+    return code, left
+
+
 def generate_pair_code() -> tuple[str, str]:
     """生成一次 6 位配对码，返回 `(code, error)`；被限速或锁定时 code 为空串。"""
     store = load_store()
@@ -121,13 +171,16 @@ def generate_pair_code() -> tuple[str, str]:
     if len(recent) >= CODE_GENERATIONS_PER_MINUTE:
         return "", "一分钟内最多生成 3 次配对码，请稍等再试。"
     code = "".join(secrets.choice("0123456789") for _ in range(PAIR_CODE_LENGTH))
+    expires_at = now + timedelta(seconds=PAIR_CODE_TTL_SECONDS)
     store["code_generations"] = recent + [_iso(now)]
     store["code"] = {
         "hash": _sha256(code),
         "created_at": _iso(now),
-        "expires_at": _iso(now + timedelta(seconds=PAIR_CODE_TTL_SECONDS)),
+        "expires_at": _iso(expires_at),
     }
     save_store(store)
+    # 明文只进内存缓存，供设置页反复显示/倒计时（见 current_plaintext_code 的说明）。
+    _remember_plaintext(code, expires_at, store["code"]["created_at"])
     return code, ""
 
 
@@ -221,6 +274,8 @@ def verify_pair_code(
     store["code"] = None
     store["failures"] = {"count": 0, "locked_until": ""}
     save_store(store)
+    # 码已被用掉：内存里的明文也必须立刻作废，否则设置页还会显示一个永远无效的码。
+    _remember_plaintext("", None)
     return f"{device['id']}:{token}", ""
 
 
