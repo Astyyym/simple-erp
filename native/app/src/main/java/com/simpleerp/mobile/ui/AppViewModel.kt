@@ -35,11 +35,19 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.builtins.serializer
 
-/** 顶部导航的目的地。设置页是第 5 个 tab（用户 2026-10-17 定案，可发现性优先于频次）。 */
+/**
+ * 底部导航的目的地。
+ *
+ * 顺序 = **用户 2026-10-23 指定的排列**：今天 / 单据 / 客户 / 商品 / 设置。
+ * 「单据」提到第 2 位（原来是 今天/客户/单据）：门店高频动作是「翻单据核对金额、
+ * 报单号」，比「看客户」更靠前；设置仍是第 5 个（可发现性优先于频次）。
+ *
+ * 枚举顺序就是 tab 条顺序（`Tab.entries` 直接渲染），改顺序只改这里。
+ */
 enum class Tab(val label: String) {
     TODAY("今天"),
-    CUSTOMERS("客户"),
     ORDERS("单据"),
+    CUSTOMERS("客户"),
     PRODUCTS("商品"),
     SETTINGS("设置"),
 }
@@ -91,6 +99,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _meta = MutableStateFlow<MetaResponse?>(null)
     val meta: StateFlow<MetaResponse?> = _meta.asStateFlow()
 
+    /**
+     * 连到的这台电脑的**公司名称**（服务端 `config.shop_name`）。
+     *
+     * 设置页顶部原来写死「简单ERP」—— 那是程序名，不是店名。用户要看到
+     * 「我现在连的是哪家店」，所以取服务端 meta 的 `shop_name`，
+     * 并在本地存一份（断网时兜底，见 `ServerConfig.shopName`）。
+     */
+    private val _shopName = MutableStateFlow("")
+    val shopName: StateFlow<String> = _shopName.asStateFlow()
+
     /** 需要用户去配对（地址有了但没配对，或服务端撤销了设备）。 */
     private val _needsPairing = MutableStateFlow(false)
     val needsPairing: StateFlow<Boolean> = _needsPairing.asStateFlow()
@@ -127,6 +145,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _customerDescending = MutableStateFlow(false)
     val customerDescending: StateFlow<Boolean> = _customerDescending.asStateFlow()
 
+    /**
+     * 「换排序后要回顶」的一次性请求。
+     *
+     * 为什么不在点击回调里直接 `scrollToItem(0)`（2026-10-23 用户真机反馈「切换后
+     * 还在原位置刷新」）：LazyColumn 在**数据顺序变化时会按 item key 重新锚定**
+     * 当前位置 —— 先滚到 index 0（旧顺序的第一个 key），数据一换，它又把那个 key
+     * 拉回视线，于是画面停在原来的行号上，看起来像「没回顶」。
+     *
+     * 正确顺序是「新顺序上屏之后再回顶」：这里只置一个待办标记，由列表页在
+     * 数据真正 Ready 时消费并滚到顶部，滚完清标记。标记是一次性的，所以切 tab
+     * 重新进入组合不会重复回顶（那正是 2026-10-22 被 `LaunchedEffect` 坑过的地方）。
+     */
+    private val _customersScrollReset = MutableStateFlow(false)
+    val customersScrollReset: StateFlow<Boolean> = _customersScrollReset.asStateFlow()
+
+    fun consumeCustomersScrollReset() {
+        _customersScrollReset.value = false
+    }
+
     private val _customerDetail = MutableStateFlow<UiState<CustomerDetailResponse>>(UiState.Loading)
     val customerDetail: StateFlow<UiState<CustomerDetailResponse>> = _customerDetail.asStateFlow()
 
@@ -151,6 +188,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val documentDetail: StateFlow<UiState<com.simpleerp.mobile.data.DocumentDetail>> =
         _documentDetail.asStateFlow()
 
+    /**
+     * 单据页「换了筛选条件就回顶」的一次性标记。
+     *
+     * 和客户页排序回顶同一个道理（2026-10-23）：换了日期/类型/客户之后，
+     * 停在原来的行号上毫无意义 —— 那是另一批数据。同样必须**等新数据上屏后**再滚，
+     * 否则 LazyColumn 会按 item key 把旧位置拉回来。
+     */
+    private val _ordersScrollReset = MutableStateFlow(false)
+    val ordersScrollReset: StateFlow<Boolean> = _ordersScrollReset.asStateFlow()
+
+    fun consumeOrdersScrollReset() {
+        _ordersScrollReset.value = false
+    }
+
     private val _products = MutableStateFlow<UiState<ProductsResponse>>(UiState.Loading)
     val products: StateFlow<UiState<ProductsResponse>> = _products.asStateFlow()
 
@@ -169,6 +220,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** 商品列表正倒序。默认正序：拼音 A→Z / 价格 便宜→贵。 */
     private val _productDescending = MutableStateFlow(false)
     val productDescending: StateFlow<Boolean> = _productDescending.asStateFlow()
+
+    /** 商品页「换排序后回顶」的一次性标记，语义同 [customersScrollReset]。 */
+    private val _productsScrollReset = MutableStateFlow(false)
+    val productsScrollReset: StateFlow<Boolean> = _productsScrollReset.asStateFlow()
+
+    fun consumeProductsScrollReset() {
+        _productsScrollReset.value = false
+    }
 
     private val _productDetail = MutableStateFlow<UiState<ProductDetailResponse>>(UiState.Loading)
     val productDetail: StateFlow<UiState<ProductDetailResponse>> = _productDetail.asStateFlow()
@@ -204,6 +263,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         _needsSetup.value = false
+        // 设置页标题用的公司名：先亮本地副本（断网也能显示上次连的是哪家店），
+        // 联网探到 meta 后再用服务端的值覆盖并落盘。
+        _shopName.value = serverConfig.shopName()
         // 先探一次 meta：地址对不对、服务活不活、要不要配对，一次问清。
         when (val result = api.get("/m/api/meta")) {
             is ApiResult.Success -> {
@@ -213,6 +275,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 } else {
                     _meta.value = decoded
                     _needsPairing.value = !decoded.paired
+                    if (decoded.shopName.isNotBlank()) {
+                        _shopName.value = decoded.shopName
+                        serverConfig.saveShopName(decoded.shopName)
+                    }
                     if (!decoded.paired) {
                         // meta 是不过设备门的，所以这里拿到 paired=false 才是真的没配对。
                     }
@@ -253,6 +319,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             _needsSetup.value = normalized.isEmpty()
             _bootstrapped.value = false
             _meta.value = null
+            // 换电脑就等于换店：旧店名不能留在标题上。
+            _shopName.value = ""
             bootstrap()
             onDone(normalized)
         }
@@ -277,6 +345,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             // 缓存**不清**：断开是「不再连这台电脑」，不是「忘掉看过的数据」。
             // 清了的话用户重新连回来要重新等一遍全量加载，没有道理。
             _meta.value = null
+            // 公司名要清：断开的语义就是「不再连这台电脑」，留着会让下一次
+            // 连到别的店时标题先闪一下旧店名（`ServerConfig.clear()` 已一并清盘）。
+            _shopName.value = ""
             _needsPairing.value = false
             _needsSetup.value = true
             _bootstrapped.value = true
@@ -415,17 +486,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // 换排序方式时重置方向：拼音默认正序、欠款默认「多→少」。
         // 不重置的话，用户从「欠款倒序」切到「拼音」会看到 Z→A，很怪。
         _customerDescending.value = false
-        refreshCustomers()
+        refreshCustomers(resetScroll = true)
     }
 
     /** 正序/倒序切换。只反转方向，不换排序依据。 */
     fun toggleCustomerOrder() {
         _customerDescending.value = !_customerDescending.value
-        refreshCustomers()
+        refreshCustomers(resetScroll = true)
     }
 
-    fun refreshCustomers() {
-        viewModelScope.launch { loadCustomers() }
+    /**
+     * 拉客户列表。[resetScroll] = 换排序/方向后要回顶。
+     *
+     * 回顶标记**必须在新数据发布之后**才置位：LazyColumn 换数据时会按 item key
+     * 重新锚定位置，先滚到 0 再换数据，它会把旧顺序的第一行（现在排在几十行之后）
+     * 拉回视线 —— 这正是「切换后不回到顶部，而是在原位置刷新」的成因。
+     */
+    fun refreshCustomers(resetScroll: Boolean = false) {
+        viewModelScope.launch {
+            loadCustomers()
+            if (resetScroll) _customersScrollReset.value = true
+        }
     }
 
     private suspend fun loadCustomers() {
@@ -470,13 +551,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _orderCustomerId.value = customerId
         _orderCustomerName.value = customerName
         _tab.value = Tab.ORDERS
-        refreshOrders()
+        refreshOrders(resetScroll = true)
     }
 
     fun clearOrderCustomer() {
         _orderCustomerId.value = 0
         _orderCustomerName.value = ""
-        refreshOrders()
+        refreshOrders(resetScroll = true)
     }
 
     // -----------------------------------------------------------------------
@@ -485,16 +566,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setOrderType(type: String) {
         _orderType.value = type
-        refreshOrders()
+        refreshOrders(resetScroll = true)
     }
 
     fun setDateRange(range: DateRange) {
         _dateRange.value = range
-        refreshOrders()
+        refreshOrders(resetScroll = true)
     }
 
-    fun refreshOrders() {
-        viewModelScope.launch { loadOrders() }
+    /** 拉单据列表。[resetScroll] = 换了筛选条件后要回顶（见 [ordersScrollReset]）。 */
+    fun refreshOrders(resetScroll: Boolean = false) {
+        viewModelScope.launch {
+            loadOrders()
+            if (resetScroll) _ordersScrollReset.value = true
+        }
     }
 
     private suspend fun loadOrders() {
@@ -605,8 +690,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun refreshProducts() {
-        viewModelScope.launch { loadProducts() }
+    fun refreshProducts(resetScroll: Boolean = false) {
+        viewModelScope.launch {
+            loadProducts()
+            if (resetScroll) _productsScrollReset.value = true
+        }
     }
 
     private suspend fun loadProducts() {
@@ -639,13 +727,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _productSortPrice.value = !_productSortPrice.value
         // 不重置的话，用户从「价格倒序」切到「拼音」会看到 Z→A，很怪。
         _productDescending.value = false
-        refreshProducts()
+        refreshProducts(resetScroll = true)
     }
 
     /** 正序/倒序切换。只反转方向，不换排序依据。 */
     fun toggleProductOrder() {
         _productDescending.value = !_productDescending.value
-        refreshProducts()
+        refreshProducts(resetScroll = true)
     }
 
     fun openProduct(productId: Int) {

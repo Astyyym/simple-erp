@@ -15,12 +15,16 @@ class MainActivity : ComponentActivity() {
         /*
          * 强制 App 内使用简体中文。
          *
-         * 为什么（2026-10-23）：material3 的 DateRangePicker（「更多筛选」里选日区间）
-         * 用的日历文案来自系统 Locale。门店手机本来是中文，没问题；但装机/调试机
-         * 常是英文系统，日历会显示 "Select dates" / "Start date - End date"，
-         * 与整个中文界面割裂。App 是给中文门店用的，界面语言不跟随系统更稳。
+         * 为什么（2026-10-23）：material3 的组件文案（日历、选择器、弹窗按钮）取自
+         * **系统 Locale**。门店手机本来是中文，没问题；但装机/调试机常是英文系统，
+         * 会出现 "Select dates" / "Cancel" 之类，与整个中文界面割裂。
+         * App 是给中文门店用的，界面语言不跟随系统更稳。
          *
-         * 只在 App 内生效（attachBaseContext 覆盖配置），不改系统设置。
+         * 注：1.4.4 起「筛选时间」的日历已换成自绘中文月历（components/ErpCalendar.kt），
+         * 不再依赖 material3 的 DateRangePicker；这条 Locale 钉死仍然要留 ——
+         * 底部面板、日期选择等 material3 组件的默认文案依旧取自系统。
+         *
+         * 只在 App 内生效（覆盖 resources 配置），不改系统设置。
          */
         applyChineseLocale()
         enableEdgeToEdge()

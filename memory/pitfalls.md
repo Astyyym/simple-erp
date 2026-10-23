@@ -1,5 +1,95 @@
 # 踩过的坑
 
+## 列表行描边要跟着**圆角**走，否则深色下会露出一圈直角方框（2026-10-23）
+
+`Modifier.listRowBorder` 原来左右两边是**从行顶画到行底**的两条直线。首/末行用的是
+`listRowShape`（圆角），直角描边就从圆角外侧探出来。浅色模式下 `border` 是 alpha 0.07、
+几乎看不见；深色模式换成 alpha 0.09 的白色后，它变成一圈明显的**直角方框**套在圆角卡外面
+（用户直接圈图报「深色模式下能看到圆角矩形后面的直角矩形边框」）。
+
+**判据**：深色截图放大 8 倍看首行左上角，圆角外侧不应有 1px 直线。
+**修法**：竖线只在没有圆角的区段画（`top + topRadius` 到 `bottom - bottomRadius`），
+圆角用 `drawArc` 补 180°/270°/0°/90° 四段，半径取 `Dimens.radius`，
+并在 `inset = stroke/2` 处画，才和 `ErpCard` 的 `.border(1dp)` 严丝合缝。
+
+## 固定高度容器 + 会折行的文本 = 静默裁字（2026-10-23）
+
+单据详情抬头是一个**固定高度**的折叠容器。客户名 `宏图建设集团第三项目部` 折成两行后，
+下面那行 `10月23日 MD…` 被顶出容器、整个消失 —— 用户看到的是「单号没了」，
+而不是「有个东西被裁了」（Compose 不报错）。
+
+**规矩**：
+1. 固定高度容器里放可能折行的文本时，高度要**按实测行数**算，不能按字数猜。
+   `TextMeasurer` + `Constraints(maxWidth = …)` 量一次 `lineCount` 最可靠，
+   可用宽要把页边距、卡片内距、**同排其他元素的实测宽**（这里是金额）都减掉。
+2. 同一行里「名字 + 金额」时，名字用 `weight(1f)` 吃剩余宽度、金额不加权重 ——
+   否则金额会被长名字挤成两行或截断。
+3. 用 `fill = false` 的 `weight` 会让文本按最小需要宽排版，长名字反而更容易把邻居顶走。
+
+## 排序切换「不回顶，在原位置刷新」= 回顶调早了（2026-10-23）
+
+现象：客户/商品列表滚到第 20 行，点正序/倒序或换排序依据，**画面停在原行号**，
+只是内容换了一批，看起来像「排序没生效」。
+
+原因不是「忘了 `scrollToItem(0)`」（上一版就有），而是**顺序错了**：
+`LazyColumn` 在数据顺序变化时会**按 item key 重新锚定**视线。先滚到 0，
+紧接着新顺序上屏，它会把「原来的第一行」（现在可能排到第 40 行）重新拉回视野。
+
+**规矩：回顶必须等新数据真正上屏之后再做。**
+
+```kotlin
+// ViewModel：只置一次性信号，滚完就清
+fun refreshCustomers(resetScroll: Boolean = false) {
+    viewModelScope.launch {
+        loadCustomers()                                   // 先加载
+        if (resetScroll) _customersScrollReset.value = true
+    }
+}
+
+// 列表页
+LaunchedEffect(signal) {
+    if (!signal) return@LaunchedEffect
+    withFrameNanos { }        // 等一帧，让新顺序完成测量与锚定
+    listState.scrollToItem(0)
+    onConsumed()
+}
+```
+
+用**一次性信号**而不是 `LaunchedEffect(sort, descending)`：后者在重新进入组合时也会跑，
+切 tab 回来就丢位置（2026-10-22 已踩过一次）。单据页换日期/类型/客户用同一机制。
+
+## `alpha = 0` 的 `Modifier.clickable` 照样吃点击（2026-10-23）
+
+折叠/展开两态叠在同一个 `Box` 里、只用 `alpha` 交叉淡入时，**透明的那一层仍然接收点击**。
+实测：单据页折叠态那一行（高 42dp、居中）正好盖住展开态的时间按钮，
+点时间按钮**毫无反应**，日志无异常、状态也没变，极容易误判成「状态没更新」。
+
+**规矩**：两态并存时按 alpha 阈值决定是否进入组合：
+
+```kotlin
+if (expandedAlpha > 0.02f) { /* 展开态 */ }
+if (collapsedAlpha > 0.02f) { /* 折叠态 */ }
+```
+
+淡入淡出的观感保留，隐形的点击层消失。
+
+## 固定高度容器里放 wrapContent 的卡片会裁掉内容（2026-10-23）
+
+单据详情抬头是「固定高度容器 + 内部卡片」做折叠动画。写 196dp 时卡片下面空出一大块；
+改 120dp 时**日期行被裁掉一半**（字号/行高随系统字体缩放一变就更糟）。
+
+**规矩**：折叠容器定高，内部卡片 `fillMaxSize()` 顶满、内容顶对齐。
+这样容器收起时卡片跟着变矮（这就是动画本身），展开时也永远不会裁到字。
+
+## 别用 PowerShell `-replace` + `Set-Content` 改含中文的源文件（2026-10-23）
+
+`(Get-Content x) -replace ... | Set-Content x` 会用默认编码重写整个文件，
+`native/app/build.gradle` 里的中文注释全变成 `?`（`与 Python 端 VERSION 无关` → `�?Python �?VERSION 无关�?`），
+diff 从 1 行变成 7 行、还看不出来哪里坏了。
+
+**规矩**：改源码一律用 `edit` 工具做字面替换；确实要整文件写就用 `[System.IO.File]::WriteAllText`
+（UTF-8 无 BOM）并立刻 `git diff` 核对行数与编码。发现被写坏就 `git checkout -- <file>` 还原再重做。
+
 ## 下拉刷新「图标不转、转完不消失」= ViewModel 里 launch 套 launch（2026-10-23）
 
 `PullToRefreshBox` 的 `isRefreshing` 由 ViewModel 的 `_refreshing` 驱动。原来的写法：

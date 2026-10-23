@@ -23,7 +23,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,6 +35,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.simpleerp.mobile.ui.components.ErpHairline
 import com.simpleerp.mobile.ui.components.LoadingState
 import com.simpleerp.mobile.ui.components.PrimaryButton
+import com.simpleerp.mobile.ui.components.ResetScrollOnSignal
 import com.simpleerp.mobile.ui.screens.CustomerDetailScreen
 import com.simpleerp.mobile.ui.screens.CustomersScreen
 import com.simpleerp.mobile.ui.screens.DocumentDetailScreen
@@ -50,7 +50,6 @@ import com.simpleerp.mobile.ui.theme.Dimens
 import com.simpleerp.mobile.ui.theme.LocalErpColors
 import com.simpleerp.mobile.ui.theme.SimpleErpTheme
 import com.simpleerp.mobile.ui.theme.ThemeMode
-import kotlinx.coroutines.launch
 
 /**
  * 页面栈：详情页是压在 tab 之上的独立层，不占底部 tab 位。
@@ -133,8 +132,6 @@ private fun MainScaffold(
     val colors = LocalErpColors.current
     val tab by vm.tab.collectAsStateWithLifecycle()
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
-    // 排序回顶用：点击回调是普通 lambda，里面要启动协程做 scrollToItem（挂起函数）。
-    val scope = rememberCoroutineScope()
 
     /*
      * 四个 tab 的列表滚动状态**提升到这里**（2026-10-22 修 N-2/N-3）。
@@ -228,6 +225,15 @@ private fun MainScaffold(
                         val query by vm.customerQuery.collectAsStateWithLifecycle()
                         val sortDebt by vm.customerSortDebt.collectAsStateWithLifecycle()
                         val descending by vm.customerDescending.collectAsStateWithLifecycle()
+                        val scrollReset by vm.customersScrollReset.collectAsStateWithLifecycle()
+                        // 换排序 / 换方向后回顶：**等新顺序上屏之后再滚**，否则 LazyColumn
+                        // 会按 item key 把「原来的第一行」重新拉回视线，看起来像没回顶
+                        // （用户 2026-10-23 真机反馈的原现象）。
+                        ResetScrollOnSignal(
+                            signal = scrollReset,
+                            listState = customersListState,
+                            onConsumed = vm::consumeCustomersScrollReset,
+                        )
                         CustomersScreen(
                             state = state,
                             query = query,
@@ -237,19 +243,9 @@ private fun MainScaffold(
                             refreshing = refreshing,
                             onRefresh = { vm.pullRefresh(Tab.CUSTOMERS) },
                             onQueryChange = vm::onCustomerQueryChange,
-                            // 换排序/换方向要回到顶部（用户 2026-10-22 要求）：
-                            // 不回顶的话，滚到第 30 行再换排序，看到的是新排序的第 30 行，
-                            // 完全不知道排的是哪一段，像「排序没生效」。
-                            // 必须放在**用户点击**的回调里：如果写成 Composable 内的
-                            // LaunchedEffect，切 tab 重新进入组合也会触发，位置就丢了。
-                            onToggleSort = {
-                                vm.toggleCustomerSort()
-                                scope.launch { customersListState.scrollToItem(0) }
-                            },
-                            onToggleOrder = {
-                                vm.toggleCustomerOrder()
-                                scope.launch { customersListState.scrollToItem(0) }
-                            },
+                            // 回顶不在这里做：见上面 ResetScrollOnSignal 的说明。
+                            onToggleSort = vm::toggleCustomerSort,
+                            onToggleOrder = vm::toggleCustomerOrder,
                             onOpenCustomer = { onOverlay(Overlay.Customer(it.id)) },
                             onRetry = { vm.refreshCustomers() },
                         )
@@ -260,6 +256,13 @@ private fun MainScaffold(
                         val orderType by vm.orderType.collectAsStateWithLifecycle()
                         val dateRange by vm.dateRange.collectAsStateWithLifecycle()
                         val customerName by vm.orderCustomerName.collectAsStateWithLifecycle()
+                        val scrollReset by vm.ordersScrollReset.collectAsStateWithLifecycle()
+                        // 换日期/类型/客户后回顶：同样要等新数据上屏（见 ResetScrollOnSignal）。
+                        ResetScrollOnSignal(
+                            signal = scrollReset,
+                            listState = ordersListState,
+                            onConsumed = vm::consumeOrdersScrollReset,
+                        )
                         OrdersScreen(
                             state = state,
                             orderType = orderType,
@@ -281,6 +284,13 @@ private fun MainScaffold(
                         val query by vm.productQuery.collectAsStateWithLifecycle()
                         val sortPrice by vm.productSortPrice.collectAsStateWithLifecycle()
                         val descending by vm.productDescending.collectAsStateWithLifecycle()
+                        val scrollReset by vm.productsScrollReset.collectAsStateWithLifecycle()
+                        // 同客户页：新顺序上屏之后再回顶（见 ResetScrollOnSignal 注释）。
+                        ResetScrollOnSignal(
+                            signal = scrollReset,
+                            listState = productsListState,
+                            onConsumed = vm::consumeProductsScrollReset,
+                        )
                         ProductsScreen(
                             state = state,
                             query = query,
@@ -290,15 +300,8 @@ private fun MainScaffold(
                             refreshing = refreshing,
                             onRefresh = { vm.pullRefresh(Tab.PRODUCTS) },
                             onQueryChange = vm::onProductQueryChange,
-                            // 同客户页：换排序回顶放在用户点击回调里，不放 Composable 内部。
-                            onToggleSort = {
-                                vm.toggleProductSort()
-                                scope.launch { productsListState.scrollToItem(0) }
-                            },
-                            onToggleOrder = {
-                                vm.toggleProductOrder()
-                                scope.launch { productsListState.scrollToItem(0) }
-                            },
+                            onToggleSort = vm::toggleProductSort,
+                            onToggleOrder = vm::toggleProductOrder,
                             onOpenProduct = { onOverlay(Overlay.Product(it)) },
                             onRetry = { vm.refreshProducts() },
                         )
@@ -306,11 +309,13 @@ private fun MainScaffold(
 
                     Tab.SETTINGS -> {
                         val meta by vm.meta.collectAsStateWithLifecycle()
+                        val shopName by vm.shopName.collectAsStateWithLifecycle()
                         val cacheNewest by vm.cacheNewest.collectAsStateWithLifecycle()
                         val themeMode by vm.themeMode.collectAsStateWithLifecycle()
                         SettingsScreen(
                             baseUrl = vm.baseUrl.value,
                             meta = meta,
+                            shopName = shopName,
                             themeMode = themeMode,
                             cacheNewest = cacheNewest,
                             onThemeMode = vm::setThemeMode,

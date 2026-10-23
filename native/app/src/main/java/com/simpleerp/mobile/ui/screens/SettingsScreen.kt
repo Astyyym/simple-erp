@@ -51,6 +51,8 @@ import com.simpleerp.mobile.ui.util.formatCacheTime
 fun SettingsScreen(
     baseUrl: String,
     meta: MetaResponse?,
+    /** 连到的那台电脑的**公司名称**（服务端 `config.shop_name`；断网时是本地副本）。 */
+    shopName: String,
     themeMode: ThemeMode,
     cacheNewest: Long,
     onThemeMode: (ThemeMode) -> Unit,
@@ -106,8 +108,11 @@ fun SettingsScreen(
     ) {
         item {
             Column(modifier = Modifier.padding(bottom = 4.dp)) {
+                // 标题显示**连到的那家店**，不写程序名（用户 2026-10-23 要求）。
+                // 「简单ERP」是程序名，摆在标题上等于没回答「我现在连的是哪台电脑」；
+                // 服务端没给（旧版本 / 断网且没副本）才退回程序名。
                 Text(
-                    meta?.shopName?.ifEmpty { "简单ERP" } ?: "简单ERP",
+                    shopName.ifBlank { meta?.shopName?.ifBlank { null } ?: "简单ERP" },
                     color = colors.ink,
                     fontSize = 21.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -133,12 +138,15 @@ fun SettingsScreen(
                     LabelValueRow("最后访问", meta.device.lastSeenAt)
                 }
                 Spacer(Modifier.height(10.dp))
+                // 顺序按用户 2026-10-23 指定：改地址 → 断开连接 → 重新检测。
+                // 「改地址」和「断开连接」都是「换/不连这台电脑」，放在最前面；
+                // 「重新检测」只是重试一次探活，最容易连点，放最后避免误触。
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     SmallAction("改地址", onChangeAddress)
-                    SmallAction("重新检测", onRefresh)
                     // 「断开连接」必须**二次确认**：它清掉本机配对，
                     // 误触就要重新扫码输码，柜台前很烦。
                     SmallAction("断开连接", { showDisconnectConfirm = true })
+                    SmallAction("重新检测", onRefresh)
                 }
             }
         }

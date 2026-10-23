@@ -105,26 +105,110 @@ fun listRowShape(isFirst: Boolean, isLast: Boolean): androidx.compose.ui.graphic
  * 整卡被切成一段段（2026-10-22 实测截图：商品列表每行一个框，像表格不像卡）。
  * 这里只补最外侧：首行画上边、末行画下边，所有行画左右两边。
  *
- * 宽度写死 1dp 而不是走 `BorderStroke`：Compose 没有「只画三边」的现成 API，
- * 用四条 1dp 的 `Modifier.background` 拼，位置与 ErpCard 的 `.border(1dp)` 对齐。
+ * ## 2026-10-23：描边必须跟着**圆角**走
+ *
+ * 原来左右两边是两条**从行顶到行底**的直线。首/末行是圆角的（`listRowShape`），
+ * 于是直角描边从圆角外面探出来 —— 浅色下 border 只有 alpha 0.07 看不出来，
+ * 深色模式下（border 是 0.09 白）就成了一圈「圆角矩形后面的直角方框」，
+ * 用户直接圈图报了出来。
+ *
+ * 现在改成：竖线在圆角起止处收住，圆角用 `drawArc` 补齐，弧度/半径与
+ * `Dimens.radius` 和 `ErpCard` 的 shape 完全一致。中间行没有圆角，仍只画竖线。
  */
 fun Modifier.listRowBorder(
     colors: ErpColors,
     isFirst: Boolean,
     isLast: Boolean,
 ): Modifier = this.drawBehind {
-    val w = size.width
-    val h = size.height
     val stroke = 1.dp.toPx()
-    // 左右两边每一行都画
-    drawLine(colors.border, androidx.compose.ui.geometry.Offset(0f, 0f), androidx.compose.ui.geometry.Offset(0f, h), stroke)
-    drawLine(colors.border, androidx.compose.ui.geometry.Offset(w, 0f), androidx.compose.ui.geometry.Offset(w, h), stroke)
-    // 顶边只给首行、底边只给末行，避免行间接缝
+    // 与 ErpCard 的 `.border(1dp)` 对齐：描边中心落在边缘内侧半像素。
+    val inset = stroke / 2f
+    val left = inset
+    val top = inset
+    val right = size.width - inset
+    val bottom = size.height - inset
+    // 半径必须与 `listRowShape` / `ErpCard` 的圆角一致，否则描边会比卡片更"方"。
+    val radius = Dimens.radius.toPx()
+    val topRadius = if (isFirst) radius else 0f
+    val bottomRadius = if (isLast) radius else 0f
+    if (right <= left || bottom <= top) return@drawBehind
+
+    // 左右两条竖线：只在没有圆角的部分画，避免探出圆角外面。
+    drawLine(
+        colors.border,
+        androidx.compose.ui.geometry.Offset(left, top + topRadius),
+        androidx.compose.ui.geometry.Offset(left, bottom - bottomRadius),
+        stroke,
+    )
+    drawLine(
+        colors.border,
+        androidx.compose.ui.geometry.Offset(right, top + topRadius),
+        androidx.compose.ui.geometry.Offset(right, bottom - bottomRadius),
+        stroke,
+    )
+
+    // 首行：上边 + 两个上圆角。
     if (isFirst) {
-        drawLine(colors.border, androidx.compose.ui.geometry.Offset(0f, 0f), androidx.compose.ui.geometry.Offset(w, 0f), stroke)
+        drawLine(
+            colors.border,
+            androidx.compose.ui.geometry.Offset(left + topRadius, top),
+            androidx.compose.ui.geometry.Offset(right - topRadius, top),
+            stroke,
+        )
+        if (topRadius > 0f) {
+            // 左上角：180° → 270°
+            drawArc(
+                color = colors.border,
+                startAngle = 180f,
+                sweepAngle = 90f,
+                useCenter = false,
+                topLeft = androidx.compose.ui.geometry.Offset(left, top),
+                size = androidx.compose.ui.geometry.Size(topRadius * 2, topRadius * 2),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke),
+            )
+            // 右上角：270° → 360°
+            drawArc(
+                color = colors.border,
+                startAngle = 270f,
+                sweepAngle = 90f,
+                useCenter = false,
+                topLeft = androidx.compose.ui.geometry.Offset(right - topRadius * 2, top),
+                size = androidx.compose.ui.geometry.Size(topRadius * 2, topRadius * 2),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke),
+            )
+        }
     }
+
+    // 末行：下边 + 两个下圆角。
     if (isLast) {
-        drawLine(colors.border, androidx.compose.ui.geometry.Offset(0f, h), androidx.compose.ui.geometry.Offset(w, h), stroke)
+        drawLine(
+            colors.border,
+            androidx.compose.ui.geometry.Offset(left + bottomRadius, bottom),
+            androidx.compose.ui.geometry.Offset(right - bottomRadius, bottom),
+            stroke,
+        )
+        if (bottomRadius > 0f) {
+            // 左下角：90° → 180°
+            drawArc(
+                color = colors.border,
+                startAngle = 90f,
+                sweepAngle = 90f,
+                useCenter = false,
+                topLeft = androidx.compose.ui.geometry.Offset(left, bottom - bottomRadius * 2),
+                size = androidx.compose.ui.geometry.Size(bottomRadius * 2, bottomRadius * 2),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke),
+            )
+            // 右下角：0° → 90°
+            drawArc(
+                color = colors.border,
+                startAngle = 0f,
+                sweepAngle = 90f,
+                useCenter = false,
+                topLeft = androidx.compose.ui.geometry.Offset(right - bottomRadius * 2, bottom - bottomRadius * 2),
+                size = androidx.compose.ui.geometry.Size(bottomRadius * 2, bottomRadius * 2),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke),
+            )
+        }
     }
 }
 
@@ -429,6 +513,34 @@ fun ErpHairline(modifier: Modifier = Modifier) {
             .height(1.dp)
             .background(LocalErpColors.current.border)
     )
+}
+
+/**
+ * 「新数据上屏之后」再把列表滚回顶部 —— 排序切换回顶的正确姿势。
+ *
+ * 为什么不能直接在点击回调里 `scrollToItem(0)`（2026-10-23 用户真机反馈
+ * 「切换正序倒序之后页面不回顶，而是在原位置刷新」）：
+ * `LazyColumn` 在**数据顺序变化时会按 item key 重新锚定**视线。先滚到 0，
+ * 紧接着新顺序上屏，它会把「原来第一行」（现在可能排到第 40 行）重新拉回视野，
+ * 于是画面停在原来的行号上，看起来像没回顶。
+ *
+ * 正确顺序：等新顺序真正上屏（`withFrameNanos` 等一帧）→ 滚到 0 → 清掉这个
+ * 一次性信号。信号是**事件**而不是状态，所以切 tab 重新进入组合不会重复回顶
+ * （2026-10-22 被 `LaunchedEffect(sort, descending)` 坑过：那写法每次重新进入
+ * 组合都会跑一遍，等于每次切 tab 都丢位置）。
+ */
+@Composable
+fun ResetScrollOnSignal(
+    signal: Boolean,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    onConsumed: () -> Unit,
+) {
+    androidx.compose.runtime.LaunchedEffect(signal) {
+        if (!signal) return@LaunchedEffect
+        androidx.compose.runtime.withFrameNanos { }
+        listState.scrollToItem(0)
+        onConsumed()
+    }
 }
 
 /** 段标题：`今天 / 卖货 / 进货` 那种小节头。 */
