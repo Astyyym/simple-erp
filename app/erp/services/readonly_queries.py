@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from erp.db import db_path
 from erp.routes.orders import _resolve_date_range, _today_history
@@ -318,11 +318,19 @@ def today_overview(today: str | None = None) -> dict:
 def resolve_mobile_range(args) -> dict:
     """手机端日期筛选 → 统一 `start_date` / `end_date`（复用桌面端的换算，不另写规则）。
 
-    `date_mode`：`day`（按日，起止两端都含）/`month`/`year`/`all`（不加日期条件）。
+    `date_mode`：
+    - `day`（按日，起止两端都含）/`month`/`year`/`all`（不加日期条件）；
+    - `week`（当周）—— 2026-10-23 新增：**ISO 周，周一→周日**，
+      不是「最近 7 天」。用户明确要求「周月年全是日历定义的周年月」；
+    - `custom`（自定义起止区间）—— 手机端「更多筛选」用，等价于 `day` 的 range。
+
     默认落在「今天」，与今日概览一致。
     """
     mode = str(args.get("date_mode") or "day").strip().lower()
-    if mode not in {"day", "month", "year", "all"}:
+    # `custom` 是手机端「更多筛选」选出的自定义起止区间，语义与 `day` 的 range 完全一致。
+    if mode == "custom":
+        mode = "day"
+    if mode not in {"day", "week", "month", "year", "all"}:
         mode = "day"
     if mode == "all":
         return {
@@ -332,6 +340,22 @@ def resolve_mobile_range(args) -> dict:
             "year": date.today().year,
             "month": date.today().month,
             "label": "全部时间",
+        }
+
+    if mode == "week":
+        # 以服务端「今天」为基准取本周（周一为第一天）。客户端不自己算，
+        # 避免手机时区/时钟与电脑不一致时两端算出不同的「本周」。
+        anchor = date.today()
+        # weekday(): 周一=0 … 周日=6
+        start_day = anchor - timedelta(days=anchor.weekday())
+        end_day = start_day + timedelta(days=6)
+        return {
+            "mode": mode,
+            "start_date": start_day.isoformat(),
+            "end_date": end_day.isoformat(),
+            "year": start_day.year,
+            "month": start_day.month,
+            "label": f"{start_day.month} 月 {start_day.day} 日 – {end_day.month} 月 {end_day.day} 日",
         }
 
     desktop_mode = {"day": "range", "month": "month", "year": "year"}[mode]

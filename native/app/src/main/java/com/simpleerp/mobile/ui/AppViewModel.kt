@@ -44,6 +44,14 @@ enum class Tab(val label: String) {
     SETTINGS("设置"),
 }
 
+/**
+ * 下拉刷新指示器的最短可见时长（毫秒）。
+ *
+ * 局域网请求常常 50ms 内就回来了，指示器一闪而过，用户会以为「手势没生效」
+ * 而反复下拉（2026-10-23 真机反馈）。
+ */
+private const val MIN_REFRESH_VISIBLE_MS = 600L
+
 /** 单个页面的加载状态：三态可区分（加载中 / 有数据 / 失败），不靠猜。 */
 sealed class UiState<out T> {
     data object Loading : UiState<Nothing>()
@@ -302,24 +310,33 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * 下拉刷新：只刷新**当前 tab**，并驱动刷新指示器。
      *
-     * 为什么不复用 `refreshXxx()`：那些是「切 tab 时的静默刷新」，不等结果、
-     * 也不显示指示器。下拉是用户明确的动作，必须让他看到「在转」和「转完了」，
-     * 否则他会以为手势没生效，反复下拉。
+     * 2026-10-23 修一个真机必现的缺陷：这里原来调 `refreshToday()`，
+     * 而 `refreshToday()` 自己只是 `viewModelScope.launch { ... }` 就返回了 ——
+     * 于是本函数第一行置 true、紧接着 `finally` 立刻置 false，**网络请求根本还没发出**。
+     * `PullToRefreshBox` 的指示器状态机被打断在半路：图标既不转、也不消失，
+     * 要等切 tab 把整棵树重建才清掉（用户实测原话）。
      *
-     * 用 `try/finally` 兜底：请求抛异常也必须把转圈关掉，否则指示器永远转着。
+     * 现在改成**等待真正的加载完成**（`loadXxx()` 是 suspend，返回即结束），
+     * 并加一个最短可见时长，避免局域网秒回时指示器一闪而过、用户以为没刷新。
      */
     fun pullRefresh(tab: Tab) {
         viewModelScope.launch {
             _refreshing.value = true
+            val startedAt = System.currentTimeMillis()
             try {
                 when (tab) {
-                    Tab.TODAY -> refreshToday()
-                    Tab.CUSTOMERS -> refreshCustomers()
-                    Tab.ORDERS -> refreshOrders()
-                    Tab.PRODUCTS -> refreshProducts()
+                    Tab.TODAY -> loadToday()
+                    Tab.CUSTOMERS -> loadCustomers()
+                    Tab.ORDERS -> loadOrders()
+                    Tab.PRODUCTS -> loadProducts()
                     Tab.SETTINGS -> Unit
                 }
             } finally {
+                // 至少让指示器转够 MIN_REFRESH_VISIBLE_MS，用户才看得出「刷过了」。
+                val elapsed = System.currentTimeMillis() - startedAt
+                if (elapsed < MIN_REFRESH_VISIBLE_MS) {
+                    delay(MIN_REFRESH_VISIBLE_MS - elapsed)
+                }
                 _refreshing.value = false
             }
         }
@@ -361,20 +378,23 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     // -----------------------------------------------------------------------
 
     fun refreshToday() {
-        viewModelScope.launch {
-            // 只在「手上还没有数据」时才转圈。已有数据就保持显示，
-            // 让 publish/网络结果直接替换 —— 否则每次切 tab 都会先闪一下骨架，
-            // 有了缓存秒开反而看起来更卡。
-            if (_today.value !is UiState.Ready) _today.value = UiState.Loading
-            _today.value = load(
-                cacheKey = "today",
-                path = "/m/api/today",
-                publish = { _today.value = it },
-                serializer = { text ->
-                    api.decode(text, TodayResponse.serializer())?.today
-                },
-            )
-        }
+        viewModelScope.launch { loadToday() }
+    }
+
+    /** 真正干活的那一层（suspend）：下拉刷新要能等它结束，所以必须可挂起。 */
+    private suspend fun loadToday() {
+        // 只在「手上还没有数据」时才转圈。已有数据就保持显示，
+        // 让 publish/网络结果直接替换 —— 否则每次切 tab 都会先闪一下骨架，
+        // 有了缓存秒开反而看起来更卡。
+        if (_today.value !is UiState.Ready) _today.value = UiState.Loading
+        _today.value = load(
+            cacheKey = "today",
+            path = "/m/api/today",
+            publish = { _today.value = it },
+            serializer = { text ->
+                api.decode(text, TodayResponse.serializer())?.today
+            },
+        )
     }
 
     // -----------------------------------------------------------------------
@@ -405,29 +425,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun refreshCustomers() {
-        viewModelScope.launch {
-            val query = buildMap {
-                val q = _customerQuery.value.trim()
-                if (q.isNotEmpty()) put("q", q)
-                if (_customerSortDebt.value) put("sort", "debt")
-                // 只在倒序时才传：正序是服务端的默认方向，多传一个 asc
-                // 会让缓存键分叉，同一份数据存两遍。
-                if (_customerDescending.value) put("order", "desc")
-            }
-            // 只在「手上还没有数据」时才转圈。已有数据就保持显示，
-            // 让 publish/网络结果直接替换 —— 否则每次切 tab 都会先闪一下骨架，
-            // 有了缓存秒开反而看起来更卡。
-            if (_customers.value !is UiState.Ready) _customers.value = UiState.Loading
-            _customers.value = load(
-                publish = { _customers.value = it },
-                cacheKey = "customers:${_customerQuery.value}:${_customerSortDebt.value}:${_customerDescending.value}",
-                path = "/m/api/customers",
-                query = query,
-                serializer = { text ->
-                    api.decode(text, CustomersResponse.serializer())?.customers
-                },
-            )
+        viewModelScope.launch { loadCustomers() }
+    }
+
+    private suspend fun loadCustomers() {
+        val query = buildMap {
+            val q = _customerQuery.value.trim()
+            if (q.isNotEmpty()) put("q", q)
+            if (_customerSortDebt.value) put("sort", "debt")
+            // 只在倒序时才传：正序是服务端的默认方向，多传一个 asc
+            // 会让缓存键分叉，同一份数据存两遍。
+            if (_customerDescending.value) put("order", "desc")
         }
+        // 只在「手上还没有数据」时才转圈。已有数据就保持显示，
+        // 让 publish/网络结果直接替换 —— 否则每次切 tab 都会先闪一下骨架，
+        // 有了缓存秒开反而看起来更卡。
+        if (_customers.value !is UiState.Ready) _customers.value = UiState.Loading
+        _customers.value = load(
+            publish = { _customers.value = it },
+            cacheKey = "customers:${_customerQuery.value}:${_customerSortDebt.value}:${_customerDescending.value}",
+            path = "/m/api/customers",
+            query = query,
+            serializer = { text ->
+                api.decode(text, CustomersResponse.serializer())?.customers
+            },
+        )
     }
 
     fun openCustomer(customerId: Int) {
@@ -472,34 +494,36 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun refreshOrders() {
-        viewModelScope.launch {
-            val range = _dateRange.value
-            val query = buildMap {
-                put("date_mode", range.mode.ifEmpty { "day" })
-                if (range.startDate.isNotEmpty()) put("start_date", range.startDate)
-                if (range.endDate.isNotEmpty()) put("end_date", range.endDate)
-                if (range.mode == "year") put("year", range.year.toString())
-                if (range.mode == "month") {
-                    put("year", range.year.toString())
-                    put("month", range.month.toString())
-                }
-                val type = _orderType.value
-                if (type.isNotEmpty()) put("order_type", type)
-                val customer = _orderCustomerId.value
-                if (customer > 0) put("customer_id", customer.toString())
+        viewModelScope.launch { loadOrders() }
+    }
+
+    private suspend fun loadOrders() {
+        val range = _dateRange.value
+        val query = buildMap {
+            put("date_mode", range.mode.ifEmpty { "day" })
+            if (range.startDate.isNotEmpty()) put("start_date", range.startDate)
+            if (range.endDate.isNotEmpty()) put("end_date", range.endDate)
+            if (range.mode == "year") put("year", range.year.toString())
+            if (range.mode == "month") {
+                put("year", range.year.toString())
+                put("month", range.month.toString())
             }
-            // 只在「手上还没有数据」时才转圈。已有数据就保持显示，
-            // 让 publish/网络结果直接替换 —— 否则每次切 tab 都会先闪一下骨架，
-            // 有了缓存秒开反而看起来更卡。
-            if (_orders.value !is UiState.Ready) _orders.value = UiState.Loading
-            _orders.value = load(
-                publish = { _orders.value = it },
-                cacheKey = "orders:${query.toSortedMap()}",
-                path = "/m/api/orders",
-                query = query,
-                serializer = { text -> api.decode(text, OrdersResponse.serializer()) },
-            )
+            val type = _orderType.value
+            if (type.isNotEmpty()) put("order_type", type)
+            val customer = _orderCustomerId.value
+            if (customer > 0) put("customer_id", customer.toString())
         }
+        // 只在「手上还没有数据」时才转圈。已有数据就保持显示，
+        // 让 publish/网络结果直接替换 —— 否则每次切 tab 都会先闪一下骨架，
+        // 有了缓存秒开反而看起来更卡。
+        if (_orders.value !is UiState.Ready) _orders.value = UiState.Loading
+        _orders.value = load(
+            publish = { _orders.value = it },
+            cacheKey = "orders:${query.toSortedMap()}",
+            path = "/m/api/orders",
+            query = query,
+            serializer = { text -> api.decode(text, OrdersResponse.serializer()) },
+        )
     }
 
     fun openDocument(orderType: String, documentId: Int) {
@@ -582,30 +606,32 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun refreshProducts() {
-        viewModelScope.launch {
-            val q = _productQuery.value.trim()
-            val sort = if (_productSortPrice.value) "price" else "pinyin"
-            // 只在「手上还没有数据」时才转圈。已有数据就保持显示，
-            // 让 publish/网络结果直接替换 —— 否则每次切 tab 都会先闪一下骨架，
-            // 有了缓存秒开反而看起来更卡。
-            if (_products.value !is UiState.Ready) _products.value = UiState.Loading
-            // 排序条件必须进缓存键：同一句搜索在「拼音」和「价格」下是两份不同的
-            // 列表，共用键会让离线时看到另一个排序的结果（看起来像排序没生效）。
-            val cacheKey = "products:$sort:${if (_productDescending.value) "desc" else "asc"}:$q"
-            val params = buildMap {
-                if (q.isNotEmpty()) put("q", q)
-                put("sort", sort)
-                // 只在倒序时才传：正序是服务端默认，多传一个 asc 会让缓存键分叉。
-                if (_productDescending.value) put("order", "desc")
-            }
-            _products.value = load(
-                publish = { _products.value = it },
-                cacheKey = cacheKey,
-                path = "/m/api/products",
-                query = params,
-                serializer = { text -> api.decode(text, ProductsResponse.serializer()) },
-            )
+        viewModelScope.launch { loadProducts() }
+    }
+
+    private suspend fun loadProducts() {
+        val q = _productQuery.value.trim()
+        val sort = if (_productSortPrice.value) "price" else "pinyin"
+        // 只在「手上还没有数据」时才转圈。已有数据就保持显示，
+        // 让 publish/网络结果直接替换 —— 否则每次切 tab 都会先闪一下骨架，
+        // 有了缓存秒开反而看起来更卡。
+        if (_products.value !is UiState.Ready) _products.value = UiState.Loading
+        // 排序条件必须进缓存键：同一句搜索在「拼音」和「价格」下是两份不同的
+        // 列表，共用键会让离线时看到另一个排序的结果（看起来像排序没生效）。
+        val cacheKey = "products:$sort:${if (_productDescending.value) "desc" else "asc"}:$q"
+        val params = buildMap {
+            if (q.isNotEmpty()) put("q", q)
+            put("sort", sort)
+            // 只在倒序时才传：正序是服务端默认，多传一个 asc 会让缓存键分叉。
+            if (_productDescending.value) put("order", "desc")
         }
+        _products.value = load(
+            publish = { _products.value = it },
+            cacheKey = cacheKey,
+            path = "/m/api/products",
+            query = params,
+            serializer = { text -> api.decode(text, ProductsResponse.serializer()) },
+        )
     }
 
     /** 换排序依据：拼音 ↔ 价格。换档时重置方向（拼音默认 A→Z、价格默认便宜→贵）。 */

@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+from datetime import date
+
 from erp.db import get_db, init_db
 from erp.services import accounting, readonly_queries
 from mobile_fixtures import seed_all
@@ -198,4 +200,22 @@ def test_mobile_range_reuses_desktop_rules():
         Args(date_mode="day", start_date="2026-10-17", end_date="2026-10-01")
     )
     assert (swapped["start_date"], swapped["end_date"]) == ("2026-10-01", "2026-10-17")
+
+    # ---- 2026-10-23 新增：当周（ISO 周一→周日）+ 更多筛选的自定义区间 ----
+    week = readonly_queries.resolve_mobile_range(Args(date_mode="week"))
+    assert week["mode"] == "week"
+    start = date.fromisoformat(week["start_date"])
+    end = date.fromisoformat(week["end_date"])
+    # 必须是日历定义的整周：周一开头、周日结尾、正好 7 天
+    assert start.weekday() == 0, f"当周应以周一开始，实际 {start} (weekday={start.weekday()})"
+    assert end.weekday() == 6, f"当周应以周日结束，实际 {end}"
+    assert (end - start).days == 6
+    # 今天必须落在这一周内（不能算成「最近 7 天」那种滑动窗口）
+    assert start <= date.today() <= end
+
+    # `custom` 与 `day` 的 range 同义：三个参数原样透传到起止
+    custom = readonly_queries.resolve_mobile_range(
+        Args(date_mode="custom", start_date="2026-09-01", end_date="2026-09-30")
+    )
+    assert (custom["start_date"], custom["end_date"]) == ("2026-09-01", "2026-09-30")
     assert data["day"]

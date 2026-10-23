@@ -305,6 +305,10 @@ fun OfflineBanner(fetchedAtLabel: String, modifier: Modifier = Modifier) {
  *
  * 换成「并排 + 高亮当前项」后，任何时刻都恰好有一个亮着 ——
  * 选中态是**位置**问题，不是「按钮有没有变蓝」的问题，猜错不了。
+ *
+ * 高度默认取 [Dimens.minTouch]（48dp），**必须和同排的搜索框、方向箭头一致**：
+ * 原来默认 40dp，比搜索框矮 8dp，一排三个圆角矩形上沿不齐、下沿也不齐
+ * （用户 2026-10-23 两次圈图反馈）。
  */
 @Composable
 fun SegmentedChips(
@@ -312,7 +316,7 @@ fun SegmentedChips(
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    height: androidx.compose.ui.unit.Dp = 40.dp,
+    height: androidx.compose.ui.unit.Dp = Dimens.minTouch,
 ) {
     val colors = LocalErpColors.current
     val outerShape = RoundedCornerShape(Dimens.radiusSm)

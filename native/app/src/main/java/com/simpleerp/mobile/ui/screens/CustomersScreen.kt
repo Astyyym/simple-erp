@@ -296,15 +296,17 @@ private fun CustomerRow(customer: Customer, onClick: () -> Unit) {
             }
         }
         Spacer(Modifier.width(10.dp))
-        // 金额：欠款用暖色、多付走 danger。**去掉「欠款/多付」徽章** ——
-        // 正负号 + 颜色已经说清楚了，每行再贴一个标签是噪音
-        // （网页版定稿也没有这个标签）。
+        // 金额：**别人欠我的（正数）用绿色**，多付（负数）走 danger。
+        //
+        // 2026-10-23 用户要求改色：原来正数用 debt 暖橙，一眼看过去像「告警」，
+        // 但「客户欠我钱」在账本语义里是**应收、是好事**，应该用绿色。
+        // 负数是「我欠他/多收了」才用红。正负号 + 颜色已说清楚，不再贴徽章。
         AmountText(
             text = customer.balanceText,
             cents = customer.balanceCents,
             size = 16,
             weight = FontWeight.SemiBold,
-            tint = if (owed) colors.debt else null,
+            tint = if (owed) colors.success else null,
         )
     }
 }
