@@ -68,10 +68,14 @@
 | 形态 | 产物 | 适合谁 | 演示数据 |
 |---|---|---|---|
 | **安装包**<br><sub>推荐门店使用</sub> | `simple-erp-setup-vX.Y.Z.exe` | 双击安装，带开始菜单/桌面图标与卸载项；**per-user，不需要管理员** | 无 |
-| **绿色包**<br><sub>先试试看</sub> | `simple-erp-windows-vX.Y.Z.zip` | 解压即用、可拷 U 盘；双击 `简单ERP.exe` | **自带 200 条** |
+| **免安装 ZIP**<br><sub>先试试看</sub> | `simple-erp-windows-vX.Y.Z.zip` | 解压即用、可拷 U 盘；双击 `简单ERP.exe` | 无 |
 | **手机 APK** | `simple-erp-mobile-vX.Y.Z.apk` | 只读查账，需配合电脑端开启「手机访问」 | — |
 
-**认名字**：带 `setup` 的是安装包；`简单ERP.exe` 是绿色版主程序，双击直接开、不走向导 —— 设计如此。
+Releases 里的三个资产**都是干净程序，不含演示数据**。想先拿演示数据点着看，用仓库源码本地跑
+`打包Windows安装包.bat` 生成绿色版目录（`dist\local-vX.Y.Z\简单ERP\`，自带 200 条演示数据，
+数据根锁在包内 `demo_data\`，与真实账本物理隔离）；这条不随 Release 分发。
+
+**认名字**：带 `setup` 的是安装包；`简单ERP.exe` 是免安装版主程序，双击直接开、不走向导 —— 设计如此。
 
 安装后业务数据在「文档\简单ERP数据」，与程序文件分开：**升级不覆盖 `config.json`，卸载不删数据**。
 
