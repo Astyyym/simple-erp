@@ -22,8 +22,8 @@
 安卓 JVM 单测 **22 tests / 0 failures**（`PairingQrTest` 9 + `RangeLabelsTest` 13，本轮无逻辑变化，仅布局）。
 **真机手感（滑动折叠是否跟手、底部面板手势）仍属真机验收项。**
 
-发版证据（2026-10-23）：`clean assembleRelease testDebugUnitTest` 从零跑通（BUILD SUCCESSFUL，2m57s），
-产物 `dist\simple-erp-mobile-v1.4.6.apk`（8,004,738 B，SHA256 `4FCC260C…31954`），
+发版证据（2026-10-23）：`clean assembleRelease testDebugUnitTest` 从零跑通（BUILD SUCCESSFUL，3m03s），
+产物 `dist\simple-erp-mobile-v1.4.6.apk`（8,004,738 B，SHA256 `B881E3E5…9CA84`），
 `aapt2 dump badging` 核对 `versionCode=11` / `versionName=1.4.6` / 包名 `com.simpleerp.mobile`，
 `apksigner verify` 通过（v2 签名，CN=SimpleERP，与旧版同密钥可直接覆盖安装）。
 桌面端、后端接口与业务逻辑零改动，`VERSION` 仍为 `v4.6.5`。
