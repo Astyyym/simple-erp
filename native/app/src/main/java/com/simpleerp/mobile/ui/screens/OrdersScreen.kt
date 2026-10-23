@@ -7,14 +7,17 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,7 +42,10 @@ import com.simpleerp.mobile.ui.components.ErpHairline
 import com.simpleerp.mobile.ui.components.ErrorState
 import com.simpleerp.mobile.ui.components.LoadingState
 import com.simpleerp.mobile.ui.components.OfflineBanner
+import com.simpleerp.mobile.ui.components.Refreshable
 import com.simpleerp.mobile.ui.components.SectionLabel
+import com.simpleerp.mobile.ui.components.listRowBorder
+import com.simpleerp.mobile.ui.components.listRowShape
 import com.simpleerp.mobile.ui.theme.Dimens
 import com.simpleerp.mobile.ui.theme.LocalErpColors
 import com.simpleerp.mobile.ui.util.formatCacheTime
@@ -52,12 +58,17 @@ import java.time.LocalDate
  * 由它复用桌面端 `_resolve_date_range()` 的换算。客户端只负责把用户点的东西
  * 变成这四个参数，避免出现「手机端按 31 天算、桌面端按月末算」这种分叉。
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun OrdersScreen(
     state: UiState<OrdersResponse>,
     orderType: String,
     dateRange: DateRange,
     customerName: String,
+    /** 列表滚动状态由上层持有（切 tab / 返回详情不丢位置，2026-10-22 修）。 */
+    listState: LazyListState,
+    refreshing: Boolean,
+    onRefresh: () -> Unit,
     onSelectType: (String) -> Unit,
     onSelectRange: (DateRange) -> Unit,
     onClearCustomer: () -> Unit,
@@ -115,6 +126,8 @@ fun OrdersScreen(
         }
 
         // ---- 类型筛选 ----
+        // FlowRow + 横向滚动二选一：先让它在窄屏自动换行，仍然超宽时
+        // 由外层 horizontalScroll 兜底（2026-10-22 实测 5 个 chip 在 945px 刚好压边）。
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -150,32 +163,48 @@ fun OrdersScreen(
             UiState.NeedsPairing, UiState.NeedsSetup -> LoadingState()
             is UiState.Ready -> {
                 val documents = state.value.documents
-                LazyColumn(
-                    contentPadding = PaddingValues(
-                        start = Dimens.pageGap,
-                        end = Dimens.pageGap,
-                        top = 8.dp,
-                        bottom = 28.dp,
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    if (state.fromCache) {
-                        item { OfflineBanner(formatCacheTime(state.fetchedAt)) }
-                    }
-                    if (documents.isEmpty()) {
-                        item {
-                            EmptyState(
-                                title = "这段时间没有单据",
-                                hint = "点上面的日期按钮，可以改成「全部时间」看更早的单。",
-                            )
+                Refreshable(refreshing = refreshing, onRefresh = onRefresh) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = Dimens.pageGap,
+                            end = Dimens.pageGap,
+                            top = 8.dp,
+                            bottom = 28.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (state.fromCache) {
+                            item { OfflineBanner(formatCacheTime(state.fetchedAt)) }
                         }
-                    }
-                    // **一整张卡里分行**，对齐网页版 `orders/list.html` 的定稿结构。
-                    // 原来每行一张白卡，175 张单排下去是一堵等大方块墙。
-                    item {
-                        ErpCard(padding = 0.dp) {
-                            Column {
-                                documents.forEachIndexed { index, doc ->
+                        if (documents.isEmpty()) {
+                            item {
+                                EmptyState(
+                                    title = "这段时间没有单据",
+                                    hint = "点上面的日期按钮，可以改成「全部时间」看更早的单。",
+                                )
+                            }
+                        }
+                        // **每行一个 item**（2026-10-22 修 N-2）：一整个 Column 塞单个 item
+                        // 时，切 tab 重新测量会把滚动偏移夹到 0（实测 offset 存着却回顶部）。
+                        // 视觉仍是一张整卡：ErpCard 首行圆上角、末行圆下角、中间直角。
+                        documents.forEachIndexed { index, doc ->
+                            item(key = "${doc.orderType}-${doc.id}") {
+                                ErpCard(
+                                    padding = 0.dp,
+                                    elevated = index == 0,
+                                    bordered = false,
+                                    shape = listRowShape(
+                                        isFirst = index == 0,
+                                        isLast = index == documents.lastIndex,
+                                    ),
+                                    modifier = Modifier.listRowBorder(
+                                        colors = colors,
+                                        isFirst = index == 0,
+                                        isLast = index == documents.lastIndex,
+                                    ),
+                                ) {
                                     DocumentRow(
                                         doc = doc,
                                         onClick = { onOpenDocument(doc.orderType, doc.id) },
@@ -186,15 +215,15 @@ fun OrdersScreen(
                                 }
                             }
                         }
-                    }
-                    if (state.value.truncated) {
-                        item {
-                            Text(
-                                "只显示了前 200 张，缩小日期范围可以看到更早的。",
-                                color = colors.muted,
-                                fontSize = 11.5.sp,
-                                modifier = Modifier.padding(vertical = 10.dp),
-                            )
+                        if (state.value.truncated) {
+                            item {
+                                Text(
+                                    "只显示了前 200 张，缩小日期范围可以看到更早的。",
+                                    color = colors.muted,
+                                    fontSize = 11.5.sp,
+                                    modifier = Modifier.padding(vertical = 10.dp),
+                                )
+                            }
                         }
                     }
                 }

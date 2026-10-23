@@ -4,3 +4,40 @@ plugins {
     id 'org.jetbrains.kotlin.plugin.compose' version '2.1.0' apply false
     id 'org.jetbrains.kotlin.plugin.serialization' version '2.1.0' apply false
 }
+
+/*
+ * 构建产物目录改到纯 ASCII 路径 —— 修「JVM 单元测试跑不起来」。
+ *
+ * 现象（2026-10-22 实测）：`:app:testDebugUnitTest` 报
+ *   ClassNotFoundException: com.simpleerp.mobile.net.PairingQrTest
+ * 而测试类明明已编译到 `app/build/tmp/kotlin-classes/debugUnitTest/...`。
+ *
+ * 根因（两层，都已验证）：
+ * 1. 测试进程的 classpath 很长（几百个 jar），Gradle 会写进一个 **UTF-8** 的 argfile，
+ *    再用 `@C:\...\gradle-worker-classpath*.txt` 传给 java 启动器；
+ * 2. Windows 上 java **启动器**（native 层、早于 JVM）按**系统 ANSI 代码页(GBK)**
+ *    读这个 argfile，不认 UTF-8。项目路径含中文「简单ERP」→ 路径被解成乱码
+ *    `D:\wenjian\Hermes\绠€鍗旹RP\...` → 类加载器找不到测试类。
+ *    （`assembleRelease` 不受影响：它不走 worker argfile，所以 APK 一直是好的。）
+ *
+ * 反证：把 buildDir 指到 `C:/Users/.../simple-erp-ascii-build` 后，9 个测试全过。
+ *
+ * 为什么改 buildDir 而不是改项目文件夹名：用户优先要求「先不重命名」。
+ * 测试 classpath 只含 build 产物目录（不含源码目录），所以挪走 buildDir
+ * 就足以让整条 classpath 变成纯 ASCII。
+ *
+ * 可用环境变量 ERP_BUILD_ROOT 覆盖（打包脚本用的是同一个默认值）。
+ */
+def asciiBuildRoot = System.getenv("ERP_BUILD_ROOT")
+if (!asciiBuildRoot) {
+    asciiBuildRoot = new File(System.getenv("LOCALAPPDATA") ?: System.getProperty("java.io.tmpdir"),
+            "simple-erp-build").absolutePath
+}
+// 万一 LOCALAPPDATA / tmpdir 本身也含非 ASCII（中文用户名机器），退到一个保证纯 ASCII 的目录。
+if (asciiBuildRoot ==~ /.*[^\x00-\x7F].*/) {
+    asciiBuildRoot = "C:/simple-erp-build"
+}
+
+allprojects {
+    buildDir = new File(asciiBuildRoot, project.name)
+}

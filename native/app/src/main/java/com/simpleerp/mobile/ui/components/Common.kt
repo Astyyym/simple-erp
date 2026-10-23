@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -30,6 +31,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.simpleerp.mobile.ui.theme.Dimens
+import com.simpleerp.mobile.ui.theme.ErpColors
 import com.simpleerp.mobile.ui.theme.LocalErpColors
 
 /**
@@ -47,10 +49,11 @@ fun ErpCard(
     onClick: (() -> Unit)? = null,
     padding: androidx.compose.ui.unit.Dp = Dimens.cardPad,
     elevated: Boolean = true,
+    bordered: Boolean = true,
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(Dimens.radius),
     content: @Composable ColumnScopeAlias.() -> Unit,
 ) {
     val colors = LocalErpColors.current
-    val shape = RoundedCornerShape(Dimens.radius)
     val base = modifier
         .fillMaxWidth()
         .then(
@@ -67,17 +70,63 @@ fun ErpCard(
         )
         .clip(shape)
         .background(colors.surface, shape)
-        // 卡片**不加黑描边**（用户 2026-10-22 二次定稿，截图框掉了整片列表）：
-        // 列表有十几二十张卡，每张都套一圈黑框会糊成一片网格，压过内容本身。
-        // 卡片的「块感」交给投影（上面 6dp shadow）和 surface 与 bg 的色差，
-        // 黑描边只留给**控件**（搜索框、chips、按钮）—— 那些是「可以点的地方」，
-        // 需要一眼看出来边界。
-        .border(1.dp, colors.border, shape)
+        // 卡片默认**不加黑描边**（用户 2026-10-22 二次定稿：每张卡都套黑框会糊成网格）。
+        // 但「每行一个 item 的列表」需要靠描边补回整卡轮廓，见 listRowShape 的说明，
+        // 那种场景传 bordered = true。
+        .then(if (bordered) Modifier.border(1.dp, colors.border, shape) else Modifier)
     val clickable = if (onClick != null) base.clickable(onClick = onClick) else base
     Column(modifier = clickable.padding(padding)) { content() }
 }
 
 typealias ColumnScopeAlias = androidx.compose.foundation.layout.ColumnScope
+
+/**
+ * 列表行卡片形状：**首行圆上角、末行圆下角、中间行直角**。
+ *
+ * 为什么需要这个：为了修「切 tab 丢滚动位置」，列表必须**每行一个 LazyColumn item**
+ * （一整个 Column 塞进单个 item 时，重新测量会把滚动偏移夹到 0，实测 offset 存着
+ * 3575 画面却回顶部）。但视觉上仍要像「一整张卡 + 内部发丝线」，
+ * 所以每个 item 背后铺一张 ErpCard，用形状拼接出整卡的圆角轮廓。
+ */
+fun listRowShape(isFirst: Boolean, isLast: Boolean): androidx.compose.ui.graphics.Shape {
+    val r = Dimens.radius
+    return RoundedCornerShape(
+        topStart = if (isFirst) r else 0.dp,
+        topEnd = if (isFirst) r else 0.dp,
+        bottomStart = if (isLast) r else 0.dp,
+        bottomEnd = if (isLast) r else 0.dp,
+    )
+}
+
+/**
+ * 列表行卡片的描边：**只画整卡的外框，不画行间接缝**。
+ *
+ * 每行一个 item 后，如果每行都 `border(...)` 四边，行与行之间会出现一条条横线，
+ * 整卡被切成一段段（2026-10-22 实测截图：商品列表每行一个框，像表格不像卡）。
+ * 这里只补最外侧：首行画上边、末行画下边，所有行画左右两边。
+ *
+ * 宽度写死 1dp 而不是走 `BorderStroke`：Compose 没有「只画三边」的现成 API，
+ * 用四条 1dp 的 `Modifier.background` 拼，位置与 ErpCard 的 `.border(1dp)` 对齐。
+ */
+fun Modifier.listRowBorder(
+    colors: ErpColors,
+    isFirst: Boolean,
+    isLast: Boolean,
+): Modifier = this.drawBehind {
+    val w = size.width
+    val h = size.height
+    val stroke = 1.dp.toPx()
+    // 左右两边每一行都画
+    drawLine(colors.border, androidx.compose.ui.geometry.Offset(0f, 0f), androidx.compose.ui.geometry.Offset(0f, h), stroke)
+    drawLine(colors.border, androidx.compose.ui.geometry.Offset(w, 0f), androidx.compose.ui.geometry.Offset(w, h), stroke)
+    // 顶边只给首行、底边只给末行，避免行间接缝
+    if (isFirst) {
+        drawLine(colors.border, androidx.compose.ui.geometry.Offset(0f, 0f), androidx.compose.ui.geometry.Offset(w, 0f), stroke)
+    }
+    if (isLast) {
+        drawLine(colors.border, androidx.compose.ui.geometry.Offset(0f, h), androidx.compose.ui.geometry.Offset(w, h), stroke)
+    }
+}
 
 /**
  * 金额文本：**字符串由服务端给，这里只管上色。**
@@ -336,6 +385,34 @@ fun OrderChip(descending: Boolean, onClick: () -> Unit) {
             fontSize = 17.sp,
             fontWeight = FontWeight.Medium,
         )
+    }
+}
+
+/**
+ * 下拉刷新容器：**与网页版 mobile.js 的下拉刷新对齐**（README 一直这么写，
+ * 但原生端此前漏了 —— 2026-10-22 补齐）。
+ *
+ * 为什么用 material3 的 `PullToRefreshBox` 而不是自己接手势：
+ * 自己写要处理嵌套滚动、阈值、回弹动画，还得和 LazyColumn 抢手势；
+ * 官方组件已经把「列表在顶部才触发」这件事做对，样式也跟 App 的圆角语言一致。
+ *
+ * 只包**列表内容**，不包搜索栏/筛选栏 —— 否则在筛选栏上下拉也会触发刷新，
+ * 那不是用户想要的（他们要的是「刷这批数据」）。
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun Refreshable(
+    refreshing: Boolean,
+    onRefresh: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = onRefresh,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        content()
     }
 }
 

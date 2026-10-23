@@ -421,16 +421,25 @@ tab 条与内容区的分界靠 tab 条自己的底色。**别再往这里加线
 
 ## 扫码「对着电脑扫不出来、相册能扫出来」（2026-10-22 真机反馈）
 
-根因不是解析器，是**相机对焦**：zxing 的 `CameraSettings` 默认
-`autoFocusEnabled=true` 但 `continuousFocusEnabled=false` —— 只对焦一次就停了。
-手机对着电脑屏幕时第一次对焦往往落在背景（键盘、桌面），之后画面再清楚也不会
-重新对焦，于是永远解不出码；相册里是清晰原图，所以那条路一直好使。
+**根因不是解析器，是相机对焦没真正生效。** 这里记两处**曾写错的结论**，别照着错的思路改：
 
-修法：`cameraSettings = CameraSettings().apply { isContinuousFocusEnabled = true;
-isAutoFocusEnabled = false; isBarcodeSceneModeEnabled = true; isMeteringEnabled = true }`。
-同时关掉 autoFocus —— 一次性对焦和连续对焦同时开会互相打架。
+- ❌ 曾写「zxing 的 `CameraSettings` 默认 `autoFocusEnabled=true` 但 `continuousFocusEnabled=false`，
+  只对焦一次就停了」——**这个描述不准确**，照着它写 `isContinuousFocusEnabled=true` +
+  `isAutoFocusEnabled=false` 是**无效的**（v4.6.5 就这么写的，实测 logcat 仍是 `[auto]`）。
+- ✅ 真正有两层坑（2026-10-22 反编译 `zxing-android-embedded 4.3.0` 字节码 + logcat 确认）：
+  1. **两个 setter 会互相覆盖 `focusMode`**：`setContinuousFocusEnabled(true)` → `focusMode=CONTINUOUS`；
+     紧接着 `setAutoFocusEnabled(false)` → `autoFocusEnabled=false` 且 **`focusMode=null`**。
+     而 `CameraConfigurationUtils.setFocus()` **只看 `focusMode` 枚举**，不是 CONTINUOUS 就只请求 `auto`。
+     → 正确写法：直接 `setFocusMode(CameraSettings.FocusMode.CONTINUOUS)`，不要用那两个布尔开关。
+  2. **必须在 `captureManager.initializeFromIntent(...)` 之后设**：该方法内部会
+     `new CameraSettings()` 并 `BarcodeView.setCameraSettings(...)`，覆盖掉之前在 `onCreate` 里设的值。
 
-测法：模拟器相机是彩条测试图，**验不了真机对焦**，只能验「从相册选」。真机必须实扫。
+**验证判据（不必真机）**：logcat 里
+`CameraConfiguration: Requesting focus mode value from among: [...]` 从 `[auto]` 变成
+`[continuous-picture, continuous-video, auto]`，且 `Can set focus mode to: continuous-picture`、
+`AutoFocusManager: Current focus mode 'continuous-picture'`。
+**注意模拟器相机能力**：默认虚拟相机支持 `continuous-picture`；`-camera-back virtualscene` 只支持 `infinity, auto`，
+所以在 virtualscene 下即便代码对了也只会回落 `auto` —— 别把「virtualscene 回落」误判成「修复没生效」。
 
 ## 扫码提示文字别用 zxing 自带的 status view（2026-10-22）
 

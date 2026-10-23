@@ -6,14 +6,18 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.LaunchedEffect
@@ -40,7 +44,10 @@ import com.simpleerp.mobile.ui.components.ErrorState
 import com.simpleerp.mobile.ui.components.LoadingState
 import com.simpleerp.mobile.ui.components.OfflineBanner
 import com.simpleerp.mobile.ui.components.OrderChip
+import com.simpleerp.mobile.ui.components.Refreshable
 import com.simpleerp.mobile.ui.components.SegmentedChips
+import com.simpleerp.mobile.ui.components.listRowBorder
+import com.simpleerp.mobile.ui.components.listRowShape
 import com.simpleerp.mobile.ui.theme.Dimens
 import com.simpleerp.mobile.ui.theme.LocalErpColors
 import com.simpleerp.mobile.ui.util.formatCacheTime
@@ -52,12 +59,17 @@ import com.simpleerp.mobile.ui.util.formatCacheTime
  * 点进去看这个商品在每个客户处的具体价格。
  * 理由：店主核对价格是双向的，只给客户优先就把另一半藏起来了。
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ProductsScreen(
     state: UiState<ProductsResponse>,
     query: String,
     sortPrice: Boolean,
     descending: Boolean,
+    /** 列表滚动状态由上层持有（切 tab / 返回详情不丢位置，2026-10-22 修）。 */
+    listState: LazyListState,
+    refreshing: Boolean,
+    onRefresh: () -> Unit,
     onQueryChange: (String) -> Unit,
     onToggleSort: () -> Unit,
     onToggleOrder: () -> Unit,
@@ -66,19 +78,17 @@ fun ProductsScreen(
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalErpColors.current
-    // 排序变了要回到顶部（用户 2026-10-22 要求）。
-    // 不回到顶部的话，用户滚到第 30 行再切排序，看到的是新排序的第 30 行 ——
-    // 完全不知道自己排的是哪一段，看起来像「排序没生效」。
-    val listState = rememberLazyListState()
-    LaunchedEffect(sortPrice, descending) {
-        listState.scrollToItem(0)
-    }
+    // 不在 Composable 里自动回顶：`LaunchedEffect` 重新进入组合时也会跑，
+    // 切 tab 回来就会把位置清掉（2026-10-22 实测）。换排序回顶改在 AppRoot 的
+    // 排序回调里做（只在用户点击时触发）。
     Column(modifier = modifier.fillMaxWidth()) {
-        Row(
+        // FlowRow：窄屏放不下「搜索框 + 排序 chips + 方向箭头」时自动换行（2026-10-22 修）。
+        FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = Dimens.pageGap, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             val shape = RoundedCornerShape(Dimens.radiusSm)
             Row(
@@ -116,7 +126,6 @@ fun ProductsScreen(
                     )
                 }
             }
-            Spacer(Modifier.width(8.dp))
             // 与客户页同构：两颗并排、选中那颗标蓝。
             SegmentedChips(
                 options = listOf("拼音", "价格"),
@@ -125,7 +134,6 @@ fun ProductsScreen(
                     if ((index == 1) != sortPrice) onToggleSort()
                 },
             )
-            Spacer(Modifier.width(6.dp))
             OrderChip(descending = descending, onClick = onToggleOrder)
         }
 
@@ -135,35 +143,46 @@ fun ProductsScreen(
             UiState.NeedsPairing, UiState.NeedsSetup -> LoadingState()
             is UiState.Ready -> {
                 val products = state.value.products
-                LazyColumn(
-                    state = listState,
-                    contentPadding = PaddingValues(
-                        start = Dimens.pageGap,
-                        end = Dimens.pageGap,
-                        bottom = 28.dp,
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    if (state.fromCache) {
-                        item { OfflineBanner(formatCacheTime(state.fetchedAt)) }
-                    }
-                    if (products.isEmpty()) {
-                        item {
-                            EmptyState(
-                                title = if (query.isBlank()) "还没有商品" else "没找到这个商品",
-                                hint = if (query.isBlank()) "" else "换个关键词，或只输入首字母试试。",
-                            )
+                Refreshable(refreshing = refreshing, onRefresh = onRefresh) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = Dimens.pageGap,
+                            end = Dimens.pageGap,
+                            bottom = 28.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        if (state.fromCache) {
+                            item { OfflineBanner(formatCacheTime(state.fetchedAt)) }
                         }
-                    } else {
-                        // **一整张卡里分行，不要每行一张卡**（2026-10-22 对齐网页版定稿）。
-                        // 原来每行一张白卡：一样高、一样白、一样圆角，几十张排下去是一堵
-                        // 方块墙，眼睛找不到落点，用户直接说「丑」。网页版 customers/orders/
-                        // products 三个列表页一直是「一张 card + 内部 row + 发丝线分隔」，
-                        // 原生端从没照做 —— 这次补上。
-                        item {
-                            ErpCard(padding = 0.dp) {
-                                Column {
-                                    products.forEachIndexed { index, product ->
+                        if (products.isEmpty()) {
+                            item {
+                                EmptyState(
+                                    title = if (query.isBlank()) "还没有商品" else "没找到这个商品",
+                                    hint = if (query.isBlank()) "" else "换个关键词，或只输入首字母试试。",
+                                )
+                            }
+                        } else {
+                            // **每行一个 item**（2026-10-22 修 N-2）：一整个 Column 塞单个 item
+                            // 时，切 tab 重新测量会把滚动偏移夹到 0。视觉仍是一张整卡。
+                            products.forEachIndexed { index, product ->
+                                item(key = product.id) {
+                                    ErpCard(
+                                        padding = 0.dp,
+                                        elevated = index == 0,
+                                        bordered = false,
+                                        shape = listRowShape(
+                                            isFirst = index == 0,
+                                            isLast = index == products.lastIndex,
+                                        ),
+                                        modifier = Modifier.listRowBorder(
+                                            colors = colors,
+                                            isFirst = index == 0,
+                                            isLast = index == products.lastIndex,
+                                        ),
+                                    ) {
                                         ProductRow(
                                             product = product,
                                             onClick = { onOpenProduct(product.id) },
@@ -173,6 +192,19 @@ fun ProductsScreen(
                                         }
                                     }
                                 }
+                            }
+                        }
+                        // 商品列表有 60 条上限（服务端 PRODUCT_LIST_LIMIT）。
+                        // 原来完全没提示，超过 60 个时后面的商品「搜不到也看不到」，
+                        // 店主会以为「就这么多」（2026-10-22 补，对齐单据页的提示）。
+                        if (state.value.truncated) {
+                            item {
+                                Text(
+                                    "只显示了前 60 个商品，输入名称或拼音缩小范围可以看到更多。",
+                                    color = colors.muted,
+                                    fontSize = 11.5.sp,
+                                    modifier = Modifier.padding(vertical = 10.dp),
+                                )
                             }
                         }
                     }

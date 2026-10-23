@@ -6,15 +6,18 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,7 +43,10 @@ import com.simpleerp.mobile.ui.components.ErrorState
 import com.simpleerp.mobile.ui.components.LoadingState
 import com.simpleerp.mobile.ui.components.OfflineBanner
 import com.simpleerp.mobile.ui.components.OrderChip
+import com.simpleerp.mobile.ui.components.Refreshable
 import com.simpleerp.mobile.ui.components.SegmentedChips
+import com.simpleerp.mobile.ui.components.listRowBorder
+import com.simpleerp.mobile.ui.components.listRowShape
 import com.simpleerp.mobile.ui.theme.Dimens
 import com.simpleerp.mobile.ui.theme.LocalErpColors
 import com.simpleerp.mobile.ui.util.formatCacheTime
@@ -54,12 +60,23 @@ import com.simpleerp.mobile.ui.util.formatCacheTime
  *
  * 排序两个：拼音（默认，柜台按店名首字母找最快）/ 欠款从多到少。
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CustomersScreen(
     state: UiState<List<Customer>>,
     query: String,
     sortDebt: Boolean,
     descending: Boolean,
+    /**
+     * 列表滚动状态**由上层持有**（2026-10-22 修）。
+     *
+     * 原来在函数里 `rememberLazyListState()`：切 tab 时整个 Composable 被销毁重建，
+     * 状态跟着丢，滚到第 20 条再切回来就跳回顶部 —— 柜台「找到客户→看一眼→回来
+     * 接着找下一个」的动线被反复打断。详情页返回同理。
+     */
+    listState: LazyListState,
+    refreshing: Boolean,
+    onRefresh: () -> Unit,
     onQueryChange: (String) -> Unit,
     onToggleSort: () -> Unit,
     onToggleOrder: () -> Unit,
@@ -68,20 +85,28 @@ fun CustomersScreen(
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalErpColors.current
-    // 排序变了要回到顶部（用户 2026-10-22 要求）。
-    // 不回到顶部的话，用户滚到第 30 行再切排序，看到的是新排序的第 30 行 ——
-    // 完全不知道自己排的是哪一段，看起来像「排序没生效」。
-    val listState = rememberLazyListState()
-    LaunchedEffect(sortDebt, descending) {
-        listState.scrollToItem(0)
-    }
+    /*
+     * 注意：**这里不能放 `LaunchedEffect(sortDebt, descending) { scrollToItem(0) }`**。
+     *
+     * 那个写法看着对，实际有两个问题（2026-10-22 实测踩到）：
+     * 1. `LaunchedEffect` 在 Composable **重新进入组合**时也会跑一遍 ——
+     *    切 tab 回来就等于又执行一次 scrollToItem(0)，滚动位置必然丢；
+     * 2. 所以「切 tab 丢位置」不是单纯的 state 提升问题，回顶逻辑本身就是元凶之一。
+     *
+     * 现在「换排序回顶」在 AppRoot 的排序回调里做（只响应用户点击，且能拿到
+     * 提升上来的 listState），这里不再自动回顶。
+     */
     Column(modifier = modifier.fillMaxWidth()) {
         // ---- 搜索 + 排序 ----
-        Row(
+        // 用 FlowRow：窄屏（≤360dp）放不下「搜索框 + 两个排序 chip + 方向箭头」时
+        // 自动换行，而不是把搜索框压成一条缝或把箭头顶出屏幕（2026-10-22 实测 945px
+        // 已贴边，360dp 机型会直接裁掉）。
+        FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = Dimens.pageGap, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             SearchField(
                 value = query,
@@ -92,7 +117,6 @@ fun CustomersScreen(
                 onValueChange = onQueryChange,
                 modifier = Modifier.weight(1f),
             )
-            Spacer(Modifier.width(8.dp))
             // 两颗并排、选中那颗标蓝。原来是一颗「拼音/欠款」文字互变的开关按钮，
             // 在「拼音」状态下是灰底，看起来像「没选中任何一项」（用户 2026-10-22 报）。
             SegmentedChips(
@@ -103,7 +127,6 @@ fun CustomersScreen(
                     if ((index == 1) != sortDebt) onToggleSort()
                 },
             )
-            Spacer(Modifier.width(6.dp))
             OrderChip(descending = descending, onClick = onToggleOrder)
         }
 
@@ -113,32 +136,56 @@ fun CustomersScreen(
             UiState.NeedsPairing, UiState.NeedsSetup -> LoadingState()
             is UiState.Ready -> {
                 val customers = state.value
-                LazyColumn(
-                    state = listState,
-                    contentPadding = PaddingValues(
-                        start = Dimens.pageGap,
-                        end = Dimens.pageGap,
-                        bottom = 28.dp,
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    if (state.fromCache) {
-                        item { OfflineBanner(formatCacheTime(state.fetchedAt)) }
-                    }
-                    if (customers.isEmpty()) {
-                        item {
-                            EmptyState(
-                                title = if (query.isBlank()) "还没有客户" else "没找到这个客户",
-                                hint = if (query.isBlank()) "" else "换个关键词，或只输入首字母试试。",
-                            )
+                Refreshable(refreshing = refreshing, onRefresh = onRefresh) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = Dimens.pageGap,
+                            end = Dimens.pageGap,
+                            bottom = 28.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(0.dp),
+                    ) {
+                        if (state.fromCache) {
+                            item { OfflineBanner(formatCacheTime(state.fetchedAt)) }
                         }
-                    } else {
-                        // **一整张卡里分行**，对齐网页版 `customers/list.html` 的定稿结构：
-                        // 原来每行一张白卡，几十张一样的方块排下去是一堵墙，没有落点。
-                        item {
-                            ErpCard(padding = 0.dp) {
-                                Column {
-                                    customers.forEachIndexed { index, customer ->
+                        if (customers.isEmpty()) {
+                            item {
+                                EmptyState(
+                                    title = if (query.isBlank()) "还没有客户" else "没找到这个客户",
+                                    hint = if (query.isBlank()) "" else "换个关键词，或只输入首字母试试。",
+                                )
+                            }
+                        } else {
+                            /*
+                             * 视觉上仍是「一整张卡 + 内部行 + 发丝线」，但**每行是一个独立 item**
+                             * （2026-10-22 修 N-2 的关键）。
+                             *
+                             * 原来的写法是「一个 item 里塞一整个 Column（几十行）」：
+                             * 切 tab 后 LazyColumn 重新测量时，这个单 item 的瞬时高度不可知，
+                             * 滚动偏移会被夹到 0 —— 实测 `offset` 明明存着 3575，画面却回顶部。
+                             * 拆成每行一个 item 后，LazyColumn 按行恢复位置，稳定不丢。
+                             *
+                             * 卡片外观用 ErpCard 铺在每行背后：第一行圆上角、最后一行圆下角，
+                             * 中间行直角，视觉上与一张整卡完全一致。
+                             */
+                            customers.forEachIndexed { index, customer ->
+                                item(key = customer.id) {
+                                    ErpCard(
+                                        padding = 0.dp,
+                                        elevated = index == 0,
+                                        bordered = false,
+                                        shape = listRowShape(
+                                            isFirst = index == 0,
+                                            isLast = index == customers.lastIndex,
+                                        ),
+                                        modifier = Modifier.listRowBorder(
+                                            colors = colors,
+                                            isFirst = index == 0,
+                                            isLast = index == customers.lastIndex,
+                                        ),
+                                    ) {
                                         CustomerRow(
                                             customer = customer,
                                             onClick = { onOpenCustomer(customer) },

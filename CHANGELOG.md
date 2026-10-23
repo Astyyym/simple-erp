@@ -2,6 +2,71 @@
 
 > 各版本条目按当时发布口径保留。v0.8.0 永久免登录已经取代早期版本中记录的本机登录门；历史凭据不在更新记录中保存。
 
+## 安卓端 1.4.2 - 扫码对焦修复 + 四项交互缺陷（2026-10-23，未发版）
+
+**只动 `native/` 安卓原生端与文档，桌面端与业务逻辑零改动。**
+
+> 版本口径：本次为 1.4.2（versionCode 7）。原先本地构建过一版 1.4.1（versionCode 6）但从未发出，已被本版取代。
+
+### 修复
+
+- **扫码「对着电脑扫不出来、只能相册选」**（真机反馈）。根因有两层，v4.6.5 那次「修复」两层都踩了：
+  1. `CameraSettings` 的两个 setter 会互相覆盖 `focusMode`——`setContinuousFocusEnabled(true)`
+     之后紧跟 `setAutoFocusEnabled(false)`，后者会把 `focusMode` 清成 `null`，于是
+     `CameraConfigurationUtils.setFocus()` 只请求 `auto`（一次性对焦）。
+  2. 设置时机也不对：`captureManager.initializeFromIntent(...)` 内部会 `new CameraSettings()`
+     并覆盖，必须放在它**之后**设。
+  现改为 `setFocusMode(FocusMode.CONTINUOUS)` 并置于初始化之后。
+  **验证**：logcat 从 `Requesting focus mode value from among: [auto]` 变为
+  `[continuous-picture, continuous-video, auto]` + `Can set focus mode to: continuous-picture`。
+- **切 tab / 详情返回丢掉列表滚动位置**：`rememberLazyListState` 提升到 Scaffold 层；
+  更关键的是列表原本把「几十行塞进单个 LazyColumn item」，切 tab 重新测量时滚动偏移被夹到 0，
+  现改为**每行一个 item**、用 `ErpCard` 的圆角拼接出「一整张卡」外观。同时移除
+  `LaunchedEffect(sortX, descending){ scrollToItem(0) }`（它在重新进入组合时也会触发，是丢位置的帮凶），
+  换排序回顶改到用户点击回调里。
+- **系统返回键在任意 tab 直接退出 App**：改为逐层后退（详情→列表；非「今天」页→「今天」；在「今天」再按才退出）。
+- **商品列表截断 60 条无提示**：补「只显示了前 60 个商品…」提示（原来只有单据页有）。
+- **窄屏顶部操作行挤压/裁剪**：搜索+排序+方向箭头改 `FlowRow`，320dp 下自动折行不再裁切。
+
+### 补齐
+
+- **下拉刷新**：原生端此前缺失（README 一直声明有）。新增 `Refreshable`（material3 `PullToRefreshBox`
+  封装）与 `AppViewModel.pullRefresh(tab)`，四个列表页均可下拉重取并显示指示器。
+
+### 文档
+
+- `AGENTS.md`、需求主文档：版本号 v4.6.3 / v3.15.0 → **v4.6.5**（并注明 `native/VERSION`）。
+- `docs/README.md`、安卓架构决策文档：把「APK 未做 / 推迟」改为「已落地于 `native/`」。
+- `README.md`：手机端交互描述补齐下拉刷新、滚动位置保留、返回键逐层后退。
+- `memory/pitfalls.md`：纠正「连续对焦」的错误根因描述（原描述会把后来人引向无效改法）。
+
+### 仍未验证
+
+- **真机相机连续对焦实扫**：模拟器默认虚拟相机可验证「确实请求了 continuous-picture」，
+  但真机对焦手感必须真机实测（virtualscene 相机不支持连续对焦，无法模拟）。
+- 真机扫码整体流程、真机断网降级：同上，属真机验收项。
+
+### 工程修复：安卓 JVM 单元测试跑不起来
+
+`:app:testDebugUnitTest` 一直报 `ClassNotFoundException: com.simpleerp.mobile.net.PairingQrTest`，
+测试类其实早已编译成功。**根因是中文路径 + Gradle argfile 编码**：
+
+1. 测试进程 classpath 很长（几百个 jar），Gradle 写进 **UTF-8** 的
+   `@C:\...\gradle-worker-classpath*.txt` 传给 java 启动器；
+2. Windows 上 **java 启动器（native 层，早于 JVM）按系统 ANSI(GBK) 读 argfile**，
+   项目路径 `D:\wenjian\Hermes\简单ERP\...` 被解成乱码 → 类加载器找不到测试类。
+
+`assembleRelease` 不走 argfile，所以 APK 一直正常，只有单测挂 —— 这也是它长期没被发现的原因。
+
+**修法（不需要重命名项目文件夹）**：把构建产物目录挪到纯 ASCII 路径。
+`native/build.gradle` 增加 `allprojects { buildDir = new File(ERP_BUILD_ROOT ?: %LOCALAPPDATA%\simple-erp-build, project.name) }`；
+测试 classpath 只含 build 产物、不含源码目录，因此整条 classpath 变纯 ASCII。
+`打包手机APK.bat` 同步改为从新路径取 APK（用 `ERP_BUILD_ROOT` 变量）。
+
+**验证**：修复后 `:app:testDebugUnitTest` **BUILD SUCCESSFUL，9 tests / 0 failures**（`PairingQrTest` 全部用例）；
+`打包手机APK.bat` 全流程 1/3→2/3→3/3 通过并产出 `dist\simple-erp-mobile-v1.4.2.apk`；
+装到模拟器可正常启动、滚动位置保留等行为不受影响。
+
 ## v4.6.5 - 手机端体验收口 + 设置页设备列表自动刷新（2026-10-22）
 
 **这一版修的是「手机连上了，但电脑上看不出来」和一批真机手感问题。**

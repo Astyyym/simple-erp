@@ -292,6 +292,39 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // 下拉刷新（用户手势）
+    // -----------------------------------------------------------------------
+
+    private val _refreshing = MutableStateFlow(false)
+    val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
+
+    /**
+     * 下拉刷新：只刷新**当前 tab**，并驱动刷新指示器。
+     *
+     * 为什么不复用 `refreshXxx()`：那些是「切 tab 时的静默刷新」，不等结果、
+     * 也不显示指示器。下拉是用户明确的动作，必须让他看到「在转」和「转完了」，
+     * 否则他会以为手势没生效，反复下拉。
+     *
+     * 用 `try/finally` 兜底：请求抛异常也必须把转圈关掉，否则指示器永远转着。
+     */
+    fun pullRefresh(tab: Tab) {
+        viewModelScope.launch {
+            _refreshing.value = true
+            try {
+                when (tab) {
+                    Tab.TODAY -> refreshToday()
+                    Tab.CUSTOMERS -> refreshCustomers()
+                    Tab.ORDERS -> refreshOrders()
+                    Tab.PRODUCTS -> refreshProducts()
+                    Tab.SETTINGS -> Unit
+                }
+            } finally {
+                _refreshing.value = false
+            }
+        }
+    }
+
     fun refreshAll() {
         refreshToday()
         refreshCustomers()

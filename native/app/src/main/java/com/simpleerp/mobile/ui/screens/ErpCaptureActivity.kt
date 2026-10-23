@@ -81,27 +81,6 @@ class ErpCaptureActivity : ComponentActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
             )
-            // ⚠️ **必须打开连续对焦**，这是「对着电脑扫不出来、从相册选就能扫出来」
-            // 的真正根因（用户 2026-10-22 真机反馈）。
-            //
-            // zxing 的 CameraSettings 默认是 autoFocusEnabled=true 但
-            // continuousFocusEnabled=false —— 意思是**只对焦一次，之后就不管了**。
-            // 手机对着电脑屏幕时，第一次对焦往往落在屏幕外的背景上（键盘、桌面），
-            // 之后画面再清楚也不会重新对焦，于是永远解不出码。
-            // 相册里的图是清晰的原图，所以那条路一直好使 —— 这也解释了
-            // 为什么「相册能扫、相机不能扫」。
-            //
-            // 关掉 autoFocus 也是对的：它是一次性对焦，和连续对焦同时开会互相打架。
-            cameraSettings = CameraSettings().apply {
-                isContinuousFocusEnabled = true
-                isAutoFocusEnabled = false
-                // 条形码场景模式：部分机型在「文字/风景」场景下会自动拉高锐度、
-                // 降噪，反而把二维码的方块边缘磨掉。
-                isBarcodeSceneModeEnabled = true
-                // 测光：屏幕是自发光的，不测光时相机可能把屏幕曝成一片白，
-                // 二维码的黑白对比度被吃掉。
-                isMeteringEnabled = true
-            }
         }
         root.addView(barcodeView)
         root.addView(buildOverlayControls())
@@ -110,6 +89,35 @@ class ErpCaptureActivity : ComponentActivity() {
         // CaptureManager 负责相机生命周期与解码回调，省掉自己写 CameraX。
         captureManager = CaptureManager(this, barcodeView)
         captureManager.initializeFromIntent(intent, savedInstanceState)
+
+        // ⚠️ **必须用连续对焦**，这是「对着电脑扫不出来、从相册选就能扫出来」的真正根因。
+        //
+        // 这里有**两层坑**，2026-10-22 逐层挖出来的（v4.6.5 那次「修复」两层都踩了）：
+        //
+        // 【坑 1】`CameraSettings` 的两个 setter 会互相覆盖 focusMode：
+        //   · setContinuousFocusEnabled(true) → focusMode = CONTINUOUS
+        //   · setAutoFocusEnabled(false)      → autoFocusEnabled=false 且 **focusMode = null**
+        //   当时写的是「先开连续、再关 auto」，第二行把第一行抹掉了。
+        //   而 `CameraConfigurationUtils.setFocus()` **只看 focusMode 枚举**，
+        //   不是 CONTINUOUS 就只请求 "auto"（一次性对焦）。
+        //
+        // 【坑 2】必须在 `captureManager.initializeFromIntent(...)` **之后**设置。
+        //   那个方法内部会 `new CameraSettings()` 并 `BarcodeView.setCameraSettings(...)`
+        //   覆盖掉当前值 —— 在它之前设的任何 cameraSettings 都会被静默丢弃
+        //   （我第一版就设在 onCreate 里，logcat 仍是 [auto]，白改一次）。
+        //
+        // 修法：直接设枚举，且放在 CaptureManager 初始化之后。
+        // 验证判据：logcat 应出现
+        //   Requesting focus mode value from among: [continuous-picture, continuous-video, auto]
+        barcodeView.cameraSettings = CameraSettings().apply {
+            setFocusMode(CameraSettings.FocusMode.CONTINUOUS)
+            // 条形码场景模式：部分机型在「文字/风景」场景下会自动拉高锐度、
+            // 降噪，反而把二维码的方块边缘磨掉。
+            isBarcodeSceneModeEnabled = true
+            // 测光：屏幕是自发光的，不测光时相机可能把屏幕曝成一片白，
+            // 二维码的黑白对比度被吃掉。
+            isMeteringEnabled = true
+        }
     }
 
     /**

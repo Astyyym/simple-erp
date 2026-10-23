@@ -46,10 +46,20 @@
   - 警告：`D:\app\Android\gradle-cache\wrapper\dists` 里只有 **8.14.3**，那个**不能**用来构建 native：Kotlin 2.1 插件在 8.x 上解析不到，报错是 `Plugin [id: 'org.jetbrains.kotlin.android'] was not found`，看着像网络/仓库问题，其实是 Gradle 版本错。**一律用 `native\gradlew.bat`**。
   - 工具链：Gradle 9.3.0 + AGP 8.11.0 + Kotlin 2.1.0 + Compose BOM 2025.01.00
 - 工程路径含中文，`native/gradle.properties` 必须有 `android.overridePathCheck=true`，否则 AGP 以「project path contains non-ASCII characters」直接中止构建。
+- **构建产物目录已挪出中文路径（2026-10-23）**：`native/build.gradle` 里 `allprojects { buildDir = new File(ERP_BUILD_ROOT ?: %LOCALAPPDATA%\simple-erp-build, project.name) }`。
+  - 为什么：中文路径会让 **JVM 单元测试**（`:app:testDebugUnitTest`）报 `ClassNotFoundException: ...PairingQrTest`，
+    而测试类其实已编译好。两层原因：① 测试进程 classpath 很长，Gradle 写进 **UTF-8 argfile**，用
+    `@C:\...\gradle-worker-classpath*.txt` 传给 java；② Windows 上 **java 启动器按 GBK** 读该 argfile，
+    `简单ERP` 被解成乱码 → 类加载不到。`assembleRelease` 不走 argfile，所以 APK 一直是好的、只有测试挂。
+  - 反证：buildDir 指到纯 ASCII 后 9 个单测全过。Gradle 无开关可关 argfile，故只能挪 buildDir。
+  - **APK 产物现在是 `%LOCALAPPDATA%\simple-erp-build\app\outputs\apk\release\app-release.apk`**，
+    不再是 `native\app\build\...`。`打包手机APK.bat` 已同步（用 `ERP_BUILD_ROOT`）。
+  - 若将来要改项目文件夹名，可把这一段还原成默认 buildDir。
 - 打包入口是 `打包手机APK.bat`（已指向 `native/`，产物 `dist\simple-erp-mobile-v<版本>.apk`）。版本号单一真源 `native/VERSION`。
 - 包名 **`com.simpleerp.mobile`**、versionCode 4 —— 与已删除的旧壳同名，所以老用户装新包是**原地覆盖升级**，不会多出一个 App。签名密钥 `native/keystore/simple-erp.jks`（与旧 `apk/keystore/` 那份 md5 相同，历史可从 git 找回）。
-- **构建后先把 `native/app/build/outputs/apk/release/app-release.apk` 复制到安装路径，再 `adb install`**。漏这一步装进去的还是上一版，每个修复都会显示「没效果」（2026-10-17 因此误判两轮）。
-- `mergeDexRelease` 报 `Unable to delete directory ... classes.dex` = 有 Gradle daemon 占着文件。先 `native/gradlew.bat --stop` 再清 `app/build/intermediates/dex`。脚本已用 `--no-daemon` 规避。
+- **构建后先把 APK 复制到安装路径，再 `adb install`**（路径见上面「构建产物目录已挪出中文路径」那条）。
+  漏这一步装进去的还是上一版，每个修复都会显示「没效果」（2026-10-17 因此误判两轮）。
+- `mergeDexRelease` 报 `Unable to delete directory ... classes.dex` = 有 Gradle daemon 占着文件。先 `native/gradlew.bat --stop` 再清 `%LOCALAPPDATA%\simple-erp-build\app\intermediates\dex`。脚本已用 `--no-daemon` 规避。
 - **模拟器验收必须让用户看见（用户 2026-10-17 明确要求）**：跑 APK 测试时**打开 Android Studio**，从 Device Manager 启 AVD（`goal11_api36_x86_64`，AVD 目录 `D:\app\Android\avd`，需要 `ANDROID_AVD_HOME`）；不进 Android Studio 就至少用**带窗口**的 `emulator -avd <avd>`，**绝不加 `-no-window`**。用户要看得到过程和画面，不接受「无头跑完只给截图」。
 - **验收结束不关闭模拟器**：不 `adb emu kill`、不卸载 App、不清 SharedPreferences 与已填地址，留给用户自己点着试。报告时说明「模拟器窗口留着，可以自己点」。
 - 手机端页面依赖桌面端第二监听（默认 5001）：留着模拟器就要一并交代服务状态——指向用户自己的安装，或保留隔离实例并写清端口与数据根；不要留「能点开但一路兜底页」的假状态。

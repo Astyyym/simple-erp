@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -34,6 +35,7 @@ import com.simpleerp.mobile.ui.components.ErpHairline
 import com.simpleerp.mobile.ui.components.ErrorState
 import com.simpleerp.mobile.ui.components.LoadingState
 import com.simpleerp.mobile.ui.components.OfflineBanner
+import com.simpleerp.mobile.ui.components.Refreshable
 import com.simpleerp.mobile.ui.components.SectionLabel
 import com.simpleerp.mobile.ui.components.TypeBadge
 import com.simpleerp.mobile.ui.theme.Dimens
@@ -54,6 +56,10 @@ import com.simpleerp.mobile.ui.util.formatCacheTime
 @Composable
 fun TodayScreen(
     state: UiState<TodayOverview>,
+    /** 列表滚动状态由上层持有（切 tab / 返回详情不丢位置，2026-10-22 修）。 */
+    listState: LazyListState,
+    refreshing: Boolean,
+    onRefresh: () -> Unit,
     onRetry: () -> Unit,
     onOpenDocument: (orderType: String, id: Int) -> Unit,
     onShowTypeOrders: (orderType: String) -> Unit,
@@ -67,6 +73,9 @@ fun TodayScreen(
             overview = state.value,
             fromCache = state.fromCache,
             fetchedAt = state.fetchedAt,
+            listState = listState,
+            refreshing = refreshing,
+            onRefresh = onRefresh,
             onRetry = onRetry,
             onOpenDocument = onOpenDocument,
             onShowTypeOrders = onShowTypeOrders,
@@ -80,6 +89,9 @@ private fun TodayContent(
     overview: TodayOverview,
     fromCache: Boolean,
     fetchedAt: Long,
+    listState: LazyListState,
+    refreshing: Boolean,
+    onRefresh: () -> Unit,
     onRetry: () -> Unit,
     onOpenDocument: (String, Int) -> Unit,
     onShowTypeOrders: (String) -> Unit,
@@ -91,16 +103,18 @@ private fun TodayContent(
         it.type == "purchase" || it.type == "purchase_return"
     }
 
-    LazyColumn(
-        modifier = modifier.fillMaxWidth(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            start = Dimens.pageGap,
-            end = Dimens.pageGap,
-            top = 12.dp,
-            bottom = 28.dp,
-        ),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
+    Refreshable(refreshing = refreshing, onRefresh = onRefresh) {
+        LazyColumn(
+            state = listState,
+            modifier = modifier.fillMaxWidth(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = Dimens.pageGap,
+                end = Dimens.pageGap,
+                top = 12.dp,
+                bottom = 28.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
         if (fromCache) {
             item { OfflineBanner(formatCacheTime(fetchedAt)) }
         }
@@ -191,6 +205,7 @@ private fun TodayContent(
             items(overview.events, key = { "${it.orderType}-${it.sourceId}" }) { event ->
                 EventRow(event = event, onClick = { onOpenDocument(event.orderType, event.sourceId) })
             }
+        }
         }
     }
 }

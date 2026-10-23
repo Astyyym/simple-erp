@@ -16,12 +16,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,6 +50,7 @@ import com.simpleerp.mobile.ui.theme.Dimens
 import com.simpleerp.mobile.ui.theme.LocalErpColors
 import com.simpleerp.mobile.ui.theme.SimpleErpTheme
 import com.simpleerp.mobile.ui.theme.ThemeMode
+import kotlinx.coroutines.launch
 
 /**
  * 页面栈：详情页是压在 tab 之上的独立层，不占底部 tab 位。
@@ -129,9 +132,39 @@ private fun MainScaffold(
 ) {
     val colors = LocalErpColors.current
     val tab by vm.tab.collectAsStateWithLifecycle()
+    val refreshing by vm.refreshing.collectAsStateWithLifecycle()
+    // 排序回顶用：点击回调是普通 lambda，里面要启动协程做 scrollToItem（挂起函数）。
+    val scope = rememberCoroutineScope()
 
-    // 有详情页时，返回键先关详情页；在 tab 首页时交给系统退出。
-    BackHandler(enabled = overlay != null) { onOverlay(null) }
+    /*
+     * 四个 tab 的列表滚动状态**提升到这里**（2026-10-22 修 N-2/N-3）。
+     *
+     * 原来 `rememberLazyListState()` 写在各自的 Screen 里：切 tab 时那个 Composable
+     * 整个离开组合树，状态被销毁，回来就跳回顶部；进详情页再返回同样如此。
+     * 柜台动线是「按拼音滚到某段 → 点开一个客户 → 退回来接着看下一个」，
+     * 每次回顶等于每次都要重滚一遍。
+     *
+     * 放在 MainScaffold 这一层：`MainScaffold` 在 tab 切换与详情进出时始终留在
+     * 组合树里（只有内部 when 分支在换），所以这四个状态是稳定的。
+     */
+    val todayListState = rememberLazyListState()
+    val customersListState = rememberLazyListState()
+    val ordersListState = rememberLazyListState()
+    val productsListState = rememberLazyListState()
+
+    /*
+     * 返回键：
+     * - 有详情页 → 关详情（原来的行为，保留）；
+     * - 在非「今天」tab → 回到「今天」，**不退出 App**；
+     * - 已在「今天」→ 交回系统（退出）。
+     *
+     * 原来是 `enabled = overlay != null`，于是在客户/单据/商品 tab 上按返回键
+     * 直接退出 Activity —— 用户对着门店 App 按返回，期望是「退一层」，不是「关掉」。
+     * README 也一直写着「返回键两段行为（详情→列表，首页再按退出）」。
+     */
+    BackHandler(enabled = overlay != null || tab != Tab.TODAY) {
+        if (overlay != null) onOverlay(null) else vm.selectTab(Tab.TODAY)
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.weight(1f)) {
@@ -178,6 +211,9 @@ private fun MainScaffold(
                         val state by vm.today.collectAsStateWithLifecycle()
                         TodayScreen(
                             state = state,
+                            listState = todayListState,
+                            refreshing = refreshing,
+                            onRefresh = { vm.pullRefresh(Tab.TODAY) },
                             onRetry = { vm.refreshToday() },
                             onOpenDocument = { type, id -> onOverlay(Overlay.Document(type, id)) },
                             onShowTypeOrders = { type ->
@@ -196,10 +232,24 @@ private fun MainScaffold(
                             state = state,
                             query = query,
                             sortDebt = sortDebt,
-                            onQueryChange = vm::onCustomerQueryChange,
-                            onToggleSort = vm::toggleCustomerSort,
                             descending = descending,
-                            onToggleOrder = vm::toggleCustomerOrder,
+                            listState = customersListState,
+                            refreshing = refreshing,
+                            onRefresh = { vm.pullRefresh(Tab.CUSTOMERS) },
+                            onQueryChange = vm::onCustomerQueryChange,
+                            // 换排序/换方向要回到顶部（用户 2026-10-22 要求）：
+                            // 不回顶的话，滚到第 30 行再换排序，看到的是新排序的第 30 行，
+                            // 完全不知道排的是哪一段，像「排序没生效」。
+                            // 必须放在**用户点击**的回调里：如果写成 Composable 内的
+                            // LaunchedEffect，切 tab 重新进入组合也会触发，位置就丢了。
+                            onToggleSort = {
+                                vm.toggleCustomerSort()
+                                scope.launch { customersListState.scrollToItem(0) }
+                            },
+                            onToggleOrder = {
+                                vm.toggleCustomerOrder()
+                                scope.launch { customersListState.scrollToItem(0) }
+                            },
                             onOpenCustomer = { onOverlay(Overlay.Customer(it.id)) },
                             onRetry = { vm.refreshCustomers() },
                         )
@@ -215,6 +265,9 @@ private fun MainScaffold(
                             orderType = orderType,
                             dateRange = dateRange,
                             customerName = customerName,
+                            listState = ordersListState,
+                            refreshing = refreshing,
+                            onRefresh = { vm.pullRefresh(Tab.ORDERS) },
                             onSelectType = vm::setOrderType,
                             onSelectRange = vm::setDateRange,
                             onClearCustomer = vm::clearOrderCustomer,
@@ -233,9 +286,19 @@ private fun MainScaffold(
                             query = query,
                             sortPrice = sortPrice,
                             descending = descending,
+                            listState = productsListState,
+                            refreshing = refreshing,
+                            onRefresh = { vm.pullRefresh(Tab.PRODUCTS) },
                             onQueryChange = vm::onProductQueryChange,
-                            onToggleSort = vm::toggleProductSort,
-                            onToggleOrder = vm::toggleProductOrder,
+                            // 同客户页：换排序回顶放在用户点击回调里，不放 Composable 内部。
+                            onToggleSort = {
+                                vm.toggleProductSort()
+                                scope.launch { productsListState.scrollToItem(0) }
+                            },
+                            onToggleOrder = {
+                                vm.toggleProductOrder()
+                                scope.launch { productsListState.scrollToItem(0) }
+                            },
                             onOpenProduct = { onOverlay(Overlay.Product(it)) },
                             onRetry = { vm.refreshProducts() },
                         )
