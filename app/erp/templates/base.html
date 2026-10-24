@@ -639,9 +639,8 @@
     /*
       单据列表的「类型标签 / 金额」配色（2026-10-24 用户要求「以手机端为准」）。
 
-      手机端（`mobile.css` 的 `.tag.t-*` 与原生 `TypeBadge` / `orderTypeColor`）是
-      **淡底 + 类型色文字**的胶囊，金额与标签同色；桌面端此前用 Bootstrap 实心色块
-      （bg-primary/bg-danger/…），又重又吵，且退货单还有整行淡红底，两层红叠在一起。
+      安卓端以 `TypeBadge` / `orderTypeColor` 为准：销售蓝、退货红、拿货橙、
+      退拿货灰；类型标签用淡底，金额与标签文字同色。
 
       现在两处色只在这里定义一份，模板只输出 `--sale/--return/--purchase/--purchase_return`：
       颜色一律走主题 token（`color-mix` 出淡底），深色/跟随系统自动跟着变，不再各写一套 hex。
@@ -651,12 +650,12 @@
     .order-type-tag--sale{color:var(--erp-primary);background:var(--erp-primary-soft)}
     .order-type-tag--return{color:var(--erp-danger);background:color-mix(in srgb,var(--erp-danger) 12%,transparent)}
     .order-type-tag--purchase{color:var(--erp-warn);background:var(--erp-warn-bg);border-color:var(--erp-warn-border)}
-    .order-type-tag--purchase_return{color:var(--erp-success);background:color-mix(in srgb,var(--erp-success) 12%,transparent)}
+    .order-type-tag--purchase_return{color:var(--erp-muted);background:var(--erp-surface-soft)}
     .order-amount{font-weight:680;font-variant-numeric:tabular-nums;white-space:nowrap}
     .order-amount--sale{color:var(--erp-primary)}
     .order-amount--return{color:var(--erp-danger)}
     .order-amount--purchase{color:var(--erp-warn)}
-    .order-amount--purchase_return{color:var(--erp-success)}
+    .order-amount--purchase_return{color:var(--erp-muted)}
     /*
       2026-10-24 用户要求：「列表不要用深浅颜色交替显示」。
       此前退货单整行铺淡红底（`.table-danger.return-order-row`）+ 斑马纹，

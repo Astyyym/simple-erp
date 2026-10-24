@@ -23,7 +23,7 @@
 ### ② 单据列表的类型标签与金额：以手机端为准，并去掉深浅交替
 
 - **类型标签**从 Bootstrap 实心 `badge` 改成手机端那种**淡底 + 类型色文字**的胶囊
-  （销售蓝 / 退货红 / 拿货橙 / 退拿货紫）。
+  （销售蓝 / 退货红 / 拿货橙 / **退拿货灰**；退拿货标签为浅灰底，金额同为灰色）。
 - **金额**跟标签同色（原来是黑字），负数不再靠整行红底表达。
 - **整行淡红底删掉了**（`.table-danger.return-order-row` 全套规则，含深色模式下那两条
   「置空 Bootstrap 条纹变量」的补丁 —— 补丁的对象已不存在）；`return-order-row` 保留为语义钩子。
@@ -63,12 +63,11 @@
   判据：`getBoundingClientRect().height` 从 0 变 88。
 - 「打印信息提示」从数据/备份组挪到「打印」组下（DOM 位置实测 723 < 2055 < 2183）。
 
-### ⑦ App 商品详情页：商品名吸顶折叠 + 客户搜索 + 拼音/价格正倒序
+### ⑦ 商品专属价详情页：固定商品名 + 客户搜索 + 拼音/价格正倒序
 
-- **商品名吸顶是结构保证的**：标题在 `.hd` 里，而 `.hd` 是滚动容器 `.body` 的兄弟节点，
-  本来就不跟着滚。动画只是**滚动量驱动的字号插值**（22px → 16px + 副标题淡出），
-  `prefers-reduced-motion` 下不动画。
-- 商品名下面加**客户搜索框 + `拼音`/`价格` chips + 方向箭头**，样式对齐首页；
+- **安卓原生端商品名固定在列表外**，直接复用客户详情页的 `BackBar`：16.5sp、SemiBold，返回按钮与间距一致；两页滚动前后均保持同一标题。一级页面与一级页面对齐，二级页面与二级页面对齐。
+- 浏览器只读端的标题位于滚动容器外，仍保留滚动量驱动的字号插值（22px → 16px + 副标题淡出），`prefers-reduced-motion` 下不动画。
+- 商品名下面加**客户搜索框 + `拼音`/`价格` chips + 方向箭头**；
   点箭头**回顶刷新**（网页端用一次性 sessionStorage 标记，在 `onDocumentSettled` 里
   `restoreScroll` 之后消费 + 2 帧 rAF；原生端用 `ResetScrollOnSignal` + `withFrameNanos`）。
   先滚会被浏览器位置恢复 / LazyColumn 的 key 锚定拉回旧位置。
@@ -81,8 +80,8 @@
 
 | 项 | 结果 |
 |---|---|
-| pytest（全量，除 `test_desktop_startup.py` 需独占 5000 端口） | **1091 passed / 16 skipped** |
-| 前端 Node（`tests/frontend/*.test.mjs`，17 个文件） | **17 passed** |
+| pytest（全量，`ERP_PORT=5299` 隔离启动检查） | **1091 passed / 16 skipped / 0 failed** |
+| 前端 Node（`tests/frontend/*.test.mjs`，17 个文件） | **110 passed / 0 failed** |
 | 安卓 JVM（`compileDebugKotlin` + `testDebugUnitTest`） | **30 tests / 0 failures** |
 | 桌面真页面 CDP 探针（1440×900，22 项数值断言） | **22/22 PASS** |
 | 手机端真页面探针（390×844，真实配对，14 项） | **14/14 PASS** |
@@ -93,23 +92,23 @@
 
 | 产物 | 大小 | SHA256 |
 |---|---|---|
-| `dist/simple-erp-setup-v4.6.8.exe` | 41,075,127 B | `9e7af41a4b4dfa5f279802524f6ee0935573d73fa15c02780c1bb308a6cc0491` |
-| `dist/simple-erp-windows-v4.6.8.zip` | 54,859,369 B | `03e698c032ffc6d22905d1d97589e3c3be4a359be61be1a075c9fb75394c19f5` |
-| `dist/local-v4.6.8/简单ERP/` | 681 文件 / 116.8 MB | 绿色版 EXE `f0633df4…`（与交付版 `7c59a67e…` 不同 → 两个入口确实分开） |
-| `dist/simple-erp-mobile-v1.4.9.apk` | 8,021,126 B | `5361895b4da033d49c8aaf61d93484fb2af45485539b22c1ca12d1dd03106c97` |
+| `dist/simple-erp-setup-v4.6.8.exe` | 41,077,708 B | `c8eac5eb490527203bfa03b0b7f604beeb230cab364543da1372817f7359dded` |
+| `dist/simple-erp-windows-v4.6.8.zip` | 54,860,067 B | `dc500105bb28792c7a92862b5ca9152a19e4a2777dab56033e07c96d88d26f07` |
+| `dist/local-v4.6.8/简单ERP/` | 681 文件 / 116.8 MiB | 绿色版 EXE `00a3bbd3…`（与交付版 `9f798f03…` 不同，两个入口独立） |
+| `dist/simple-erp-mobile-v1.4.9.apk` | 8,021,126 B | `1e312e9e01d630cb307db4fa316c72a5432630d87e37b59c285769c081204ca4` |
 
-**产物门（逐项实测）**：ZIP **679 条目**、顶层唯一 `简单ERP/`、`demo_data` / `*.db` / `-wal` / `-shm` / `*.log` 命中 **0**、包内 `_internal/VERSION` = `v4.6.8`、根 `config.json` 在包内；ZIP 内 EXE 与干净产物 EXE **同哈希**（`7c59a67e…`）；三个 EXE 的 PE 版本均为 `4.6.8.0` / `v4.6.8`；绿色版演示数据 200 条（`orders` 125 = 销售 90 + 退货 35、`purchase_orders` 45、`purchase_return_orders` 30、`integrity_check` = ok）。
+**产物门（逐项实测）**：ZIP **679 条目**、顶层唯一 `简单ERP/`、`demo_data` / `*.db` / `-wal` / `-shm` / `*.log` 命中 **0**、包内 `_internal/VERSION` = `v4.6.8`、根 `config.json` 在包内；ZIP 内 EXE 与干净产物 EXE **同哈希**（`9f798f03…`）；三个 EXE 的 PE 版本均为 `4.6.8.0` / `v4.6.8`；绿色版演示数据 200 条（`orders` 125 = 销售 90 + 退货 35、`purchase_orders` 45、`purchase_return_orders` 30、`integrity_check` = ok）。
 
-**隔离冒烟（真实 EXE，非源码）**：
+**首次打包的隔离冒烟（真实 EXE，非源码；两处修正后的重新打包复验见下文）**：
 
 - **交付版**（`build/clean-v4.6.8` 副本 + ASCII 临时目录 + 独立 `ERP_DATA_ROOT`）：`/health` = `v4.6.8`、`auth: disabled`、`database: ok`；**11 条路由全 200**；包内页实测含五张指标卡 id、`order-type-tag` / `order-amount--`、`customer-balance`、`sort=price`、`sort=debt`、`filter-inline`。
 - **ZIP 解压副本**（`ERP_PORT=5097`）：`/health` = `v4.6.8`、数据根指向临时目录；10 条路由全 200；新 UI 标记 7/7 命中；10 个改动过的模板 / 静态文件与源码**逐字节一致**。
 - **手机端（真实配对）**：设置页开「手机访问」→ 5001 起来 → `/m/pair` 200 → 生成配对码 → 配对成功；`/m/`、`/m/customers`、`/m/orders`、`/m/products`、`/m/settings` 全 200；`/m/products/1` 含 `.pin` 吸顶条、`data-reset-scroll`、`sort=pinyin` / `sort=price`、`name="q"`；`/m/api/products/1` 的 `sort` / `order` / `query` 正确回显，非法值回落 `price`/`desc`。
 - **绿色版**（从**副本**启动，交付产物不被写脏）：`/health` = `v4.6.8`、`data_root` 指向副本内 `demo_data`；**11 条路由全 200**；五张指标卡与 DB 对账一致（今日 销售 1 / 退货 3 / 拿货 0 / 退拿货 0）。
-- **安装包真实安装 / 覆盖 / 卸载链路**（`/DIR=D:\app\simple-erp-probe468` 隔离目录）：静默安装 exit 0、679 文件、PE `4.6.8.0`、`config.json` 与厂默认模板**同哈希**、无 `demo_data` / `*.db`；改 `config.json` 造差异后**不带 `/DIR` 覆盖安装** → 落回同一目录、`config.json` **逐字节保留**、`%LOCALAPPDATA%\Programs\简单ERP` 未被创建；卸载 → 程序文件清空、只剩 `config.json`（`uninsneveruninstall`）、卸载注册表键与开始菜单项清空、`LastAppDir` 保留。探针目录已删、`LastAppDir` 已还原为 `D:\app\简单ERP`，**正式安装 `D:\app\简单ERP`（v4.6.7）全程未被触碰**。
+- **安装包真实安装 / 覆盖 / 卸载链路**（首次打包时使用隔离安装目录）：静默安装 exit 0、679 文件、PE `4.6.8.0`、`config.json` 与厂默认模板同哈希、无 `demo_data` / `*.db`；修改配置后覆盖安装，仍使用原目录且逐字节保留配置；卸载后仅保留配置，程序文件与卸载入口清空，安装目录记忆保留。探针目录已清理，原安装目录记忆已还原，正式安装未被覆盖。
 - **正式数据根**（`Documents\简单ERP数据`，12 文件）冒烟前后 size / mtime 逐项零变化。
 
-**仍未做**：`git push`、打 tag、建 GitHub Release（本轮只做本地提交 + 本地打包）；**未验**：真机装机手感（APK 只过了编译 + JVM 单测）、目标打印机实打（本轮不涉及打印）。
+**本次修正与验收（2026-10-24）**：退拿货标签及金额按安卓端改为灰色；安卓商品专属价详情标题与客户详情统一。相关 pytest 37 项、安卓 JVM 30 项通过，浅色/深色/跟随系统配色及安卓两类详情滚动前后均已验收。上述表格为修正后重新打包的产物；正常入口与绿色演示入口均通过隔离启动、页面和样张 PDF 生成检查，APK release 签名校验通过。**用户已确认电脑端和手机端安装测试通过**。本轮未改打印排版，目标打印机实打未另行重验；GitHub 提交、标签与附件以对应 Release 页面为准。
 
 ## v4.6.7 - 扫码框自上而下扫描动画 + 设置页去掉「卡片套卡片」并重做备份与恢复（2026-10-23）
 

@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -32,7 +31,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.simpleerp.mobile.data.ProductDetailResponse
@@ -58,9 +56,8 @@ import com.simpleerp.mobile.ui.util.formatCacheTime
  *
  * ## 2026-10-24 改版（用户第七张截图的三条要求）
  *
- * 1. **商品名在上下滑动时固定在顶部**：标题条提到 `LazyColumn` 外面（与首页
- *    `TodayHeader` / 单据页 `OrdersFilterBar` 同一手法），滚动时不会跟着走。
- *    字号沿用首页 `.hd h1` 那一套（22sp SemiBold），看起来是同一套 App。
+ * 1. **商品名在上下滑动时固定在顶部**：标题条提到 `LazyColumn` 外面，
+ *    复用客户详情的 `BackBar`（16.5sp SemiBold），统一二级页面标题样式。
  * 2. 商品名下面加「搜索框 + 拼音/价格 + 正倒序箭头」，与客户页/商品页同一形态。
  * 3. **箭头点击 = 换方向 + 回顶**（`ResetScrollOnSignal` 的一次性信号）：
  *    换了顺序却停在原行号，等于让用户猜现在排的是哪一段。
@@ -100,9 +97,10 @@ fun ProductDetailScreen(
              * 与首页 TodayScreen、单据页 OrdersScreen 的结构完全一致。
              */
             Column(modifier = modifier.fillMaxSize()) {
-                ProductPinHeader(
+                BackBar(
                     title = detail.product.name,
                     onBack = onBack,
+                    modifier = Modifier.padding(horizontal = Dimens.pageGap),
                 )
                 FlowRow(
                     modifier = Modifier
@@ -190,47 +188,6 @@ fun ProductDetailScreen(
                 }
             }
         }
-    }
-}
-
-/**
- * 吸顶标题条：返回键 + 商品名。
- *
- * 字号/字重照抄首页页头（22sp SemiBold、行高 1.25），两个页面看起来才是一套东西
- * —— 用户 2026-10-23 要求过「单据页顶部与第一页同高同字号」，这里沿用同一口径。
- *
- * 商品名可能很长（`地下式消防水泵接合器`），所以给 `maxLines = 1` + 省略号：
- * 吸顶条高度必须固定，折成两行会让下面的列表整体往下跳。
- */
-@Composable
-private fun ProductPinHeader(title: String, onBack: () -> Unit) {
-    val colors = LocalErpColors.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(colors.bg)
-            .padding(start = Dimens.pageGap, end = Dimens.pageGap, top = 6.dp, bottom = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(Dimens.radiusSm))
-                .clickable(onClick = onBack)
-                .padding(horizontal = 6.dp, vertical = 8.dp),
-        ) {
-            Text("‹ 返回", color = colors.primary, fontSize = 14.5.sp)
-        }
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = title,
-            color = colors.ink,
-            fontSize = 22.sp,
-            fontWeight = FontWeight.SemiBold,
-            lineHeight = 28.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
     }
 }
 
