@@ -3,9 +3,11 @@
 <style>
   .dashboard-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:16px}.dashboard-head h1{margin:0}
   .day-chip{display:flex;flex-direction:column;align-items:flex-end;gap:2px;color:var(--erp-muted);font-size:12px}.day-chip strong{color:var(--erp-ink);font-size:13px;font-variant-numeric:tabular-nums}
-  .metric-grid{display:grid;grid-template-columns:minmax(0,1.45fr) repeat(2,minmax(0,1fr));gap:12px;margin-bottom:15px}
-  .metric-card{min-width:0;min-height:120px;padding:15px 16px;background:var(--erp-glass-bg-strong);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);box-shadow:var(--erp-shadow);-webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.15);backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.15)}
-  .metric-card.net-card{border-color:color-mix(in srgb,var(--erp-primary) 32%,var(--erp-border))}.metric-head{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--erp-muted);font-size:12px;font-weight:650}.metric-period{padding:2px 6px;color:var(--erp-primary);background:var(--erp-primary-soft);border-radius:4px;font-size:11px}.metric-value{margin:12px 0 4px;color:var(--erp-ink);font-size:27px;font-weight:720;line-height:1.15;font-variant-numeric:tabular-nums}.metric-value.count{font-size:25px}.metric-help{margin:0;color:var(--erp-muted);font-size:12px}
+  /* 2026-10-24 用户要求：指标卡补齐「拿货单 / 退拿货单」，与手机端今日概览的四类对齐。
+     五张卡一行：净业务额吃宽（1.45fr），四类各一列 —— 四类**不相加**，所以每张只报笔数。 */
+  .metric-grid{display:grid;grid-template-columns:minmax(0,1.45fr) repeat(4,minmax(0,1fr));gap:10px;margin-bottom:15px}
+  .metric-card{min-width:0;min-height:112px;padding:14px 15px;background:var(--erp-glass-bg-strong);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);box-shadow:var(--erp-shadow);-webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.15);backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.15)}
+  .metric-card.net-card{border-color:color-mix(in srgb,var(--erp-primary) 32%,var(--erp-border))}.metric-head{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--erp-muted);font-size:12px;font-weight:650}.metric-period{padding:2px 6px;color:var(--erp-primary);background:var(--erp-primary-soft);border-radius:4px;font-size:11px}.metric-value{margin:10px 0 4px;color:var(--erp-ink);font-size:27px;font-weight:720;line-height:1.15;font-variant-numeric:tabular-nums}.metric-value.count{font-size:23px}.metric-help{margin:0;color:var(--erp-muted);font-size:12px}
   .dashboard-layout{width:100%;margin:0 auto}
   .dashboard-main{display:grid;grid-template-columns:minmax(0,1fr) 250px;grid-template-areas:"head actions" "metrics actions" "recent actions" "flow actions";align-items:start;gap:20px;min-width:0}
   .dashboard-head{grid-area:head}
@@ -56,7 +58,7 @@
   .firstrun-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:16px}
   .firstrun-actions .firstrun-spacer{flex:1 1 auto}
   .firstrun-tip{margin:10px 0 0;color:var(--erp-muted);font-size:12px;line-height:1.5}
-  @media(max-width:1100px){.dashboard-main{grid-template-columns:minmax(0,1fr) 220px;grid-template-areas:"head actions" "metrics actions" "recent actions" "flow actions";gap:14px}.quick-actions{padding:14px}.dashboard-head{align-items:flex-start;flex-direction:column;gap:8px}.day-chip{align-items:flex-start;text-align:left}.metric-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.flow{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.flow-step,.flow-step:first-child,.flow-step:last-child{border:1px solid var(--erp-border);border-radius:7px}}
+  @media(max-width:1100px){.dashboard-main{grid-template-columns:minmax(0,1fr) 220px;grid-template-areas:"head actions" "metrics actions" "recent actions" "flow actions";gap:14px}.quick-actions{padding:14px}.dashboard-head{align-items:flex-start;flex-direction:column;gap:8px}.day-chip{align-items:flex-start;text-align:left}/* 五张指标卡：窄档回落两列，净业务额独占一行（1.45fr 的宽卡压到 1/2 会裁数字）。 */ .metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.metric-card.net-card{grid-column:1/-1}.flow{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.flow-step,.flow-step:first-child,.flow-step:last-child{border:1px solid var(--erp-border);border-radius:7px}}
   @media(max-width:760px){.sidebar{display:none}.content{height:calc(100% - 20px);margin:10px;border-radius:18px}.page-topbar{padding:0 12px}.page-topbar .company{min-width:0;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.page-body{padding:15px 11px 22px}.dashboard-main{grid-template-columns:minmax(0,1fr);grid-template-areas:"head" "metrics" "actions" "recent" "flow";gap:14px}.quick-actions{position:static}.quick-action-list{grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-head{align-items:flex-start;flex-direction:column;gap:8px}.day-chip{align-items:flex-start}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.metric-card{min-height:108px;padding:12px}.metric-card.net-card{grid-column:1/-1}.metric-value{font-size:24px}.recent-head{align-items:flex-start;flex-direction:column}.recent-table-wrap{overflow:visible}.recent-table{min-width:0}.recent-table thead{display:none}.recent-table,.recent-table tbody{display:block;width:100%}.recent-table tbody tr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 9px;padding:10px;border-top:1px solid var(--erp-border)}.recent-table tbody td{min-width:0;padding:2px 0;border:0}.recent-table tbody td:nth-child(1){grid-column:1/-1}.recent-table tbody td:nth-child(2){grid-column:1/-1;color:var(--erp-muted)}.recent-table tbody td:nth-child(3){grid-column:1;color:var(--erp-muted);font-size:12px}.recent-table tbody td:nth-child(4){grid-column:2;color:var(--erp-muted);text-align:right;font-size:12px}.recent-table tbody td:nth-child(5){grid-column:1}.recent-table tbody td:nth-child(6){grid-column:2;text-align:right}}
   @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
     .quick-actions,.quick-action:not(.primary),.workspace-panel,.metric-card,.recent-panel{background:var(--erp-surface)}
@@ -129,6 +131,19 @@
         <div class="metric-head"><span>退货单</span><span class="metric-period">今日</span></div>
         <p class="metric-value count" id="returnsCount">{{ today_returns_count }} 笔</p>
         <p data-ui-hint class="metric-help">正式保存或已打印</p>
+      </article>
+      {# 2026-10-24：用户要求补上拿货 / 退拿货两类（与手机端今日概览四类同口径）。
+         口径 = business_date + status='saved'（拿货与退拿货没有「已打印」态），
+         与 routes/purchases.py:_purchase_today_history 一致。 #}
+      <article class="metric-card">
+        <div class="metric-head"><span>拿货单</span><span class="metric-period">今日</span></div>
+        <p class="metric-value count" id="purchasesCount">{{ today_purchases_count }} 笔</p>
+        <p data-ui-hint class="metric-help">正式保存</p>
+      </article>
+      <article class="metric-card">
+        <div class="metric-head"><span>退拿货单</span><span class="metric-period">今日</span></div>
+        <p class="metric-value count" id="purchaseReturnsCount">{{ today_purchase_returns_count }} 笔</p>
+        <p data-ui-hint class="metric-help">正式保存</p>
       </article>
     </section>
     <aside class="quick-actions" id="dashboardQuickActions" aria-labelledby="quickActionsTitle">

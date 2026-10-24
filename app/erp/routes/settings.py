@@ -409,6 +409,27 @@ def backup_copy():
     return redirect(url_for("settings.settings_page") + "#backupSection")
 
 
+@settings_bp.post("/backup/delete")
+def backup_delete():
+    """删除一份备份 zip（2026-10-24 用户要求：另存 / 恢复 / 删除三个独立按钮）。
+
+    与「清空数据」「恢复」不同，这里**不自动再备份一份**：删除的对象就是备份本身，
+    再备份一份等于什么都没删。所以只做两件事：校验文件名在 backups/ 内、删掉它。
+    删除不可撤销，界面上的按钮必须自己带二次确认（模板里已有 confirm）。
+    """
+    source = _backup_path_from_form()
+    if source is None:
+        flash("找不到要删除的备份文件", "danger")
+        return redirect(url_for("settings.settings_page") + "#backupSection")
+    name = source.name
+    try:
+        source.unlink()
+        flash(f"已删除备份：{name}", "success")
+    except OSError as exc:
+        flash(f"删除备份失败：{exc}", "danger")
+    return redirect(url_for("settings.settings_page") + "#backupSection")
+
+
 @settings_bp.post("/backup/restore")
 def backup_restore():
     source = _backup_path_from_form()

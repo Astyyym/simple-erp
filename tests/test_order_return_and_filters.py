@@ -20,6 +20,13 @@ def test_return_order_page_offers_both_save_and_save_print():
 
 
 def test_orders_mark_return_orders_red_and_account_ledger_preserves_return_sign_and_clear_filter():
+    """退货单的「红」现在落在**类型标签与金额**上，不再是整行淡红底。
+
+    2026-10-24 用户要求「列表不要用深浅颜色交替显示」，同时「类型标签与金额颜色
+    以手机端为准」：整行着色被删，方向由 `.order-type-tag--return` +
+    `.order-amount--return` 表达。用例名里的 mark_red 仍成立，只是载体变了 ——
+    所以断言跟着载体改，而不是删用例。
+    """
     init_db()
     suffix = uuid.uuid4().hex[:8]
     customer_id = create_customer(f"红色退货客户{suffix}")
@@ -32,7 +39,10 @@ def test_orders_mark_return_orders_red_and_account_ledger_preserves_return_sign_
 
     assert 'href="/orders/"' in orders_html
     assert "清除筛选条件" in orders_html
-    assert f'<tr class="table-danger return-order-row" data-order-type="return"' in orders_html
+    # 行上仍带语义钩子（不再带 table-danger），红色落在标签与金额上。
+    assert '<tr class="return-order-row" data-order-type="return"' in orders_html
+    assert 'class="order-type-tag order-type-tag--return"' in orders_html
+    assert 'class="order-amount order-amount--return"' in orders_html
     assert f"RETURN-{suffix}" in orders_html
     assert f"SALE-{suffix}" in orders_html
 

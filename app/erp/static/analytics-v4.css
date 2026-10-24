@@ -74,13 +74,18 @@ html[data-ui-theme="dark"] .erp-analytics{color-scheme:dark}
 .erp-analytics .filter-tier-query{display:flex;flex-direction:row;flex-wrap:wrap;gap:12px 16px;align-items:flex-end}
 /* 时间块按内容宽度，不被 base 的 flex:1.2 1 320px 拉伸。 */
 .erp-analytics .filter-field-composite{flex:0 0 auto}
-/* 时间块排成两行（与单据管理页同一形态）：第一行「时间范围 + 模式按钮」，第二行「起止日期」。
-   用 grid 而不是 flex：flex 容器的 max-content 宽度按「所有子项不换行之和」算，时间块收不窄；
-   grid 的 auto 列宽 = 各列 max-content，时间块宽度 = 标签列 + 按钮列 ≈ 290px，
-   腾出来的宽度正好让「客户 + 商品名称」并排在右侧同一行（2026-10-17 用户要求与单据管理页一致）。 */
-.erp-analytics .filter-field-composite .filter-inline{display:grid;grid-template-columns:auto auto;justify-content:start;align-items:center;gap:8px 12px;min-width:0}
-.erp-analytics .filter-field-composite .filter-inline>.dates{grid-column:1 / -1;margin:0}
-.erp-analytics .filter-field-date .date-range{grid-template-columns:auto auto;justify-content:start}
+/*
+  2026-10-24 用户要求（第三张截图）：**日期输入框放在「按日到日」右侧同一行**。
+
+  原来是 grid 两行（第一行「时间范围 + 模式按钮」，第二行起止日期，
+  `.dates{grid-column:1/-1}` 独占整行）—— 用户圈出日期框，要求跟模式按钮排一行。
+  改成单行 flex：标签 / 模式按钮 / 日期输入依次排开，放不下才换行（窄档见文件末尾）。
+  用 flex 而不是继续用 grid：这里不再需要「让时间块收窄给右侧让位」，
+  三个元素天然按内容宽度排列，窄屏直接 wrap 即可。
+*/
+.erp-analytics .filter-field-composite .filter-inline{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;min-width:0}
+.erp-analytics .filter-field-composite .filter-inline>.dates{margin:0;flex:0 0 auto}
+.erp-analytics .filter-field-date .date-range{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-start}
 .erp-analytics .filter-field-date .form-control{width:auto;min-width:132px}
 /* 第二行：客户 + 商品名称并排成一组，宽度按内容，右侧留白。 */
 .erp-analytics .filter-row-counterparty{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:flex-start}

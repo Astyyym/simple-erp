@@ -106,6 +106,8 @@
       resetLayer();
     }
     restoreScroll(location.href);
+    // 排序/换档后的回顶要**在恢复旧位置之后**执行，否则旧位置会盖掉回顶。
+    consumeResetScroll();
   }
 
   function resetLayer() {
@@ -554,6 +556,74 @@
       }
     });
   });
+
+  /* ---------------- 5.42 商品详情页：商品名滚动折叠 ----------------
+     2026-10-24 用户要求「商品名在上下滑动的时候顶部固定，动画」。
+     商品名在 `.hd` 里（滚动容器 `.body` 的兄弟节点），**固定是结构保证的**；
+     这里只负责「动画」：滑过 40px 给 <html> 打 data-pin-compact，标题收小、
+     副标题淡出；回顶立即恢复。
+
+     为什么用 `data-pin-compact` 而不是直接改元素 style：
+     - 折叠/恢复两态的视觉全在 CSS 里（可读、可被 prefers-reduced-motion 关掉）；
+     - JS 只翻一个布尔，滚动事件里不做样式计算，60fps 下不抖。
+     节流用 `requestAnimationFrame`：iOS/Android 的 scroll 事件频率不一致，
+     直接在里面写 DOM 会在快速滑动时掉帧。 */
+  var pinPage = document.querySelector('.body[data-page="product"]');
+  if (pinPage) {
+    var compact = false;
+    var ticking = false;
+    var applyPinState = function () {
+      ticking = false;
+      var next = pinPage.scrollTop > 40;
+      if (next === compact) { return; }
+      compact = next;
+      document.documentElement.setAttribute('data-pin-compact', next ? '1' : '0');
+    };
+    pinPage.addEventListener('scroll', function () {
+      if (ticking) { return; }
+      ticking = true;
+      requestAnimationFrame(applyPinState);
+    }, { passive: true });
+    applyPinState();
+  }
+
+  /* ---------------- 5.45 排序/换档后回顶 ----------------
+     2026-10-24：商品专属价详情页顶部加了「拼音 / 价格 / 方向箭头」。
+     换了排序或方向之后如果停在原来的行号，用户看到的是「新顺序的第 20 行」，
+     完全不知道排的是哪一段 —— 与 2026-10-23 客户/商品列表上踩过的坑同源。
+     这里用 `data-reset-scroll` 标记「这一下要回顶」，点击时先记一个会话标记，
+     导航完成（新页面脚本执行）后再滚到 0：**必须等新内容上屏**，
+     否则浏览器会把滚动位置夹回旧值。 */
+  var RESET_SCROLL_KEY = 'erp-mobile-reset-scroll';
+  document.addEventListener('click', function (event) {
+    var link = event.target && event.target.closest ? event.target.closest('a[data-reset-scroll]') : null;
+    if (!link) { return; }
+    try { sessionStorage.setItem(RESET_SCROLL_KEY, '1'); } catch (error) { /* 隐私模式 */ }
+    // 同一个 URL（比如已在倒序还点倒序）不会触发导航，直接把当前页滚回顶部。
+    var samePage = link.href === location.href;
+    if (samePage) {
+      var box = document.querySelector('.body');
+      if (box) { box.scrollTo({ top: 0, behavior: 'smooth' }); }
+      try { sessionStorage.removeItem(RESET_SCROLL_KEY); } catch (error) { /* 忽略 */ }
+    }
+  }, true);
+
+  function consumeResetScroll() {
+    var box = document.querySelector('.body');
+    if (!box) { return; }
+    var flagged = false;
+    try {
+      // 用字面量而不是模块级常量：本函数在脚本前半段（onDocumentSettled）就会跑，
+      // 那时后面的 `var` 还是 undefined，拼出来的键会变成 "undefined"。
+      flagged = sessionStorage.getItem('erp-mobile-reset-scroll') === '1';
+      if (flagged) { sessionStorage.removeItem('erp-mobile-reset-scroll'); }
+    } catch (error) { return; }
+    if (!flagged) { return; }
+    // 等一帧让新内容完成排版，再滚 —— 立刻滚会被浏览器的滚动位置恢复盖掉。
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { box.scrollTop = 0; });
+    });
+  }
 
   /* ---------------- 5.5 tab 预取 ----------------
      每次点 tab 都是整页导航，要重新握手 + 拿 HTML + 拿 CSS/JS。

@@ -148,6 +148,8 @@ private fun MainScaffold(
     val customersListState = rememberLazyListState()
     val ordersListState = rememberLazyListState()
     val productsListState = rememberLazyListState()
+    // 商品详情（某商品 → 每个客户价）也有自己的滚动位置与排序回顶需求（2026-10-24）。
+    val productDetailListState = rememberLazyListState()
 
     /*
      * 返回键：
@@ -195,10 +197,27 @@ private fun MainScaffold(
 
                 is Overlay.Product -> {
                     val state by vm.productDetail.collectAsStateWithLifecycle()
+                    val detailQuery by vm.productDetailQuery.collectAsStateWithLifecycle()
+                    val detailSortPinyin by vm.productDetailSortPinyin.collectAsStateWithLifecycle()
+                    val detailDescending by vm.productDetailDescending.collectAsStateWithLifecycle()
+                    val detailScrollReset by vm.productDetailScrollReset.collectAsStateWithLifecycle()
                     LaunchedEffect(current.id) { vm.openProduct(current.id) }
+                    // 详情页换排序/方向后回顶：同样要等新顺序上屏（见 ResetScrollOnSignal）。
+                    ResetScrollOnSignal(
+                        signal = detailScrollReset,
+                        listState = productDetailListState,
+                        onConsumed = vm::consumeProductDetailScrollReset,
+                    )
                     ProductDetailScreen(
                         state = state,
+                        query = detailQuery,
+                        sortPinyin = detailSortPinyin,
+                        descending = detailDescending,
+                        listState = productDetailListState,
                         onBack = { onOverlay(null) },
+                        onQueryChange = vm::onProductDetailQueryChange,
+                        onToggleSort = vm::toggleProductDetailSort,
+                        onToggleOrder = vm::toggleProductDetailOrder,
                         onRetry = { vm.openProduct(current.id) },
                     )
                 }

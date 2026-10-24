@@ -165,22 +165,38 @@ def test_purchase_source_picker_is_searchable_with_a_shared_limit():
     assert "purchaseSourceClear" in tpl
 
 
-def test_dark_theme_return_rows_neutralise_the_bootstrap_stripe_overlay():
-    """F2（2026-10-14）：深色下退货单行曾被 Bootstrap 的条纹 inset 阴影盖成浅粉底 + 浅粉字。
+def test_return_rows_no_longer_paint_a_striped_or_tinted_background():
+    """2026-10-24 用户要求：**列表不要用深浅颜色交替显示**。
 
-    `.table-danger` 的 `--bs-table-striped-bg` 是浅色模式写死的 `#eccccf`，而 Bootstrap 用
-    `box-shadow: inset 0 0 0 9999px var(--bs-table-bg-type, …)` 把它盖在 background 之上；
-    只覆盖 background/color 不够，必须把这两个变量一起置空（深色与跟随系统各一条）。
-    实测修复前 `getComputedStyle(td).boxShadow` 为 `rgb(236, 204, 207) … inset`，修复后为透明。
+    历史背景（F2，2026-10-14）：退货单整行曾用 `.table-danger` 铺淡红底，深色模式下
+    还被 Bootstrap 的条纹 inset 阴影盖成浅粉底 + 浅粉字，当时用两条「置空
+    `--bs-table-bg-type` / `--bs-table-accent-bg`」的规则修过。
+
+    现在方向改由「类型标签 + 金额颜色」表达（与手机端单据列表同一形态）：
+    - 行底一律是卡片白，斑马纹全局关闭（`--bs-table-accent-bg:transparent`）；
+    - `.return-order-row` 只作为语义钩子保留，**不再有任何背景色规则**。
+    所以这里断言的是「旧的整行着色与深色覆盖规则都必须消失」，
+    而不是继续守着那两条补丁 —— 补丁的对象已经不存在了。
     """
     from pathlib import Path
 
     base = (Path(__file__).resolve().parents[1] / "app" / "erp" / "templates" / "base.html").read_text(encoding="utf-8")
-    lines = base.splitlines()
-    overlay_rules = [line for line in lines if "--bs-table-bg-type:transparent" in line]
-    assert len(overlay_rules) == 2, "深色与跟随系统各需要一条覆盖"
-    assert all("table-danger" in line and "return-order-row" in line for line in overlay_rules)
-    hover_rules = [line for line in lines if "table-danger.return-order-row:hover>*" in line]
-    assert len(hover_rules) == 3, "浅色 1 条 + 深色/跟随系统各 1 条，否则悬停又变浅底浅字"
-    assert sum('html[data-ui-theme="dark"]' in line for line in hover_rules) == 1
-    assert sum('html[data-ui-theme="system"]' in line for line in hover_rules) == 1
+    # 断言要带 `{`：注释里解释「为什么删掉整行淡红底」时也会出现这个选择器，
+    # 只查裸类名会被注释满足，变成假通过（本项目已经踩过一次同类坑）。
+    assert "table-danger.return-order-row>*{" not in base, "整行淡红底已按用户要求删除"
+    assert "table-danger.return-order-row:hover>*{" not in base
+    # 斑马纹必须被显式关掉：只删模板里的 table-striped 类不够，
+    # 回收站/拿货明细等页仍在用该类，全局关掉才不会再出现深浅交替。
+    assert ".table-striped>tbody>tr:nth-of-type(odd)>*{--bs-table-accent-bg:transparent}" in base
+    # 方向必须靠这两组钩子上色（手机端同款语义）。
+    for hook in (
+        ".order-type-tag--sale",
+        ".order-type-tag--return",
+        ".order-type-tag--purchase",
+        ".order-type-tag--purchase_return",
+        ".order-amount--sale",
+        ".order-amount--return",
+        ".order-amount--purchase",
+        ".order-amount--purchase_return",
+    ):
+        assert hook in base, hook

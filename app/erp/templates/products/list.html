@@ -58,29 +58,51 @@
     </div>
     {% if quality %}<input type="hidden" name="quality" value="{{ quality }}">{% endif %}
     {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+    {% if order %}<input type="hidden" name="order" value="{{ order }}">{% endif %}
     <button class="btn btn-primary">查找商品</button>
     <a class="btn btn-outline-secondary" href="/products/">清除信息</a>
   </form>
 </div>
+{#
+  排序控件（2026-10-24 用户要求「按拼音排序」右侧加「价格」+ 正倒序箭头，同手机端）。
+
+  手机端商品价页是「拼音 / 价格 两颗并排 chip + 一个方向箭头」：
+  拼音 = A→Z，价格 = 最低专属价从便宜到贵；箭头切换正倒序。
+  桌面端这里保留「按拼音排序」这个已有文案（老用户与书签都认它），把「价格」补在它右侧，
+  箭头放在最后 —— 与手机端同一顺序、同一语义，只是文案更完整。
+
+  方向只在选了排序依据后才可点：默认列表按使用次数排（历史行为），
+  此时箭头灰掉并写清原因，而不是假装它在控制一个不存在的顺序。
+#}
+{% set _q = ('q=' ~ q|urlencode ~ '&') if q else '' %}
+{% set _qual = ('quality=' ~ quality ~ '&') if quality else '' %}
+{% set _sortq = ('sort=' ~ sort ~ '&') if sort else '' %}
+{% set _orderq = ('order=' ~ order ~ '&') if order else '' %}
 <div class="list-batch-bar" id="productsViewBar" data-refresh-fragment>
   <button class="btn btn-danger" type="button" onclick="submitSelected('bulkProductsForm','确认删除选中的商品吗？')">删除选中</button>
   <div class="list-view-options">
     <span class="list-view-cap">档案筛选：</span>
     <a class="btn btn-sm {{ 'btn-primary' if quality != 'todo' else 'btn-outline-secondary' }}" data-inplace
-       href="/products/?{% if q %}q={{ q|urlencode }}&{% endif %}{% if sort %}sort={{ sort }}{% endif %}">全部</a>
+       href="/products/?{{ _q }}{{ _sortq }}{{ _orderq }}">全部</a>
     <a class="btn btn-sm {{ 'btn-primary' if quality == 'todo' else 'btn-outline-secondary' }}" data-inplace
-       href="/products/?{% if q %}q={{ q|urlencode }}&{% endif %}quality=todo{% if sort %}&sort={{ sort }}{% endif %}">待补全{% if todo_count %}（{{ todo_count }}）{% endif %}</a>
+       href="/products/?{{ _q }}quality=todo&amp;{{ _sortq }}{{ _orderq }}">待补全{% if todo_count %}（{{ todo_count }}）{% endif %}</a>
     <span class="list-view-sep" aria-hidden="true"></span>
-    {% if sort == 'pinyin' %}
-    <a class="btn btn-sm btn-primary" data-inplace
-       href="/products/?{% if q %}q={{ q|urlencode }}&{% endif %}{% if quality %}quality={{ quality }}{% endif %}">按拼音排序</a>
+    <a class="btn btn-sm {{ 'btn-primary' if sort == 'pinyin' else 'btn-outline-secondary' }}" data-inplace
+       href="/products/?{{ _q }}{{ _qual }}sort=pinyin">按拼音排序</a>
+    <a class="btn btn-sm {{ 'btn-primary' if sort == 'price' else 'btn-outline-secondary' }}" data-inplace
+       href="/products/?{{ _q }}{{ _qual }}sort=price">价格</a>
+    {% if sort in ('pinyin', 'price') %}
+    <a class="btn btn-sm btn-outline-secondary list-sort-dir" data-inplace
+       href="/products/?{{ _q }}{{ _qual }}{{ _sortq }}order={{ 'asc' if order == 'desc' else 'desc' }}"
+       title="{{ '当前倒序，点击改成正序' if order == 'desc' else '当前正序，点击改成倒序' }}"
+       aria-label="{{ '当前倒序，点击改成正序' if order == 'desc' else '当前正序，点击改成倒序' }}">{{ '↓' if order == 'desc' else '↑' }}</a>
     {% else %}
-    <a class="btn btn-sm btn-outline-secondary" data-inplace
-       href="/products/?{% if q %}q={{ q|urlencode }}&{% endif %}{% if quality %}quality={{ quality }}&{% endif %}sort=pinyin">按拼音排序</a>
+    <span class="btn btn-sm btn-outline-secondary disabled list-sort-dir" aria-disabled="true"
+          title="先选「按拼音排序」或「价格」，再用箭头切换正倒序">↑</span>
     {% endif %}
   </div>
 </div>
-<p data-ui-hint class="list-legend">「待补全」= 开单或批量导入时建的商品档案，缺品牌，补齐后自动移出本筛选；「按拼音排序」按名称拼音排，可与筛选、搜索叠加。</p>
+<p data-ui-hint class="list-legend">「待补全」= 开单或批量导入时建的商品档案，缺品牌，补齐后自动移出本筛选；「按拼音排序」按名称拼音排、「价格」按各客户专属价里最低的那个排（没有专属价的商品始终垫底），两者都能用箭头切换正倒序，可与筛选、搜索叠加。</p>
 {% if truncated %}<div class="alert alert-warning py-2 mb-2" role="status"><strong>列表已截断</strong>（仅显示前 200 条）。迁移后商品可能很多，请用上方搜索缩小范围，**不要据此认为数据丢失**。</div>{% endif %}
 <form id="bulkProductsForm" method="post" action="/products/bulk_delete"></form>
 <style>

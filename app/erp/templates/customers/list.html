@@ -58,41 +58,67 @@
     </div>
     {% if quality == 'todo' %}<input type="hidden" name="quality" value="todo">{% endif %}
     {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+    {% if order %}<input type="hidden" name="order" value="{{ order }}">{% endif %}
     <button class="btn btn-primary">查找客户</button>
     <a class="btn btn-outline-secondary" href="/customers/">清除信息</a>
   </form>
 </div>
 <!-- 2026-10-14 第二轮：客户页同步商品页结构——「删除选中」与档案筛选同处批量动作条，
      不再把 chip 单独放搜索行下面（两页此前不一致，用户截图指出）。 -->
+{#
+  排序控件（2026-10-24 用户要求：与手机端一致，在「按拼音排序」右侧加「欠款」+ 正倒序箭头）。
+  手机端客户页是「拼音 / 欠款 两颗 chip + 一个方向箭头」：
+  拼音 = A→Z；欠款 = 当前欠款从多到少（柜台最常问「谁欠得多」）；箭头切换正倒序。
+  方向只在选了排序依据后才可点 —— 默认列表按名称排（历史行为），
+  此时箭头灰掉并写清原因，不假装它在控制一个不存在的顺序。
+#}
+{% set _q = ('q=' ~ q|urlencode ~ '&') if q else '' %}
+{% set _qual = ('quality=' ~ quality ~ '&') if quality else '' %}
+{% set _sortq = ('sort=' ~ sort ~ '&') if sort else '' %}
+{% set _orderq = ('order=' ~ order ~ '&') if order else '' %}
 <div class="list-batch-bar" id="customersViewBar" data-refresh-fragment>
   <button class="btn btn-danger" type="button" onclick="submitSelected('bulkCustomersForm','确认删除选中的客户吗？')">删除选中</button>
   <div class="list-view-options">
     <span class="list-view-cap">档案筛选：</span>
     <a class="btn btn-sm {{ 'btn-primary' if quality != 'todo' else 'btn-outline-secondary' }}" data-inplace
-       href="/customers/?{% if q %}q={{ q|urlencode }}&{% endif %}{% if sort %}sort={{ sort }}{% endif %}">全部</a>
+       href="/customers/?{{ _q }}{{ _sortq }}{{ _orderq }}">全部</a>
     <a class="btn btn-sm {{ 'btn-primary' if quality == 'todo' else 'btn-outline-secondary' }}" data-inplace
-       href="/customers/?{% if q %}q={{ q|urlencode }}&{% endif %}quality=todo{% if sort %}&sort={{ sort }}{% endif %}">待补全{% if todo_count %}（{{ todo_count }}）{% endif %}</a>
+       href="/customers/?{{ _q }}quality=todo&amp;{{ _sortq }}{{ _orderq }}">待补全{% if todo_count %}（{{ todo_count }}）{% endif %}</a>
     <span class="list-view-sep" aria-hidden="true"></span>
-    {% if sort == 'pinyin' %}
-    <a class="btn btn-sm btn-primary" data-inplace
-       href="/customers/?{% if q %}q={{ q|urlencode }}&{% endif %}{% if quality %}quality={{ quality }}{% endif %}">按拼音排序</a>
+    <a class="btn btn-sm {{ 'btn-primary' if sort == 'pinyin' else 'btn-outline-secondary' }}" data-inplace
+       href="/customers/?{{ _q }}{{ _qual }}sort=pinyin">按拼音排序</a>
+    <a class="btn btn-sm {{ 'btn-primary' if sort == 'debt' else 'btn-outline-secondary' }}" data-inplace
+       href="/customers/?{{ _q }}{{ _qual }}sort=debt">欠款</a>
+    {% if sort in ('pinyin', 'debt') %}
+    <a class="btn btn-sm btn-outline-secondary list-sort-dir" data-inplace
+       href="/customers/?{{ _q }}{{ _qual }}{{ _sortq }}order={{ 'asc' if order == 'desc' else 'desc' }}"
+       title="{{ '当前倒序，点击改成正序' if order == 'desc' else '当前正序，点击改成倒序' }}"
+       aria-label="{{ '当前倒序，点击改成正序' if order == 'desc' else '当前正序，点击改成倒序' }}">{{ '↓' if order == 'desc' else '↑' }}</a>
     {% else %}
-    <a class="btn btn-sm btn-outline-secondary" data-inplace
-       href="/customers/?{% if q %}q={{ q|urlencode }}&{% endif %}{% if quality %}quality={{ quality }}&{% endif %}sort=pinyin">按拼音排序</a>
+    <span class="btn btn-sm btn-outline-secondary disabled list-sort-dir" aria-disabled="true"
+          title="先选「按拼音排序」或「欠款」，再用箭头切换正倒序">↑</span>
     {% endif %}
   </div>
 </div>
-<p data-ui-hint class="list-legend">「待补全」= 开单或批量导入时建的客户档案，电话与地址都为空（导入可留空），补齐后自动移出本筛选；「按拼音排序」按名称拼音排，可与筛选、搜索叠加。</p>
+<p data-ui-hint class="list-legend">「待补全」= 开单或批量导入时建的客户档案，电话与地址都为空（导入可留空），补齐后自动移出本筛选；「按拼音排序」按名称拼音排、「欠款」按当前欠款从多到少排，两者都能用箭头切换正倒序，可与筛选、搜索叠加。</p>
 <section id="customersResults" data-refresh-fragment>
 {% if truncated %}<div class="alert alert-warning py-2 mb-2" role="status"><strong>列表已截断</strong>（仅显示前 200 条）。迁移后客户可能很多，请用上方搜索缩小范围，**不要据此认为数据丢失**。</div>{% endif %}
 <form id="bulkCustomersForm" method="post" action="/customers/bulk_delete"></form>
-<table class="table table-striped align-middle stable-table">
-  <colgroup><col style="width:44px"><col style="width:22%"><col style="width:15%"><col style="width:26%"><col style="width:100px"><col style="width:90px"><col style="width:190px"></colgroup>
-  <thead><tr><th class="selection-cell"><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>名称</th><th>电话</th><th>地址</th><th>期初</th><th>来源</th><th class="action-cell">操作</th></tr></thead>
+<table class="table align-middle stable-table">
+  {# 列宽（2026-10-24 随「期初 → 欠款」一起调）：欠款列 100→124px、来源列 90→104px。
+     实测（1440 视口）欠款 `¥6229.80` 需要 127px 而只有 110px、来源「手工新建」需要 98px
+     而只有 90px —— 两列都被 ellipsis 截成「¥6229....」「手工...」。
+     地址是长文本（靠 title 悬停看全，历史口径），让出 40px 给这两个一眼要读的列。 #}
+  <colgroup><col style="width:44px"><col style="width:21.5%"><col style="width:14.5%"><col style="width:21.5%"><col style="width:128px"><col style="width:104px"><col style="width:190px"></colgroup>
+  {# 2026-10-24 用户要求：「期初」列改为「欠款」（与手机端一致）。
+     正数 = 客户欠我（绿），负数 = 我欠客户 / 多付（红）；0 保持中性色。
+     口径 = 当前欠款（期初 + 销售/退货 + 调整 − 收款 − 拿货 + 退拿货），
+     与账款管理页同一套加减法，见 routes/customers.py:_customer_balance_map。 #}
+  <thead><tr><th class="selection-cell"><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>名称</th><th>电话</th><th>地址</th><th>欠款</th><th>来源</th><th class="action-cell">操作</th></tr></thead>
   <tbody>
   {% for c in customers %}
   <tr>
-    <td class="selection-cell"><input form="bulkCustomersForm" type="checkbox" name="ids" value="{{c.id}}"></td><td title="{{c.name}}">{{c.name}}{% if customer_needs_completion(c) %}<span class="badge text-bg-warning ms-1" title="缺联系方式：请补全电话或地址，便于后续对账联系">待补全</span>{% endif %}</td><td title="{{c.phone}}">{{c.phone}}</td><td title="{{c.address}}">{{c.address}}</td><td>¥{{cents_to_yuan(c.opening_balance_cents)}}</td><td>{{ origin_label(c.origin) }}</td>
+    <td class="selection-cell"><input form="bulkCustomersForm" type="checkbox" name="ids" value="{{c.id}}"></td><td title="{{c.name}}">{{c.name}}{% if customer_needs_completion(c) %}<span class="badge text-bg-warning ms-1" title="缺联系方式：请补全电话或地址，便于后续对账联系">待补全</span>{% endif %}</td><td title="{{c.phone}}">{{c.phone}}</td><td title="{{c.address}}">{{c.address}}</td><td><span class="customer-balance {{ 'is-owed' if c.balance_cents > 0 else ('is-overpaid' if c.balance_cents < 0 else '') }}" title="{{ '客户欠我 ' if c.balance_cents > 0 else ('我欠客户 ' if c.balance_cents < 0 else '已结清') }}">¥{{cents_to_yuan(c.balance_cents)}}</span></td><td>{{ origin_label(c.origin) }}</td>
     <td class="action-cell"><div class="action-wrap"><a class="btn btn-sm btn-primary" href="/customers/{{c.id}}/edit">编辑</a><form class="d-inline ajax-delete-form" method="post" action="/customers/{{c.id}}/delete"><button class="btn btn-sm btn-danger">删除</button></form></div></td>
   </tr>
   {% endfor %}

@@ -232,6 +232,36 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _productDetail = MutableStateFlow<UiState<ProductDetailResponse>>(UiState.Loading)
     val productDetail: StateFlow<UiState<ProductDetailResponse>> = _productDetail.asStateFlow()
 
+    /**
+     * 商品详情页（某商品 → 每个客户的专属价）的**页内筛选**。
+     *
+     * 2026-10-24 用户要求（第七张截图）：商品名下面加「搜索框 + 拼音/价格 + 正倒序箭头」，
+     * 箭头点击要「回顶刷新」。三件事都是页内状态，不属于商品列表 ——
+     * 混用会让「在列表搜了 A、点进详情却在搜 B」，所以单独一组。
+     *
+     * 为什么要放在 ViewModel 而不是 Composable 的 `remember`：
+     * 从详情页进客户详情再返回时，Composable 会重建，`remember` 的筛选条件就丢了，
+     * 用户得重新输一遍客户名。
+     */
+    private val _productDetailQuery = MutableStateFlow("")
+    val productDetailQuery: StateFlow<String> = _productDetailQuery.asStateFlow()
+
+    /** 详情页排序：false = 价格（默认，贵的在前），true = 客户拼音。 */
+    private val _productDetailSortPinyin = MutableStateFlow(false)
+    val productDetailSortPinyin: StateFlow<Boolean> = _productDetailSortPinyin.asStateFlow()
+
+    /** 详情页正倒序。默认 true = 倒序（价格贵的在前），与网页版默认一致。 */
+    private val _productDetailDescending = MutableStateFlow(true)
+    val productDetailDescending: StateFlow<Boolean> = _productDetailDescending.asStateFlow()
+
+    /** 详情页「换排序/方向后回顶」的一次性标记，语义同 [customersScrollReset]。 */
+    private val _productDetailScrollReset = MutableStateFlow(false)
+    val productDetailScrollReset: StateFlow<Boolean> = _productDetailScrollReset.asStateFlow()
+
+    fun consumeProductDetailScrollReset() {
+        _productDetailScrollReset.value = false
+    }
+
     private val _cacheNewest = MutableStateFlow(0L)
     val cacheNewest: StateFlow<Long> = _cacheNewest.asStateFlow()
 
@@ -746,6 +776,82 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
     }
+
+    /**
+     * 打开商品详情并带上页内筛选（搜索/排序/方向）。
+     *
+     * 只有一个入口（不再另写一个无参版本）：Kotlin 里 `f(id)` 会同时匹配
+     * `f(id)` 与 `f(id, default)` 两个重载，编译期就报歧义。
+     *
+     * 换商品时**重置页内筛选**：在商品 A 里搜过「老李」，退回列表点开商品 B
+     * 却还带着这个搜索词，用户会以为 B 只有那一个客户。
+     *
+     * 缓存键必须含这三个条件：同一个商品在「拼音正序」和「价格倒序」下是两份不同的列表，
+     * 共用键会让离线时看到另一个排序的结果 —— 看起来像「排序没生效」
+     * （2026-10-22 商品列表上踩过同一个坑）。
+     */
+    fun openProduct(productId: Int, resetScroll: Boolean = false) {
+        if (productId <= 0) return
+        val loadedId = (_productDetail.value as? UiState.Ready)?.value?.product?.id ?: 0
+        if (loadedId != 0 && loadedId != productId) {
+            // 换了一个商品：把上一个商品的搜索/排序带回新页面是错的。
+            _productDetailQuery.value = ""
+            _productDetailSortPinyin.value = false
+            _productDetailDescending.value = true
+        }
+        viewModelScope.launch {
+            val q = _productDetailQuery.value.trim()
+            val sort = if (_productDetailSortPinyin.value) "pinyin" else "price"
+            val order = if (_productDetailDescending.value) "desc" else "asc"
+            val cacheKey = "product:$productId:$sort:$order:$q"
+            // 只在「手上还没有数据」时才转圈：换排序时保持旧列表在屏幕上，
+            // 否则每点一次箭头都白屏闪一下。
+            if (_productDetail.value !is UiState.Ready) _productDetail.value = UiState.Loading
+            val params = buildMap {
+                if (q.isNotEmpty()) put("q", q)
+                put("sort", sort)
+                put("order", order)
+            }
+            _productDetail.value = load(
+                cacheKey = cacheKey,
+                path = "/m/api/products/$productId",
+                query = params,
+                serializer = { text -> api.decode(text, ProductDetailResponse.serializer()) },
+            )
+            // 回顶信号必须在新数据发布之后置位（见 customersScrollReset 的注释）。
+            if (resetScroll) _productDetailScrollReset.value = true
+        }
+    }
+
+    /** 详情页搜索：防抖后重新请求（与列表页同一套 220ms 节奏）。 */
+    fun onProductDetailQueryChange(value: String) {
+        _productDetailQuery.value = value
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            delay(220)
+            // 换搜索词等于换一批数据：同样要回顶，否则会停在旧结果的行号上。
+            openProduct(currentProductId(), resetScroll = true)
+        }
+    }
+
+    /** 换排序依据：价格 ↔ 客户拼音。换档时重置为该档的默认方向。 */
+    fun toggleProductDetailSort() {
+        _productDetailSortPinyin.value = !_productDetailSortPinyin.value
+        // 价格默认「贵的在前」（desc），拼音默认 A→Z（asc）。
+        // 不重置的话，用户从「价格正序」切到拼音会看到 Z→A，很怪。
+        _productDetailDescending.value = !_productDetailSortPinyin.value
+        openProduct(currentProductId(), resetScroll = true)
+    }
+
+    /** 正倒序切换：只反转方向，不换排序依据。 */
+    fun toggleProductDetailOrder() {
+        _productDetailDescending.value = !_productDetailDescending.value
+        openProduct(currentProductId(), resetScroll = true)
+    }
+
+    /** 当前正在看的商品 id（从已加载的详情里取；还没加载时返回 0，调用方会忽略）。 */
+    private fun currentProductId(): Int =
+        (_productDetail.value as? UiState.Ready)?.value?.product?.id ?: 0
 
     // -----------------------------------------------------------------------
     // 内部：统一把 LoadOutcome 映射成 UiState

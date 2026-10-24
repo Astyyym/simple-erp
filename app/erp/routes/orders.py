@@ -403,7 +403,11 @@ def list_orders():
         documents = [
             dict(row) | {
                 "type_label": {"sale": "销售单", "return": "退货单", "purchase": "拿货单", "purchase_return": "退拿货单"}[row["order_type"]],
-                "type_badge": {"sale": "bg-primary", "return": "bg-danger", "purchase": "bg-warning text-dark", "purchase_return": "bg-info text-dark"}[row["order_type"]],
+                # 2026-10-24 用户要求「类型标签以手机端为准」：手机上（mobile.css `.tag.t-*`
+                # 与原生 `TypeBadge`）是**淡底 + 类型色文字**的胶囊，不是 Bootstrap 的
+                # 实心色块。实心色块在表格里又重又吵，而且退货单还有整行淡红底，两者叠一起
+                # 就是「一片红」。类型色本身统一由下面的 `.order-type-tag--*` / `.order-amount--*`
+                # 一处定义（模板只输出类型，不再拼 Bootstrap 类名）。
                 "status_label": {
                     "draft": "草稿", "saved": "正式保存", "printed": "已打印", "void": "已作废",
                 }.get(row["status"], row["status"]),

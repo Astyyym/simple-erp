@@ -217,7 +217,10 @@ def test_both_filter_cards_share_one_full_row_field_grid():
     # 此前是 column 的两行布局）。放不下时由 flex-wrap 折行，窄档规则见媒体查询。
     assert 'class="filter-row-counterparty"' in analytics
     assert ".erp-analytics .filter-tier-query{display:flex;flex-direction:row;flex-wrap:wrap" in css
-    # 时间块内部排成两行（与单据管理页同一形态）：第一行「时间范围 + 模式按钮」，第二行「起止日期」。
-    # 用 grid 让时间块宽度收到约 290px，腾出宽度给右侧并排的「客户 + 商品名称」。
-    assert ".erp-analytics .filter-field-composite .filter-inline{display:grid" in css
-    assert ".erp-analytics .filter-field-composite .filter-inline>.dates{grid-column:1 / -1" in css
+    # 时间块内部排布（2026-10-24 用户第三张截图要求：**日期输入框放在「按日到日」右侧同一行**）。
+    # 此前是 grid 两行（第一行「时间范围 + 模式按钮」，第二行起止日期占整行），
+    # 用户圈出日期框要求与模式按钮同行 → 改成单行 flex，放不下才换行。
+    assert ".erp-analytics .filter-field-composite .filter-inline{display:flex" in css
+    # 日期块不再独占整行（旧规则 `.dates{grid-column:1 / -1}` 必须消失，否则两行结构又回来）。
+    assert ".erp-analytics .filter-field-composite .filter-inline>.dates{grid-column:1 / -1" not in css
+    assert ".erp-analytics .filter-field-composite .filter-inline>.dates{margin:0;flex:0 0 auto}" in css

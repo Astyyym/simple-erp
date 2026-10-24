@@ -253,6 +253,20 @@ def create_app() -> Flask:
                 """,
                 (today_iso,),
             ).fetchone()
+            # 2026-10-24 用户要求：工作台指标卡补齐「拿货单 / 退拿货单」，与手机端
+            # 今日概览的四类口径对齐（拿货/退拿货走 business_date + status='saved'，
+            # 与 routes/purchases.py:_purchase_today_history 同源；四类不相加，
+            # 所以这里只给笔数，金额仍只由「今日净业务额」（销售 − 退货）承担）。
+            purchase_counts = conn.execute(
+                """
+                SELECT
+                    (SELECT COUNT(*) FROM purchase_orders
+                      WHERE business_date=? AND status='saved' AND deleted_at IS NULL) AS purchase_count,
+                    (SELECT COUNT(*) FROM purchase_return_orders
+                      WHERE business_date=? AND status='saved' AND deleted_at IS NULL) AS purchase_return_count
+                """,
+                (today_iso, today_iso),
+            ).fetchone()
             recent_rows = conn.execute(
                 """
                 SELECT o.id, o.order_no, o.order_date, o.total_amount_cents,
@@ -284,6 +298,8 @@ def create_app() -> Flask:
             today_net_amount_cents=metrics["net_amount_cents"],
             today_sales_count=metrics["sales_count"],
             today_returns_count=metrics["returns_count"],
+            today_purchases_count=purchase_counts["purchase_count"],
+            today_purchase_returns_count=purchase_counts["purchase_return_count"],
             recent_orders=recent_orders,
             cents_to_yuan=cents_to_yuan,
         )

@@ -249,8 +249,21 @@ def products():
 
 @mobile_bp.get("/products/<int:product_id>")
 def product_detail(product_id: int):
-    """商品详情：这个商品在**每个客户**那里的专属价（用户点名的那个洞）。"""
-    detail = readonly_queries.product_customer_prices(product_id)
+    """商品详情：这个商品在**每个客户**那里的专属价（用户点名的那个洞）。
+
+    2026-10-24（用户要求，第七张截图）：详情页顶部固定商品名 + 搜索框 + 排序。
+    搜索与排序都走**服务端 GET 参数**（`q` / `sort` / `order`），不做前端过滤：
+    专属价最多 200 条，服务端过滤才与客户/商品列表同一套拼音匹配口径
+    （`name_match_clause`），也保证刷新/返回后条件还在。
+    """
+    q = (request.args.get("q") or "").strip()
+    sort = (request.args.get("sort") or "").strip()
+    if sort not in {"price", "pinyin"}:
+        sort = "price"
+    order = (request.args.get("order") or "").strip()
+    if order not in {"asc", "desc"}:
+        order = "desc"
+    detail = readonly_queries.product_customer_prices(product_id, q=q, sort=sort, order=order)
     if detail is None:
         return _not_found_page(
             "这个商品不存在，可能已被删除。", back_url=url_for("mobile.products")
@@ -274,6 +287,9 @@ def product_detail(product_id: int):
         detail=detail,
         customer_id=customer_id,
         back_url=back_url,
+        query=q,
+        sort=sort,
+        order=order,
     )
 
 

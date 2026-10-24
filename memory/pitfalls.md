@@ -669,6 +669,41 @@ zxing `ViewfinderView` 那条横线**位置写死**在 `framingRect` 垂直中�
 验证动画在动：连续截图取线所在 y 坐标比对（本项目用 `System.Drawing` 逐像素找蓝色行），
 不要只看一张图说「有变色」。
 
+## 给控件加内距/加粗之后，表格列宽必须按 `scrollWidth` 重算（2026-10-24）
+
+类型标签从 Bootstrap 的裸文字 `badge` 改成带内距的胶囊、金额改成同色加粗之后，
+同一套 `<colgroup>` 立刻开始裁字：类型格 84px 内容要 105px（`退货单` → `退货单…`），
+金额格 `¥-503.13` 要 127px 却只有 101px（`¥-503....`）。**模板和 CSS 都改对了，
+只是宽度不够**，所以测试全绿、只有截图能看出来。
+
+**判据**：遍历 `tbody` 每格，`scrollWidth > clientWidth + 0.5` 即中招；
+再按列取 `scrollWidth` 的最大值 = 该列真实需要的宽度。
+
+**别用固定 px 修**：窄屏（1280/1100）表宽只有 895/831，固定 px 会把「单号 / 往来对象」
+压到 0（实测）。用百分比让所有列同比缩小，只把语义列（日期/类型/金额/状态）
+按实测需求先给够；操作列可以从 300px 收到 274px 再把宽度还回去。
+
+## `hidden` 属性 + 作者样式 `display:flex` = 面板高度 0，点了没反应（2026-10-24）
+
+备份行的展开面板用 `data-open` 控制显隐，JS 只加/删这个属性 —— 面板量到
+`getBoundingClientRect().height === 0`，点「恢复」屏幕上什么都没出现，也不报错。
+
+**根因**：Bootstrap 自带 `[hidden]{display:none!important}`，而面板初始带 `hidden`。
+`!important` 压过作者写的 `.backup-panel[data-open]{display:flex}`。
+
+**规矩**：这类「服务端渲染即收起、JS 切换」的面板，`hidden` 属性与自定义状态属性
+**必须一起切换**（摘 `hidden` + 加 `data-open`），并在 CSS 里补
+`.x[hidden]{display:none!important}` 兜底。判据就是高度从 0 变成非 0，
+不要只看属性有没有加上。
+
+## 排序/筛选后「回顶」的消费时机：必须在新内容上屏之后（2026-10-24 网页端复现）
+
+手机端 2026-10-23 已在 LazyColumn 上踩过一次（见上面「排序切换不回顶」那条），
+网页端是同一个道理但机制不同：**浏览器的滚动位置恢复**会在脚本之后执行，
+所以 `onDocumentSettled` 里必须 `restoreScroll()` → 再 `consumeResetScroll()`，
+且回顶本身要等两帧（`requestAnimationFrame` 套一层）让新内容完成排版。
+顺序颠倒的表现与手机端一致：点了箭头，停在原行号。
+
 ## 设置页的表格会叠成「卡片套卡片」（2026-10-23）
 
 全局 `table.table`（`base.html`）自带玻璃背景 + 描边 + 投影。塞进 `settings-card` 后

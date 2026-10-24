@@ -57,7 +57,47 @@ def export_customers_excel():
     )
 
 
-def _customer_list_context(conn, q: str = "", quality: str = "", sort: str = ""):
+def _customer_balance_map(conn, customer_ids: list[int]) -> dict[int, int]:
+    """一次算出这批客户的**当前欠款**（分），口径与账款管理页 / 手机端完全一致。
+
+    正数 = 客户欠我（应收），负数 = 我欠客户（多付/预付）。
+
+    为什么必须与 `services/accounting.py:get_customer_account_ledger()` 逐项同源：
+    客户列表这一列现在显示「欠款」而不是「期初」，如果这里换一套加减法，
+    同一个客户在客户管理页和账款管理页会给出两个数 —— 那比不显示更糟。
+    加减项：期初 + 销售/退货（saved/printed 且未删）+ 调整（active）
+    − 收款（active）− 拿货（saved 且未删）+ 退拿货（saved 且未删）。
+    """
+    ids = sorted({int(value) for value in customer_ids})
+    if not ids:
+        return {}
+    placeholders = ",".join("?" for _ in ids)
+    rows = conn.execute(
+        f"""
+        SELECT c.id AS customer_id,
+               COALESCE(c.opening_balance_cents, 0)
+             + COALESCE((SELECT SUM(o.total_amount_cents) FROM orders o
+                          WHERE o.customer_id = c.id AND o.status IN ('saved','printed')
+                            AND o.deleted_at IS NULL), 0)
+             + COALESCE((SELECT SUM(a.amount_cents) FROM adjustments a
+                          WHERE a.customer_id = c.id AND a.status='active'), 0)
+             - COALESCE((SELECT SUM(p.amount_cents) FROM payments p
+                          WHERE p.customer_id = c.id AND p.status='active'), 0)
+             - COALESCE((SELECT SUM(po.total_amount_cents) FROM purchase_orders po
+                          WHERE po.customer_id = c.id AND po.status='saved'
+                            AND po.deleted_at IS NULL), 0)
+             + COALESCE((SELECT SUM(pr.total_amount_cents) FROM purchase_return_orders pr
+                          WHERE pr.customer_id = c.id AND pr.status='saved'
+                            AND pr.deleted_at IS NULL), 0) AS balance_cents
+          FROM customers c
+         WHERE c.id IN ({placeholders})
+        """,
+        ids,
+    ).fetchall()
+    return {int(row["customer_id"]): int(row["balance_cents"] or 0) for row in rows}
+
+
+def _customer_list_context(conn, q: str = "", quality: str = "", sort: str = "", order: str = ""):
     # 待补全口径（2026-10-14 第二轮）：来源 = 开单攒出 + 批量导入，且电话与地址都为空。
     # 必须与 services/master_data_quality 同源，别在这里另写一套条件。
     todo_sql = (
@@ -66,30 +106,51 @@ def _customer_list_context(conn, q: str = "", quality: str = "", sort: str = "")
         if quality == "todo"
         else ""
     )
-    # 按拼音排序（2026-10-14 第二轮：与商品页同步）：pinyin_full 是「无分隔符小写全拼」，
-    # 空值排最后再回落名称。默认仍按名称（NOCASE）——中文按码位排不是拼音序，
-    # 这正是这个开关存在的理由。排序值由路由白名单校验后再传进来。
-    order_by = (
-        "ORDER BY (CASE WHEN COALESCE(pinyin_full, '') = '' THEN 1 ELSE 0 END), "
-        "pinyin_full COLLATE NOCASE ASC, name COLLATE NOCASE ASC, id ASC"
-        if sort == "pinyin"
-        else "ORDER BY name COLLATE NOCASE ASC, id ASC"
-    )
+    # 排序（2026-10-24 用户要求，与手机端客户页同构）：
+    #   sort=""（默认）/ "name" = 按名称（NOCASE），维持历史行为；
+    #   sort="pinyin" = 按拼音 A→Z，空拼音始终垫底（不跟方向翻转）；
+    #   sort="debt"   = 按当前欠款（多→少为正序），需要先算余额再在 Python 里排。
+    # order="desc" 才反转；默认 asc —— 与手机端「只在倒序时传 order」同一约定。
+    descending = order == "desc"
+    direction = "DESC" if descending else "ASC"
+    if sort == "pinyin":
+        order_by = (
+            "ORDER BY (CASE WHEN COALESCE(pinyin_full, '') = '' THEN 1 ELSE 0 END), "
+            f"pinyin_full COLLATE NOCASE {direction}, name COLLATE NOCASE ASC, id ASC"
+        )
+    else:
+        order_by = "ORDER BY name COLLATE NOCASE ASC, id ASC"
+    # 按欠款排序时不能靠 SQL 的 LIMIT 截断（顺序还没算出来），先取全量再排再截。
+    fetch_limit = "" if sort == "debt" else " LIMIT 200"
     if q:
         customers = conn.execute(
             f"SELECT * FROM customers WHERE deleted_at IS NULL AND ({name_match_clause()} OR phone LIKE ? OR address LIKE ?)"
             + todo_sql
-            + f" {order_by} LIMIT 200",
+            + f" {order_by}{fetch_limit}",
             (*name_match_params(q), name_like_pattern(q), name_like_pattern(q)),
         ).fetchall()
     else:
         customers = conn.execute(
             "SELECT * FROM customers WHERE deleted_at IS NULL"
             + todo_sql
-            + f" {order_by} LIMIT 200"
+            + f" {order_by}{fetch_limit}"
         ).fetchall()
-    # E4：到达上限即提示「已截断，可用搜索缩小范围」。
-    truncated = len(customers) >= 200
+    # 2026-10-24：列表把「期初」换成「欠款」（用户要求，同手机端）。
+    # 一次批量 SQL 算好，模板只负责上色（正数绿=别人欠我，负数红=我欠别人）。
+    balances = _customer_balance_map(conn, [row["id"] for row in customers])
+    records = []
+    for row in customers:
+        record = dict(row)
+        record["balance_cents"] = balances.get(int(row["id"]), 0)
+        records.append(record)
+    if sort == "debt":
+        # 欠款正序 = 多→少（柜台最常问「谁欠得多」）；倒序 = 少→多。
+        records.sort(key=lambda item: (-item["balance_cents"], item["name"]), reverse=descending)
+        truncated = len(records) > 200
+        records = records[:200]
+    else:
+        truncated = len(records) >= 200
+    customers = records
     suggestions = conn.execute(
         f"SELECT DISTINCT name FROM customers WHERE deleted_at IS NULL AND {name_match_clause()} ORDER BY name LIMIT 20",
         (*name_match_params(q),),
@@ -119,6 +180,7 @@ def import_customers():
             todo_count=todo_count,
             quality="",
             sort="",
+            order="",
             cents_to_yuan=cents_to_yuan,
             q="",
             import_error=message,
@@ -211,6 +273,7 @@ def import_customers_confirm():
         todo_count=todo_count,
         quality="",
         sort="",
+        order="",
         cents_to_yuan=cents_to_yuan,
         q="",
         import_result=result,
@@ -226,10 +289,14 @@ def list_customers():
     if quality not in ("", "todo"):
         quality = ""
     sort = request.args.get("sort", "").strip()
-    if sort not in ("", "pinyin"):
+    if sort not in ("", "pinyin", "debt"):
         sort = ""
+    # 正倒序：只有显式 desc 才反转，默认保持各排序的历史方向（与手机端同一约定）。
+    order = request.args.get("order", "").strip()
+    if order not in ("", "asc", "desc"):
+        order = ""
     with get_db() as conn:
-        customers, suggestions, truncated, todo_count = _customer_list_context(conn, q, quality, sort)
+        customers, suggestions, truncated, todo_count = _customer_list_context(conn, q, quality, sort, order)
     return render_template(
         "customers/list.html",
         customers=customers,
@@ -238,6 +305,7 @@ def list_customers():
         todo_count=todo_count,
         quality=quality,
         sort=sort,
+        order=order,
         cents_to_yuan=cents_to_yuan,
         q=q,
         **_backup_hint(),

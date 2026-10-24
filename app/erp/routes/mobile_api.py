@@ -435,7 +435,20 @@ def products():
 
 @mobile_api_bp.get("/products/<int:product_id>")
 def product_detail(product_id: int):
-    detail = readonly_queries.product_customer_prices(product_id)
+    """商品详情：这个商品在每个客户处的专属价。
+
+    2026-10-24（用户要求，第七张截图）：App 详情页顶部固定商品名，并在下面加了
+    「搜索框 + 拼音/价格 + 正倒序箭头」。三个参数都交给服务端算 ——
+    拼音匹配只有一套实现（`utils/pinyin.py`），客户端自己过滤就会分叉。
+    """
+    q = (request.args.get("q") or "").strip()
+    sort = (request.args.get("sort") or "").strip()
+    if sort not in {"price", "pinyin"}:
+        sort = "price"
+    order = (request.args.get("order") or "").strip()
+    if order not in {"asc", "desc"}:
+        order = "desc"
+    detail = readonly_queries.product_customer_prices(product_id, q=q, sort=sort, order=order)
     if detail is None:
         return _error("这个商品不存在，可能已被删除。", 404)
     prices = []
@@ -462,6 +475,9 @@ def product_detail(product_id: int):
         prices=prices,
         price_count=detail["price_count"],
         truncated=detail["truncated"],
+        query=q,
+        sort=sort,
+        order=order,
         customers_without_price=detail["customers_without_price"],
     )
 

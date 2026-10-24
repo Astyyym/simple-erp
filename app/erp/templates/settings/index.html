@@ -228,12 +228,16 @@
   </section>
 </form>
 
-{# 「打印信息提示」是点了立即生效的操作（不在主 form 内），归到「数据与备份」组，语义与按钮一致。 #}
-<section class="settings-group" id="groupData">
-  <div class="settings-group-head"><h2>数据与备份</h2><span class="settings-group-note">下面这些卡片不在上面的表单里，<strong>点按钮当场生效，不需要先点「保存设置」</strong></span></div>
-</section>
+{#
+  「打印信息提示」2026-10-24 用户要求归到「打印」这一项下。
 
-<section class="settings-card settings-instant" id="printInfoPromptSection">
+  它是**点了立即生效**的动作，因此不能放进主表单（`settingsMainForm`）——
+  HTML 不允许嵌套 form，而且放进主表单后它会跟着「保存设置」一起提交，
+  语义就变成了「保存才生效」。所以位置放在主表单 `</form>` 之后、
+  「数据与备份」分组标题之前：视觉上仍属「打印」这一段（紧接打印版面预览），
+  行为上保持「点按钮当场生效」。
+#}
+<section class="settings-card settings-instant mt-4" id="printInfoPromptSection">
   <h3>打印信息提示</h3>
   <p data-ui-hint class="text-muted small mb-2">
     工作台会在「订货电话 / 订货地址」为空时提示一次。补全后提示自动消失；不想再看到可以关掉。
@@ -247,6 +251,10 @@
     <span class="text-muted small ms-2">当前：提示中</span>
     {% endif %}
   </form>
+</section>
+
+<section class="settings-group" id="groupData">
+  <div class="settings-group-head"><h2>数据与备份</h2><span class="settings-group-note">下面这些卡片不在上面的表单里，<strong>点按钮当场生效，不需要先点「保存设置」</strong></span></div>
 </section>
 
 <section class="settings-card settings-instant mt-4" id="dataLocationSection">
@@ -295,62 +303,70 @@
     表格自带背景 + 描边 + 投影，叠在卡片上就是「大卡片上又叠一个小卡片」；
     加上每行并排塞两组表单（另存目录 + 恢复确认），整块又乱又丑。
 
-    这一版不用表格，改成**扁平行列表**：
-      每行 = 一行摘要（时间 / 大小 / 版本标签 / 原因）+ 右侧一个「另存 / 恢复」；
-      两个表单收进 `<details>`，**展开后行内铺开**（不是绝对定位弹层 ——
-      弹层会被卡片和 .settings-table-shell 的 overflow 裁掉，实测直接看不见）。
-    这样整块只有外层卡片一层，行与行之间一条发丝线，用不到的操作完全不出现在屏幕上。
+    2026-10-24 用户要求：每行右侧改成**三个独立按钮**「另存 / 恢复 / 删除」。
+    原来是「另存 / 恢复」合成一颗、点整行展开再看两组表单 —— 用户点「恢复」时
+    还得先展开、再找确认框，而且「删除」根本没有入口（只能去资源管理器删文件）。
+
+    现在：摘要行右侧三颗按钮，点「另存」/「恢复」各自在**行内铺开**对应表单
+    （不是绝对定位弹层 —— 弹层会被卡片的 overflow 裁掉，实测直接看不见），
+    「删除」是一个带二次确认的独立表单，点了立刻生效。
+    同一行同时只开一个面板：两个都开着时输入框会挤成两行，也没人同时填。
   #}
   <ul class="backup-list">
     {% for b in backups %}
-    <li class="backup-row">
-      {#
-        `details` 包住**整行**：summary 就是摘要行，展开内容落在它下面。
-        第一版把 details 塞进摘要行的右侧，结果展开时那个 details 一撑宽，
-        flex 直接把摘要挤成两行、按钮跑到摘要上方去了（截图确认过）。
-      #}
-      <details class="backup-item">
-        <summary class="backup-summary">
-          <span class="backup-when">{{ b.created_at_display }}</span>
-          <span class="backup-size">{{ b.size_display }}</span>          {#
-            标签必须写出来：改成扁平行后没有表头了，孤零零一个 `v15`
-            用户根本不知道是什么版本（备份里库的结构版本）。
-          #}
-          <span class="backup-schema">
-            数据库版本 {{ b.schema_version_display }}
-            {% if b.is_legacy %}<span class="badge bg-warning text-dark">旧版结构</span>{% endif %}
-          </span>
-          <span class="backup-reason">{{ b.reason }}</span>
-          <span class="backup-toggle btn btn-sm btn-outline-secondary">另存 / 恢复</span>
-        </summary>
-        <div class="backup-more-body">
-          <form method="post" action="{{ url_for('settings.backup_copy') }}" class="settings-inline-form">
+    <li class="backup-row" data-backup-row>
+      <div class="backup-summary">
+        <span class="backup-when">{{ b.created_at_display }}</span>
+        <span class="backup-size">{{ b.size_display }}</span>          {#
+          标签必须写出来：改成扁平行后没有表头了，孤零零一个 `v15`
+          用户根本不知道是什么版本（备份里库的结构版本）。
+        #}
+        <span class="backup-schema">
+          数据库版本 {{ b.schema_version_display }}
+          {% if b.is_legacy %}<span class="badge bg-warning text-dark">旧版结构</span>{% endif %}
+        </span>
+        <span class="backup-reason">{{ b.reason }}</span>
+        <span class="backup-actions">
+          <button type="button" class="btn btn-sm btn-outline-secondary"
+                  data-backup-toggle="copy" aria-expanded="false">另存</button>
+          <button type="button" class="btn btn-sm btn-outline-primary"
+                  data-backup-toggle="restore" aria-expanded="false">恢复</button>
+          <form method="post" action="{{ url_for('settings.backup_delete') }}" class="backup-delete-form"
+                onsubmit="return confirm('删除这份备份（{{ b.created_at_display }}，{{ b.size_display }}）？删除后无法找回，请确认已经另存到别处。');">
             <input type="hidden" name="backup_name" value="{{ b.name }}">
-            <label class="settings-inline-label">另存到
-              <input class="form-control form-control-sm" name="destination_dir" placeholder="例如 D:\备份">
-            </label>
-            <button type="submit" class="btn btn-sm btn-outline-secondary">另存</button>
+            <button type="submit" class="btn btn-sm btn-danger">删除</button>
           </form>
-          {% if b.is_legacy %}
-          <p class="settings-row-warn">
-            旧版结构备份：恢复后重开程序会自动升级到当前版本（v15），
-            <strong>库存与成本数据将被永久删除、无法回退</strong>。
-          </p>
-          {% endif %}
-          <form method="post" action="{{ url_for('settings.backup_restore') }}" class="settings-inline-form"
-                onsubmit="return confirm('{% if b.is_legacy %}这份备份是{{ b.schema_version_display }}旧版结构：恢复并重开程序后会自动升级到 v15，库存与成本数据将被永久删除、无法回退。{% endif %}将用这份备份覆盖当前数据库。恢复前会自动备份当前库。确定继续？');">
-            <input type="hidden" name="backup_name" value="{{ b.name }}">
-            <label class="settings-inline-label">恢复确认
-              <input class="form-control form-control-sm" name="confirm_text" placeholder="输入 恢复">
-            </label>
-            <label class="settings-inline-check">
-              <input class="form-check-input" type="checkbox" name="include_config" value="1">
-              <span>同时恢复设置</span>
-            </label>
-            <button type="submit" class="btn btn-sm btn-danger">恢复此备份</button>
-          </form>
-        </div>
-      </details>
+        </span>
+      </div>
+      <div class="backup-panel" data-backup-panel="copy" hidden>
+        <form method="post" action="{{ url_for('settings.backup_copy') }}" class="settings-inline-form">
+          <input type="hidden" name="backup_name" value="{{ b.name }}">
+          <label class="settings-inline-label">另存到
+            <input class="form-control form-control-sm" name="destination_dir" placeholder="例如 D:\备份">
+          </label>
+          <button type="submit" class="btn btn-sm btn-outline-secondary">另存到该目录</button>
+        </form>
+      </div>
+      <div class="backup-panel" data-backup-panel="restore" hidden>
+        {% if b.is_legacy %}
+        <p class="settings-row-warn">
+          旧版结构备份：恢复后重开程序会自动升级到当前版本（v15），
+          <strong>库存与成本数据将被永久删除、无法回退</strong>。
+        </p>
+        {% endif %}
+        <form method="post" action="{{ url_for('settings.backup_restore') }}" class="settings-inline-form"
+              onsubmit="return confirm('{% if b.is_legacy %}这份备份是{{ b.schema_version_display }}旧版结构：恢复并重开程序后会自动升级到 v15，库存与成本数据将被永久删除、无法回退。{% endif %}将用这份备份覆盖当前数据库。恢复前会自动备份当前库。确定继续？');">
+          <input type="hidden" name="backup_name" value="{{ b.name }}">
+          <label class="settings-inline-label">恢复确认
+            <input class="form-control form-control-sm" name="confirm_text" placeholder="输入 恢复">
+          </label>
+          <label class="settings-inline-check">
+            <input class="form-check-input" type="checkbox" name="include_config" value="1">
+            <span>同时恢复设置</span>
+          </label>
+          <button type="submit" class="btn btn-sm btn-danger">恢复此备份</button>
+        </form>
+      </div>
     </li>
     {% endfor %}
   </ul>
@@ -856,41 +872,41 @@
   table.settings-plain-table th.settings-col-action{text-align:right}
   table.settings-plain-table td.settings-col-action{text-align:right}
 
-  /* ===== 备份列表：不用表格，改成可展开的扁平行（2026-10-23）=====
+  /* ===== 备份列表：扁平行 + 三个独立按钮（2026-10-24 重做）=====
      为什么不用 <table>：① 表格自带一层玻璃，与卡片叠成「卡片套卡片」；
      ② 每行的操作表单塞不进单元格，展开后会把列撑破、出现横向滚动条。
-     现在每行是 `<details>`：summary 即摘要行，展开内容落在它下面。 */
+     现在每行 = 一条摘要（时间 / 大小 / 版本 / 原因）+ 右侧「另存 / 恢复 / 删除」三颗按钮，
+     点前两颗在行内铺开对应表单（`.backup-panel`），第三颗是独立表单、点即生效。 */
   .backup-list{list-style:none;margin:0;padding:0}
   .backup-row{border-bottom:1px solid var(--erp-border)}
   .backup-row:last-child{border-bottom:0}
-  .backup-item>summary{list-style:none;cursor:pointer}
-  .backup-item>summary::-webkit-details-marker{display:none}
   .backup-summary{
     display:flex;align-items:center;gap:14px;flex-wrap:nowrap;
     padding:11px 2px;border-radius:6px;
   }
-  .backup-summary:hover{background:var(--erp-surface-soft)}
-  .backup-item[open]>summary{background:var(--erp-surface-soft)}
   .backup-when{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
   .backup-size{color:var(--erp-muted);font-size:13px;white-space:nowrap;min-width:64px}
   .backup-schema{color:var(--erp-muted);font-size:13px;white-space:nowrap;display:flex;align-items:center;gap:6px}
   .backup-reason{color:var(--erp-muted);font-size:12.5px;flex:1 1 auto;min-width:0;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  /* 右侧那个「另存 / 恢复」只是视觉按钮，真正可点的是整行 summary。 */
-  .backup-toggle{flex:0 0 auto;pointer-events:none}
-  .backup-item[open] .backup-toggle{background:var(--erp-primary-soft);color:var(--erp-primary);border-color:var(--erp-primary)}
-  /* 展开后在行内铺开。
-     ⚠️ `display` 必须写成「默认 none + [open] 才 flex」：
-     浏览器 UA 样式是 `details:not([open]) > *:not(summary){display:none}`，
-     而**作者样式优先级更高** —— 直接给 .backup-more-body 写 display:flex，
-     收起状态下内容仍然占位（实测 getBoundingClientRect 高度不为 0）。 */
-  .backup-more-body{display:none}
-  .backup-item[open]>.backup-more-body{
+  /* 三个按钮成一组、贴右；删除是独立 form，必须 `display:contents` 才不会
+     在按钮组里多出一层块级盒（否则「删除」会掉到第二行）。 */
+  .backup-actions{flex:0 0 auto;display:flex;align-items:center;gap:6px}
+  .backup-actions .btn{white-space:nowrap}
+  .backup-delete-form{display:contents;margin:0}
+  /* 展开的面板：默认 `hidden` 属性（UA/Bootstrap 的 display:none!important 负责隐藏），
+     展开时 JS **同时**加 `data-open` 并摘掉 `hidden` —— 两件事缺一不可：
+     · 只加 data-open：Bootstrap 的 `[hidden]{display:none!important}` 仍然压着，
+       面板量到 height=0（本轮实测踩到，点了「恢复」什么都没出现）；
+     · 只摘 hidden：作者样式没给内距/描边/背景，展开后是一坨贴边的裸表单。 */
+  .backup-panel[hidden]{display:none!important}
+  .backup-panel[data-open]{
     display:flex;flex-direction:column;gap:10px;
     margin:2px 0 12px;padding:12px 14px;
     border:1px solid var(--erp-border);border-radius:10px;
     background:var(--erp-surface);
   }
+  .backup-panel[data-open]>.settings-row-warn{margin-bottom:0}
   .settings-inline-form{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px;margin:0}
   .settings-inline-label{display:flex;flex-direction:column;gap:4px;flex:1 1 160px;min-width:0;
     font-size:12px;font-weight:600;color:var(--erp-muted)}
@@ -898,10 +914,11 @@
   .settings-inline-check{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--erp-muted);margin:0 0 8px}
   .settings-inline-check .form-check-input{margin:0}
   .settings-row-warn{margin:0;font-size:12px;line-height:1.6;color:var(--erp-danger,#c0392b)}
-  /* 窄屏：原因另起一行，按钮仍靠右。 */
+  /* 窄屏：原因另起一行，三个按钮仍靠右。 */
   @media(max-width:720px){
     .backup-summary{flex-wrap:wrap;gap:6px 12px}
     .backup-reason{flex:1 1 100%;white-space:normal;order:5}
+    .backup-actions{margin-left:auto}
   }
 
   /* 已配对设备：标题 + 数量 + 「撤销全部」同一行，表格下方留出明确间隙。 */
@@ -1039,6 +1056,38 @@
       // Preview reads saved config from server; warn but still allow new tab.
       const ok = window.confirm('当前修改尚未保存，打印预览仍显示上次已保存的内容。是否继续打开预览？');
       if (!ok) event.preventDefault();
+    });
+  });
+
+  // 备份行：另存 / 恢复 两颗按钮各自在行内展开对应表单（2026-10-24）。
+  // 同一行同时只开一个面板：两个都开着时输入框会挤成两行，也没人会同时填。
+  //
+  // ⚠️ 显隐必须**同时**管 `hidden` 属性和 `data-open`：
+  // Bootstrap 自带 `[hidden]{display:none!important}`，只加 `data-open` 的话
+  // 面板永远量到 height=0（本轮实测踩到：点了「恢复」什么都没出现）。
+  // 反过来只删 `hidden` 也不够 —— 作者样式要给展开态补内距/描边/背景。
+  document.querySelectorAll('[data-backup-toggle]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      const row = button.closest('[data-backup-row]');
+      if (!row) return;
+      const which = button.getAttribute('data-backup-toggle');
+      row.querySelectorAll('[data-backup-panel]').forEach(function (panel) {
+        const open = panel.getAttribute('data-backup-panel') === which && !panel.hasAttribute('data-open');
+        if (open) {
+          panel.setAttribute('data-open', '');
+          panel.removeAttribute('hidden');
+        } else {
+          panel.removeAttribute('data-open');
+          panel.setAttribute('hidden', '');
+        }
+      });
+      row.querySelectorAll('[data-backup-toggle]').forEach(function (other) {
+        const active = other === button && row.querySelector('[data-backup-panel="' + which + '"][data-open]');
+        other.setAttribute('aria-expanded', active ? 'true' : 'false');
+      });
+      // 展开后把输入框聚焦，省一次点击（店主点「另存」就是想填目录）。
+      const opened = row.querySelector('[data-backup-panel="' + which + '"][data-open] input');
+      if (opened) opened.focus();
     });
   });
 

@@ -114,18 +114,32 @@
   </form>
 <form id="bulkOrdersForm" method="post" action="/orders/bulk_delete"></form>
 <section id="ordersResults" data-refresh-fragment>
-<table class="table table-striped align-middle stable-table">
-  <colgroup><col style="width:44px"><col style="width:16%"><col style="width:17%"><col style="width:11%"><col style="width:11%"><col style="width:11%"><col style="width:11%"><col style="width:300px"></colgroup>
+<table class="table align-middle stable-table">
+  {# 列宽（2026-10-24 按实测重分配；总比例与改前一致，只在列之间挪宽度）：
+     类型标签从 Bootstrap 的裸文字 `badge` 改成带内距的胶囊（与手机端一致），金额也改成
+     同色 + 加粗 —— 两者都比原来宽 10–15px；而日期列原本只有 101px、需要 125px
+     （一直截成 `2026-...`，属于既存缺陷，本轮顺带补上）。
+     实测需要（1440 视口、表宽 1055）：日期 125 / 类型 114 / 金额 126 / 状态 98，
+     扣掉勾选 44 与操作 300 后剩 711 → 这四列先给够，单号与往来对象平分剩余。
+     为什么不用固定 px：窄屏（1280/1100）表宽只有 895/831，固定 px 会把单号与往来对象
+     压到 0；百分比至少让它们同比缩小，而这两列本来就靠 title 悬停看全（历史口径）。 #}
+  <colgroup><col style="width:44px"><col style="width:13.2%"><col style="width:13.2%"><col style="width:12.3%"><col style="width:11%"><col style="width:12.2%"><col style="width:10%"><col style="width:274px"></colgroup>
   <thead><tr><th class="selection-cell"><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>单号</th><th>往来对象</th><th>日期</th><th>类型</th><th>金额</th><th>状态</th><th class="action-cell">操作</th></tr></thead>
   <tbody>
   {% for o in documents %}
-  <tr class="{{ 'table-danger return-order-row' if o.order_type == 'return' else '' }}" data-order-type="{{o.order_type}}" data-document-key="{{o.document_key}}">
+  {# 2026-10-24 用户要求「列表不要用深浅颜色交替显示」：整行不再套 `table-danger`
+     （它只是给行铺一层淡红底），方向改由「类型标签 + 金额颜色」表达，
+     与手机端单据列表同一形态。`return-order-row` 保留为语义钩子。 #}
+  <tr class="{{ 'return-order-row' if o.order_type == 'return' else '' }}" data-order-type="{{o.order_type}}" data-document-key="{{o.document_key}}">
     <td class="selection-cell">{% if o.deletable %}<input form="bulkOrdersForm" type="checkbox" name="ids" value="{{o.document_key}}">{% endif %}</td>
     <td title="{{o.order_no}}">{{o.order_no}}</td>
     <td title="{{o.customer_name}}">{{o.customer_name or '历史未关联对象'}}</td>
     <td>{{o.business_date}}</td>
-    <td><span class="badge {{o.type_badge}}">{{o.type_label}}</span></td>
-    <td>¥{{cents_to_yuan(o.total_amount_cents)}}</td>
+    {# 2026-10-24 用户要求「类型标签以手机端为准」：手机端是**淡底 + 类型色文字**的胶囊
+       （mobile.css `.tag.t-*` / 原生 TypeBadge），不是 Bootstrap 实心色块。 #}
+    <td><span class="order-type-tag order-type-tag--{{o.order_type}}">{{o.type_label}}</span></td>
+    {# 金额颜色与类型标签同色（用户 2026-10-24 要求，与手机端单据列表一致）。 #}
+    <td><span class="order-amount order-amount--{{o.order_type}}">¥{{cents_to_yuan(o.total_amount_cents)}}</span></td>
     <td><span class="badge {{o.status_badge}}">{{o.status_label}}</span></td>
     <td class="action-cell"><div class="action-wrap">
       <a class="btn btn-sm btn-secondary" href="{{o.detail_url}}">查看</a>

@@ -81,17 +81,28 @@ def test_product_needs_completion_covers_order_and_import_sources():
 # ---------------------------------------------------------------- 按钮就位
 
 def test_view_options_live_in_the_batch_bar_next_to_bulk_delete():
-    """三个按钮放在「删除选中」右侧那块原本空着的区域，并带就地刷新钩子。"""
+    """四个按钮放在「删除选中」右侧那块原本空着的区域，并带就地刷新钩子。
+
+    2026-10-24 用户要求（与手机端一致）：在「按拼音排序」右侧补「价格」，
+    再加一个正倒序箭头 → 排序类从 1 个变 3 个（拼音 / 价格 / 方向），
+    档案筛选仍是 2 个（全部 / 待补全），合计 4 个 data-inplace 链接。
+    方向箭头在没选排序依据时是**置灰的 span**（不是链接），所以不计入。
+    """
     init_db()
     html = create_app().test_client().get("/products/").get_data(as_text=True)
     bar = html.split('class="list-batch-bar"', 1)[1].split("</div>\n</div>", 1)[0]
     assert 'id="productsViewBar"' in html, "整条批量栏要能就地替换（否则筛选状态不会变）"
     assert "data-refresh-fragment" in html.split('class="list-batch-bar"', 1)[1][:120]
     assert "删除选中" in bar
-    for label in ("档案筛选", "全部", "待补全", "按拼音排序"):
+    for label in ("档案筛选", "全部", "待补全", "按拼音排序", "价格"):
         assert label in bar, label
-    assert bar.count("data-inplace") == 3, "全部 / 待补全 / 按拼音排序 都要走就地刷新"
+    assert bar.count("data-inplace") == 4, "全部 / 待补全 / 按拼音排序 / 价格 都要走就地刷新"
     assert 'class="list-view-options"' in bar
+    # 方向箭头：默认（没选排序依据）置灰，选了之后变成可点的链接。
+    assert 'list-sort-dir' in bar
+    sorted_html = create_app().test_client().get("/products/?sort=price").get_data(as_text=True)
+    sorted_bar = sorted_html.split('class="list-batch-bar"', 1)[1].split("</div>\n</div>", 1)[0]
+    assert 'order=desc' in sorted_bar, "选了排序依据后箭头要能切换方向"
 
 
 def test_todo_filter_only_lists_order_archived_products_without_brand():
@@ -201,7 +212,11 @@ def test_pinyin_sort_survives_search_and_todo_filter():
     body = _results_body(html)
     assert "开单攒出测试品" in body
     # 筛选 + 排序要能一起用，且链接里互相带上对方的参数（否则点一下就丢条件）。
-    assert "quality=todo&sort=pinyin" in html
+    # 2026-10-24：链接改成「拼好的查询串」后 `&` 会输出成 `&amp;`，
+    # 断言跟着取解码后的形态，避免把 HTML 转义当成「参数丢了」。
+    import html as html_module
+    decoded = html_module.unescape(html)
+    assert "quality=todo&sort=pinyin" in decoded
 
 
 def test_view_links_keep_query_and_the_other_option():

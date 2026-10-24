@@ -54,17 +54,27 @@ def _results_body(html: str) -> str:
 # ---------------------------------------------------------------- 按钮就位（与商品页同构）
 
 def test_view_options_live_in_the_batch_bar_next_to_bulk_delete():
-    """三个按钮放在「删除选中」右侧那块原本空着的区域，并带就地刷新钩子。"""
+    """四个按钮放在「删除选中」右侧那块原本空着的区域，并带就地刷新钩子。
+
+    2026-10-24 用户要求（与手机端一致）：在「按拼音排序」右侧补「欠款」，
+    再加一个正倒序箭头 → 排序类从 1 个变 3 个（拼音 / 欠款 / 方向），
+    档案筛选仍是 2 个（全部 / 待补全），合计 4 个 data-inplace 链接。
+    方向箭头在没选排序依据时是**置灰的 span**（不是链接），所以不计入。
+    """
     init_db()
     html = create_app().test_client().get("/customers/").get_data(as_text=True)
     assert 'id="customersViewBar"' in html, "整条批量栏要能就地替换（否则筛选状态不会变）"
     assert "data-refresh-fragment" in html.split('class="list-batch-bar"', 1)[1][:160]
     bar = html.split('class="list-batch-bar"', 1)[1].split('<p class="list-legend"', 1)[0]
     assert "删除选中" in bar
-    for label in ("档案筛选", "全部", "待补全", "按拼音排序"):
+    for label in ("档案筛选", "全部", "待补全", "按拼音排序", "欠款"):
         assert label in bar, label
-    assert bar.count("data-inplace") == 3, "全部 / 待补全 / 按拼音排序 都要走就地刷新"
+    assert bar.count("data-inplace") == 4, "全部 / 待补全 / 按拼音排序 / 欠款 都要走就地刷新"
     assert 'class="list-view-options"' in bar
+    assert 'list-sort-dir' in bar
+    sorted_bar = create_app().test_client().get("/customers/?sort=debt").get_data(as_text=True)
+    sorted_bar = sorted_bar.split('class="list-batch-bar"', 1)[1].split('<p class="list-legend"', 1)[0]
+    assert 'order=desc' in sorted_bar, "选了排序依据后箭头要能切换方向"
 
 
 def test_old_facet_row_is_gone_from_the_customer_page():
@@ -129,7 +139,9 @@ def test_pinyin_sort_survives_search_and_todo_filter():
     body = _results_body(html)
     assert "开单攒出测试客户" in body
     # 筛选 + 排序要能一起用，且链接里互相带上对方的参数（否则点一下就丢条件）。
-    assert "quality=todo&sort=pinyin" in html
+    # 2026-10-24：链接改成「拼好的查询串」后 `&` 会输出成 `&amp;`，断言取解码后的形态。
+    import html as html_module
+    assert "quality=todo&sort=pinyin" in html_module.unescape(html)
 
 
 def test_view_links_keep_query_and_the_other_option():

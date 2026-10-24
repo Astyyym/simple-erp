@@ -751,14 +751,46 @@ def product_price_summary(
     return {"products": products, "truncated": truncated, "query": q}
 
 
-def product_customer_prices(product_id: int, *, limit: int = CUSTOMER_PRICE_LIMIT) -> dict | None:
-    """商品视角：这个商品在**每个客户**那里的专属价（价格降序）。
+def product_customer_prices(
+    product_id: int,
+    *,
+    limit: int = CUSTOMER_PRICE_LIMIT,
+    q: str = "",
+    sort: str = "price",
+    order: str = "desc",
+) -> dict | None:
+    """商品视角：这个商品在**每个客户**那里的专属价。
 
     与桌面端商品编辑页的「客户专属价」卡片同源：都是 `customer_prices` JOIN
     `customers`，**不额外过滤已删客户**（桌面端也没有），否则两边会少一行。
     `last_price_cents` 仍按「该客户最近一张有效销售/退货单里这个商品的单价」取，
     与 `product_prices()` 的口径一致，供模板给差额提示。
+
+    2026-10-24（用户要求，App 商品详情页加搜索与排序）：
+    - `q`：按客户名称 / 拼音首字母 / 全拼过滤（复用 `name_match_clause`，与其它页同源）；
+    - `sort="price"`（默认）/ `"pinyin"`：按专属价或客户拼音排；
+    - `order="desc"`（默认，价格降序）/ `"asc"`。
+      默认值保持历史行为不变（HTML 页面与既有测试都按价格降序断言）。
     """
+    q = (q or "").strip()
+    if sort not in {"price", "pinyin"}:
+        sort = "price"
+    descending = (order or "desc").strip() != "asc"
+    direction = "DESC" if descending else "ASC"
+    if sort == "pinyin":
+        # 空拼音**始终垫底**（与客户列表同一约定）：写成 f"... {direction}" 时
+        # 倒序会把空串翻到最前，看起来像「排序坏了」。
+        order_by = (
+            "CASE WHEN COALESCE(c.pinyin_initials, '') = '' THEN 1 ELSE 0 END, "
+            f"c.pinyin_initials COLLATE NOCASE {direction}, c.name COLLATE NOCASE ASC, c.id ASC"
+        )
+    else:
+        order_by = f"cp.price_cents {direction}, c.name COLLATE NOCASE ASC, c.id ASC"
+    where = ["cp.product_id = ?"]
+    params: list = [int(product_id)]
+    if q:
+        where.append(name_match_clause("c."))
+        params.extend(name_match_params(q))
     with connect_readonly() as conn:
         product = conn.execute(
             "SELECT id, name, unit FROM products WHERE id=? AND deleted_at IS NULL",
@@ -778,11 +810,11 @@ def product_customer_prices(product_id: int, *, limit: int = CUSTOMER_PRICE_LIMI
                      ORDER BY o.order_date DESC, o.id DESC LIMIT 1) AS last_price_cents
               FROM customer_prices cp
               JOIN customers c ON c.id = cp.customer_id
-             WHERE cp.product_id = ?
-             ORDER BY cp.price_cents DESC, c.name COLLATE NOCASE ASC, c.id ASC
+             WHERE {' AND '.join(where)}
+             ORDER BY {order_by}
              LIMIT ?
             """,
-            (int(product_id), int(product_id), max(limit, 1) + 1),
+            (int(product_id), *params, max(limit, 1) + 1),
         ).fetchall()
         # 「没有这个商品专属价」的客户：只在未删客户里算，避免把回收站里的名字点出来。
         missing_rows = conn.execute(
@@ -817,6 +849,9 @@ def product_customer_prices(product_id: int, *, limit: int = CUSTOMER_PRICE_LIMI
         "prices": prices,
         "price_count": len(prices),
         "truncated": truncated,
+        "query": q,
+        "sort": sort,
+        "order": "desc" if descending else "asc",
         "customers_without_price": {
             "count": len(missing_rows),
             "names": [row["name"] for row in missing_rows[:NO_PRICE_NAME_LIMIT]],

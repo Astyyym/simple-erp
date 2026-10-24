@@ -138,9 +138,12 @@ def test_search_row_keeps_input_and_both_buttons_in_one_flex_row():
 
 
 def test_view_options_row_keeps_cap_and_chips_together_on_both_pages():
-    """两页的档案筛选都是「标签 + 三个 chip」，同属批量动作条右侧，沿用 btn-sm 语义。
+    """两页的档案筛选都是「标签 + chip」，同属批量动作条右侧，沿用 btn-sm 语义。
 
     决策变更（2026-10-14 第二轮）：客户页补上「按拼音排序」→ 两页 chip 数一致（3 个）。
+    决策变更（2026-10-24）：用户要求与手机端一致，排序 chip 从 1 个变 2 个
+    （商品页「按拼音排序 / 价格」、客户页「按拼音排序 / 欠款」）+ 一个方向箭头，
+    所以 `btn-sm` 计数从 3 变 5（2 个档案筛选 + 2 个排序 + 1 个方向）。
     """
     for path in PAGES:
         bar = _html(path).split('class="list-view-options"', 1)[1].split("</div>", 1)[0]
@@ -148,7 +151,9 @@ def test_view_options_row_keeps_cap_and_chips_together_on_both_pages():
         assert "档案筛选" in bar, path
         for label in ("全部", "待补全", "按拼音排序"):
             assert label in bar, f"{path} 缺少 {label}"
-        assert bar.count("btn-sm") == 3, path
+        # 排序第二档两页不同：商品是「价格」、客户是「欠款」（各自与手机端对应）。
+        assert ("价格" if path.startswith("/products") else "欠款") in bar, path
+        assert bar.count("btn-sm") == 5, path
 
 
 def _legend(html: str) -> str:

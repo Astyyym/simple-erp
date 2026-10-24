@@ -313,7 +313,15 @@
     }
     .table>:not(caption)>*>*{padding:12px 14px;border-bottom-color:var(--erp-border)}
     .table th{height:44px;background:var(--erp-glass-bg-strong);color:var(--erp-muted);font-size:calc(12px * var(--erp-scale));font-weight:650;letter-spacing:.03em;vertical-align:middle;white-space:nowrap}
-    .table td{font-size:calc(14px * var(--erp-scale));vertical-align:middle;background:transparent}.table-striped>tbody>tr:nth-of-type(odd)>*{--bs-table-accent-bg:rgba(127,127,127,.04)}.table tbody tr:hover>*{background:rgba(37,99,235,.05)}
+    .table td{font-size:calc(14px * var(--erp-scale));vertical-align:middle;background:transparent}
+    /* 2026-10-24 用户要求：列表不要用深浅颜色交替显示。
+       原来 `.table-striped` 给奇数行铺 rgba(127,127,127,.04)，一行白一行灰，
+       扫行时眼睛一直在跳。现在斑马纹全局关闭，行与行的边界只靠
+       `.table>:not(caption)>*>*` 的 1px 发丝线；模板里的 `table-striped` 类保留
+       （语义不变），只是不再产生底色。退货单的整行淡红底是**类型标识**、不是斑马纹，
+       仍按 `.table-danger.return-order-row` 保留。 */
+    .table-striped>tbody>tr:nth-of-type(odd)>*{--bs-table-accent-bg:transparent}
+    .table tbody tr:hover>*{background:rgba(37,99,235,.05)}
     .stable-table{table-layout:fixed;width:100%}.stable-table th,.stable-table td{height:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.stable-table .action-cell{width:380px;min-width:380px}.stable-table .action-wrap{display:flex;gap:6px;align-items:center;justify-content:flex-start;white-space:nowrap}.stable-table .action-wrap .btn{min-width:60px}.stable-table .deleting{opacity:.45;pointer-events:none}
     /*
       勾选框单元格（2026-10-16 批次 2 实测确诊）：单元格里只有一个裸 inline-block 复选框
@@ -442,6 +450,18 @@
     .list-view-options{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto}
     .list-view-options .list-view-cap{color:var(--erp-muted);font-size:12.5px;font-weight:600}
     .list-view-sep{width:1px;height:20px;background:var(--erp-border)}
+    /* 排序方向箭头（2026-10-24）：与手机端 `OrderChip` 同一形态 —— 方角小按钮、只放 ↑/↓。
+       用箭头而不是「正序/倒序」四个字：它跟在两颗排序 chip 后面，中文太占宽。
+       箭头方向就是当前结果的实际顺序：↑ = 从小到大 / A→Z，↓ = 反过来。
+       没选排序依据时置灰（`.disabled`）并靠 title 说明原因，不隐藏 ——
+       隐藏会让用户以为「这页不能改方向」。 */
+    .list-sort-dir{min-width:38px;padding-left:0;padding-right:0;font-size:15px;font-weight:700;line-height:1}
+    /* 客户列表「欠款」列（2026-10-24，取代原来的「期初」）。
+       正数 = 客户欠我 → 绿色（应收是好事）；负数 = 我欠客户/多付 → 红色。
+       与手机端 CustomersScreen 的配色规则一致，别反着用。 */
+    .customer-balance{font-variant-numeric:tabular-nums;font-weight:650}
+    .customer-balance.is-owed{color:var(--erp-success)}
+    .customer-balance.is-overpaid{color:var(--erp-danger)}
     @media(max-width:760px){ .list-view-options{margin-left:0} }
     .list-create{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:14px 0 0;padding-top:14px;border-top:1px solid var(--erp-border)}
     /* 字段用等宽网格均分；给字段一个舒适下限，宁可整齐换行也不把 6 个框压到 116px 挤成一排 */
@@ -615,14 +635,36 @@
       -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);
       backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);
     }
-    .alert{border-radius:6px;border-width:1px}.table-danger.return-order-row>*{background:#fff1f1!important;color:#a52a2a}.table-danger.return-order-row:hover>*{background:#ffe7e7!important}
-    /* F2（2026-10-14）：深色下必须连 Bootstrap 的「条纹覆盖层」一起置空。
-       `.table-danger` 是浅色模式写死的变体（`--bs-table-striped-bg: #eccccf`），而 Bootstrap 用
-       `box-shadow: inset 0 0 0 9999px var(--bs-table-bg-type, …)` 把那层色**盖在 background 之上**；
-       只覆盖 background/color 会被整片盖掉 → 浅粉底 + 浅粉字。hover 同理，否则悬停又变浅底浅字。 */
-    html[data-ui-theme="dark"] .table-danger.return-order-row>*{background:rgba(248,113,113,.12)!important;color:#fecaca;--bs-table-bg-type:transparent!important;--bs-table-accent-bg:transparent!important}
-    html[data-ui-theme="dark"] .table-danger.return-order-row:hover>*{background:rgba(248,113,113,.22)!important}
-    @media (prefers-color-scheme: dark){html[data-ui-theme="system"] .table-danger.return-order-row>*{background:rgba(248,113,113,.12)!important;color:#fecaca;--bs-table-bg-type:transparent!important;--bs-table-accent-bg:transparent!important}html[data-ui-theme="system"] .table-danger.return-order-row:hover>*{background:rgba(248,113,113,.22)!important}}
+    .alert{border-radius:6px;border-width:1px}
+    /*
+      单据列表的「类型标签 / 金额」配色（2026-10-24 用户要求「以手机端为准」）。
+
+      手机端（`mobile.css` 的 `.tag.t-*` 与原生 `TypeBadge` / `orderTypeColor`）是
+      **淡底 + 类型色文字**的胶囊，金额与标签同色；桌面端此前用 Bootstrap 实心色块
+      （bg-primary/bg-danger/…），又重又吵，且退货单还有整行淡红底，两层红叠在一起。
+
+      现在两处色只在这里定义一份，模板只输出 `--sale/--return/--purchase/--purchase_return`：
+      颜色一律走主题 token（`color-mix` 出淡底），深色/跟随系统自动跟着变，不再各写一套 hex。
+      行的底色统一为白（不再有斑马纹与退货整行淡红），方向靠标签与金额的颜色区分。
+    */
+    .order-type-tag{display:inline-flex;align-items:center;min-height:22px;padding:2px 8px;border:1px solid transparent;border-radius:6px;font-size:calc(12px * var(--erp-scale));font-weight:650;white-space:nowrap}
+    .order-type-tag--sale{color:var(--erp-primary);background:var(--erp-primary-soft)}
+    .order-type-tag--return{color:var(--erp-danger);background:color-mix(in srgb,var(--erp-danger) 12%,transparent)}
+    .order-type-tag--purchase{color:var(--erp-warn);background:var(--erp-warn-bg);border-color:var(--erp-warn-border)}
+    .order-type-tag--purchase_return{color:var(--erp-success);background:color-mix(in srgb,var(--erp-success) 12%,transparent)}
+    .order-amount{font-weight:680;font-variant-numeric:tabular-nums;white-space:nowrap}
+    .order-amount--sale{color:var(--erp-primary)}
+    .order-amount--return{color:var(--erp-danger)}
+    .order-amount--purchase{color:var(--erp-warn)}
+    .order-amount--purchase_return{color:var(--erp-success)}
+    /*
+      2026-10-24 用户要求：「列表不要用深浅颜色交替显示」。
+      此前退货单整行铺淡红底（`.table-danger.return-order-row`）+ 斑马纹，
+      一张表里三种底色交替出现，扫行时像一层层深浅条纹。
+      现在**行底一律是卡片的白色**，方向只由「类型标签 + 金额颜色」表达
+      （与手机端单据列表同一形态）。`return-order-row` 类保留为语义钩子
+      （排查/前端脚本按它取行），但不再画任何底色。
+    */
     /* native controls (date/select/scrollbar) follow the dark theme */
     html[data-ui-theme="dark"]{color-scheme:dark}
     @media (prefers-color-scheme: dark){html[data-ui-theme="system"]{color-scheme:dark}}

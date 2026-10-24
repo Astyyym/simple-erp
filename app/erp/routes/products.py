@@ -71,7 +71,7 @@ def export_products_excel():
     )
 
 
-def _product_list_context(conn, q: str = "", quality: str = "", sort: str = ""):
+def _product_list_context(conn, q: str = "", quality: str = "", sort: str = "", order: str = ""):
     # v14：商品身份只有名称，「待补全（型号为空）」筛选已随 spec 列一起删除。
     # 2026-10-14 第一轮：用户要求商品页恢复「全部 / 待补全」+ 新增「按拼音排序」。
     # 2026-10-14 第二轮：口径扩到「开单攒出 + 批量导入」。
@@ -83,19 +83,37 @@ def _product_list_context(conn, q: str = "", quality: str = "", sort: str = ""):
         if quality == "todo"
         else ""
     )
-    # 按拼音排序：pinyin_full 是「无分隔符小写全拼」，空值排最后再回落名称。
-    # 默认仍按名称（NOCASE）——中文是按码位排，不是拼音，这正是要加这个开关的原因。
-    pinyin_order = (
-        "ORDER BY (CASE WHEN COALESCE(p.pinyin_full, '') = '' THEN 1 ELSE 0 END), "
-        "p.pinyin_full COLLATE NOCASE ASC, p.name COLLATE NOCASE ASC, p.id ASC"
-    )
+    # 排序（2026-10-24 用户要求，与手机端商品价页同构）：
+    #   sort=""（默认）= 使用次数倒序，维持历史行为；
+    #   sort="pinyin" = 按拼音 A→Z，空拼音**始终垫底**（不跟 direction 翻转，见下）；
+    #   sort="price"  = 按最低专属价（`MIN(cp.price_cents)`，无专属价的商品永远垫底）。
+    # order="desc" 才反转，默认 asc —— 与手机端「只在倒序时传 order」同一约定，
+    # 避免同一个排序因为多传一个 asc 而分出两套缓存键。
+    descending = order == "desc"
+    direction = "DESC" if descending else "ASC"
+    if sort == "price":
+        pinyin_order = (
+            "ORDER BY (CASE WHEN min_price_cents IS NULL THEN 1 ELSE 0 END), "
+            f"min_price_cents {direction}, p.name COLLATE NOCASE ASC, p.id ASC"
+        )
+    elif sort == "pinyin":
+        # 空拼音那一项固定 ASC：写成 f"... {direction}" 时倒序会把空串翻到最前，
+        # 看起来像「排序坏了」（手机端踩过同一个坑，见 memory/pitfalls.md）。
+        pinyin_order = (
+            "ORDER BY (CASE WHEN COALESCE(p.pinyin_full, '') = '' THEN 1 ELSE 0 END), "
+            f"p.pinyin_full COLLATE NOCASE {direction}, p.name COLLATE NOCASE ASC, p.id ASC"
+        )
+    else:
+        pinyin_order = ""
     if q:
         products = conn.execute(
             f"""
-            SELECT p.*
+            SELECT p.*, MIN(cp.price_cents) AS min_price_cents
             FROM products AS p
+            LEFT JOIN customer_prices AS cp ON cp.product_id = p.id
             WHERE p.deleted_at IS NULL AND {name_match_clause('p.')}{todo_sql}
-            {pinyin_order if sort == 'pinyin' else 'ORDER BY p.usage_count DESC, p.id DESC'}
+            GROUP BY p.id
+            {pinyin_order or 'ORDER BY p.usage_count DESC, p.id DESC'}
             """,
             (*name_match_params(q),),
         ).fetchall()
@@ -103,10 +121,12 @@ def _product_list_context(conn, q: str = "", quality: str = "", sort: str = ""):
     else:
         products = conn.execute(
             f"""
-            SELECT p.*
+            SELECT p.*, MIN(cp.price_cents) AS min_price_cents
             FROM products AS p
+            LEFT JOIN customer_prices AS cp ON cp.product_id = p.id
             WHERE p.deleted_at IS NULL{todo_sql}
-            {pinyin_order if sort == 'pinyin' else 'ORDER BY p.name COLLATE NOCASE ASC, p.id ASC'} LIMIT 200
+            GROUP BY p.id
+            {pinyin_order or 'ORDER BY p.name COLLATE NOCASE ASC, p.id ASC'} LIMIT 200
             """
         ).fetchall()
         # E4：到达上限即提示「已截断，可用搜索缩小范围」。
@@ -268,10 +288,14 @@ def list_products():
     if quality not in ("", "todo"):
         quality = ""
     sort = request.args.get("sort", "").strip()
-    if sort not in ("", "pinyin"):
+    if sort not in ("", "pinyin", "price"):
         sort = ""
+    # 正倒序：只有显式 desc 才反转，默认保持各排序的历史方向（与手机端同一约定）。
+    order = request.args.get("order", "").strip()
+    if order not in ("", "asc", "desc"):
+        order = ""
     with get_db() as conn:
-        rows, suggestions, truncated, todo_count = _product_list_context(conn, q, quality, sort)
+        rows, suggestions, truncated, todo_count = _product_list_context(conn, q, quality, sort, order)
     return render_template(
         "products/list.html",
         products=rows,
@@ -282,6 +306,7 @@ def list_products():
         q=q,
         quality=quality,
         sort=sort,
+        order=order,
         todo_count=todo_count,
         **_backup_hint(),
     )
