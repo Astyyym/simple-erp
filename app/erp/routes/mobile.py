@@ -319,13 +319,38 @@ def settings():
 
 @mobile_bp.get("/pair")
 def pair():
-    return render_template(
-        "mobile/pair.html",
-        nav_key="pair",
-        error="",
-        next_path=_safe_next(request.args.get("next")),
-        lock_seconds=mobile_pairing.lock_remaining_seconds(),
+    """配对页。同时下发「这台设备是谁」的 uid cookie（**不是**认证凭据）。
+
+    为什么要服务端下发而不是前端 JS 生成：没有 JS 也要能配对（配对页是唯一
+    兜底入口，见设置页那套「JS 挂了还能配」的口径）。服务端在渲染时种 cookie，
+    `pair_submit` 自己读回来，不依赖任何客户端脚本。
+
+    为什么需要它：浏览器每次清 cookie / 换浏览器都要重新配对，没有稳定 uid
+    就会在设置页长出好几条「浏览器」记录。uid 只用于合并展示，不参与认证。
+    """
+    existing_uid = mobile_pairing.normalize_device_uid(
+        request.cookies.get(mobile_pairing.UID_COOKIE_NAME)
     )
+    new_uid = "" if existing_uid else mobile_pairing.new_device_uid()
+    response = make_response(
+        render_template(
+            "mobile/pair.html",
+            nav_key="pair",
+            error="",
+            next_path=_safe_next(request.args.get("next")),
+            lock_seconds=mobile_pairing.lock_remaining_seconds(),
+        )
+    )
+    if new_uid:
+        response.set_cookie(
+            mobile_pairing.UID_COOKIE_NAME,
+            new_uid,
+            max_age=400 * 24 * 3600,
+            httponly=True,
+            samesite="Lax",
+            path="/",
+        )
+    return response
 
 
 @mobile_bp.post("/pair")
@@ -333,12 +358,17 @@ def pair_submit():
     next_path = _safe_next(request.form.get("next"))
     code = request.form.get(PAIR_FORM_FIELD, "")
     label = (request.form.get("label") or "").strip()
+    # uid 优先取表单（测试/手工提交可直接给），否则取配对页种下的 cookie。
+    uid = mobile_pairing.normalize_device_uid(
+        request.form.get("device_uid") or request.cookies.get(mobile_pairing.UID_COOKIE_NAME)
+    )
     cookie_value, error = mobile_pairing.verify_pair_code(
         code,
         label=label or _device_label_from_agent(request.headers.get("User-Agent", "")),
         ip=request.remote_addr or "",
         # 这个蓝图只服务浏览器页面，所以固定报 browser。
         platform=mobile_pairing.PLATFORM_BROWSER,
+        uid=uid,
     )
     if error:
         return (
@@ -360,6 +390,16 @@ def pair_submit():
         samesite="Lax",
         path="/",
     )
+    # 保底：配对成功后把 uid 再种一次（cookie 被清过但表单里带了 uid 的情况）。
+    if uid:
+        response.set_cookie(
+            mobile_pairing.UID_COOKIE_NAME,
+            uid,
+            max_age=400 * 24 * 3600,
+            httponly=True,
+            samesite="Lax",
+            path="/",
+        )
     return response
 
 

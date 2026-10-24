@@ -348,3 +348,51 @@ def test_devices_json_endpoint_returns_devices():
     assert payload["ok"] is True
     assert isinstance(payload["devices"], list)
     assert payload["count"] == len(payload["devices"])
+
+
+# ---------------------------------------------------------------------------
+# 关闭提醒的数据源（2026-10-24）
+# ---------------------------------------------------------------------------
+
+def test_close_state_endpoint_reports_listening_and_devices():
+    """关闭提醒浮层的数据源必须是完整 JSON。
+
+    它和 `mobile/devices` 是同族缺陷风险：接口 500 时页面只是「弹出来但没有时间」，
+    看起来像样式没加载，而不像后端挂了 —— 所以这里逐字段断。
+
+    `listening` 是这次新增的关键字段：**开关开着 ≠ 监听起来了**（5001 被占时
+    开关会回弹、监听不启动）。缺了它，浮层会让店主拿起手机去同步，而那一定失败。
+    """
+    from erp import create_app
+    from erp.services import mobile_pairing
+
+    client = create_app().test_client()
+    response = client.get("/settings/mobile/close-state", headers={"Accept": "application/json"})
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload is not None
+    assert payload["ok"] is True
+    # 没有设备时不能要求提醒（桌面壳据此直接放行关闭）。
+    assert payload["has_devices"] == bool(mobile_pairing.list_devices())
+    assert isinstance(payload["devices"], list)
+    assert isinstance(payload["listening"], bool)
+    assert "listening_error" in payload
+    # 没在监听时二维码必须为空（给一张连不上的码等于教店主白扫一次）。
+    if not payload["listening"]:
+        assert payload["qr"] == ""
+    # 相对时间要么是 null（从未同步），要么是非负整数。
+    for device in payload["devices"]:
+        seconds = device["last_sync_seconds"]
+        assert seconds is None or seconds >= 0
+
+
+def test_close_state_lists_device_uid_and_sync_fields():
+    """设备条目必须带 uid 与同步时间 —— 浮层要用它们说「哪台、多久前同步的」。"""
+    from erp import create_app
+
+    client = create_app().test_client()
+    payload = client.get("/settings/mobile/close-state").get_json()
+    for device in payload["devices"]:
+        assert "uid_short" in device
+        assert "last_sync_label" in device
+        assert "last_sync_seconds" in device

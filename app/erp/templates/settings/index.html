@@ -492,6 +492,7 @@
         {% else %}未监听{% endif %}
       </dd>
       <dt>最后一次手机成功请求</dt><dd>{{ mobile.last_success_label }}</dd>
+      <dt>最后一次完整同步</dt><dd>{{ mobile.last_sync_label }}</dd>
       <dt>上次错误</dt><dd>{{ mobile.status.error or '无' }}</dd>
       <dt>已配对设备</dt><dd id="mobileDeviceCount">{{ mobile.devices|length }} 台</dd>
     </dl>
@@ -523,26 +524,51 @@
     </form>
   </div>
   <div class="settings-table-shell">
-    <table class="table align-middle settings-plain-table" id="mobileDevicesTable"
+    {#
+      宽窄适配（2026-10-24 用户反馈「窗口一窄，配对设备表格从圆角卡片里伸出去」）：
+      7 列全是 nowrap，表格固有宽度约 800px；卡片内宽小于它时表格不会自己缩，
+      而是直接顶穿卡片右边界（实测 1000px 视口下，卡片内宽 575px、表格 804px）。
+      现在外层 `.settings-table-shell` 声明 `container-type:inline-size`，
+      并用 `@container` 在容器不够宽时把整表改成「每条设备一张小卡」的堆叠形态；
+      宽的时候仍是正常表格。
+      **data-label 不能省**：堆叠后表头被隐藏，标签只能由 td 的 data-label 画出来，
+      少了它每行就只剩一串没有名字的值。
+    #}
+    <table class="table align-middle settings-plain-table settings-stack-table" id="mobileDevicesTable"
            {% if not mobile.devices %}style="display: none;"{% endif %}>
-      <thead><tr><th>设备</th><th>接入方式</th><th>配对时间</th><th>最后访问</th><th>来源 IP</th><th class="settings-col-action">操作</th></tr></thead>
+      {# 「设备 ID」列（2026-10-24 用户要求）：同一台手机重复配对曾经长出两条一模一样的
+         「手机 App」，人眼没法区分。现在客户端上报稳定 uid、服务端原地合并，
+         这一列让人**看得出确实是同一台**。旧记录（升级前配的、没有 uid）显示「旧记录」。 #}
+      <thead><tr><th>设备</th><th>接入方式</th><th>设备 ID</th><th>配对时间</th><th>最后访问</th><th>来源 IP</th><th class="settings-col-action">操作</th></tr></thead>
       <tbody>
         {% for device in mobile.devices %}
         <tr>
-          <td>{{ device.label }}</td>
-          <td>
+          <td data-label="设备">{{ device.label }}</td>
+          <td data-label="接入方式">
             {% if device.platform == 'app' %}
             <span class="badge text-bg-primary">手机 App</span>
             {% else %}
             <span class="badge text-bg-secondary">浏览器</span>
             {% endif %}
           </td>
-          <td class="settings-nowrap">{{ device.paired_label }}</td>
-          <td class="settings-nowrap">{{ device.last_seen_label }}</td>
-          <td><code>{{ device.last_ip or '—' }}</code></td>
+          <td class="settings-nowrap" data-label="设备 ID">
+            {% if device.uid_short %}
+            <code title="{{ device.uid }}">{{ device.uid_short }}</code>
+            {% else %}
+            <span class="text-muted small" title="升级前配对的旧记录，没有设备 ID；重复配对的旧记录请手工撤销">旧记录</span>
+            {% endif %}
+          </td>
+          <td class="settings-nowrap" data-label="配对时间">{{ device.paired_label }}</td>
+          <td class="settings-nowrap" data-label="最后访问">
+            {{ device.last_seen_label }}
+            {% if device.last_sync_label and device.last_sync_label != '—' %}
+            <span class="mobile-sync-badge" title="最后一次完整同步（关电脑前手机拉到的那份数据）">已同步 {{ device.last_sync_label }}</span>
+            {% endif %}
+          </td>
+          <td data-label="来源 IP"><code>{{ device.last_ip or '—' }}</code></td>
           <td class="settings-col-action">
             <form method="post" action="{{ url_for('settings.mobile_revoke') }}"
-                  onsubmit="return confirm('撤销后这台手机下次请求会回到配对页，数据不在手机本地，确定撤销？');">
+                  onsubmit="return confirm('撤销后这台手机下次请求会回到配对页。手机里已有的离线缓存仍能看，确定撤销？');">
               <input type="hidden" name="device_id" value="{{ device.id }}">
               <button type="submit" class="btn btn-sm btn-outline-danger">撤销这台</button>
             </form>
@@ -560,6 +586,16 @@
   <p class="text-muted small settings-devices-empty" id="mobileDevicesEmpty"
      {% if mobile.devices %}style="display: none;"{% endif %}>
     还没有配对过手机。打开手机访问后，用手机扫码并输入配对码即可。
+  </p>
+  <p data-ui-hint class="text-muted small mb-0 mt-2">
+    <strong>设备 ID</strong>：同一台手机、同一个浏览器再次配对会<strong>合并成这一条</strong>（只换新的登录凭据，不新增记录）。
+    标着「旧记录」的是这次升级前配的，没有设备 ID；如果它是同一台手机的重复记录，手工点「撤销这台」即可，程序不会自动删 ——
+    删错等于把正常设备踢下线。
+  </p>
+  <p data-ui-hint class="text-muted small mb-0">
+    <strong>关电脑前先让手机同步</strong>：手机 App 打开「设置 → 立即同步」，或电脑关机提醒里点「我已刷新」前扫一眼。
+    同步过之后，电脑关掉也能在手机上翻到今天、本月、今年、全部时间的单据，以及客户/商品详情。
+    看「最后访问」后面的<strong>已同步</strong>标签就是这次同步的时间。
   </p>
 </section>
 
@@ -852,7 +888,33 @@
      修法：设置页里的表格统一加 `.settings-plain-table`，把表格自身的玻璃、
      描边、投影全部去掉，只保留表头底色与行间发丝线；外层卡片是唯一一层。
      不改全局 `table.table`，避免影响单据/客户那些「裸表格」页。 */
-  .settings-table-shell{min-width:0}
+  /*
+    表格容器的宽度契约（2026-10-24 用户反馈「窄窗口下配对设备表格从圆角卡片里伸出去」）。
+
+    病根：`.settings-table-shell` 只写了 `min-width:0`，表格本身 7 列全 nowrap，
+    最小内容宽度约 800px。卡片内宽一旦小于它，table 既不换行也不收缩，
+    直接越出卡片右边界 —— 截图里就是表格横穿卡片、还带着一条横向滚动条。
+    `min-width:0` 只解决「网格/弹性子项不被内容撑开」，管不到「表格自身比容器宽」。
+
+    修法两层：
+    ① 兜底：容器 `overflow-x:auto`，任何情况下表格都只能在容器内部横向滚动，
+       绝不会画出卡片之外（先保住「不伸出去」这条硬约束）。
+    ② 真正的适配：容器声明 `container-type:inline-size`，用 `@container` 按
+       **容器自身宽度**（不是视口宽度）切换成堆叠卡片。用视口媒体查询做不到这件事——
+       左栏 200px + 卡片内距让容器比视口窄 300px 以上，视口 1280 时容器只有 635px。
+  */
+  .settings-table-shell{min-width:0;max-width:100%;overflow-x:auto;overflow-y:visible;
+    container-type:inline-size}
+  /* 表格不许比容器更宽（两条腿都要：min-width 压住固有宽度，width 保证撑满）。 */
+  table.settings-plain-table{width:100%;max-width:100%}
+  /*
+    设备表列内距比全局 `.table`（12px 14px）更紧：这张表 7 列、每列全是短值
+    （日期、IP、8 位设备 ID），14px 的左右内距纯属浪费，实测每列省 6px 就能
+    把最小内容宽度从 804px 压到 720px —— 正好让 1440 窗口（卡片内宽 795px）
+    还能显示正常表格，不用一提宽就掉进堆叠形态。别的设置页表格列少，不动。
+  */
+  table.settings-stack-table>thead>tr>th,
+  table.settings-stack-table>tbody>tr>td{padding-left:8px;padding-right:8px}
   table.settings-plain-table,
   table.settings-plain-table:not(.order-table){
     background:transparent;border:0;border-radius:0;box-shadow:none;
@@ -868,9 +930,79 @@
   table.settings-plain-table>tbody>tr:last-child>td{border-bottom:0}
   table.settings-plain-table>tbody>tr:hover>td{background:transparent}
   .settings-nowrap{white-space:nowrap}
+  /* 「已同步 10月24日 21:45」小标签：只在真的同步过之后出现，跟在「最后访问」后面。
+     不用 data-ui-hint —— 它是状态信息，关掉界面说明文字时也必须可见。 */
+  .mobile-sync-badge{
+    display:inline-block;margin-left:8px;padding:1px 7px;border-radius:999px;
+    border:1px solid var(--erp-border-strong);background:var(--erp-surface-soft);
+    color:var(--erp-muted);font-size:11.5px;font-weight:600;white-space:nowrap;
+  }
   .settings-col-action{white-space:nowrap;text-align:right}
   table.settings-plain-table th.settings-col-action{text-align:right}
   table.settings-plain-table td.settings-col-action{text-align:right}
+
+  /*
+    窄容器下「表格 → 设备小卡」（2026-10-24 用户反馈的正面适配，不是兜底滚动条）。
+    阈值 760px：7 列 nowrap 的最小内容宽度实测约 720px（列内距收到 8px 后），
+    再加上「日期 + 已同步」这类要换行的内容，760 以下就已经明显拥挤。
+    断点用小数值而不是 768 —— 卡片内宽是「视口 − 左栏 − 各级内距」，永远凑不到整数。
+  */
+  @container (max-width:760px){
+    table.settings-stack-table{display:block;width:100%}
+    table.settings-stack-table thead{display:none}
+    table.settings-stack-table tbody{display:block}
+    /*
+      每条设备 = 一张带描边的小卡。卡内字段用 `auto-fit` 自动排 1～2 列：
+      容器 635px 时排 2 列（高度砍掉一半），手机宽度下自动退回 1 列。
+      写死列数会在某个宽度上留下大片空白，所以让列数跟着容器走。
+      `minmax(min(200px,100%),1fr)` 里的 `min()` 不能删：只写 200px 时
+      卡片内宽小于 200px（窄窗口 / 高缩放）这一列仍是硬 200px，照样溢出
+      （实测容器 198px 时溢出 15px）。
+    */
+    table.settings-stack-table tbody tr{
+      display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));
+      gap:2px 20px;padding:10px 12px;margin:0 0 10px;
+      border:1px solid var(--erp-border);border-radius:10px;
+      background:var(--erp-surface-soft);
+    }
+    table.settings-stack-table tbody tr:last-child{margin-bottom:0}
+    /* 每个字段 = 「标签 | 值」两小列。标签固定 68px（够放「接入方式」「配对时间」），
+       值占满剩余并允许换行 —— 再窄也不会往外顶。 */
+    table.settings-stack-table>tbody>tr>td{
+      display:grid;grid-template-columns:68px minmax(0,1fr);gap:10px;
+      align-items:baseline;padding:3px 0;border-bottom:0;
+      white-space:normal;overflow-wrap:anywhere;
+    }
+    table.settings-stack-table>tbody>tr>td::before{
+      content:attr(data-label);
+      color:var(--erp-muted);font-size:12px;font-weight:600;
+    }
+    /* 「设备」这一格是卡片标题：跨满整行、加重、底部一条发丝线分隔。 */
+    table.settings-stack-table>tbody>tr>td[data-label="设备"]{
+      grid-column:1/-1;padding-bottom:7px;margin-bottom:4px;
+      border-bottom:1px solid var(--erp-border);font-weight:650;
+    }
+    /* 没有 data-label 的单元格（目前只有操作列）：跨满整行、右对齐、不画标签。 */
+    table.settings-stack-table>tbody>tr>td:not([data-label]){
+      grid-column:1/-1;display:block;padding-top:8px;text-align:right;
+    }
+    table.settings-stack-table>tbody>tr>td:not([data-label])::before{content:none}
+    /* 堆叠后 nowrap 一律解除：否则「10月24日 23:13 已同步 10月24日 23:13」
+       仍是一条不可断的长行，照样会撑出去。 */
+    table.settings-stack-table .settings-nowrap{white-space:normal}
+    table.settings-stack-table .mobile-sync-badge{margin-left:0;margin-top:2px}
+    /* 徽标是 grid item，默认 `stretch` 会被拉成整列宽的一条色带
+       （实测截图里「手机 App」变成一整条蓝条）。行内小件都要收成内容宽度。 */
+    table.settings-stack-table>tbody>tr>td>.badge{justify-self:start}
+  }
+  /*
+    极窄容器（<340px）：标签挪到值上方。68px 标签列在 200px 宽的卡片里
+    只剩 120px 留给值，长一点的「10月24日 23:13 · 已同步 …」还是会溢出
+    （实测容器 198px 时仍有 15px 横向滚动）。
+  */
+  @container (max-width:340px){
+    table.settings-stack-table>tbody>tr>td{grid-template-columns:minmax(0,1fr);gap:1px}
+  }
 
   /* ===== 备份列表：扁平行 + 三个独立按钮（2026-10-24 重做）=====
      为什么不用 <table>：① 表格自带一层玻璃，与卡片叠成「卡片套卡片」；
@@ -1346,7 +1478,7 @@
 
     function signature(payload) {
       return (payload.devices || []).map(function (d) {
-        return [d.id, d.label, d.platform, d.paired_at, d.last_seen_at, d.last_ip].join('|');
+        return [d.id, d.label, d.platform, d.paired_at, d.last_seen_at, d.last_ip, d.uid, d.last_sync_at].join('|');
       }).join('#') + '@' + payload.count;
     }
 
@@ -1381,15 +1513,25 @@
         var badge = isApp
           ? '<span class="badge text-bg-primary">手机 App</span>'
           : '<span class="badge text-bg-secondary">浏览器</span>';
+        // 设备 ID（2026-10-24）：同一台手机重复配对现在会合并成一条，这一列是
+        // 「确实是同一台」的可核对依据。旧记录（无 uid）显式写「旧记录」，
+        // 不能显示成空白 —— 空白看起来像 bug。
+        var uidCell = d.uid_short
+          ? '<code title="' + escapeHtml(d.uid) + '">' + escapeHtml(d.uid_short) + '</code>'
+          : '<span class="text-muted small" title="升级前配对的旧记录，没有设备 ID；重复配对的旧记录请手工撤销">旧记录</span>';
+        var syncBadge = (d.last_sync_label && d.last_sync_label !== '—')
+          ? '<span class="mobile-sync-badge" title="最后一次完整同步（关电脑前手机拉到的那份数据）">已同步 ' + escapeHtml(d.last_sync_label) + '</span>'
+          : '';
         return '<tr>'
-          + '<td>' + escapeHtml(d.label) + '</td>'
-          + '<td>' + badge + '</td>'
-          + '<td class="settings-nowrap">' + escapeHtml(d.paired_at || '—') + '</td>'
-          + '<td class="settings-nowrap">' + escapeHtml(d.last_seen_at || '—') + '</td>'
-          + '<td><code>' + escapeHtml(d.last_ip || '—') + '</code></td>'
+          + '<td data-label="设备">' + escapeHtml(d.label) + '</td>'
+          + '<td data-label="接入方式">' + badge + '</td>'
+          + '<td class="settings-nowrap" data-label="设备 ID">' + uidCell + '</td>'
+          + '<td class="settings-nowrap" data-label="配对时间">' + escapeHtml(d.paired_label || '—') + '</td>'
+          + '<td class="settings-nowrap" data-label="最后访问">' + escapeHtml(d.last_seen_label || '—') + syncBadge + '</td>'
+          + '<td data-label="来源 IP"><code>' + escapeHtml(d.last_ip || '—') + '</code></td>'
           + '<td class="settings-col-action">'
           + '<form method="post" action="{{ url_for("settings.mobile_revoke") }}"'
-          + ' onsubmit="return confirm(\'撤销后这台手机下次请求会回到配对页，数据不在手机本地，确定撤销？\');">'
+          + ' onsubmit="return confirm(\'撤销后这台手机下次请求会回到配对页。手机里已有的离线缓存仍能看，确定撤销？\');">'
           + '<input type="hidden" name="device_id" value="' + escapeHtml(d.id) + '">'
           + '<button type="submit" class="btn btn-sm btn-outline-danger">撤销这台</button>'
           + '</form>'

@@ -9,6 +9,16 @@
   `hmac.compare_digest`。手机丢失 → 桌面端撤销设备 → 立刻失联（阶段一不落本地数据）。
 - 6 位码：每分钟最多生成 3 次、有效期 120 秒、连续错 5 次锁 5 分钟。
 
+**设备身份 uid（2026-10-24 新增，store v2）**
+
+同一台手机重复配对会长出两条记录（用户实测报过）：手机点「改地址」会清 cookie
+再配一次，服务端原来每次都 `append`。现在客户端上报一个稳定的 `device_uid`，
+服务端**同 uid 原地更新、不新增记录**。
+
+uid 的信任边界必须写清：它是**客户端可伪造**的，只用于「识别是不是同一台」，
+**不参与认证**。认证仍然只有 token（sha256 + `compare_digest`）。伪造 uid 得先拿到
+6 位配对码，而拿到码的人本来就能配对，所以它不扩大攻击面。
+
 时间一律存本地时间 ISO 串（与项目其它 JSON 配置一致），便于设置页直接展示。
 """
 from __future__ import annotations
@@ -16,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 import secrets
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -23,6 +34,10 @@ from pathlib import Path
 from erp.config import project_path
 
 COOKIE_NAME = "erp_mobile"
+# 浏览器端「这台设备是谁」的 cookie（**不是**认证凭据，只是 uid 的载体）。
+# 配对页 GET 时服务端下发，POST 时服务端自己从 cookie 读 —— 不需要任何前端 JS，
+# 所以保持 httponly。泄露它没有后果（见上面 uid 的信任边界）。
+UID_COOKIE_NAME = "erp_device_uid"
 
 PAIR_CODE_LENGTH = 6
 PAIR_CODE_TTL_SECONDS = 120
@@ -30,7 +45,11 @@ CODE_GENERATIONS_PER_MINUTE = 3
 MAX_FAILED_ATTEMPTS = 5
 LOCK_SECONDS = 300
 
-STORE_VERSION = 1
+# v1 → v2：设备记录新增 `uid` / `last_sync_at`；载入时按 uid 去重。
+STORE_VERSION = 2
+
+# uid 只接受 URL 安全字符，长度 6–64。原生端发 16 hex，浏览器端发 32 hex。
+_UID_RE = re.compile(r"^[0-9A-Za-z_-]{6,64}$")
 
 
 def store_path() -> Path:
@@ -81,7 +100,63 @@ def load_store() -> dict:
         store["code_generations"] = []
     if not isinstance(store.get("failures"), dict):
         store["failures"] = {"count": 0, "locked_until": ""}
+    store["devices"] = _dedupe_by_uid(store["devices"])
+    store["version"] = STORE_VERSION
     return store
+
+
+def _dedupe_by_uid(devices: list) -> list:
+    """同 uid 多条只留 `paired_at` 最新的那条；无 uid 的旧记录原样保留（顺序不变）。
+
+    为什么在**读取时**去重、而不是只在写入时判断：v1 的库已经因为旧逻辑长出过
+    重复记录（用户实测两条「手机 App」），升级后第一次打开设置页就应该只看到一条，
+    而不是等用户再配一次才收敛。这里是纯函数式的，`load_store()` 每次都会走。
+    """
+    kept: list = []
+    best_index: dict[str, int] = {}
+    for device in devices:
+        if not isinstance(device, dict):
+            continue
+        uid = normalize_device_uid(device.get("uid", ""))
+        if not uid:
+            kept.append(device)
+            continue
+        existing = best_index.get(uid)
+        if existing is None:
+            best_index[uid] = len(kept)
+            kept.append(device)
+            continue
+        # 同 uid：留配对时间更晚的一条；`last_seen_at` / `last_sync_at` 取两者较大值，
+        # 免得把「最后一次真的连上过」的时间一起丢掉。
+        previous = kept[existing]
+        if str(device.get("paired_at", "")) > str(previous.get("paired_at", "")):
+            merged = dict(device)
+            kept[existing] = merged
+        else:
+            merged = dict(previous)
+        merged["last_seen_at"] = max(
+            str(previous.get("last_seen_at", "") or ""), str(device.get("last_seen_at", "") or "")
+        )
+        merged["last_sync_at"] = max(
+            str(previous.get("last_sync_at", "") or ""), str(device.get("last_sync_at", "") or "")
+        )
+        kept[existing] = merged
+    return kept
+
+
+def normalize_device_uid(value) -> str:
+    """收敛客户端上报的设备 uid；非法一律当空串（**不信任何花哨输入**）。
+
+    空串的含义是「这台客户端没有稳定身份」，此时退回旧行为（每次配对新记录）——
+    旧版 App / 第三方客户端仍然能配对，只是不能自动合并。
+    """
+    text = str(value or "").strip()
+    return text if _UID_RE.match(text) else ""
+
+
+def new_device_uid() -> str:
+    """服务端为浏览器端生成一个 uid（32 hex）。"""
+    return secrets.token_hex(16)
 
 
 def save_store(store: dict) -> None:
@@ -210,7 +285,7 @@ def _register_failure(store: dict) -> str:
     return f"配对码不正确，还可以再试 {remaining} 次。"
 
 
-def _new_device(label: str, ip: str, platform: str = "") -> tuple[dict, str]:
+def _new_device(label: str, ip: str, platform: str = "", uid: str = "") -> tuple[dict, str]:
     token = secrets.token_urlsafe(32)
     device = {
         "id": secrets.token_hex(8),
@@ -223,6 +298,9 @@ def _new_device(label: str, ip: str, platform: str = "") -> tuple[dict, str]:
         "paired_at": _iso(_now()),
         "last_seen_at": "",
         "last_ip": (ip or "").strip()[:64],
+        # 客户端上报的稳定身份（可伪造，只用于合并展示，不参与认证）。
+        "uid": normalize_device_uid(uid),
+        "last_sync_at": "",
     }
     return device, token
 
@@ -246,9 +324,14 @@ def platform_label(platform: str) -> str:
 
 
 def verify_pair_code(
-    code: str, *, label: str = "", ip: str = "", platform: str = ""
+    code: str, *, label: str = "", ip: str = "", platform: str = "", uid: str = ""
 ) -> tuple[str, str]:
-    """校验配对码。返回 `(cookie_value, error)`：成功时 error 为空串。"""
+    """校验配对码。返回 `(cookie_value, error)`：成功时 error 为空串。
+
+    `uid` 非空且已有同 uid 的设备时**原地更新**（换 token、更新 label/时间），
+    不新增记录 —— 这是「同一台手机重复配对长出两条」的修法。旧记录 `id` 保持不变，
+    所以桌面端「撤销这台」的表单值仍然有效。
+    """
     cleaned = "".join(ch for ch in str(code or "") if ch.isdigit())
     store = load_store()
     remaining = _lock_remaining(store)
@@ -269,14 +352,54 @@ def verify_pair_code(
         save_store(store)
         return "", message
 
-    device, token = _new_device(label, ip, platform)
-    store["devices"].append(device)
+    clean_uid = normalize_device_uid(uid)
+    existing_index = next(
+        (
+            index
+            for index, item in enumerate(store["devices"])
+            if clean_uid and item.get("uid") == clean_uid
+        ),
+        None,
+    )
+    if existing_index is not None:
+        device, token = _renew_device(
+            store["devices"][existing_index], label, ip, platform, clean_uid
+        )
+        # ⚠️ 必须写回列表：`_renew_device` 返回的是副本，只改副本等于**没换 token**
+        # （旧 cookie 继续有效，而界面上看着像重配成功）。
+        store["devices"][existing_index] = device
+    else:
+        device, token = _new_device(label, ip, platform, clean_uid)
+        store["devices"].append(device)
     store["code"] = None
     store["failures"] = {"count": 0, "locked_until": ""}
     save_store(store)
     # 码已被用掉：内存里的明文也必须立刻作废，否则设置页还会显示一个永远无效的码。
     _remember_plaintext("", None)
     return f"{device['id']}:{token}", ""
+
+
+def _renew_device(existing: dict, label: str, ip: str, platform: str, uid: str) -> tuple[dict, str]:
+    """同 uid 重新配对：**保留 id / last_seen_at / last_sync_at**，换 token 与其它展示字段。
+
+    必须换 token：旧 cookie 已经丢了才会重新配对；不换的话旧 cookie（如果还留在
+    某台设备的浏览器里）会继续有效，等于「重新配对」没起到收敛作用。
+    """
+    token = secrets.token_urlsafe(32)
+    device = dict(existing)
+    device.update(
+        {
+            "token_sha256": _sha256(token),
+            "label": (label or "").strip()[:40] or str(existing.get("label") or "手机"),
+            "platform": normalize_platform(platform),
+            "paired_at": _iso(_now()),
+        }
+    )
+    if ip:
+        device["last_ip"] = ip[:64]
+    device["uid"] = uid
+    device.setdefault("last_sync_at", "")
+    return device, token
 
 
 def device_from_cookie(raw: str | None) -> dict | None:
@@ -324,9 +447,32 @@ def remember_success(device: dict | None, ip: str = "") -> None:
     save_store(store)
 
 
+# 快照（全量同步）是「关电脑前让手机拉一遍」的动作，频率远低于普通查询，
+# 所以它**每次都落盘**：桌面端的关闭提醒要显示的正是「一次真正的同步」的时间，
+# 节流会让这个时间比实际旧几分钟，正好落进「到底同没同步」的疑心里。
+def mark_synced(device: dict | None) -> str:
+    """记「这台设备最后一次拉全量快照」。返回写入的时间串（空串 = 没记）。"""
+    if not device:
+        return ""
+    device_id = str(device.get("id") or "")
+    if not device_id:
+        return ""
+    moment = _iso(_now())
+    store = load_store()
+    for item in store["devices"]:
+        if item.get("id") == device_id:
+            item["last_sync_at"] = moment
+            break
+    store["last_success_at"] = moment
+    save_store(store)
+    _last_seen_cache[device_id] = _now()
+    return moment
+
+
 def list_devices() -> list[dict]:
     devices = []
     for device in load_store()["devices"]:
+        uid = normalize_device_uid(device.get("uid", ""))
         devices.append(
             {
                 "id": device.get("id", ""),
@@ -337,6 +483,10 @@ def list_devices() -> list[dict]:
                 "platform_label": platform_label(device.get("platform", "")),
                 "paired_at": device.get("paired_at", ""),
                 "last_seen_at": device.get("last_seen_at", ""),
+                # 空 uid = 升级前配的旧记录（或未上报身份的客户端），界面显示「旧记录」。
+                "uid": uid,
+                "uid_short": uid[:8] if uid else "",
+                "last_sync_at": device.get("last_sync_at", ""),
                 "last_ip": device.get("last_ip", ""),
             }
         )

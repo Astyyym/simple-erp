@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,6 +31,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.simpleerp.mobile.ui.components.ErpHairline
@@ -67,6 +71,26 @@ private sealed class Overlay {
 fun AppRoot() {
     val vm: AppViewModel = viewModel()
     val themeMode by vm.themeMode.collectAsStateWithLifecycle()
+
+    /*
+     * 回到前台自动同步（2026-10-24）。
+     *
+     * 为什么必须有：`bootstrap()` 只在 ViewModel 的 `init` 里跑一次，而 ViewModel
+     * 活得比 Activity 久得多 —— 店主早上开店、点亮屏幕，看到的可能是昨晚关电脑前的
+     * 数据，界面上却没有任何迹象说明它是旧的。
+     *
+     * 为什么用 ON_RESUME 而不是每次重组：重组在打字、滚动时都会发生；
+     * 「回到前台」才是「用户重新开始使用」这个语义。真正的节流（10 分钟）在
+     * `maybeAutoSync()` 里，这里只负责触发。
+     */
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) vm.maybeAutoSync()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     SimpleErpTheme(mode = themeMode) {
         val colors = LocalErpColors.current
@@ -331,12 +355,17 @@ private fun MainScaffold(
                         val shopName by vm.shopName.collectAsStateWithLifecycle()
                         val cacheNewest by vm.cacheNewest.collectAsStateWithLifecycle()
                         val themeMode by vm.themeMode.collectAsStateWithLifecycle()
+                        val syncState by vm.syncState.collectAsStateWithLifecycle()
+                        val lastSyncAt by vm.lastSyncAt.collectAsStateWithLifecycle()
                         SettingsScreen(
                             baseUrl = vm.baseUrl.value,
                             meta = meta,
                             shopName = shopName,
                             themeMode = themeMode,
                             cacheNewest = cacheNewest,
+                            syncState = syncState,
+                            lastSyncAt = lastSyncAt,
+                            onSyncNow = { vm.syncNow() },
                             onThemeMode = vm::setThemeMode,
                             onChangeAddress = onChangeAddress,
                             onRefresh = { vm.recheck() },

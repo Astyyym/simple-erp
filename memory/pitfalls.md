@@ -1,5 +1,36 @@
 # 踩过的坑
 
+## `Set-Content -Encoding UTF8` 写 VERSION 会带 BOM，打包直接失败（2026-10-24）
+
+- 症状：`打包Windows安装包.bat` 到 `[1/5]` 报
+  `ValueError: VERSION must contain a three-part release version`，而 `Get-Content VERSION`
+  看着就是 `v4.6.9`，逐字节也「像是对的」。
+- 原因：Windows PowerShell 5 的 `Set-Content -Encoding UTF8` 写的是 **UTF-8 with BOM**，
+  `简单ERP.spec:12` 的 `re.fullmatch(r'[vV]?(\d+)\.(\d+)\.(\d+)')` 从 BOM 那个字符开始匹配，直接不认。
+- 正确写法（无 BOM）：
+  `[System.IO.File]::WriteAllText($path, "v4.6.9", (New-Object System.Text.UTF8Encoding($false)))`
+- 判断方法：读原始字节看前三个是不是 `EF BB BF`。**别只信 `Get-Content` 的显示**，
+  它对 BOM 不敏感。
+
+## pywebview 的 `closing` 处理器里不能同步调 `evaluate_js`（2026-10-24）
+
+`window.events.closing = Event(window, should_lock=True)`（`webview/window.py:163`）意味着
+处理器在 **UI 线程同步执行**；而 `evaluate_js` 也要等 UI 线程 → 直接死锁，
+表现是「点了 × 程序没反应、也不报错」。
+
+**正确做法**：处理器只做判断并 `return False` 取消这次关闭，另起线程去调 `evaluate_js` 弹层。
+同一族问题：不要在 JS 的异步回调里直接 `destroy()` 自己所在的窗口 —— 先置标志，再由后台线程关。
+
+## 缓存键两端各拼一套 = 「在线能看、离线空白」（2026-10-24）
+
+断网时某一档列表/详情永远打不开，而**在线测试全绿**（在线走网络，压根不查缓存键）。
+这是本项目里最容易漏测的一类缺陷：功能对的、数据对的，只有缓存查不到。
+
+**修法**：规范化键（`path?键按字母序&跳过空值`）由**服务端**算好并放进快照响应，
+客户端原样当键用。Python 侧 `mobile_api._canonical_path` 与 Kotlin 侧
+`SnapshotStore.canonicalKey` 必须逐字一致，两端各有测试钉住
+（`tests/test_mobile_snapshot.py`、`SnapshotStoreKeyTest`）。
+
 ## 列表行描边要跟着**圆角**走，否则深色下会露出一圈直角方框（2026-10-23）
 
 `Modifier.listRowBorder` 原来左右两边是**从行顶画到行底**的两条直线。首/末行用的是
@@ -725,6 +756,34 @@ zxing `ViewfinderView` 那条横线**位置写死**在 `framingRect` 垂直中�
 **去掉表头要补标签。** 表格改扁平行后，`v15` 这种裸值没人看得懂 ——
 `tests/test_backup_restore.py` 断言 `"数据库版本" in html` 会先红，说明语义真的丢了，
 写成 `数据库版本 v15`，别去改测试。
+
+## 表格伸出卡片：`min-width:0` 管不到「表格自身比容器宽」（2026-10-24）
+
+用户截图：窗口一窄，「已配对设备」7 列表格横穿卡片右边界，还带一条横向滚动条。
+
+**这不是 `min-width:0` 能解决的事。** `min-width:0` 解决的是「grid/flex 子项被内容的
+最小内容宽度撑开」；表格本身是 `display:table`，7 列全 `nowrap` 时它的**最小内容宽度**
+（实测 720–804px）就是硬下限，容器再窄它也不会收缩，而是直接越界。
+
+**验收判据不是「看起来没伸出去」，是数字**：
+`shell.scrollWidth - shell.clientWidth`（容器内溢出）与
+`document.documentElement.scrollWidth - window.innerWidth`（整页溢出）都必须是 0。
+
+**正确修法两层**：
+1. 容器 `overflow-x:auto` —— 兜底，任何宽度都不会画出边界；
+2. 容器 `container-type:inline-size` + `@container` 切形态 —— **必须按容器宽度算**。
+   左栏 200px + 各级内距让容器比视口窄 300px 以上（视口 1280 时容器只有 635px），
+   视口媒体查询在这里必然错档。
+
+**两个实测坑**：
+- `repeat(auto-fit,minmax(200px,1fr))` 在容器 <200px 时仍是硬 200px 列，照样溢出 15px。
+  要写 `minmax(min(200px,100%),1fr)`。
+- 堆叠后 `.badge` 是 grid item，默认 `stretch` 被拉成整列宽的**一条色带**（截图里
+  「手机 App」变成一整条蓝条）。行内小件都要 `justify-self:start`。
+
+**表头隐藏后的标签来源**：靠 `td[data-label]` + `::before{content:attr(data-label)}`。
+设置页这类有「每 4 秒自动刷新重绘表体」的表格，**Jinja 模板与 JS 拼串两处都要带**
+`data-label`，只改模板会在配对一台手机后立刻变成没有标签的一串值。
 
 ## 安装包卸载加了 `/VERYSILENT /SUPPRESSMSGBOXES` 仍会停在一个模态框上（2026-10-24）
 

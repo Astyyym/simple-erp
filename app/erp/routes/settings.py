@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime
 from pathlib import Path
 
 from flask import Blueprint, flash, jsonify, redirect, render_template, request, session, url_for, current_app
@@ -477,6 +478,15 @@ def backup_restore():
 #   3) 手机端没有任何写端：解绑只能在这里做。
 
 
+def _latest_sync_at(devices: list[dict]) -> str:
+    """所有设备里最晚的一次「全量快照同步」时间（没有就空串）。
+
+    关闭提醒文案要用它回答「现在关，手机上能看到到几点的数据」——
+    这个时间来自 `mobile_pairing.mark_synced()`，只在 `/m/api/snapshot` 成功后写。
+    """
+    return max((str(device.get("last_sync_at") or "") for device in devices), default="")
+
+
 def mobile_panel_context() -> dict:
     """设置页「手机访问」分区要展示的一切（不含任何业务数据）。"""
     status = mobile_status()
@@ -484,6 +494,7 @@ def mobile_panel_context() -> dict:
     for device in devices:
         device["paired_label"] = timestamp_label(device.get("paired_at", ""))
         device["last_seen_label"] = timestamp_label(device.get("last_seen_at", ""))
+        device["last_sync_label"] = timestamp_label(device.get("last_sync_at", ""))
     enabled = bool(load_config().get("mobile_access_enabled"))
     reachable = bool(status["listening"]) and port_in_use(status["port"])
     return {
@@ -493,6 +504,7 @@ def mobile_panel_context() -> dict:
         "enabled": enabled,
         "reachable": reachable,
         "last_success_label": timestamp_label(mobile_pairing.last_success_at()),
+        "last_sync_label": timestamp_label(_latest_sync_at(devices)),
         # 二维码只在「真的在监听 + 地址看起来手机能连」时才给：给一个 127 或代理网卡
         # 地址的二维码，等于让店主扫一张永远连不上的图。
         #
@@ -643,14 +655,22 @@ def mobile_devices():
     店主在电脑上开着设置页、拿手机扫码配对 —— 配对成功了，但那个页面不会自己变，
     「已配对设备 0 台」一直挂着，看起来像配对失败（2026-10-22 用户实测报这个）。
     这里返回当前设备列表 + 诊断时间，前端每几秒拉一次，变了就局部更新。
+
+    2026-10-24：加了 `uid` / `uid_short` / `last_sync_at` —— 设备 ID 要能看见，
+    「最后一次全量同步」是关闭提醒的依据。
     """
     devices = mobile_pairing.list_devices()
+    for device in devices:
+        device["paired_label"] = timestamp_label(device.get("paired_at", ""))
+        device["last_seen_label"] = timestamp_label(device.get("last_seen_at", ""))
+        device["last_sync_label"] = timestamp_label(device.get("last_sync_at", ""))
     return jsonify(
         {
             "ok": True,
             "count": len(devices),
             "devices": devices,
             "last_success_label": timestamp_label(mobile_pairing.last_success_at()),
+            "last_sync_label": timestamp_label(_latest_sync_at(devices)),
         }
     )
 
@@ -660,3 +680,79 @@ def mobile_revoke_all():
     count = mobile_pairing.revoke_all_devices()
     session["mobile_notice"] = ("success", f"已撤销全部 {count} 台手机。要再连回来需要重新配对。")
     return redirect(url_for("settings.settings_page") + "#mobileAccessSection")
+
+
+# ---------------------------------------------------------------------------
+# 关闭软件前的同步提醒（2026-10-24）
+# ---------------------------------------------------------------------------
+# 这是**桌面壳专用**的只读接口：`desktop_app.py` 在窗口 closing 时用
+# `evaluate_js("window.erpClosePrompt()")` 弹页内浮层，浮层再拉这里拿「最后一次同步」。
+
+
+def _seconds_since(value: str) -> int | None:
+    """本地 ISO 串 → 距今秒数；空/非法返回 None（界面显示「从未同步」）。"""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        moment = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return max(0, int((datetime.now() - moment).total_seconds()))
+
+
+def close_prompt_state() -> dict:
+    """关闭提醒浮层要的全部状态（不含任何业务数据）。
+
+    为什么要有 `has_devices` 这一项：没有设备时提醒毫无意义（店主没在用手机端），
+    桌面壳据此直接放行关闭。判定放在服务端而不是 JS 里，是因为「有没有设备」
+    的真相在 `data/mobile_devices.json`，JS 看不到 —— 让 JS 自己猜等于把
+    业务判定复制一份到浏览器，必然分叉。
+
+    为什么还要 `listening` / `listening_error`：开关开着不代表监听起来了
+    （端口 5001 被上一次没退干净的进程占着时，开关会回弹、监听不启动）。
+    这时浮层仍然要弹（店主需要知道手机端坏了），但**不能**让他拿起手机去同步 ——
+    那一定失败。浮层据这两项把「去做这一步」换成「这里有问题」。
+    """
+    devices = mobile_pairing.list_devices()
+    status = mobile_status()
+    latest = _latest_sync_at(devices)
+    payload = []
+    for device in devices:
+        seconds = _seconds_since(device.get("last_sync_at", ""))
+        payload.append(
+            {
+                "label": device.get("label", "手机"),
+                "platform_label": device.get("platform_label", ""),
+                "uid": device.get("uid", ""),
+                "uid_short": device.get("uid_short", ""),
+                # 前端只做「N 分钟前」的换算，不重新格式化绝对时间 ——
+                # 那样两端就会各写一套时间文案（踩过的坑见 mobile_format 注释）。
+                "last_sync_label": timestamp_label(device.get("last_sync_at", "")),
+                "last_sync_seconds": seconds,
+            }
+        )
+    listening = bool(status["listening"])
+    return {
+        "ok": True,
+        "has_devices": bool(devices),
+        "device_count": len(devices),
+        "listening": listening,
+        "listening_error": "" if listening else str(status.get("error") or ""),
+        "last_sync_label": timestamp_label(latest),
+        "last_sync_seconds": _seconds_since(latest),
+        "devices": payload,
+        "url": mobile_url(status["port"], ip=status["lan_ip"]),
+        # 二维码只在真的在监听时才给：给一张永远连不上的码，等于教店主白扫一次。
+        "qr": (
+            qr_png_data_uri(status["url"])
+            if listening and status.get("lan_usable")
+            else ""
+        ),
+    }
+
+
+@settings_bp.get("/mobile/close-state")
+def mobile_close_state():
+    """关闭提醒浮层的数据源（JSON）。只读，不写任何文件。"""
+    return jsonify(close_prompt_state())

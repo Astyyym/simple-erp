@@ -87,6 +87,13 @@ data class Loaded<T>(
  *
  * 只有 `Unreachable`（连不上/超时）才回落 —— 服务端明确返回错误时必须显示错误，
  * 否则用户会拿着昨天的数据去报价，而界面看不出异常。
+ *
+ * 2026-10-24：回落链从「精确键 → 报错」扩展成「精确键 → 全量快照 → 报错」。
+ * 为什么要第二层：用户实测「二级页面断网刷不出来」—— 详情页只在**点开那一刻**
+ * 才落盘，所以从没点开过的单据断网必然空白。快照（`/m/api/snapshot`）在关闭电脑前
+ * 一次把列表 + 详情都写下来，第二层就是给它用的。
+ *
+ * 顺序不能反：精确键是「用户真的打开过这一页」的证据，比快照新；先查它才对。
  */
 suspend fun <T> ApiClient.loadWithCache(
     cache: ResponseCache,
@@ -94,6 +101,8 @@ suspend fun <T> ApiClient.loadWithCache(
     path: String,
     query: Map<String, String> = emptyMap(),
     decode: (String) -> T?,
+    /** 全量快照：第二层回落。旧调用方不传也能工作（就是原来的行为）。 */
+    snapshot: SnapshotStore? = null,
 ): LoadOutcome<T> {
     return when (val result = get(path, query)) {
         is ApiResult.Success -> {
@@ -112,15 +121,22 @@ suspend fun <T> ApiClient.loadWithCache(
             if (cached != null) {
                 val value = decode(cached.body)
                 if (value != null) {
-                    LoadOutcome.Ok(
+                    return LoadOutcome.Ok(
                         Loaded(value, fromCache = true, fetchedAt = cached.fetchedAt)
                     )
-                } else {
-                    LoadOutcome.Error("连不上电脑。请确认电脑开着、手机和电脑连同一个 WiFi。")
                 }
-            } else {
-                LoadOutcome.Error("连不上电脑。请确认电脑开着、手机和电脑连同一个 WiFi。")
             }
+            // 第二层：全量快照。键必须用服务端那套规范化规则，否则查不到。
+            val snap = snapshot?.get(SnapshotStore.canonicalKey(path, query))
+            if (snap != null) {
+                val value = decode(snap.body)
+                if (value != null) {
+                    return LoadOutcome.Ok(
+                        Loaded(value, fromCache = true, fetchedAt = snap.fetchedAt)
+                    )
+                }
+            }
+            LoadOutcome.Error("连不上电脑。请确认电脑开着、手机和电脑连同一个 WiFi。")
         }
         is ApiResult.Failure -> LoadOutcome.Error(result.message)
         is ApiResult.Unauthorized -> LoadOutcome.NeedsPairing

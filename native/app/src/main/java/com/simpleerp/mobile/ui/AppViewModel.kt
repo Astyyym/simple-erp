@@ -16,6 +16,7 @@ import com.simpleerp.mobile.data.OrdersResponse
 import com.simpleerp.mobile.data.PairStatusResponse
 import com.simpleerp.mobile.data.ProductDetailResponse
 import com.simpleerp.mobile.data.ProductsResponse
+import com.simpleerp.mobile.data.SnapshotResponse
 import com.simpleerp.mobile.data.TodayOverview
 import com.simpleerp.mobile.data.TodayResponse
 import com.simpleerp.mobile.net.ApiClient
@@ -25,6 +26,7 @@ import com.simpleerp.mobile.net.LoadOutcome
 import com.simpleerp.mobile.net.PersistentCookieStore
 import com.simpleerp.mobile.net.ResponseCache
 import com.simpleerp.mobile.net.ServerConfig
+import com.simpleerp.mobile.net.SnapshotStore
 import com.simpleerp.mobile.net.loadWithCache
 import com.simpleerp.mobile.ui.theme.ThemeMode
 import kotlinx.coroutines.Job
@@ -84,6 +86,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val serverConfig = ServerConfig(app)
     private val cache = ResponseCache(app)
+    private val snapshot = SnapshotStore(app)
     private val api = ApiClient(app)
 
     // ---- 全局 ----
@@ -265,8 +268,34 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _cacheNewest = MutableStateFlow(0L)
     val cacheNewest: StateFlow<Long> = _cacheNewest.asStateFlow()
 
+    /**
+     * 「立即同步」的状态（2026-10-24）。
+     *
+     * 为什么要一个专门的状态机，而不是复用 `refreshing`：同步要跑十几到几十个
+     * 请求（列表 + 每张单据详情），界面必须能显示「正在同步 / 成功，缓存了 N 项 /
+     * 失败原因」。用下拉刷新的转圈表示「同步好了没」太含糊 —— 店主关电脑前
+     * 正是要一个明确的答案。
+     */
+    sealed class SyncState {
+        /** 还没同步过（本次进程内）。 */
+        data object Idle : SyncState()
+        data object Running : SyncState()
+        data class Done(val entryCount: Int, val atMillis: Long) : SyncState()
+        data class Failed(val message: String) : SyncState()
+    }
+
+    private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
+    val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
+
+    /** 上次同步的时间（epoch 毫秒，0 = 从未）。设置页「离线缓存」那张卡用它。 */
+    private val _lastSyncAt = MutableStateFlow(0L)
+    val lastSyncAt: StateFlow<Long> = _lastSyncAt.asStateFlow()
+
     /** 搜索输入防抖：柜台前打字快，每键一请求会把局域网打满。 */
     private var searchJob: Job? = null
+
+    /** 同步串行化：两次同步重叠会互相覆盖快照文件，也白费流量。 */
+    private var syncJob: Job? = null
 
     // -----------------------------------------------------------------------
     // 启动
@@ -324,9 +353,92 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         _bootstrapped.value = true
         _cacheNewest.value = cache.newestTimestamp() ?: 0L
+        _lastSyncAt.value = serverConfig.lastSyncAt()
         if (!_needsPairing.value && !_needsSetup.value) {
             refreshAll()
+            // 打开 App 时顺手同步一次：这样「早上开店打开手机」看到的就不是
+            // 昨晚关电脑前的旧数据。只在「距上次同步超过 10 分钟」时才真的发 ——
+            // 柜台前反复切到后台再回来，不该每次都跑几十个请求。
+            maybeAutoSync()
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // 全量同步（2026-10-24：关电脑前让手机拉一遍）
+    // -----------------------------------------------------------------------
+
+    /** 距上次同步超过这么久才自动同步（毫秒）。10 分钟：够短到「打开就是新的」，
+     *  够长到「切个后台回来不重跑」。 */
+    private val autoSyncIntervalMs = 10 * 60 * 1000L
+
+    /**
+     * 回到前台 / 启动时调用：距上次同步超过 [autoSyncIntervalMs] 才同步。
+     *
+     * 为什么不每次都同步：一次同步是几十个请求的聚合，局域网也要一两秒；
+     * 用户在「客户详情 → 返回 → 再进详情」之间来回切时，它不该反复跑。
+     */
+    fun maybeAutoSync() {
+        viewModelScope.launch {
+            val last = serverConfig.lastSyncAt()
+            _lastSyncAt.value = last
+            if (last > 0 && System.currentTimeMillis() - last < autoSyncIntervalMs) return@launch
+            if (_needsPairing.value || _needsSetup.value) return@launch
+            runSync(silent = true)
+        }
+    }
+
+    /**
+     * 「立即同步」：设置页那颗按钮。
+     *
+     * 成功时把整份快照落盘（列表 + 每张单据详情 + 客户/商品详情），
+     * 于是断网时二级页面也能打开 —— 这是用户报的「缓存刷新不出来」的修法。
+     */
+    fun syncNow() {
+        viewModelScope.launch { runSync(silent = false) }
+    }
+
+    private suspend fun runSync(silent: Boolean) {
+        if (_needsPairing.value || _needsSetup.value) {
+            if (!silent) _syncState.value = SyncState.Failed("还没连上电脑，先在设置里配对。")
+            return
+        }
+        // 串行化：正在跑就复用同一个任务，不叠加。
+        if (syncJob?.isActive == true) return
+        val job = viewModelScope.launch {
+            _syncState.value = SyncState.Running
+            when (val result = api.get("/m/api/snapshot")) {
+                is ApiResult.Success -> {
+                    val decoded = api.decode(result.body, SnapshotResponse.serializer())
+                    if (decoded == null || !decoded.ok) {
+                        _syncState.value = SyncState.Failed("手机和电脑的版本对不上，请更新电脑端。")
+                        return@launch
+                    }
+                    val at = System.currentTimeMillis()
+                    snapshot.save(at, decoded.entries)
+                    serverConfig.saveLastSyncAt(at)
+                    _lastSyncAt.value = at
+                    _syncState.value = SyncState.Done(decoded.entryCount, at)
+                    // 同步完刷新当前可见的数据：否则屏幕上还是同步前那一份，
+                    // 而「已同步」标签已经是新的 —— 两处时间对不上会让人怀疑没同步成功。
+                    refreshAll()
+                }
+                is ApiResult.Unreachable -> {
+                    if (!silent) {
+                        _syncState.value = SyncState.Failed("连不上电脑，请先开电脑、连同一个 WiFi。")
+                    } else {
+                        _syncState.value = SyncState.Idle
+                    }
+                }
+                is ApiResult.Failure -> _syncState.value = SyncState.Failed(result.message)
+                ApiResult.Unauthorized -> {
+                    _needsPairing.value = true
+                    _syncState.value = SyncState.Failed("设备已被电脑端撤销，请重新配对。")
+                }
+                ApiResult.NoServerConfigured -> _syncState.value = SyncState.Failed("还没设置电脑地址。")
+            }
+        }
+        syncJob = job
+        job.join()
     }
 
     /** 设置页「重新检测」：重跑一次启动流程（地址/配对/元信息）。 */
@@ -459,11 +571,29 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             // platform=app：让电脑端设备列表能区分「手机 App」和「浏览器」。
             // 不带这个字段的话，一个 App 和一个浏览器在设置页会显示成两条
             // 一模一样的「Android 手机」，撤销设备时没法判断该撤哪条。
-            val body = """{"code":"$code","label":"手机 App","platform":"app"}"""
-            when (val result = api.postJson("/m/api/pair", body)) {
+            //
+            // 2026-10-24 两处改进：
+            // ① `label` 用手机型号（Build.MODEL，如 `2201123C`）而不是「手机 App」——
+            //    两条记录连名字都一样时，人眼根本分不出来；
+            // ② `device_uid` 是这台手机的**稳定身份**，电脑端据此把同一台设备的重复
+            //    配对合并成一条（用户实测：改了地址再配一次就多出一条）。
+            val uid = serverConfig.deviceUid()
+            val label = pairLabel()
+            val payload = buildString {
+                append("{")
+                append("\"code\":\"").append(code.jsonEscape()).append("\",")
+                append("\"label\":\"").append(label.jsonEscape()).append("\",")
+                append("\"platform\":\"app\",")
+                append("\"device_uid\":\"").append(uid.jsonEscape()).append("\"")
+                append("}")
+            }
+            when (val result = api.postJson("/m/api/pair", payload)) {
                 is ApiResult.Success -> {
                     _needsPairing.value = false
                     bootstrap()
+                    // 配对成功立刻同步一次：这样店主刚配好、还没点任何页面时，
+                    // 关电脑前的「最后同步」就已经有值了，不是「从未同步」。
+                    syncNow()
                     onResult(null)
                 }
                 is ApiResult.Failure -> onResult(result.message)
@@ -473,6 +603,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
+
+    /** 配对时上报的设备名：优先手机型号（`Xiaomi 2201123C` → `2201123C`）。 */
+    private fun pairLabel(): String {
+        val model = runCatching { android.os.Build.MODEL }.getOrNull().orEmpty().trim()
+        return if (model.isEmpty()) "手机 App" else model.take(40)
+    }
+
+    private fun String.jsonEscape(): String = replace("\\", "\\\\").replace("\"", "\\\"")
 
     // -----------------------------------------------------------------------
     // 今日概览
@@ -880,17 +1018,37 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         //    `publish` 是「立刻上屏」的通道：调用方把它接到自己的 StateFlow 上，
         //    这样缓存值在第一个挂起点之前就渲染了，用户感觉是「秒开」。
         //    网络请求继续往下走，成功了会用新鲜数据覆盖它。
+        //
+        //    2026-10-24：精确键没命中时**再查一次全量快照**。这是「二级页面断网
+        //    刷不出来」的修法 —— 详情页只在点开那一刻才落盘，从没点开过的单据
+        //    断网必然空白；快照里已经带着它的详情。
         if (publish != null) {
             val cached = cache.get(cacheKey)
             val cachedValue = cached?.let { serializer(it.body) }
             if (cached != null && cachedValue != null) {
                 _cacheNewest.value = maxOf(_cacheNewest.value, cached.fetchedAt)
                 publish(UiState.Ready(cachedValue, fromCache = true, fetchedAt = cached.fetchedAt))
+            } else {
+                val snap = snapshot.get(SnapshotStore.canonicalKey(path, query))
+                val snapValue = snap?.let { serializer(it.body) }
+                if (snap != null && snapValue != null) {
+                    _cacheNewest.value = maxOf(_cacheNewest.value, snap.fetchedAt)
+                    publish(UiState.Ready(snapValue, fromCache = true, fetchedAt = snap.fetchedAt))
+                }
             }
         }
         // 显式写 <T>：`serializer` 的类型是 (String) -> T?，不指定的话编译器会把
         // loadWithCache 的 T 推成 T?，得到 Loaded<T?> 而无法赋给 UiState<T>。
-        return when (val outcome = api.loadWithCache<T>(cache, cacheKey, path, query, serializer)) {
+        return when (
+            val outcome = api.loadWithCache<T>(
+                cache = cache,
+                cacheKey = cacheKey,
+                path = path,
+                query = query,
+                decode = serializer,
+                snapshot = snapshot,
+            )
+        ) {
             is LoadOutcome.Ok -> {
                 val data: Loaded<T> = outcome.data
                 if (data.fromCache) {

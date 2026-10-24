@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.simpleerp.mobile.data.MetaResponse
+import com.simpleerp.mobile.ui.AppViewModel
 import com.simpleerp.mobile.ui.Tab
 import com.simpleerp.mobile.ui.components.ErpCard
 import com.simpleerp.mobile.ui.components.ErpHairline
@@ -55,6 +56,10 @@ fun SettingsScreen(
     shopName: String,
     themeMode: ThemeMode,
     cacheNewest: Long,
+    /** 「立即同步」的状态与上次同步时间（2026-10-24）。 */
+    syncState: AppViewModel.SyncState,
+    lastSyncAt: Long,
+    onSyncNow: () -> Unit,
     onThemeMode: (ThemeMode) -> Unit,
     onChangeAddress: () -> Unit,
     onRefresh: () -> Unit,
@@ -170,6 +175,44 @@ fun SettingsScreen(
         item { SectionLabel("离线缓存", modifier = Modifier.padding(top = 6.dp)) }
         item {
             ErpCard {
+                // 2026-10-24：这一块从「说明一段文字」变成**同步面板**。
+                //
+                // 为什么必须给一颗明确的按钮：桌面端关闭时会提醒「先让手机同步一下」，
+                // 而如果手机上找不到「同步」这个动作，那条提醒就是一句无法执行的废话。
+                // 用户实测的原话是「关软件要提醒他登录手机进行一下刷新同步」——
+                // 刷新这个动作必须在手机上可点、且结果可读。
+                Text(
+                    "关电脑前在这里点一次「立即同步」。同步过之后，电脑关掉也能看单据、客户和商品价（含明细）。",
+                    color = colors.muted,
+                    fontSize = 12.5.sp,
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    when (syncState) {
+                        is AppViewModel.SyncState.Running -> "正在同步…"
+                        is AppViewModel.SyncState.Done ->
+                            "已同步完成：${syncState.entryCount} 项，${formatCacheTime(syncState.atMillis)}"
+                        is AppViewModel.SyncState.Failed -> syncState.message
+                        AppViewModel.SyncState.Idle ->
+                            if (lastSyncAt > 0) "上次同步：${formatCacheTime(lastSyncAt)}"
+                            else "还没同步过"
+                    },
+                    color = when (syncState) {
+                        is AppViewModel.SyncState.Failed -> colors.danger
+                        is AppViewModel.SyncState.Done -> colors.success
+                        else -> colors.ink
+                    },
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SmallAction(
+                        if (syncState is AppViewModel.SyncState.Running) "同步中…" else "立即同步",
+                        onSyncNow,
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
                 Text(
                     if (cacheNewest > 0) {
                         "断网时能看截至 ${formatCacheTime(cacheNewest)} 的数据，页面上会标「离线」。"
@@ -177,7 +220,7 @@ fun SettingsScreen(
                         "还没有缓存。成功联网看过一次之后，断网就能看到上次的数据。"
                     },
                     color = colors.muted,
-                    fontSize = 12.5.sp,
+                    fontSize = 12.sp,
                 )
             }
         }

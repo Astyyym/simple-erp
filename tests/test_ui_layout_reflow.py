@@ -172,6 +172,39 @@ def test_settings_uses_two_columns_only_on_wide_screens():
     assert "settings-instant" in page
 
 
+def test_settings_device_table_adapts_instead_of_overhanging_the_card():
+    """已配对设备表在窄窗口下不能伸出卡片右边界（2026-10-24 用户截图反馈）。
+
+    病根：7 列全 nowrap，表格固有宽度约 720–800px；卡片内宽小于它时 table 既不换行
+    也不收缩，直接顶穿卡片（实测 1000px 视口：卡片内宽 575px、表格 804px）。
+    `.settings-table-shell` 原来只有 `min-width:0`，它管的是「网格子项不被内容撑开」，
+    管不到「表格自身比容器宽」。
+
+    修法两层，缺一不可：
+    ① 容器 `overflow-x:auto` —— 兜底，任何情况下都不画出卡片；
+    ② `container-type:inline-size` + `@container` —— 按**容器**宽度（不是视口宽度）
+       把整表切成「每条设备一张小卡」。视口媒体查询做不到：左栏 200px 让容器
+       比视口窄 300px 以上。
+    """
+    page = _html("/settings/")
+    assert ".settings-table-shell{min-width:0;max-width:100%;overflow-x:auto" in page
+    assert "container-type:inline-size" in page
+    assert "@container (max-width:760px){" in page
+    # 阈值必须按容器算：表格宽度契约也要同时钉住，否则 width:auto 会把固有宽度带回来。
+    assert "table.settings-plain-table{width:100%;max-width:100%}" in page
+
+    # 堆叠形态靠 td 的 data-label 画标签，缺一个就会出现「没有名字的值」。
+    assert 'class="table align-middle settings-plain-table settings-stack-table"' in page
+    for label in ("设备", "接入方式", "设备 ID", "配对时间", "最后访问", "来源 IP"):
+        assert f'data-label="{label}"' in page, label
+    # 自动刷新重绘的行也必须带 data-label（只改 Jinja 模板会漏掉这段 JS 拼串，
+    # 配对一台手机后表格就变成没有标签的一串值）。
+    assert '+ \'<td data-label="设备">\'' in page
+    assert '+ \'<td data-label="来源 IP">' in page
+    # 操作列没有 data-label：堆叠时靠 `:not([data-label])` 占满整行靠右。
+    assert "td:not([data-label])" in page
+
+
 def test_both_filter_cards_share_one_full_row_field_grid():
     """单据管理与数据分析的筛选卡：同一套 .filter-card 三段式结构。"""
     orders = _html("/orders/")

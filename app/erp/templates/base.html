@@ -3,6 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  {# 关闭提醒浮层要读的同步状态地址（2026-10-24）。放在 meta 里而不是内联 JS：
+     内联脚本里写死 `/settings/mobile/close-state` 就等于把路由地址复制一份，
+     url_prefix 一改就静默失效，而失效的表现是「提醒弹出来了但没有时间」，
+     比不弹更难查。 #}
+  <meta name="erp-close-state-url" content="{{ url_for('settings.mobile_close_state') }}">
   <title>{{ shop_name or 'ERP' }} · 本地 ERP</title>
   <!-- 品牌图标 favicon：与侧栏 .brand-mark 同一 Keyline file-spreadsheet 图形（MIT），
        内联 data URI，源码与打包版一致，不依赖外部文件或 CDN。 -->
@@ -774,6 +779,10 @@
   {# 共享就地刷新：筛选 / 翻页 / 页内切换不再整页重载并回顶。
      模块本身是 module，用 type=module 引入；各页在自身脚本里调用 window.erpPageRefresh.initPageRefresh()。 #}
   <script type="module" src="{{ url_for('static', filename='page-refresh.mjs') }}?v=1"></script>
+  {# 关闭软件前的「先让手机同步」浮层（2026-10-24）。挂在**每个桌面页面**上，
+     由 Python 侧在窗口 closing 时调 `window.erpClosePrompt()` 弹出来。
+     放 base.html 而不是设置页：店主关电脑时在哪一页都可能，提醒不能只在设置页有效。 #}
+  <script src="{{ static_url('js/close-prompt.js') }}"></script>
 </head>
 <body class="{{ 'order-entry-page' if request.path in ('/orders/new', '/orders/return/new', '/purchases/new', '/purchases/return/new') else '' }}">
 <div class="app-shell">

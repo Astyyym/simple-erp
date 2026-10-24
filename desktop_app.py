@@ -124,6 +124,138 @@ def _error_html(message: str) -> str:
     )
 
 
+def _close_prompt_script() -> str:
+    """调页内浮层的 JS。返回布尔，`evaluate_js` 才拿得到 true/false。
+
+    为什么包一层 `!!(...)`：`window.erpClosePrompt` 可能不存在（旧缓存里的
+    base.html 没有挂这个脚本），直接调会抛异常；包一层之后拿到的是 false，
+    Python 侧据此走原生确认框兜底。**绝不能让「浮层挂了」变成「关不掉」**。
+    """
+    return (
+        "!!(window.erpClosePrompt && window.erpClosePrompt());"
+    )
+
+
+NATIVE_CLOSE_PROMPT = (
+    "关门之前，先让手机同步一下。\n\n"
+    "拿起手机打开简单ERP App → 设置 → 立即同步，几秒钟就好。\n"
+    "同步过之后，这台电脑关掉也能在手机上翻单据、客户和商品价。\n\n"
+    "点「确定」关闭软件，点「取消」返回。"
+)
+
+
+class CloseGate:
+    """窗口关闭闸门：挡住第一次关闭，等用户决定（2026-10-24 用户要求「每次必弹」）。
+
+    三条硬约束（都是踩点，别改）：
+
+    1. **`closing` 处理器在 UI 线程同步执行**（pywebview 的 `Event(should_lock=True)`）。
+       所以处理器里**不能**同步调 `evaluate_js` —— 那要等同一个 UI 线程，直接死锁。
+       做法：处理器立刻 `return False` 取消关闭，另起线程去调解 JS。
+    2. **每次都要弹**。所以 `cancel()` 必须能被 JS 调回来清标志；否则第二次点 ×
+       会被当成「用户已经看过提醒了」直接放行（用户明确否决了「不再提醒」开关）。
+    3. **必须有兜底**。页内浮层调不出来（当前在错误页/闪屏/PDF 预览、JS 报错、
+       WebView2 没载入完）时退回原生确认框；再失败就放行 —— 程序关不掉比少一次
+       提醒严重得多。
+    """
+
+    def __init__(self, probe=None, notify=None) -> None:
+        # `probe` 返回 True 表示「该弹提醒」（手机访问开着 + 至少一台设备）。
+        # `notify` 用来弹原生兜底确认框（返回 bool）。两者都可注入，便于测试。
+        self._probe = probe
+        self._notify = notify
+        self.prompted = False
+        self._decided = False
+        self._lock = threading.Lock()
+
+    # -- 由窗口事件调用 -----------------------------------------------------
+    def should_cancel_close(self) -> bool:
+        """返回 True = 取消这次关闭（即「这次别关，先弹提醒」）。"""
+        with self._lock:
+            if self._decided:
+                # 用户已经在浮层里点了「关闭」，或兜底流程已经放行。
+                return False
+            if self.prompted:
+                # 第二次点 ×（用户没在浮层上做选择就再点一次）：直接放行。
+                # 这是「浮层残留在屏幕上点不到」时的唯一出路 —— 不能让用户被 bug 困住。
+                self._decided = True
+                return False
+        try:
+            needed = bool(self._probe and self._probe())
+        except Exception:  # noqa: BLE001 — 探测失败就按「不用提醒」处理
+            needed = False
+        if not needed:
+            with self._lock:
+                self._decided = True
+            return False
+        with self._lock:
+            self.prompted = True
+        # 起线程去弹浮层：处理器必须在 UI 线程上立刻返回。
+        threading.Thread(target=self._show_prompt, daemon=True).start()
+        return True
+
+    def _show_prompt(self) -> None:
+        shown = False
+        try:
+            shown = bool(_window.evaluate_js(_close_prompt_script()))
+        except Exception:  # noqa: BLE001 — 浮层失败就走兜底
+            logging.getLogger(__name__).warning("页内关闭提醒调不出来，退原生确认框", exc_info=True)
+        if shown:
+            return
+        # 兜底：原生确认框。注意这时窗口还开着（关闭已被取消）。
+        confirm = self._notify
+        allowed = False
+        if confirm is not None:
+            try:
+                allowed = bool(confirm())
+            except Exception:  # noqa: BLE001
+                allowed = False
+        if allowed:
+            self.confirm()
+
+    # -- 由 JS 桥 / 兜底调用 ------------------------------------------------
+    def confirm(self) -> None:
+        """用户确认关闭：放行下一次关闭事件。"""
+        with self._lock:
+            self._decided = True
+            self.prompted = False
+
+    def cancel(self) -> None:
+        """用户取消：清掉状态，下次点 × 仍然弹提醒（每次必弹）。"""
+        with self._lock:
+            self.prompted = False
+            self._decided = False
+
+
+_close_gate: CloseGate | None = None
+
+
+def _close_prompt_needed() -> bool:
+    """该不该弹提醒：手机访问开着 **且** 至少有一台已配对设备。
+
+    两个都不满足时直接放行 —— 没在用手机端的店主不该被拦。
+    """
+    try:
+        from erp.config import load_config
+        from erp.services import mobile_pairing
+
+        if not load_config().get("mobile_access_enabled"):
+            return False
+        return bool(mobile_pairing.list_devices())
+    except Exception:  # noqa: BLE001 — 读配置/设备表失败时不要拦人
+        return False
+
+
+def _native_confirm() -> bool:
+    """原生兜底确认框（页内浮层调不出来时用）。"""
+    if _window is None:
+        return True
+    try:
+        return bool(_window.create_confirmation_dialog("简单ERP", NATIVE_CLOSE_PROMPT))
+    except Exception:  # noqa: BLE001
+        return True
+
+
 class DesktopApi:
     """JS bridge for the PyWebView desktop shell."""
 
@@ -160,6 +292,38 @@ class DesktopApi:
             return False
 
     def is_desktop(self) -> bool:
+        return True
+
+    def erp_close_window(self) -> bool:
+        """页内浮层里点「我已同步，关闭软件」/「直接关闭」时调用：真正关窗口。
+
+        为什么不当场 `destroy()`：这个方法是**从 JS 的异步回调**进来的，
+        而 `destroy()` 会销毁正在执行 JS 的那个窗口。先置闸门标志、再由
+        `CloseGate` 安排的线程去关，能避开「在 JS 回调里销毁自己」那类竞态
+        （表现是卡住或进程留在后台）。
+        """
+        global _window
+        gate = _close_gate
+        if gate is not None and gate.prompted:
+            gate.confirm()
+        if _window is None:
+            return False
+        try:
+            _window.destroy()
+            return True
+        except Exception:  # noqa: BLE001 — 关不掉也要让进程退出（见 finally）
+            logging.getLogger(__name__).exception("销毁窗口失败")
+            return False
+
+    def erp_close_prompt_cancel(self) -> bool:
+        """用户点了「取消，先不关」：清掉闸门，让下一次点 × 仍然弹提醒。
+
+        没有这个方法的话，「第一次点 × 弹了、用户取消、第二次点 × 直接关」——
+        而用户要的是**每次**都提醒。
+        """
+        gate = _close_gate
+        if gate is not None:
+            gate.cancel()
         return True
 
     def save_pdf(self, filename: str, data_url: str) -> dict[str, str | bool]:
@@ -377,6 +541,20 @@ def main() -> None:
             _window.load_html(_error_html(str(exc)))
 
     _window.events.loaded += _on_loaded
+
+    # 关闭闸门（2026-10-24 用户要求：**每次**关闭都提醒先让手机同步）。
+    #
+    # 事件契约：pywebview 的 `closing` 处理器返回 False → **取消**这次关闭。
+    # 处理器是 `should_lock=True`，在 UI 线程同步执行 —— 所以这里只做「判断 + 起线程」，
+    # 真正的弹层在后台线程里调 `evaluate_js`（详见 CloseGate 的注释）。
+    global _close_gate
+    _close_gate = CloseGate(probe=_close_prompt_needed, notify=_native_confirm)
+
+    def _on_closing() -> bool:
+        return not _close_gate.should_cancel_close()
+
+    _window.events.closing += _on_closing
+
     threading.Thread(target=_swap_to_app, daemon=True).start()
     try:
         webview.start()
