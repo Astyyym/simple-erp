@@ -725,3 +725,19 @@ zxing `ViewfinderView` 那条横线**位置写死**在 `framingRect` 垂直中�
 **去掉表头要补标签。** 表格改扁平行后，`v15` 这种裸值没人看得懂 ——
 `tests/test_backup_restore.py` 断言 `"数据库版本" in html` 会先红，说明语义真的丢了，
 写成 `数据库版本 v15`，别去改测试。
+
+## 安装包卸载加了 `/VERYSILENT /SUPPRESSMSGBOXES` 仍会停在一个模态框上（2026-10-24）
+
+`packaging/installer/简单ERP.iss` 的 `CurUninstallStepChanged(usPostUninstall)` 里有一个
+**`MsgBox`**（告诉用户「业务数据没删，在文档\简单ERP数据」）。这是 `[Code]` 段里的脚本调用，
+**不受 `/SUPPRESSMSGBOXES` 约束** —— 参数只管 Inno 自己的标准对话框。
+
+于是 `Start-Process unins000.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait`
+**永不返回**（agent 侧表现为「命令跑了 120s 后被转成后台任务」，而程序文件其实已经删干净了）。
+
+**判断方法**：`Get-Process | Where-Object { $_.ProcessName -match 'unins|_unins' }` 能看到
+`_unins.tmp` 且 `MainWindowTitle` = `卸载`；目标目录里只剩 `config.json`（`uninsneveruninstall`）。
+
+**处理**：`AppActivate(pid)` + `SendKeys('{ENTER}')` 点掉它；或者干脆**别用 `-Wait`**，
+起来后轮询「目录是否只剩 `config.json` + 卸载注册表键是否消失」。
+**不要**因为 `-Wait` 卡住就判定卸载失败或去 `taskkill` 卸载器 —— 那时文件已经删完了。
