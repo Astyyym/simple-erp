@@ -526,8 +526,8 @@
   <div class="settings-table-shell">
     {#
       宽窄适配（2026-10-24 用户反馈「窗口一窄，配对设备表格从圆角卡片里伸出去」）：
-      7 列全是 nowrap，表格固有宽度约 800px；卡片内宽小于它时表格不会自己缩，
-      而是直接顶穿卡片右边界（实测 1000px 视口下，卡片内宽 575px、表格 804px）。
+      7 列全是 nowrap，真实数据下表格自然宽度约 1027px；卡片内宽小于它时表格不会
+      自己缩，而是直接顶穿卡片右边界（实测 1440 视口下，卡片内宽 795px、溢出 37px）。
       现在外层 `.settings-table-shell` 声明 `container-type:inline-size`，
       并用 `@container` 在容器不够宽时把整表改成「每条设备一张小卡」的堆叠形态；
       宽的时候仍是正常表格。
@@ -892,8 +892,9 @@
     表格容器的宽度契约（2026-10-24 用户反馈「窄窗口下配对设备表格从圆角卡片里伸出去」）。
 
     病根：`.settings-table-shell` 只写了 `min-width:0`，表格本身 7 列全 nowrap，
-    最小内容宽度约 800px。卡片内宽一旦小于它，table 既不换行也不收缩，
-    直接越出卡片右边界 —— 截图里就是表格横穿卡片、还带着一条横向滚动条。
+    自然宽度约 1027px（真实数据：型号名 + 真实局域网 IP + 「已同步」徽标）。
+    卡片内宽一旦小于它，table 既不换行也不收缩，直接越出卡片右边界 ——
+    截图里就是表格横穿卡片、还带着一条横向滚动条。
     `min-width:0` 只解决「网格/弹性子项不被内容撑开」，管不到「表格自身比容器宽」。
 
     修法两层：
@@ -909,12 +910,17 @@
   table.settings-plain-table{width:100%;max-width:100%}
   /*
     设备表列内距比全局 `.table`（12px 14px）更紧：这张表 7 列、每列全是短值
-    （日期、IP、8 位设备 ID），14px 的左右内距纯属浪费，实测每列省 6px 就能
-    把最小内容宽度从 804px 压到 720px —— 正好让 1440 窗口（卡片内宽 795px）
-    还能显示正常表格，不用一提宽就掉进堆叠形态。别的设置页表格列少，不动。
+    （日期、IP、8 位设备 ID），14px 的左右内距纯属浪费。别的设置页表格列少，不动。
   */
   table.settings-stack-table>thead>tr>th,
   table.settings-stack-table>tbody>tr>td{padding-left:8px;padding-right:8px}
+  /*
+    设备名允许断词（`sdk_gphone64_x86_64` 这类型号名本身就是一整个不可断的长 token）。
+    打包冒烟实测：加这条之前整表最小内容宽度 892px，加了之后 782px —— 差别全在这一列。
+    只在真的放不下时才断，宽的时候浏览器根本不会用它。
+  */
+  table.settings-stack-table>tbody>tr>td:first-child,
+  table.settings-stack-table>tbody>tr>td:first-child code{overflow-wrap:anywhere}
   table.settings-plain-table,
   table.settings-plain-table:not(.order-table){
     background:transparent;border:0;border-radius:0;box-shadow:none;
@@ -931,9 +937,14 @@
   table.settings-plain-table>tbody>tr:hover>td{background:transparent}
   .settings-nowrap{white-space:nowrap}
   /* 「已同步 10月24日 21:45」小标签：只在真的同步过之后出现，跟在「最后访问」后面。
-     不用 data-ui-hint —— 它是状态信息，关掉界面说明文字时也必须可见。 */
+     不用 data-ui-hint —— 它是状态信息，关掉界面说明文字时也必须可见。
+
+     **独占一行**（2026-10-24 打包冒烟后改）：原来跟日期同一行 inline，于是这一列
+     的宽度 = 日期 + 徽标 ≈ 291px，7 列加起来 1027px —— 连 1440 窗口都装不下
+     （卡片内宽 795px），表格被顶出卡片。改成 block 后同一列只要
+     max(日期, 徽标) ≈ 155px，整表降到 892px。这是纯收益，不改任何信息。 */
   .mobile-sync-badge{
-    display:inline-block;margin-left:8px;padding:1px 7px;border-radius:999px;
+    display:block;width:fit-content;margin:2px 0 0;padding:1px 7px;border-radius:999px;
     border:1px solid var(--erp-border-strong);background:var(--erp-surface-soft);
     color:var(--erp-muted);font-size:11.5px;font-weight:600;white-space:nowrap;
   }
@@ -943,11 +954,19 @@
 
   /*
     窄容器下「表格 → 设备小卡」（2026-10-24 用户反馈的正面适配，不是兜底滚动条）。
-    阈值 760px：7 列 nowrap 的最小内容宽度实测约 720px（列内距收到 8px 后），
-    再加上「日期 + 已同步」这类要换行的内容，760 以下就已经明显拥挤。
+
+    阈值 860px 是**实测**出来的，不是拍的：真实数据（设备名 `sdk_gphone64_x86_64`、
+    IP `192.168.10.21`、带「已同步」徽标）下，这张 7 列表格的自然宽度大约 1027px，
+    把徽标改成独占一行、设备名允许断词后，最小内容宽度降到 782px。断点取在两者
+    之间偏上的 860px：再低的话 782–860 这一档会先出现横向滚动条，而不是切形态。
+
+    ⚠️ 这个数字必须用**真实形态的数据**量：我第一次拿演示库的 `127.0.0.1`
+    当 IP、拿「手机 App」当设备名，量出 720px 就把断点定在 760 —— 结果 1440 窗口
+    下（容器 795px）表格直接溢出 37px。IP 少两位、名字少几个字符，结论就反了。
+
     断点用小数值而不是 768 —— 卡片内宽是「视口 − 左栏 − 各级内距」，永远凑不到整数。
   */
-  @container (max-width:760px){
+  @container (max-width:860px){
     table.settings-stack-table{display:block;width:100%}
     table.settings-stack-table thead{display:none}
     table.settings-stack-table tbody{display:block}
@@ -990,7 +1009,10 @@
     /* 堆叠后 nowrap 一律解除：否则「10月24日 23:13 已同步 10月24日 23:13」
        仍是一条不可断的长行，照样会撑出去。 */
     table.settings-stack-table .settings-nowrap{white-space:normal}
-    table.settings-stack-table .mobile-sync-badge{margin-left:0;margin-top:2px}
+    table.settings-stack-table .mobile-sync-badge{margin-left:0}
+    /* 徽标自身也是 nowrap + fit-content：容器窄到比徽标还窄时（实测 500px 视口 →
+       容器 138px < 徽标 140px）它会顶出去。堆叠形态下它独占一行，允许换行没有代价。 */
+    table.settings-stack-table .mobile-sync-badge{white-space:normal;max-width:100%}
     /* 徽标是 grid item，默认 `stretch` 会被拉成整列宽的一条色带
        （实测截图里「手机 App」变成一整条蓝条）。行内小件都要收成内容宽度。 */
     table.settings-stack-table>tbody>tr>td>.badge{justify-self:start}

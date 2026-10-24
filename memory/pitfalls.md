@@ -763,7 +763,7 @@ zxing `ViewfinderView` 那条横线**位置写死**在 `framingRect` 垂直中�
 
 **这不是 `min-width:0` 能解决的事。** `min-width:0` 解决的是「grid/flex 子项被内容的
 最小内容宽度撑开」；表格本身是 `display:table`，7 列全 `nowrap` 时它的**最小内容宽度**
-（实测 720–804px）就是硬下限，容器再窄它也不会收缩，而是直接越界。
+就是硬下限，容器再窄它也不会收缩，而是直接越界。
 
 **验收判据不是「看起来没伸出去」，是数字**：
 `shell.scrollWidth - shell.clientWidth`（容器内溢出）与
@@ -780,10 +780,35 @@ zxing `ViewfinderView` 那条横线**位置写死**在 `framingRect` 垂直中�
   要写 `minmax(min(200px,100%),1fr)`。
 - 堆叠后 `.badge` 是 grid item，默认 `stretch` 被拉成整列宽的**一条色带**（截图里
   「手机 App」变成一整条蓝条）。行内小件都要 `justify-self:start`。
+- 徽标/按钮这类 `white-space:nowrap` + `width:fit-content` 的小件，在容器比它还窄时
+  仍会顶出去（实测 500px 视口：容器 138px < 徽标 140px）。堆叠形态里要给
+  `white-space:normal;max-width:100%`。
 
 **表头隐藏后的标签来源**：靠 `td[data-label]` + `::before{content:attr(data-label)}`。
 设置页这类有「每 4 秒自动刷新重绘表体」的表格，**Jinja 模板与 JS 拼串两处都要带**
 `data-label`，只改模板会在配对一台手机后立刻变成没有标签的一串值。
+
+### ⚠️ 量宽度必须用「真实形态数据」，别用演示库的占位值
+
+第一次量的时候用的是演示库：IP 是 `127.0.0.1`（11 字符）、设备名是「手机 App」，
+得出「最小内容宽度 720px」，断点定 760、并自信地写成「1440 窗口仍是正常表格」。
+**打包后在 1440 视口下表格溢出 37px** —— 真实门店数据是 IP `192.168.10.21`（13 字符）、
+型号 `sdk_gphone64_x86_64`（19 字符且不可断词）、还带「已同步」徽标，自然宽度 1027px，
+差出 300px。
+
+规则：**涉及列宽/断点/换行的判断，一律先造一份「最坏情况」数据**
+（最长型号名、完整局域网 IP、所有可选徽标全亮），再量 `min-content` 与自然宽度。
+演示数据只适合截图，不适合量布局。
+
+量法（Chrome CDP，不必改成仓库代码）：
+```js
+const c = table.cloneNode(true);
+c.style.cssText = 'position:absolute;left:-9999px;width:min-content;max-width:none;display:table';
+document.body.appendChild(c);
+Math.round(c.getBoundingClientRect().width);   // 最小内容宽度
+```
+再对 clone 逐条解除候选的宽松化条件（徽标换行 / 允许断词 / nowrap 解除），
+就能看出每条各能省多少 —— 断点取在「最小内容宽度」与「自然宽度」之间。
 
 ## 安装包卸载加了 `/VERYSILENT /SUPPRESSMSGBOXES` 仍会停在一个模态框上（2026-10-24）
 

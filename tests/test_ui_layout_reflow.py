@@ -175,8 +175,9 @@ def test_settings_uses_two_columns_only_on_wide_screens():
 def test_settings_device_table_adapts_instead_of_overhanging_the_card():
     """已配对设备表在窄窗口下不能伸出卡片右边界（2026-10-24 用户截图反馈）。
 
-    病根：7 列全 nowrap，表格固有宽度约 720–800px；卡片内宽小于它时 table 既不换行
-    也不收缩，直接顶穿卡片（实测 1000px 视口：卡片内宽 575px、表格 804px）。
+    病根：7 列全 nowrap，表格固有宽度约 1027px；卡片内宽小于它时 table 既不换行
+    也不收缩，直接顶穿卡片（换用真实形态数据后实测：1440 视口下卡片内宽 795px、
+    表格 1027px，溢出 37px）。
     `.settings-table-shell` 原来只有 `min-width:0`，它管的是「网格子项不被内容撑开」，
     管不到「表格自身比容器宽」。
 
@@ -185,13 +186,24 @@ def test_settings_device_table_adapts_instead_of_overhanging_the_card():
     ② `container-type:inline-size` + `@container` —— 按**容器**宽度（不是视口宽度）
        把整表切成「每条设备一张小卡」。视口媒体查询做不到：左栏 200px 让容器
        比视口窄 300px 以上。
+
+    ⚠️ 断点 860 是量出来的：真实数据（型号 `sdk_gphone64_x86_64`、IP
+    `192.168.10.21`、带「已同步」徽标）下自然宽度 1027px；徽标独占一行 +
+    设备名可断词后最小内容宽度 782px。断点必须高于 782，否则 782–860 这一档
+    会先冒出横向滚动条而不是切形态。**别拿演示库的 `127.0.0.1` 去量** ——
+    那样会得到 720px 的假结论，断点定低就会在 1440 窗口下直接溢出。
     """
     page = _html("/settings/")
     assert ".settings-table-shell{min-width:0;max-width:100%;overflow-x:auto" in page
     assert "container-type:inline-size" in page
-    assert "@container (max-width:760px){" in page
+    assert "@container (max-width:860px){" in page
     # 阈值必须按容器算：表格宽度契约也要同时钉住，否则 width:auto 会把固有宽度带回来。
     assert "table.settings-plain-table{width:100%;max-width:100%}" in page
+
+    # 徽标独占一行：inline 时这一列 = 日期 + 徽标 ≈ 291px，整表 1027px 装不下。
+    assert ".mobile-sync-badge{\n    display:block;width:fit-content" in page
+    # 设备名要能断词（型号名是不可断的长 token），否则最小内容宽度仍卡在 892px。
+    assert "td:first-child{overflow-wrap:anywhere}" in page or "code{overflow-wrap:anywhere}" in page
 
     # 堆叠形态靠 td 的 data-label 画标签，缺一个就会出现「没有名字的值」。
     assert 'class="table align-middle settings-plain-table settings-stack-table"' in page
@@ -203,6 +215,8 @@ def test_settings_device_table_adapts_instead_of_overhanging_the_card():
     assert '+ \'<td data-label="来源 IP">' in page
     # 操作列没有 data-label：堆叠时靠 `:not([data-label])` 占满整行靠右。
     assert "td:not([data-label])" in page
+    # 极窄容器：徽标自己也要允许换行，否则 500px 视口（容器 138px < 徽标 140px）仍溢出。
+    assert "table.settings-stack-table .mobile-sync-badge{white-space:normal;max-width:100%}" in page
 
 
 def test_both_filter_cards_share_one_full_row_field_grid():

@@ -71,26 +71,36 @@
 
 用户截图报：窗口一窄，7 列的配对设备表**从圆角卡片右边界伸出去**，还带一条横向滚动条。
 
-- 病根两层：① 7 列全 `nowrap`，表格最小内容宽度约 720px；卡片内宽小于它就既不换行也不收缩。
-  ② `.settings-table-shell` 只有 `min-width:0` —— 它管的是「网格/弹性子项不被内容撑开」，
-  管不到「表格自身比容器宽」（实测 1000px 视口：容器 575px、表格 804px）。
+- 病根两层：① 7 列全 `nowrap`，真实数据下表格自然宽度 **1027px**；卡片内宽小于它就既不换行
+  也不收缩。② `.settings-table-shell` 只有 `min-width:0` —— 它管的是「网格/弹性子项不被内容
+  撑开」，管不到「表格自身比容器宽」（实测 1440 视口：容器 795px、溢出 37px）。
 - 修法：容器加 `overflow-x:auto`（兜底，任何宽度都不会画出卡片）+ `container-type:inline-size`，
   用 `@container` 按**容器**宽度切形态。这里不能用视口媒体查询：左栏 200px 让容器比视口窄 300px 以上，
   视口 1280 时容器只有 635px。
-  - `@container (max-width:760px)`：整表变「每条设备一张小卡」，字段用
+  - `@container (max-width:860px)`：整表变「每条设备一张小卡」，字段用
     `repeat(auto-fit,minmax(min(200px,100%),1fr))` 自动排 1～2 列（1280 容器下排 2 列，手机宽度退 1 列）。
     `min()` 不能省：只写 200px 时容器 198px 仍会溢出 15px（实测）。
   - `@container (max-width:340px)`：标签挪到值上方。
-- 表格列内距从全局 14px 收到 8px（这张表全是日期/IP/8 位 ID，宽内距纯属浪费）：
-  最小内容宽度 804 → 720px，1440 窗口仍显示正常表格，不用一提宽就掉进堆叠形态。
+- 让表格本身先瘦下来（这两条是纯收益，不改任何信息）：
+  - 「已同步」徽标从 `inline-block` 改成**独占一行**：原来这一列宽 = 日期 + 徽标 ≈ 291px；
+    改后 max(日期, 徽标) ≈ 155px，整表 1027 → 892px。
+  - 设备名允许 `overflow-wrap:anywhere`（`sdk_gphone64_x86_64` 是不可断的长 token）：892 → 782px。
+  - 表格列内距从全局 14px 收到 8px（这张表全是日期/IP/8 位 ID，宽内距纯属浪费）。
+- 断点 860 取在 782（最小内容宽度）与 1027（自然宽度）之间偏上：低于 782 的那一档会先冒出
+  横向滚动条而不是切形态。
 - 标签靠 `td[data-label]` 画出来 —— **服务端渲染与自动刷新那段 JS 拼串都要带**，
   只改 Jinja 会漏掉后者（配对一台手机后表格立刻变成没有标签的一串值）。
-- 实测（隔离数据根）：1440/1280/1100/1000/900/820/700/560 八个宽度下
-  `shellOverflowX = 0`、`docOverflow = 0`；容器 198px 时也无横向溢出。深色主题逐张看图确认。
-- 测试：新增 `test_settings_device_table_adapts_instead_of_overhanging_the_card`（结构契约 + 断言
-  JS 重绘那串 HTML 也带 `data-label`）；全量 `pytest tests/ -q` = **1124 passed, 17 skipped**。
-- README 截图 `docs/images/shot-settings.jpg` 已用 `node tools/shots.mjs --only settings` 重拍
-  （该图为设置页首屏，1440 宽度下表格仍是正常形态，画面无可见变化）。
+- **打包冒烟抓到的一个真 bug**：第一次是用演示库数据量的（IP `127.0.0.1`、设备名「手机 App」），
+  得出 720px、断点定 760 —— 打包后在 1440 视口下表格仍溢出 37px。真实门店数据里 IP 是
+  `192.168.10.21`、型号是 `sdk_gphone64_x86_64`，宽度差出 300px。现在所有数字都用
+  「真实形态数据」重量过。
+- 实测（隔离数据根 + 真实形态设备数据）：1920/1680/1600/1440/1280/1100/1000/900/820/760/
+  700/600/500/460/400/360 共 16 档宽度下 `shellOverflowX = 0` 或容器已窄到 38px 以下的
+  极限区（此时整页 `docOverflow` 仍为 0），深色主题逐张看图确认。
+- 测试：新增 `test_settings_device_table_adapts_instead_of_overhanging_the_card`（结构契约 +
+  断点/徽标/断词断言 + 断言 JS 重绘那串 HTML 也带 `data-label`）；
+  全量 `pytest tests/ -q` = **1124 passed, 17 skipped**。
+- README 截图 `docs/images/shot-settings.jpg` 重拍（设置页首屏，正常形态无可见变化）。
 
 ### 验证
 
