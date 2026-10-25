@@ -135,12 +135,20 @@
 
 ### 产物
 
+2026-10-25 因⑤的两轮修复重打了两次 Windows 产物，下表是**最后一次**（含①②⑤全部改动）。
+同名重打后旧哈希作废，已同步更新；APK 未重打（全部安卓源码改动早于 10-24 22:02 的构建）。
+
 | 形态 | 文件 | SHA256 |
 |---|---|---|
-| 安装包 | `dist\simple-erp-setup-v4.6.9.exe`（41,093,244 B） | `3D616892804050086C4148FF3CC3A732C61930F7F8FD416C7753170FB8E53257` |
-| 交付 ZIP | `dist\simple-erp-windows-v4.6.9.zip`（54,880,367 B） | `CC0353659152309657FF08DFE9A687875466C4AABB7609F941FC1C5E6D2B9AC8` |
+| 安装包 | `dist\simple-erp-setup-v4.6.9.exe`（41,096,298 B） | `B5DFAE35D2CB464661B01BAAD55EDEDAB3DFD7C46944A09646767D2579E4D86A` |
+| 交付 ZIP | `dist\simple-erp-windows-v4.6.9.zip`（54,885,915 B） | `15F86612800B42282D2F5D9DFB63A802AFB502F0D9326F7BF3AAC82738689536` |
 | 绿色版目录 | `dist\local-v4.6.9\简单ERP\`（自带 200 条演示数据） | — |
 | 安卓 APK | `dist\simple-erp-mobile-v1.4.10.apk`（8,037,506 B，versionCode 15） | `D4BFF03743BD8B92E07E0D21B186477C45D02F30DCBE2397C708BDAB22FCE553` |
+
+**重打后的成品验收**（绿色版 EXE 实跑，隔离数据根 + 真实形态设备数据）：
+`/health` = `v4.6.9`、`data_root` 指向包内 `demo_data`；14 档宽度（1920 → 460）下
+`shellOverflowX` 与 `docOverflow` **全为 0**、徽标全部落在值列内（`badgeInsideCell: true`）；
+ZIP 内确认无 `demo_data`。
 
 旧 v4.6.8 的三份产物与 APK 1.4.9 已按「只保留当前版本」的规矩删除。
 
