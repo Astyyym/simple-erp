@@ -17,7 +17,7 @@ plugins {
  *    再用 `@C:\...\gradle-worker-classpath*.txt` 传给 java 启动器；
  * 2. Windows 上 java **启动器**（native 层、早于 JVM）按**系统 ANSI 代码页(GBK)**
  *    读这个 argfile，不认 UTF-8。项目路径含中文「简单ERP」→ 路径被解成乱码
- *    `D:\wenjian\Hermes\绠€鍗旹RP\...` → 类加载器找不到测试类。
+ *    `D:\wenjian\Agent\绠€鍗旹RP\...` → 类加载器找不到测试类。
  *    （`assembleRelease` 不受影响：它不走 worker argfile，所以 APK 一直是好的。）
  *
  * 反证：把 buildDir 指到 `C:/Users/.../simple-erp-ascii-build` 后，9 个测试全过。
