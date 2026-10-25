@@ -216,7 +216,11 @@ def test_settings_device_table_adapts_instead_of_overhanging_the_card():
     # 操作列没有 data-label：堆叠时靠 `:not([data-label])` 占满整行靠右。
     assert "td:not([data-label])" in page
     # 极窄容器：徽标自己也要允许换行，否则 500px 视口（容器 138px < 徽标 140px）仍溢出。
-    assert "table.settings-stack-table .mobile-sync-badge{white-space:normal;max-width:100%}" in page
+    assert "table.settings-stack-table .mobile-sync-badge{" in page
+    # 徽标在 DOM 里是 td 的第三个子项；td 是 2 列 grid（::before 标签 | 值），
+    # 不显式钉列的话它会掉进第二行的标签列（68px），被挤成三行小圆饼（打包实跑抓到）。
+    assert "grid-column:2/-1;justify-self:start" in page
+    assert "white-space:normal;max-width:100%" in page
 
 
 def test_both_filter_cards_share_one_full_row_field_grid():

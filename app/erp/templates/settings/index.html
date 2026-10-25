@@ -1009,21 +1009,37 @@
     /* 堆叠后 nowrap 一律解除：否则「10月24日 23:13 已同步 10月24日 23:13」
        仍是一条不可断的长行，照样会撑出去。 */
     table.settings-stack-table .settings-nowrap{white-space:normal}
-    table.settings-stack-table .mobile-sync-badge{margin-left:0}
-    /* 徽标自身也是 nowrap + fit-content：容器窄到比徽标还窄时（实测 500px 视口 →
-       容器 138px < 徽标 140px）它会顶出去。堆叠形态下它独占一行，允许换行没有代价。 */
-    table.settings-stack-table .mobile-sync-badge{white-space:normal;max-width:100%}
-    /* 徽标是 grid item，默认 `stretch` 会被拉成整列宽的一条色带
-       （实测截图里「手机 App」变成一整条蓝条）。行内小件都要收成内容宽度。 */
+    /*
+      「已同步」徽标在堆叠形态里的位置（2026-10-25 打包实跑抓到）。
+
+      td 现在是 2 列 grid：「::before 标签 | 值」。badge 在 DOM 里是 td 的第三个
+      子项，自动排布会把它丢进**第二行的标签列**（68px 宽）—— 截图里它被挤成一个
+      68px 宽的三行小圆饼，还把整张卡片撑高。必须显式 `grid-column:2/-1` 钉在值列。
+
+      另外两条也一起收在这里：
+      · `white-space:normal;max-width:100%`：容器比徽标还窄时（实测 500px 视口 →
+        容器 138px < 徽标 140px）不会再顶出去；
+      · `justify-self:start`：grid item 默认 stretch，不收回内容宽度会变成整条色带。
+    */
+    table.settings-stack-table .mobile-sync-badge{
+      grid-column:2/-1;justify-self:start;
+      margin:2px 0 0;white-space:normal;max-width:100%;
+    }
+    /* 徽标同样的问题，「手机 App」/「浏览器」这些行内徽标也要收回内容宽度。 */
     table.settings-stack-table>tbody>tr>td>.badge{justify-self:start}
   }
   /*
     极窄容器（<340px）：标签挪到值上方。68px 标签列在 200px 宽的卡片里
     只剩 120px 留给值，长一点的「10月24日 23:13 · 已同步 …」还是会溢出
     （实测容器 198px 时仍有 15px 横向滚动）。
+
+    ⚠️ 这里必须把徽标的 `grid-column:2/-1` 一起撤回：td 只剩 1 列时，
+    钉在 `2/-1` 的徽标会**凭空创建出一条隐式第二列**，于是值列被压到几十 px、
+    徽标和「配对时间」叠在一起（实测 460px 视口截图里文字互相压叠）。
   */
   @container (max-width:340px){
     table.settings-stack-table>tbody>tr>td{grid-template-columns:minmax(0,1fr);gap:1px}
+    table.settings-stack-table .mobile-sync-badge{grid-column:1/-1}
   }
 
   /* ===== 备份列表：扁平行 + 三个独立按钮（2026-10-24 重做）=====
