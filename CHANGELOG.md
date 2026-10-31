@@ -53,6 +53,16 @@
 - **未验**：真机冷启动进「连不上电脑」页、「配过对 + 电脑关机仍能看缓存」回归、切回前台上手手感、APK 真机安装。
 - 打包：本地出齐三产物 + APK（不含演示数据的安装包 / ZIP + 自带 200 条演示数据的绿色版）。
 
+### 产物与校验（GitHub Release v4.7.0，2026-10-31）
+
+已发布到 [Releases v4.7.0](https://github.com/Astyyym/simple-erp/releases/tag/v4.7.0)（Latest，tag `v4.7.0` / 提交 `939cd74`）。下列 SHA256 与 GitHub 侧资产 `digest` 逐一核对一致：
+
+| 资产 | 大小 | SHA256 |
+|---|---|---|
+| `simple-erp-setup-v4.7.0.exe` | 40,906,110 B | `8d11194c501e2d90a0ee2069424cdd79c28cf8329f765377f8f6f04430bd9ac4` |
+| `simple-erp-windows-v4.7.0.zip` | 54,693,552 B | `f696840a3d46c7f52a2f6cfd6c7d118f02650e9be6dae3b1bbc866e125a0ecd5` |
+| `simple-erp-mobile-v1.4.11.apk` | 8,053,890 B | `8e10d0e69bf10701a5758195e6f4c6096e76975a65edd181829c4061ab10661a` |
+
 ## v4.6.9 - 同 WiFi 同步收口：关闭前同步提醒 + 设备 ID 与重复配对合并 + 全量快照缓存（2026-10-24）
 
 > 桌面端 `VERSION` `v4.6.8` → **`v4.6.9`**；安卓端 `native/VERSION` `1.4.9` → **`1.4.10`**（versionCode 14 → 15）。
