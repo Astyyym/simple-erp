@@ -23,10 +23,13 @@ import com.simpleerp.mobile.net.ApiClient
 import com.simpleerp.mobile.net.ApiResult
 import com.simpleerp.mobile.net.Loaded
 import com.simpleerp.mobile.net.LoadOutcome
+import com.simpleerp.mobile.net.MetaProbe
 import com.simpleerp.mobile.net.PersistentCookieStore
 import com.simpleerp.mobile.net.ResponseCache
 import com.simpleerp.mobile.net.ServerConfig
 import com.simpleerp.mobile.net.SnapshotStore
+import com.simpleerp.mobile.net.StartupRoute
+import com.simpleerp.mobile.net.StartupRouting
 import com.simpleerp.mobile.net.loadWithCache
 import com.simpleerp.mobile.ui.theme.ThemeMode
 import kotlinx.coroutines.Job
@@ -121,6 +124,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _bootstrapped = MutableStateFlow(false)
     val bootstrapped: StateFlow<Boolean> = _bootstrapped.asStateFlow()
+
+    /**
+     * 「连不上电脑」页（2026-10-31）。
+     *
+     * 只在「本地没确认过配对 + 探测不到电脑」时为 `true`。区分它和 [needsPairing] 很重要：
+     * 配对页意味着「电脑在，但这台手机没被允许」；这里是「手机压根没连上电脑」——
+     * 处置方式完全不同（前者输码，后者查 WiFi/地址/防火墙）。
+     */
+    private val _connectionLost = MutableStateFlow(false)
+    val connectionLost: StateFlow<Boolean> = _connectionLost.asStateFlow()
+
+    /** 「连不上电脑」页上那句原因（地址 / HTTP 状态码），给人看的，不参与判断。 */
+    private val _connectionDetail = MutableStateFlow("")
+    val connectionDetail: StateFlow<String> = _connectionDetail.asStateFlow()
 
     // ---- 页面 ----
     private val _today = MutableStateFlow<UiState<TodayOverview>>(UiState.Loading)
@@ -325,42 +342,88 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // 设置页标题用的公司名：先亮本地副本（断网也能显示上次连的是哪家店），
         // 联网探到 meta 后再用服务端的值覆盖并落盘。
         _shopName.value = serverConfig.shopName()
+        // 本地是否**确认过**配对：决定「连不上」时是进主界面看缓存，还是停在连不上页。
+        val pairedConfirmed = serverConfig.pairedConfirmed()
+        var probe = MetaProbe.UNREACHABLE
+        var detail = ""
         // 先探一次 meta：地址对不对、服务活不活、要不要配对，一次问清。
         when (val result = api.get("/m/api/meta")) {
             is ApiResult.Success -> {
                 val decoded = api.decode(result.body, MetaResponse.serializer())
                 if (decoded == null) {
-                    _needsSetup.value = true
+                    // 地址通了但对方不是简单ERP（最常见：IP 被别的设备拿走了）。
+                    probe = MetaProbe.SERVER_ERROR
+                    detail = "这个地址回的内容看不懂，确认是不是这台电脑的地址。"
                 } else {
                     _meta.value = decoded
-                    _needsPairing.value = !decoded.paired
+                    probe = if (decoded.paired) MetaProbe.PAIRED else MetaProbe.NOT_PAIRED
                     if (decoded.shopName.isNotBlank()) {
                         _shopName.value = decoded.shopName
                         serverConfig.saveShopName(decoded.shopName)
                     }
-                    if (!decoded.paired) {
-                        // meta 是不过设备门的，所以这里拿到 paired=false 才是真的没配对。
-                    }
                 }
             }
-            is ApiResult.Unauthorized -> _needsPairing.value = true
+            is ApiResult.Unauthorized -> probe = MetaProbe.NOT_PAIRED
             is ApiResult.Unreachable -> {
-                // 连不上：可能是电脑没开。允许进主界面看缓存，页面上会标注离线。
-                _needsPairing.value = false
+                probe = MetaProbe.UNREACHABLE
+                detail = "连不上 $url。"
             }
-            is ApiResult.Failure -> _needsPairing.value = false
-            ApiResult.NoServerConfigured -> _needsSetup.value = true
+            is ApiResult.Failure -> {
+                probe = MetaProbe.SERVER_ERROR
+                detail = "电脑回了 HTTP ${result.code}。"
+            }
+            ApiResult.NoServerConfigured -> {
+                _needsSetup.value = true
+                _bootstrapped.value = true
+                return
+            }
+        }
+        // 配对态落盘：**只有服务端确认过才算**（见 ServerConfig.pairedConfirmed 的说明）。
+        when (probe) {
+            MetaProbe.PAIRED -> serverConfig.savePairedConfirmed(true)
+            MetaProbe.NOT_PAIRED -> serverConfig.savePairedConfirmed(false)
+            else -> Unit
+        }
+
+        when (StartupRouting.route(probe, pairedConfirmed)) {
+            StartupRoute.MAIN -> {
+                _needsPairing.value = false
+                _connectionLost.value = false
+            }
+            StartupRoute.PAIR -> {
+                _needsPairing.value = true
+                _connectionLost.value = false
+            }
+            StartupRoute.CONNECTION_LOST -> {
+                // 从来没确认过配对、又连不上：停在「连不上电脑」页。
+                // 不静默进主界面 —— 2026-10-31 就是这条把「防火墙拦了」演成了「已经配好」。
+                _needsPairing.value = false
+                _connectionLost.value = true
+                _connectionDetail.value = detail
+            }
         }
         _bootstrapped.value = true
         _cacheNewest.value = cache.newestTimestamp() ?: 0L
         _lastSyncAt.value = serverConfig.lastSyncAt()
-        if (!_needsPairing.value && !_needsSetup.value) {
+        if (!_needsPairing.value && !_needsSetup.value && !_connectionLost.value) {
             refreshAll()
             // 打开 App 时顺手同步一次：这样「早上开店打开手机」看到的就不是
             // 昨晚关电脑前的旧数据。只在「距上次同步超过 10 分钟」时才真的发 ——
             // 柜台前反复切到后台再回来，不该每次都跑几十个请求。
             maybeAutoSync()
         }
+    }
+
+    /**
+     * 「连不上电脑」页的次级入口：明知连不上，仍要进去看上次同步的缓存。
+     *
+     * 为什么保留这个入口：关电脑前同步一次、之后断网也能看，是明确的产品能力
+     * （见 `docs/需求/2026-10-17_安卓只读端架构决策.md`）。新页面只是把
+     * 「没连上」这件事说清楚，**不是**把离线看数据这条路堵死。
+     */
+    fun showOfflineCache() {
+        _connectionLost.value = false
+        refreshAll()
     }
 
     // -----------------------------------------------------------------------
@@ -382,8 +445,43 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val last = serverConfig.lastSyncAt()
             _lastSyncAt.value = last
             if (last > 0 && System.currentTimeMillis() - last < autoSyncIntervalMs) return@launch
-            if (_needsPairing.value || _needsSetup.value) return@launch
+            if (_needsPairing.value || _needsSetup.value || _connectionLost.value) return@launch
             runSync(silent = true)
+        }
+    }
+
+    /** 回到前台刷当前页的最小间隔（毫秒）。旋转屏幕、输入法弹出都会连着触发 ON_RESUME。 */
+    private val foregroundRefreshGapMs = 5_000L
+    private var lastForegroundAt = 0L
+
+    /**
+     * 回到前台（`ON_RESUME`）：先刷**当前页**，再按 10 分钟节流跑全量同步（2026-10-31）。
+     *
+     * 为什么不能只靠 [maybeAutoSync]：它 10 分钟才跑一次快照，而用户切出去回个消息
+     * 再回来，期望的是「刚才开的那张单已经在了」。所以这里先刷当前 tab —— 一个请求，
+     * 局域网几十毫秒；快照是全量（放大后约 1~3 MB），仍按 10 分钟节流，频繁跑没有意义。
+     *
+     * 冷启动不用管：`bootstrap()` 末尾已经 `refreshAll()` + `maybeAutoSync()`。
+     */
+    fun onAppForeground() {
+        // 冷启动时 ON_RESUME 会和 `init` 里的 bootstrap 撞车：那时 baseUrl 还没读出来，
+        // 发出去的请求只会得到 NoServerConfigured，把界面短暂打回「连接电脑」页。
+        // bootstrap 结束时自己会 refreshAll()，所以这里直接跳过更安全。
+        if (!_bootstrapped.value) return
+        if (_needsPairing.value || _needsSetup.value || _connectionLost.value) return
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            if (now - lastForegroundAt < foregroundRefreshGapMs) return@launch
+            lastForegroundAt = now
+            when (_tab.value) {
+                Tab.TODAY -> loadToday()
+                Tab.CUSTOMERS -> loadCustomers()
+                Tab.ORDERS -> loadOrders()
+                Tab.PRODUCTS -> loadProducts()
+                // 设置页没有列表数据要刷（公司名/版本来自 meta，重新检测是用户显式动作）。
+                Tab.SETTINGS -> Unit
+            }
+            maybeAutoSync()
         }
     }
 
@@ -398,7 +496,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun runSync(silent: Boolean) {
-        if (_needsPairing.value || _needsSetup.value) {
+        if (_needsPairing.value || _needsSetup.value || _connectionLost.value) {
             if (!silent) _syncState.value = SyncState.Failed("还没连上电脑，先在设置里配对。")
             return
         }
@@ -458,6 +556,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             // 换地址等于换电脑：旧 cookie 与新主机不匹配，必须清掉重新配对。
             // 用 api 内部那个实例，否则清的不是真正发请求时用的那份。
             api.cookieStore.clear()
+            // 「确认过配对」也跟着作废：新地址上这台手机还没被允许过。
+            // 不清的话，连不上新地址时会被当成「配过对」直接放行进主界面。
+            serverConfig.savePairedConfirmed(false)
+            _connectionLost.value = false
             _needsSetup.value = normalized.isEmpty()
             _bootstrapped.value = false
             _meta.value = null
@@ -491,6 +593,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             // 连到别的店时标题先闪一下旧店名（`ServerConfig.clear()` 已一并清盘）。
             _shopName.value = ""
             _needsPairing.value = false
+            _connectionLost.value = false
             _needsSetup.value = true
             _bootstrapped.value = true
         }
@@ -590,6 +693,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             when (val result = api.postJson("/m/api/pair", payload)) {
                 is ApiResult.Success -> {
                     _needsPairing.value = false
+                    // 先落「确认过配对」再 bootstrap：配对刚成功、网络随即抖一下时，
+                    // 也不会被当成「从没连上过」而退回连不上页。
+                    serverConfig.savePairedConfirmed(true)
                     bootstrap()
                     // 配对成功立刻同步一次：这样店主刚配好、还没点任何页面时，
                     // 关电脑前的「最后同步」就已经有值了，不是「从未同步」。

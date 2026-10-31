@@ -415,6 +415,26 @@
   <div class="alert alert-{{ mobile_notice[0] }} py-2" role="alert">{{ mobile_notice[1] }}</div>
   {% endif %}
 
+  {#
+    「还没有任何手机连进来过」（2026-10-31 门店事故后加）。
+
+    **必须放在折叠的诊断区之外**：那次事故里，店主看到的是「已打开 + 地址 + 二维码 +
+    已配对设备 0 台」，诊断信息是收起的，谁也不会为一个「看着正常」的页面去展开它。
+    三行诊断当时全是对的（最后一次手机成功请求 —、上次错误 无、端口自检通过），
+    但没有一句能让人读出「手机从没连进来过」。
+
+    措辞用「如果手机那边已经试过…」而不是「出错了」：刚打开开关、还没去配对的正常场景
+    不该被吓一跳；设备一出现（哪怕还没发请求）这条就由下面的脚本立刻隐藏。
+  #}
+  {% if mobile.enabled and mobile.never_connected %}
+  <div class="alert alert-warning py-2 mb-2" role="alert" id="mobileNeverConnected">
+    <strong>还没有任何手机连进来过。</strong>
+    如果手机那边已经试过扫码/输码、这里却始终没有记录，先查<strong>防火墙</strong>：
+    第一次打开手机访问时 Windows 会弹网络提示，<strong>必须点「允许」</strong>；
+    点「取消」会被记成阻止规则且以后不再询问，得在防火墙里删掉那条规则才能恢复。
+  </div>
+  {% endif %}
+
   {% if mobile.enabled or mobile_code %}
   {#
     配对码面板：**一个自洽的小卡**，不是飘在页面里的绿色 alert。
@@ -488,10 +508,13 @@
       <dt>局域网地址</dt><dd><code>{{ mobile.status.lan_ip }}</code>{{ '（看起来不是手机能连的地址）' if not mobile.status.lan_usable }}</dd>
       <dt>是否在监听</dt>
       <dd>
-        {% if mobile.status.listening %}正在监听{% if mobile.reachable %}，端口自检通过{% else %}，但端口探测失败{% endif %}
+        {% if mobile.status.listening %}正在监听{% if mobile.reachable %}，端口自检通过<span class="text-muted">（仅本机回环，<strong>不代表手机能连</strong>）</span>{% else %}，但端口探测失败{% endif %}
         {% else %}未监听{% endif %}
       </dd>
-      <dt>最后一次手机成功请求</dt><dd>{{ mobile.last_success_label }}</dd>
+      <dt>最后一次手机成功请求</dt>
+      <dd>
+        {% if mobile.never_connected %}<span class="text-muted">—（还没有任何手机连进来过）</span>{% else %}{{ mobile.last_success_label }}{% endif %}
+      </dd>
       <dt>最后一次完整同步</dt><dd>{{ mobile.last_sync_label }}</dd>
       <dt>上次错误</dt><dd>{{ mobile.status.error or '无' }}</dd>
       <dt>已配对设备</dt><dd id="mobileDeviceCount">{{ mobile.devices|length }} 台</dd>
@@ -1535,6 +1558,10 @@
       // 页面开了十分钟还显示「0 台」，看起来像配对失败。
       var countNode = document.querySelector('[data-device-count]');
       if (countNode) { countNode.textContent = payload.count + ' 台'; }
+      // 设备一出现，「还没有任何手机连进来过」那条提示必须立刻消失 ——
+      // 刚配对成功的人还看着「从没连进来过」，会以为配对失败（2026-10-22 同类问题）。
+      var neverNode = document.getElementById('mobileNeverConnected');
+      if (neverNode) { neverNode.style.display = payload.count ? 'none' : ''; }
       if (!table) { return; }
       // 「撤销全部」跟着有没有设备走：0 台时它没有意义，留着像坏按钮。
       if (revokeAll) { revokeAll.style.display = payload.count ? '' : 'none'; }

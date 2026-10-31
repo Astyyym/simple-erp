@@ -55,8 +55,10 @@ class ApiClient(private val context: Context) {
      * 超过 2.5 秒基本只有两种可能 —— 电脑关机了、或者手机不在这个网里。
      * 两种情况都不会因为多等 5 秒而变好，只会让用户盯着转圈。
      *
-     * readTimeout 保持 15 秒：那是「已经连上了、服务端在算」的等待，
-     * 大数据量（全部时间的单据）确实需要时间，砍短会误判成失败。
+     * readTimeout 15 → 30 秒（2026-10-31）：那是「已经连上了、服务端在算」的等待。
+     * 快照范围放大后（单据详情 400 / 客户详情全量 / 商品详情全量），门店那台电脑
+     * 生成一次可能要 5~10 秒 —— 15 秒会把「正在慢慢算」误判成「连不上」，
+     * 然后回落到旧缓存，用户看到的是「同步了但数据没变」。
      */
     private val client = OkHttpClient.Builder()
         // 1.5 秒（2026-10-22 从 2.5 秒再收紧）。
@@ -67,7 +69,7 @@ class ApiClient(private val context: Context) {
         // 局域网正常是 20~80ms，1.5 秒已经是很宽松的余量：真超过就说明
         // 电脑关了或者不在同一个网，多等一秒也不会变好。
         .connectTimeout(1500, TimeUnit.MILLISECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(10, TimeUnit.SECONDS)
         .cookieJar(cookieStore)
         .build()

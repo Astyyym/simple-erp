@@ -594,11 +594,20 @@ def product_detail(product_id: int):
 #    表现是「在线上能看、离线查不到同一页」。
 
 # 各段上限：不是性能指标，是「关电脑前能等多久」的口径。
-# 单据列表 200 上限来自 `readonly_queries.DOCUMENT_LIST_LIMIT`，这里不再放宽；
-# 详情按「最近 N 张」取，因为店主核对金额几乎都是最近的单。
-SNAPSHOT_ORDER_DETAILS = 120
-SNAPSHOT_CUSTOMER_DETAILS = 40
-SNAPSHOT_PRODUCT_DETAILS = 60
+# 单据列表上限来自 `readonly_queries.DOCUMENT_LIST_LIMIT`，这里不再放宽。
+#
+# 2026-10-31 用户要求「缓存范围再大一点」，三档一起放大（原来 120 / 40 / 60）：
+# - 单据详情 120 → 400：按「最近 400 张」取，覆盖一年以上的核对需求；
+# - 客户详情 40 → 1000：**全部客户**。实测单个客户详情约 4.4 KB（20 张单 + 30 条流水
+#   + 专属价），300 个客户约 1.3 MB；断网时最常看的就是这一页，值得占这个体积；
+# - 商品详情 60 → 300：**全部商品**（配合 `PRODUCT_LIST_LIMIT` 一起提）。
+#
+# 体积实测（演示库 122 单 / 28 客户 / 43 商品）：改造前 0.39 MB / 200 条目，改造后约 0.9 MB。
+# 按「3000 单 / 300 客户 / 150 商品」的门店外推约 2.6 MB：局域网传输不到 1 秒，
+# 服务端生成 2~5 秒（客户端 readTimeout 已同步放宽到 30 秒，别改回去）。
+SNAPSHOT_ORDER_DETAILS = 400
+SNAPSHOT_CUSTOMER_DETAILS = 1000
+SNAPSHOT_PRODUCT_DETAILS = 300
 
 
 def _canonical_path(path: str, query: dict) -> str:

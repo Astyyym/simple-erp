@@ -836,3 +836,56 @@ Math.round(c.getBoundingClientRect().width);   // 最小内容宽度
 **处理**：`AppActivate(pid)` + `SendKeys('{ENTER}')` 点掉它；或者干脆**别用 `-Wait`**，
 起来后轮询「目录是否只剩 `config.json` + 卸载注册表键是否消失」。
 **不要**因为 `-Wait` 卡住就判定卸载失败或去 `taskkill` 卸载器 —— 那时文件已经删完了。
+
+## 「手机永远连不上、电脑端一切正常」= 防火墙 Block 规则（2026-10-31 门店现场实测）
+
+**症状（三者同时出现才算这条）**：手机扫码后**没有配对码输入页**，直接进主界面显示旧缓存；
+手机设置页「电脑上的版本」显示 `—`；电脑端「已配对设备 0 台」「最后一次手机成功请求 —」
+「上次错误 无」，但「正在监听，端口自检通过」。
+
+**根因是三层叠在一起，缺一层都不会是这个现象**：
+
+1. Windows 防火墙弹窗点「**取消**」会生成一条 **Block 规则**，且**以后不再询问**。
+   Block 的优先级高于 Allow —— 事后在「允许应用通过防火墙」里勾选**也可能不生效**，
+   必须把 Block 那条删掉。
+2. **每次装到新路径**（升级、换目录）都会重新弹一次。实测一台机器上留着
+   `v4.4.0 / v4.5.0 / v4.6.1 / v4.6.4 / v4.6.5` 各一对规则，说明每次升级都会重来。
+3. 手机端把「连不上」当「已配对」：`bootstrap()` 的 `Unreachable` 分支把 `needsPairing`
+   置 `false`（`native/.../AppViewModel.kt:347-350`），于是直接进主界面读缓存 ——
+   用户看到的是「配上了」，实际一个包都没发出去。
+
+**为什么诊断页会骗人**：端口自检是 `127.0.0.1` 回环探测（`app/erp/mobile_server.py:110-113`），
+天然看不到防火墙；在电脑上 `Test-NetConnection <本机LAN IP> -Port 5001` 也走本机路径，
+**同样不能证明外部可达**。唯一可信的判据是「服务端有没有收到过外部请求」：
+「上次错误 无」+「最后一次手机成功请求 —」= 连 401 都没有 = 包没到 Flask = 网络层问题。
+
+**查与修**：
+
+```powershell
+# 有没有 Block 规则（按 Program 过滤，别按中文 DisplayName 精确匹配）
+Get-NetFirewallRule -Action Block | Get-NetFirewallApplicationFilter |
+  Where-Object Program -like '*简单*' | Select Program
+
+# 删 Block + 补明确放行（管理员）
+Get-NetFirewallRule | Where-Object { $_.DisplayName -like '*简单*' -and $_.Action -eq 'Block' } | Remove-NetFirewallRule
+New-NetFirewallRule -DisplayName "简单ERP 手机访问 5001" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 5001 -Profile Any
+```
+
+30 秒对照实验（定性最快，记得改回来）：`Set-NetFirewallProfile -Profile Public -Enabled False`
+→ 手机浏览器打开 `http://<电脑IP>:5001/m/` → 立刻 `-Enabled True`。能出配对页即锁定防火墙。
+
+**顺带一个必须知道的连带问题：地址会漂移。** 现场用的是随身 WiFi（`MIFI_*`），
+电脑地址从 `192.168.0.100` 变成 `192.168.0.102`；而设置页的地址与二维码是**页面加载那一刻**
+由 `lan_ip()` 算出来的，IP 变了不刷新就是旧码，手机扫进去存的是个已经不存在的地址。
+→ 排查顺序永远是：**先 F5 刷新设置页核对地址 → 再扫码 → 再看防火墙**。
+产品目前没有「自动发现电脑」，地址变了只能重新扫码。
+
+## 排查「手机连不上」的固定顺序（照这个走，别跳步）
+
+1. 电脑设置页 **F5** → 地址是不是手机里存的那个（前三段 + 最后一段都要对）。
+2. 手机「设置 → WLAN」看本机 IP，确认和电脑同段；顺带确认 SSID 就是那台电脑连的。
+3. 电脑上 `netstat -ano | findstr :5001` 必须是 `0.0.0.0:5001 LISTENING`（不是 127.0.0.1）。
+4. 查 Block 规则（上一节）。
+5. 手机**浏览器**开 `http://<IP>:5001/m/` —— 这是唯一能区分「网络层」与「App 层」的动作；
+   只看 App 的报错永远分不清。
+6. 以上都通、App 仍显示「电脑上的版本 —」，才轮到 App 侧（清 cookie 重配）。

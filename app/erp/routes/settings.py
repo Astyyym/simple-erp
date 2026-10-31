@@ -497,13 +497,21 @@ def mobile_panel_context() -> dict:
         device["last_sync_label"] = timestamp_label(device.get("last_sync_at", ""))
     enabled = bool(load_config().get("mobile_access_enabled"))
     reachable = bool(status["listening"]) and port_in_use(status["port"])
+    last_success = mobile_pairing.last_success_at()
     return {
         "status": status,
         "devices": devices,
         "pending": mobile_pairing.pending_code_info(),
         "enabled": enabled,
         "reachable": reachable,
-        "last_success_label": timestamp_label(mobile_pairing.last_success_at()),
+        # 「一台手机都没连进来过」——2026-10-31 门店事故后加的判定。
+        #
+        # 那天电脑的防火墙被点了「取消」（生成 Block 规则、以后不再询问），
+        # 手机发出的包全被丢弃。页面当时显示的是「最后一次手机成功请求 —」「上次错误 无」
+        # 「正在监听，端口自检通过」—— 三行都对，但没人能从中读出「手机从没连进来过」。
+        # 这个派生字段只负责把这三行翻译成一句人话，不参与任何放行判断。
+        "never_connected": (not last_success) and (not devices),
+        "last_success_label": timestamp_label(last_success),
         "last_sync_label": timestamp_label(_latest_sync_at(devices)),
         # 二维码只在「真的在监听 + 地址看起来手机能连」时才给：给一个 127 或代理网卡
         # 地址的二维码，等于让店主扫一张永远连不上的图。

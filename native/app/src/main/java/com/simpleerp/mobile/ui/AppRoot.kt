@@ -40,6 +40,7 @@ import com.simpleerp.mobile.ui.components.ErpHairline
 import com.simpleerp.mobile.ui.components.LoadingState
 import com.simpleerp.mobile.ui.components.PrimaryButton
 import com.simpleerp.mobile.ui.components.ResetScrollOnSignal
+import com.simpleerp.mobile.ui.screens.ConnectionLostScreen
 import com.simpleerp.mobile.ui.screens.CustomerDetailScreen
 import com.simpleerp.mobile.ui.screens.CustomersScreen
 import com.simpleerp.mobile.ui.screens.DocumentDetailScreen
@@ -73,20 +74,23 @@ fun AppRoot() {
     val themeMode by vm.themeMode.collectAsStateWithLifecycle()
 
     /*
-     * 回到前台自动同步（2026-10-24）。
+     * 回到前台自动刷新（2026-10-24 加，2026-10-31 补「刷当前页」）。
      *
      * 为什么必须有：`bootstrap()` 只在 ViewModel 的 `init` 里跑一次，而 ViewModel
      * 活得比 Activity 久得多 —— 店主早上开店、点亮屏幕，看到的可能是昨晚关电脑前的
      * 数据，界面上却没有任何迹象说明它是旧的。
      *
      * 为什么用 ON_RESUME 而不是每次重组：重组在打字、滚动时都会发生；
-     * 「回到前台」才是「用户重新开始使用」这个语义。真正的节流（10 分钟）在
-     * `maybeAutoSync()` 里，这里只负责触发。
+     * 「回到前台」才是「用户重新开始使用」这个语义。
+     *
+     * 2026-10-31 用户要求「切回应用要自动刷新」：原来这里只调 `maybeAutoSync()`，
+     * 它 10 分钟才跑一次全量快照，切出去回来看的还是刚才那份列表。
+     * 现在交给 `onAppForeground()`：先刷当前页（一个请求），快照仍按 10 分钟节流。
      */
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) vm.maybeAutoSync()
+            if (event == Lifecycle.Event.ON_RESUME) vm.onAppForeground()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -97,6 +101,9 @@ fun AppRoot() {
         val bootstrapped by vm.bootstrapped.collectAsStateWithLifecycle()
         val needsSetup by vm.needsSetup.collectAsStateWithLifecycle()
         val needsPairing by vm.needsPairing.collectAsStateWithLifecycle()
+        val connectionLost by vm.connectionLost.collectAsStateWithLifecycle()
+        val connectionDetail by vm.connectionDetail.collectAsStateWithLifecycle()
+        val cacheNewest by vm.cacheNewest.collectAsStateWithLifecycle()
         val baseUrl by vm.baseUrl.collectAsStateWithLifecycle()
 
         var overlay by remember { mutableStateOf<Overlay?>(null) }
@@ -118,6 +125,22 @@ fun AppRoot() {
                         vm.saveBaseUrl(address)
                         setupForChange = false
                     },
+                )
+
+                /*
+                 * 「连不上电脑」（2026-10-31）：本地没确认过配对、又探测不到电脑时停在这里。
+                 *
+                 * **不要**把它和 needsPairing 合并：后者是「电脑在、但这台手机没被允许」，
+                 * 处置方式是输 6 位码；这里是「压根没连上」，处置方式是查 WiFi / 地址 / 防火墙。
+                 * 合成一个页面，用户会按错误的步骤排查（2026-10-31 门店事故就是这么发生的）。
+                 */
+                connectionLost -> ConnectionLostScreen(
+                    address = baseUrl,
+                    detail = connectionDetail,
+                    cacheAt = cacheNewest,
+                    onRetry = { vm.recheck() },
+                    onChangeAddress = { vm.saveBaseUrl("") },
+                    onShowCache = { vm.showOfflineCache() },
                 )
 
                 needsPairing -> PairScreen(

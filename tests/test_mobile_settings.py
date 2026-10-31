@@ -396,3 +396,50 @@ def test_close_state_lists_device_uid_and_sync_fields():
         assert "uid_short" in device
         assert "last_sync_label" in device
         assert "last_sync_seconds" in device
+
+
+def test_diagnostics_flags_never_connected_when_nothing_ever_arrived():
+    """一台手机都没连进来过时，诊断区必须给出可执行结论（2026-10-31 门店事故）。
+
+    那天的三行诊断全是「对的」：最后一次手机成功请求 —、上次错误 无、端口自检通过，
+    但没有一句能让店主读出「手机从没连进来过」—— 于是白查了一上午。
+    """
+    from erp import create_app
+    from erp.config import save_config
+
+    init_db()
+    save_config({"mobile_access_enabled": True})
+    # 起一个真实监听（临时端口，不抢 5001）：只有「正在监听」时诊断里才会出现
+    # 「端口自检通过」，那句自曝局限的文案也才在页面上。
+    port = _free_port()
+    ok, error = mobile_server.start_mobile_listener(port=port)
+    assert ok, error
+    html = create_app().test_client().get("/settings/").get_data(as_text=True)
+    assert 'id="mobileNeverConnected"' in html
+    # 用提示正文里的独有短语证明整块渲染了（刷新脚本的注释里不会出现这句）。
+    assert "如果手机那边已经试过扫码" in html
+    # 端口自检必须自曝局限：它是本机回环，看不见防火墙。
+    assert "不代表手机能连" in html
+
+
+def test_diagnostics_never_connected_clears_after_a_device_pairs():
+    """配对成功一台设备后，那条「从没连进来过」的提示必须消失。
+
+    注意判据不是 `last_success_at`（它要等手机真的发请求才写），而是「有没有设备」——
+    页面打开的那一刻还没收到请求是正常的，不能因此说人家没连上。
+    """
+    from erp import create_app
+    from erp.config import save_config
+
+    init_db()
+    save_config({"mobile_access_enabled": True})
+    code, error = mobile_pairing.generate_pair_code()
+    assert error == ""
+    cookie_value, error = mobile_pairing.verify_pair_code(code, label="测试手机", platform="app")
+    assert error == ""
+    assert cookie_value
+
+    html = create_app().test_client().get("/settings/").get_data(as_text=True)
+    # 只按 id + 正文独有短语断言：刷新脚本的注释里也提到这条提示，按中文短语泛断言会被注释骗过。
+    assert 'id="mobileNeverConnected"' not in html
+    assert "如果手机那边已经试过扫码" not in html

@@ -186,3 +186,49 @@ def test_snapshot_counts_match_entries(paired_client, seeded):
     assert counts["product_details"] == len(
         [key for key in keys if key.startswith("/m/api/products/")]
     )
+
+
+def test_snapshot_covers_every_customer_not_just_the_first_forty(paired_client):
+    """客户详情要覆盖**全部客户**（2026-10-31 从 40 提到 1000）。
+
+    40 的上限会让第 41 个之后的客户断网时点开是空白，而「查谁欠多少钱」正是手机端
+    最高频的用法 —— 用户不可能知道自己想看的那位排在第几个。
+    """
+    from erp.services import accounting
+
+    for index in range(45):
+        accounting.create_customer(f"批量客户{index:02d}")
+
+    data = _snapshot(paired_client)
+    entries = data["entries"]
+    listing = paired_client.get("/m/api/customers").get_json()["customers"]
+    assert len(listing) >= 45, "客户列表本身也要全量，否则详情无从遍历"
+    missing = [
+        customer["id"]
+        for customer in listing
+        if f"/m/api/customers/{customer['id']}" not in entries
+    ]
+    assert missing == [], f"这些客户在列表里但没有详情缓存：{missing[:5]}"
+
+
+def test_snapshot_covers_products_beyond_the_old_sixty_cap(paired_client):
+    """商品详情也要覆盖全部商品（2026-10-31 从 60 提到 300）。
+
+    消防器材店商品常见 100~300 个；60 的上限会让商品页和快照都只覆盖前 60 个，
+    而且页面上没有任何提示。
+    """
+    from erp.services import accounting
+
+    for index in range(65):
+        accounting.create_product(f"批量商品{index:02d}", "个")
+
+    data = _snapshot(paired_client)
+    entries = data["entries"]
+    listing = paired_client.get("/m/api/products").get_json()["products"]
+    assert len(listing) >= 65, "商品列表本身也要越过 60，否则详情无从遍历"
+    missing = [
+        product["id"]
+        for product in listing
+        if f"/m/api/products/{product['id']}" not in entries
+    ]
+    assert missing == [], f"这些商品在列表里但没有详情缓存：{missing[:5]}"

@@ -1,0 +1,89 @@
+# Multi-type document lists and cross-document links
+
+Use when several document types (e.g. sale / return / purchase / purchase-return) currently render as separate sections and the user asks for one list, a type facet, or a link between a document and the document it originates from.
+
+## Consolidating per-type lists into one table
+
+- Build **one paginated result set**, not concatenated sections: a `UNION ALL` over the per-type tables projecting a common column shape plus a literal type discriminator, then `ORDER BY <business date> DESC, <type>, id DESC LIMIT ? OFFSET ?`. Count and paginate the union itself; a page that paginates only one branch will show a total that contradicts the visible rows.
+- **The per-type tables rarely share column names.** A sales/return table may date rows with `order_date` while a purchase table uses `business_date`, and a document table may store only `customer_id` with the display name living in a separate `customers` table. Writing one WHERE string and interpolating it into every branch fails at runtime with `no such column: <name>`. Build a **per-side** condition string carrying that side's own aliases (`o.order_date`, `o.deleted_at`, `c.name` for the joined side; the purchase table's own `business_date`, `customer_name`) and alias the differing date columns to one output name.
+- Compute per-row presentation in the **route**, not the template: type label, type badge class, status label, detail/edit URLs, a deletable flag, and a stable `type:id` document key. The template then renders one uniform row shape and all branching lives in one place.
+- **Every per-row action URL must be computed per type, including ones currently hidden.** When a merged table was built from per-type sections, row actions copied from the original template keep the original table's URL shape (e.g. every row's delete posting to `/orders/{id}/delete`), so a row of another type would hit the wrong table. It stays latent only while a status gate hides those rows; the moment you widen eligibility, the wrong-table bug activates. Build `delete_url`/`edit_url`/`detail_url` as per-type maps in the route alongside `type:id`, and grep the template for any hardcoded `/<type>/{{` prefix that should have come from the row.
+- Show the type as a small colored badge in its own column, and keep one shared status-badge column across all types.
+- A per-branch predicate gate (`1=1` when the type is selected, `1=0` when it is not) is how a `UNION ALL` respects a type filter — you cannot inject one shared `IN` list across branches whose type column differs.
+
+## Multi-select facets
+
+- Convert a single-select filter to multi-select without breaking existing links: read the repeated parameter (`request.args.getlist`) and fall back to the legacy single value when the list is empty. Treat an empty selection as **all**, not none.
+- Provide explicit all / clear controls beside the checkboxes; do not make the user uncheck each box.
+- Put all / clear on the **same row as the type chips**, immediately after the last chip and left-aligned with them — the user reads them as actions on those four chips, so pushing them to the far edge (`justify-content:space-between` with `justify-content:flex-end` on the button group) makes them look unrelated and is reported as a defect. Do not add a separate action row for them.
+- Let the type block **span the full filter row** instead of occupying one narrow column, and keep the "nothing selected = all" hint inline with the type row rather than adding another line. Verify the row still wraps acceptably at the narrowest supported width — one `flex-wrap` row holding four toggles plus two small buttons is fine as long as the buttons stay adjacent to the chips.
+- A filter block that spans the whole row changes the filter card's grid: re-check any layout test that asserts the field group / action group split before and after the change.
+
+## Heterogeneous bulk actions
+
+- Key selected rows by `type:id`, and dispatch each key to that type's **own** existing rule. Do not force a shared rule: document types differ in what may be deleted.
+- For "what may be deleted", there are two legitimate designs and the user picks: **(a)** render the row's select checkbox **only when the row is actionable in its current state** (a formal document must be voided first), so the UI cannot offer an operation the server will reject; or **(b)** let every row be selected and have the delete path **reverse the document first** (void → recycle bin) so the user never performs a separate void step. Design (b) is what the user asks for when they say the checkbox "isn't there" or the delete "can't be used" on a dataset of live documents — an empty checkbox column reads as a broken feature, not as a state gate. Do not pick silently: design (a) leaves the void control visible somewhere, design (b) removes it.
+- **A per-row optimistic-concurrency version cannot be submitted as a positional list once one form carries mixed types.** The existing per-type endpoint pairs `ids[i]` with `versions[i]`, which only works while every row in the request is the same type; a merged table lets the user select rows of different types (only some of which have a version column at all), and the positional pairing silently mismatches. Submit each version as its own named field keyed by the row (`version_<id>`), or emit the whole selection as JSON, and have the server look up each version by key. Reject a mismatched version for the whole request with a readable reason instead of applying the valid subset, and keep the legacy per-type endpoint working for callers that still use it.
+- Report per-key failures back to the user as a readable message list; a partially applied bulk action must say which keys failed and why.
+- **A bulk button must submit from the card it lives in, and its checkbox name must be the one the handler reads.** When one page holds several cards each with its own checkbox name (`recycle_ids`, `product_ids`, `customer_ids`) and a bulk action calls a *global* helper that only looks for `name="ids"`, the buttons in the cards using a different name find nothing, fall through to their "nothing selected" branch, and become **permanently dead** — the user reports "点恢复选中/确认删除选中没有反应，只能一条一条操作" while the page looks completely normal. Read the helper's selector against every card's checkbox name; if they disagree, route all cards through one driver driven by per-card `data-` attributes (`data-recycle-checkbox`, `data-recycle-form`) and set the form `action` per card at submit time, rather than letting each card depend on a global helper with a hardcoded name.
+- **A bulk button that silently no-ops was almost certainly shipped with green tests.** Template tests that only assert the *strings* exist (`'id="purgeProductsForm"' in page`, `'name="product_ids"' in page`) pass happily while the JS wiring is broken, because they never execute the handler. When you fix such a bug, add a behavioural test that actually drives the click (headless browser or a JS test that imports and runs the handler) — assert the confirm dialog fires and the correct endpoint receives the selected keys. Treat "the form id and checkbox name are both present" as a rendering assertion, never as proof the button works. The template's inline JS is the unit under test: a Node test can read the `<script>` block out of the template, run it in a `vm` context over a minimal DOM stub built from the template's own `data-` attributes, and assert the submit action, the injected fields, and the abort paths (nothing selected, confirm declined) — no browser required, and it runs in the normal suite.
+- **Clear the form before rebuilding it on each submit.** A handler that appends hidden inputs without resetting first accumulates the previous click's selection, so a second action submits both sets.
+- **Do not delete a form/helper the moment a card stops using it.** A legacy sync script (e.g. `onchange="syncRecycleChecks()"` that copied checked values into hidden inputs) can be load-bearing for the only path that made a button work; removing it during a layout refactor leaves dead buttons behind. When replacing such a script, verify the replacement covers every card, then delete the old one in the same change — never in an earlier one.
+
+## Optional cross-document source links
+
+- Before building "link this document to its origin", establish which meaning the user wants:
+  - **Linkage / trace** — pick the source, prefill its rows, quantities/limits and reference prices, but the user may still add rows and edit every value, and pricing/inventory rules are unchanged.
+  - **Constraint** — the source bounds quantity and drives pricing/allocation.
+  Choosing wrong is expensive: constraint mode reverts any prior decoupling and its schema migration. Ask before building.
+- For linkage mode, reuse an existing read-only source API when one exists rather than adding a parallel endpoint; prefill into the same row components (set the product picker, unit display, quantity, price) and leave every control editable, then refresh totals.
+- Keep the link **optional** and default to "no link, enter manually", so the manual path stays first-class.
+- Removing a field from an entry form must not silently drop its stored value on re-edit: carry the existing value through a hidden field, or clear only when the user explicitly clears. Deleting a field from the form is a UI change, not a data change — leave the column and history intact.
+
+## Repurposing an existing visualization
+
+- Replacing what a chart aggregates onto a different metric is a scope/口径 change, not a cosmetic one. Rename the visible label, keep the previous metric still computed so the change is auditable, and confirm the sign convention and which document types are in scope first. "Flow"/"流水" is ambiguous between gross turnover and direction-netted movement — a net figure needs an explicit per-type sign table (which type adds, which subtracts) agreed up front.
+
+## Merged lists in the recycle bin
+
+When the recycle bin holds one card per type and the user asks for one document list with a type facet, reuse the consolidation recipe above (union projection, type discriminator, per-type predicate gate) and keep restore/purge dispatch per type:
+
+- Purge eligibility differs per type, but **"a posted document can never be physically deleted" is not a safe default** — see the dead-end below. Decide purge eligibility against the *state documents actually hold when they reach the bin*, not against the state you imagine they hold. Keep the per-key rule dispatch and reject the whole request with a readable reason rather than a generic failure.
+- Restore semantics differ too — restoring a voided document usually only restores visibility and does not re-activate it. Say which of the two the button does; do not label both "恢复".
+- Render the checkbox only on rows the current state allows acting on, and keep the count badge per type so the user can still see the split.
+- Non-document types in the same page (products, customers) belong in their own column/card; a product or customer with ledger history is blocked from physical deletion for the same reason.
+
+### The recycle bin that can never be emptied
+
+**A purge predicate written against the wrong state makes every binned record permanently undeletable, and a per-row "can't purge" badge hides it as normal.** The user experiences it as "回收站里不能清空，只能一直存在里面？" — and it is a defect, not a design choice.
+
+The mechanism, and why it is easy to ship:
+
+- The **delete** path and the **purge** path are written at different times against different assumptions. If deletion is implemented as *auto-reverse (void) → soft-delete*, every formal document enters the bin with `status='void'`; a purge rule inherited from an earlier era that reads `status != 'draft' → not purgeable` then refuses **every** formal document. The two rules are individually defensible and jointly deadlock. Measured on a real store: 8 of 8 binned documents purgeable = 0.
+- **The age-based auto-cleanup usually shares the same predicate**, so the "delete after N days" promise silently never fires and the bin only grows. Verify the expiry sweep actually removes rows, not that it is scheduled.
+- **Foreign keys add a second layer.** With `foreign_keys=ON`, deleting a document that a live document still references (`orders.source_order_id → orders.id`) raises `FOREIGN KEY constraint failed` — after the eligibility check already said yes. Enumerate the FK graph for the tables you purge and decide per reference: null the pointer, cascade it, or refuse with a reason naming the referencing document. A `NO ACTION` self-reference needs an explicit decision; it will not resolve itself.
+- **Check whether the referencing document is itself soft-deleted.** A reference from a *binned* document is not a live dependency and should not block; only a reference from a live document should. Read `deleted_at` on both sides of the reference.
+- Auto-increment primary keys do **not** protect against id reuse here (SQLite `AUTOINCREMENT` does, plain `INTEGER PRIMARY KEY` does not) — confirm which the table uses before deciding that purging rows is safe.
+
+Fix shape: make the purge predicate match the state the delete path actually produces, resolve or refuse each FK reference explicitly, and route the same predicate through the expiry sweep. Then **verify by emptying a copied bin end-to-end** and re-running the expiry sweep with an old `deleted_at` — asserting "the button renders" or "the disabled badge shows the right count" proves nothing about whether the bin can ever drain.
+
+**Deletion order is dictated by the FK graph, and the graph can be self-referential.** `order_items.source_item_id → order_items.id` means a return's line points at the sale's line, so purging the *referenced* record first raises `FOREIGN KEY constraint failed` while the *referencing* one is still binned. Rather than making the caller sort records, run a **multi-pass sweep**: each pass deletes only the rows that currently have no live reference, and the remaining ones pass on the next iteration once their referencer is gone. Purge a document as **lines → its own stock postings (including the reversal postings) → the document row**, so no orphan postings survive.
+
+**Distinguish the two reference kinds when refusing.** A reference from a **live** document is a business fact the user must resolve first (readable rejection, 400). A reference from a record that is **also still in the bin** is only a purge-ordering problem and must not surface as an error the user has to reason about — retry it in a later pass, or if a single-row purge is requested, return a readable message naming the referencing binned record instead of letting the raw integrity error escape as a 500.
+
+**A bulk purge must dispatch per kind.** Orders need the multi-pass sweep; products/customers need their own per-row path. Routing every kind through the document-only helper silently breaks the non-document kinds (the bulk action stops removing them at all) — keep the dispatch explicit and cover each kind with a test.
+
+**Product purge and customer purge have different gates, and both are narrower than the document gate.** A product can be purged only when no **live** document still references it (a live document's reversal path reads the product's stock postings, so purging it first strands the reversal); a customer with ledger history is never physically deleted. Do not widen either to match the document rule.
+
+When a purge is refused, the reason must name the concrete blocker (which rule, which referencing document), not a generic "cannot delete". See [`action-failure-surfacing.md`](action-failure-surfacing.md) for the failure-surface rules.
+
+## Numbering that spans document types
+
+When the user asks one document type to adopt a sibling's number prefix, the prefix is not decorative — it selects the sequence. Two types sharing a prefix must share one daily sequence, or they will eventually hand out the same number to different documents.
+
+- Route every allocation for both types through **one module** exposing two entry points: `allocate` (consumes the next number; must run inside the caller's write transaction) and `peek` (returns the next number without consuming). Entry-page display and any preview endpoint call `peek`; only the save path calls `allocate`. A preview that allocates burns a sequence number every time the page is refreshed, so the number a user sees stops matching the number they get.
+- Keep **one shared sequence table** for the shared prefix rather than one table per document type — a per-type table cannot see the other type's usage and both sides will reissue the same number.
+- **Legacy prefixes must still be respected.** Historical rows keep their old prefix and are never rewritten. Before issuing a new number for a day, take the maximum over all of: both types' new-prefix rows, that day's legacy-prefix rows, and the shared sequence table. Check the day's legacy rows directly rather than depending on a one-time backfill that may not have run on a given database.
+- Retire the old per-type sequence table by leaving it in place for existing databases and simply not writing to it; dropping or migrating it is a separate decision that needs its own migration.
+- Update the hint text the user reads wherever the old prefix was stated, and update the tests that assert the old prefix — **including any test that asserts a specific sequence ordinal**, because a shared sequence shifts the expected number by however many numbers the sibling type consumed.
+- Confirm which type keeps its prefix when two would collide, and surface the alternatives rather than silently picking one: the user may intend a shared pool (matching an existing sale/return convention) or a distinct third prefix.

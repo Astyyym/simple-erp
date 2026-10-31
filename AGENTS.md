@@ -8,7 +8,7 @@
 
 - 正式目录（唯一真源）：本地 Windows 项目根目录
 - GitHub：`Astyyym/simple-erp`，默认分支 `main`
-- 当前源码版本以根目录 `VERSION` 为准；当前工作区 `VERSION` 为 `v4.6.5`（安卓原生端版本见 `native/VERSION`）
+- 当前源码版本以根目录 `VERSION` 为准；当前工作区 `VERSION` 为 `v4.7.0`（安卓原生端版本见 `native/VERSION`）
 - 当前需求权威文档：`docs/需求/消防器材店ERP系统-需求文档.md`
 
 ## 怎么跑
@@ -38,7 +38,7 @@
 ## 可以改
 
 - `app/` 业务与前端；`tests/` 测试
-- `docs/`、`开发短计划/`、本项目 `skills/simple-business-erp-development/`
+- `docs/`、`开发短计划/`、本项目 `skills/`
 - `CHANGELOG.md`、`VERSION`、`README.md`：仅在需求和发版范围明确时更新
 
 ## README 铁律（2026-10-21 用户要求重写后定）
@@ -102,8 +102,10 @@
 
 进入本项目后，涉及开发、业务规则或交付验收时读取：
 
+- 技能总索引：`skills/README.md`（两个项目技能的职责边界与读取顺序，先读这个）
 - 项目主技能：`skills/simple-business-erp-development/SKILL.md`
 - 参考索引：`skills/simple-business-erp-development/references/README.md`
 - 打印、导入、数据目录、打包等细节按索引按需读取对应 `references/`
+- ERP UI 扩展技能（在已验收 UI 上加库存/采购/退货/分析/对账等流程时必读）：`skills/erp-ui-extension/SKILL.md`，专题索引 `skills/erp-ui-extension/references/README.md`，`scripts/audit-*.mjs` 是 UI 几何与主题审计脚本
 
 项目专用技能只服务本项目，不加入 Hermes 全局技能目录。

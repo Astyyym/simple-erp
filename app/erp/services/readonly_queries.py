@@ -47,8 +47,14 @@ ORDER_STATUS_SQL = "('saved','printed')"
 PURCHASE_STATUS_SQL = "('saved')"
 
 BUSY_TIMEOUT_MS = 4000
-DOCUMENT_LIST_LIMIT = 200
-PRODUCT_LIST_LIMIT = 60
+# 手机端列表上限（2026-10-31 从 200 提到 400）。
+# 为什么跟着快照一起放大：快照里的「单据详情」是从 `date_mode=all` 这份列表里取的，
+# 列表只有 200 张时，详情上限再高也覆盖不到更早的单据 —— 两个上限必须一起动。
+DOCUMENT_LIST_LIMIT = 400
+# 商品列表上限（2026-10-31 从 60 提到 300）。
+# 消防器材店的商品常见 100~300 个；60 会让「商品」页和快照都只覆盖前 60 个，
+# 而且页面上没有任何提示（用户以为这就是全部）。
+PRODUCT_LIST_LIMIT = 300
 
 
 @contextmanager
@@ -120,7 +126,9 @@ def list_customers(
     q: str = "",
     *,
     only_debt: bool = False,
-    limit: int = 400,
+    # 2026-10-31：400 → 1000。门店客户数通常在几百，400 会静默截断；
+    # 快照要「全部客户详情」，列表也必须是全量（快照的客户详情就是按这份列表遍历的）。
+    limit: int = 1000,
     sort: str = "pinyin",
     order: str = "",
 ) -> dict:

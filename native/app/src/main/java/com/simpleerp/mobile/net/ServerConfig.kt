@@ -22,6 +22,9 @@ class ServerConfig(private val context: Context) {
         val SHOP_NAME = stringPreferencesKey("shop_name")
         val DEVICE_UID = stringPreferencesKey("device_uid")
         val LAST_SYNC_AT = stringPreferencesKey("last_sync_at")
+
+        /** 「这台手机确实和这台电脑配对成功过」——见 [pairedConfirmed] 的说明。 */
+        val PAIRED_CONFIRMED = stringPreferencesKey("paired_confirmed")
     }
 
     /** 返回形如 `http://192.168.10.5:5001` 的根地址；未配置时为空串。 */
@@ -30,6 +33,32 @@ class ServerConfig(private val context: Context) {
 
     suspend fun saveBaseUrl(raw: String) {
         context.dataStore.edit { it[Keys.BASE_URL] = normalize(raw) }
+    }
+
+    /**
+     * 「这台手机**确实**和这台电脑配对成功过」（2026-10-31）。
+     *
+     * 为什么需要它：原来只凭「`/m/api/meta` 连不上」就判断要不要进主界面，于是
+     * **从没配对成功、只是网络不通**的手机也会被放进主界面看旧缓存（真实事故：
+     * 门店电脑防火墙 Block 规则 → 手机永远连不上 → App 看起来「配好了」）。
+     *
+     * 有了这个标志，两种「连不上」就能分开：
+     * - `true` + 连不上 → 电脑可能只是关机了，**照旧进主界面看缓存**（明确需求，别弄坏）；
+     * - `false` + 连不上 → 停在「连不上电脑」页，不再伪装成已配对。
+     *
+     * 置 `true` 的唯一时机：服务端真的回过 `paired=true`，或配对提交成功。
+     * 置 `false`：改地址（换电脑）、断开连接、服务端明确说没配对（401 / `paired=false`）。
+     *
+     * ⚠️ 它是**本地展示用**标志，不是凭据：清数据/重装只会让用户多确认一次配对，
+     * 认证永远只有 cookie 里的 token（见 `mobile_pairing`）。
+     */
+    suspend fun pairedConfirmed(): Boolean =
+        context.dataStore.data.map { it[Keys.PAIRED_CONFIRMED] == "1" }.first()
+
+    suspend fun savePairedConfirmed(value: Boolean) {
+        context.dataStore.edit {
+            if (value) it[Keys.PAIRED_CONFIRMED] = "1" else it.remove(Keys.PAIRED_CONFIRMED)
+        }
     }
 
     /**
@@ -85,6 +114,8 @@ class ServerConfig(private val context: Context) {
             it.remove(Keys.SHOP_NAME)
             // 上次同步时间一起清：它属于「连的是这台电脑」这件事。
             it.remove(Keys.LAST_SYNC_AT)
+            // 「确认过配对」也属于「连的是这台电脑」：断开后再连回来必须重新确认。
+            it.remove(Keys.PAIRED_CONFIRMED)
             // ⚠️ `device_uid` **不能**清 —— 它是「这台手机是谁」，与连哪台电脑无关。
             // 清了它，下次连回来服务端会当成新设备，重复配对的问题就回来了。
         }

@@ -1,6 +1,8 @@
 # Gradle 与构建产物：不入库
 .gradle/
 build/
+# Kotlin 2.x 的会话目录（跑 testDebugUnitTest 时生成，不是源码）
+.kotlin/
 local.properties
 
 # 签名文件：keystore 与口令绝不能入库

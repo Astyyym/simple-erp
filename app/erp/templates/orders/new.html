@@ -372,6 +372,11 @@ async function refineProductRow(tr, product) {
   // 售价唯一来源 = 该客户的专属价（2026-10-15）：有专属价就带出，**没有就留空**。
   // 旧版这里写 `|| priceInput.value`，会把上一个客户的价或档案价留在行上。
   priceInput.value = match.unit_price || '';
+  // 2026-10-31：记住「这个价是系统按当前商品自动带出来的」。
+  // 用途见 `clearAutoPriceIfUntouched()`：名称改成另一个商品时必须能撤掉它。
+  tr.__autoPrice = match.unit_price
+    ? { productId: String(product.id), value: String(match.unit_price) }
+    : null;
   recalc();
 }
 function bindRow(tr) {
@@ -382,6 +387,21 @@ function bindRow(tr) {
   const productIdField = tr.querySelector('.product-id');
   const productNameField = tr.querySelector('.product-name');
   const priceInput = tr.querySelector('.unit-price');
+  // 「自动带出的价」只属于**带出它的那个商品**（2026-10-31 用户实测）。
+  //
+  // 现象：先输 ABC（已建档，有专属价 ¥50）→ 价自动出现；把 C 删掉改成 ABD
+  // （全新商品）→ 价还挂在行上，得手动删，删晚一点还会被后端学成 ABD 的专属价。
+  //
+  // 规则：名称不再命中「带出这个价的商品」时，把**我们写的那一份**撤掉。
+  // 判据是值仍然等于当初写入的值 —— 用户自己改过的价绝不动（那是他的输入，不是我们的）。
+  function clearAutoPriceIfUntouched() {
+    const auto = tr.__autoPrice;
+    if (!auto) return false;
+    tr.__autoPrice = null;
+    if (String(priceInput.value) !== auto.value) return false;
+    priceInput.value = '';
+    return true;
+  }
   // v14/Phase 3 S2：行状态更新抽成命名函数，供「手输精确命中」与「联想点选」共用。
   // 2026-10-17 行复制/粘贴：粘贴带过来的单价属于**上一行那个型号**。
   // 规则：只要名称已经不同于「复制来源的名称」，这一行就是「换过型号」，
@@ -406,6 +426,8 @@ function bindRow(tr) {
     if (!product) {
       // 未命中已有商品：保留纯文本，交给后端自动建档；单位/价格按当前输入保留。
       productIdField.value = '';
+      // 但「系统自动带出的那个价」不属于新商品，必须撤掉（见 clearAutoPriceIfUntouched）。
+      clearAutoPriceIfUntouched();
       recalc();
       return;
     }
@@ -418,6 +440,8 @@ function bindRow(tr) {
     // 点选商品只带单位：单价按**当前客户**的专属价取（refineProductRow 异步回填），
     // 没有专属价就留空手输。旧版在这里无条件写档案价（2026-10-15 下线）。
     priceInput.value = '';
+    // 换了商品，上一件的「自动价」标记立刻作废（refineProductRow 会写新的）。
+    tr.__autoPrice = null;
     // 粘贴来的行「名称没动、只是重新命中同一个商品」→ 保留复制过来的价；
     // 换过型号（droppedPastedPrice）→ 保持清空，走下面按新客户取价。
     if (!droppedPastedPrice && tr.__pastedPrice) {
