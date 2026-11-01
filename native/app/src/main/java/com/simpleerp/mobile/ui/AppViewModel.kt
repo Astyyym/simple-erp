@@ -32,6 +32,7 @@ import com.simpleerp.mobile.net.StartupRoute
 import com.simpleerp.mobile.net.StartupRouting
 import com.simpleerp.mobile.net.loadWithCache
 import com.simpleerp.mobile.ui.theme.ThemeMode
+import com.simpleerp.mobile.ui.util.OfflineOrderFilter
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -308,6 +309,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _lastSyncAt = MutableStateFlow(0L)
     val lastSyncAt: StateFlow<Long> = _lastSyncAt.asStateFlow()
 
+    /**
+     * 同步回溯几个月（含本月，默认 2）。设置页可选「近 2 / 3 / 6 / 12 个月」。
+     * 2026-11-01 用户要求「默认两个月，也能自己选更长」—— 它直接决定离线能翻多远。
+     */
+    private val _syncMonths = MutableStateFlow(ServerConfig.DEFAULT_SYNC_MONTHS)
+    val syncMonths: StateFlow<Int> = _syncMonths.asStateFlow()
+
     /** 搜索输入防抖：柜台前打字快，每键一请求会把局域网打满。 */
     private var searchJob: Job? = null
 
@@ -405,6 +413,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _bootstrapped.value = true
         _cacheNewest.value = cache.newestTimestamp() ?: 0L
         _lastSyncAt.value = serverConfig.lastSyncAt()
+        _syncMonths.value = serverConfig.syncMonths()
         if (!_needsPairing.value && !_needsSetup.value && !_connectionLost.value) {
             refreshAll()
             // 打开 App 时顺手同步一次：这样「早上开店打开手机」看到的就不是
@@ -495,6 +504,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { runSync(silent = false) }
     }
 
+    /**
+     * 设置页选「同步回溯范围」（近 2 / 3 / 6 / 12 个月）。
+     *
+     * 改完立刻同步一次：否则用户以为「选了近半年」已经生效，实际还是上次那份两个月缓存，
+     * 断网后仍然翻不到更早的单，又变成一次「说了改了却没改」的误会。
+     */
+    fun setSyncMonths(months: Int) {
+        val clamped = months.coerceIn(1, 24)
+        if (clamped == _syncMonths.value) return
+        viewModelScope.launch {
+            serverConfig.saveSyncMonths(clamped)
+            _syncMonths.value = clamped
+            runSync(silent = false)
+        }
+    }
+
     private suspend fun runSync(silent: Boolean) {
         if (_needsPairing.value || _needsSetup.value || _connectionLost.value) {
             if (!silent) _syncState.value = SyncState.Failed("还没连上电脑，先在设置里配对。")
@@ -504,7 +529,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (syncJob?.isActive == true) return
         val job = viewModelScope.launch {
             _syncState.value = SyncState.Running
-            when (val result = api.get("/m/api/snapshot")) {
+            // 同步范围由用户在设置页决定（默认 2 个月）；服务端据此生成覆盖区间的备份列表。
+            val months = serverConfig.syncMonths()
+            _syncMonths.value = months
+            when (val result = api.get("/m/api/snapshot", mapOf("months" to months.toString()))) {
                 is ApiResult.Success -> {
                     val decoded = api.decode(result.body, SnapshotResponse.serializer())
                     if (decoded == null || !decoded.ok) {
@@ -514,6 +542,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     val at = System.currentTimeMillis()
                     snapshot.save(at, decoded.entries)
                     serverConfig.saveLastSyncAt(at)
+                    // 记下本次覆盖的区间与备份列表键，断网本地筛选要用。
+                    serverConfig.saveSyncSpan(decoded.syncFrom, decoded.syncTo, decoded.backupKey)
                     _lastSyncAt.value = at
                     _syncState.value = SyncState.Done(decoded.entryCount, at)
                     // 同步完刷新当前可见的数据：否则屏幕上还是同步前那一份，
@@ -876,12 +906,63 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // 让 publish/网络结果直接替换 —— 否则每次切 tab 都会先闪一下骨架，
         // 有了缓存秒开反而看起来更卡。
         if (_orders.value !is UiState.Ready) _orders.value = UiState.Loading
-        _orders.value = load(
+        val state = load(
             publish = { _orders.value = it },
             cacheKey = "orders:${query.toSortedMap()}",
             path = "/m/api/orders",
             query = query,
             serializer = { text -> api.decode(text, OrdersResponse.serializer()) },
+        )
+        // 断网 + 精确缓存没命中（自定义区间没有一一对应的快照键）→ 用备份列表本地筛选。
+        // 只在「连不上」时兜底；服务端明确报错仍原样显示，不能拿旧数据盖住真实错误。
+        _orders.value = if (state is UiState.Failed && state.message.contains("连不上电脑")) {
+            fallbackOrdersFromBackup(range, _orderType.value, _orderCustomerId.value) ?: state
+        } else {
+            state
+        }
+    }
+
+    /**
+     * 断网且当前时间区间没有精确缓存时，用「离线备份列表」在本地按区间 + 类型 + 客户筛一次。
+     *
+     * 为什么需要：快照只给「今天/本周/本月/本年/全部」这些**快捷档**各存一份，用户按
+     * 「10 月」「10/31 单日」「8–10 月」这种自定义区间查时，缓存里没有对应键 —— 过去就
+     * 直接报「连不上电脑」（2026-11-01 用户报的「11 月 1 号一过就查不到 10 月」）。备份列表
+     * 覆盖整段同步区间（默认本月 + 上月），本地筛一下就能翻到。
+     *
+     * 只处理**显式起止区间**：周/月/年这些「具体是哪几天由服务端算」的档不在这里算，
+     * 避免把日期换算规则复制到客户端、两端口径分叉（`resolve_mobile_range` 只有一份）。
+     */
+    private suspend fun fallbackOrdersFromBackup(
+        range: DateRange,
+        orderType: String,
+        customerId: Int,
+    ): UiState<OrdersResponse>? {
+        val start = range.startDate
+        val end = range.endDate
+        if (start.isEmpty() || end.isEmpty()) return null
+        val backupKey = serverConfig.backupKey()
+        if (backupKey.isEmpty()) return null
+        val backup = snapshot.get(backupKey) ?: return null
+        val decoded = api.decode(backup.body, OrdersResponse.serializer()) ?: return null
+        val syncFrom = serverConfig.syncFrom()
+        val documents = OfflineOrderFilter.filter(decoded.documents, start, end, orderType, customerId)
+        // 请求区间早于「已同步起点」→ 更早的单根本没缓存，标记不完整，页面提示需联网。
+        val truncated = decoded.truncated || (syncFrom.isNotEmpty() && start < syncFrom)
+        _cacheNewest.value = maxOf(_cacheNewest.value, backup.fetchedAt)
+        return UiState.Ready(
+            OrdersResponse(
+                schema = decoded.schema,
+                ok = true,
+                documents = documents,
+                truncated = truncated,
+                orderType = orderType,
+                customerId = customerId,
+                customerName = "",
+                dateRange = range,
+            ),
+            fromCache = true,
+            fetchedAt = backup.fetchedAt,
         )
     }
 

@@ -380,6 +380,7 @@ private fun MainScaffold(
                         val themeMode by vm.themeMode.collectAsStateWithLifecycle()
                         val syncState by vm.syncState.collectAsStateWithLifecycle()
                         val lastSyncAt by vm.lastSyncAt.collectAsStateWithLifecycle()
+                        val syncMonths by vm.syncMonths.collectAsStateWithLifecycle()
                         SettingsScreen(
                             baseUrl = vm.baseUrl.value,
                             meta = meta,
@@ -388,7 +389,9 @@ private fun MainScaffold(
                             cacheNewest = cacheNewest,
                             syncState = syncState,
                             lastSyncAt = lastSyncAt,
+                            syncMonths = syncMonths,
                             onSyncNow = { vm.syncNow() },
+                            onSetSyncMonths = vm::setSyncMonths,
                             onThemeMode = vm::setThemeMode,
                             onChangeAddress = onChangeAddress,
                             onRefresh = { vm.recheck() },

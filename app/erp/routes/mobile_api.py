@@ -200,16 +200,24 @@ def _customer_detail_payload(customer_id: int) -> dict | None:
     }
 
 
-def _orders_payload(args, *, order_type: str, customer_id: int) -> dict:
+def _orders_payload(
+    args, *, order_type: str, customer_id: int, limit: int | None = None
+) -> dict:
     customer_brief = readonly_queries.customer_brief(customer_id) if customer_id else None
     if customer_brief is None:
         customer_id = 0
     date_range = readonly_queries.resolve_mobile_range(args)
+    # `limit` 只有「离线备份列表」会传（要比单月视图深，见 SNAPSHOT_BACKUP_LIMIT）。
+    # 逐页接口与各快捷视图仍走 list_documents 的默认上限，行为不变。
+    list_kwargs = {}
+    if limit is not None:
+        list_kwargs["limit"] = limit
     result = readonly_queries.list_documents(
         order_type=order_type,
         start_date=date_range["start_date"],
         end_date=date_range["end_date"],
         customer_id=customer_id or None,
+        **list_kwargs,
     )
     documents = [
         {
@@ -609,6 +617,35 @@ SNAPSHOT_ORDER_DETAILS = 400
 SNAPSHOT_CUSTOMER_DETAILS = 1000
 SNAPSHOT_PRODUCT_DETAILS = 300
 
+# 离线「本地兜底筛选」用的备份单据列表上限（2026-11-01）。
+#
+# 为什么单列一个、且比单月视图（DOCUMENT_LIST_LIMIT）深：断网后用户可能按任意时间区间
+# 筛单据（10 月、10/31 单日、8–10 月……），这些区间在快照里没有一一对应的键，只能
+# 拿一份覆盖整段同步区间的底座列表在手机本地筛。底座漏了，区间里就会有单「凭空消失」。
+# 5000 张摘要约 1~1.5 MB，局域网一次都在 1 秒内。真超过会在响应里带 `orders_truncated`。
+SNAPSHOT_BACKUP_LIMIT = 5000
+
+# 默认同步多少个月（含本月）。2026-11-01 用户要求：默认两个月 = 本月 + 上月，
+# 这样 11 月 1 号也能翻到整个 10 月；手机上还能选更长（见 `months` 参数）。
+SNAPSHOT_DEFAULT_MONTHS = 2
+SNAPSHOT_MAX_MONTHS = 24
+
+
+def _sync_span(months: int) -> tuple[str, str]:
+    """同步区间 `[起, 止]`：起 = 往前 (months-1) 个月那个月的 1 号，止 = 今天。
+
+    为什么起点对齐「月初」而不是「今天往前推 N×30 天」：店主按自然月翻单据，月初对齐
+    才能保证「上月」是一整个月（10/1–10/31 全在区间里），不会出现「10 月 31 号的单
+    刚好滑出两个月」这种跨月边界事故 —— 这正是用户 2026-11-01 报的那个现象。
+    """
+    from datetime import date as _date
+
+    end = _date.today()
+    total = end.year * 12 + (end.month - 1) - (max(int(months), 1) - 1)
+    start_year, start_month = divmod(total, 12)
+    start = _date(start_year, start_month + 1, 1)
+    return start.isoformat(), end.isoformat()
+
 
 def _canonical_path(path: str, query: dict) -> str:
     """规范化缓存键：`path?k=v&k2=v2`，query 键按字母序，跳过空值。
@@ -651,20 +688,46 @@ def snapshot():
     products_payload = _products_payload("", "pinyin", "")
     put("/m/api/products", {}, products_payload)
 
-    # 单据：把手机端**会真正发出来的 5 种筛选**各缓存一份。
+    # ---- 单据 ----
     #
-    # ⚠️ 这批 query 字典必须逐字等于客户端会发出的参数，否则规范化路径对不上，
-    # 断网时同一个页面查不到缓存（表现就是「在线能看、离线空白」）。客户端的构造在
-    # `AppViewModel.loadOrders()`：首次进入只发 `date_mode=day`（起止留空，服务端补今天）；
-    # 点「今天」chip 会连起止日期一起发；周/月/年/全部各是另一种组合。
-    # 这两种「今天」在客户端是两个不同的缓存键（参数不同 = 不同的 URL），所以两份都要给。
+    # 分两层缓存，缺一不可：
+    #
+    # ① **备份列表**（2026-11-01 新增）：覆盖整个「同步区间」`[sync_from, sync_to]`，
+    #    用较大上限取全。它不对应某个具体按钮，而是断网后「任意时间区间本地筛选」的底座 ——
+    #    「10 月」「10/31 单日」「8–10 月」这些区间在快照里没有一一对应的键，只能拿这份
+    #    底座在手机本地按日期过滤。所以详情也**优先从它收集**，保证区间内（尤其上月）点开有明细。
+    #
+    # ② **各快捷视图**：今天 / 本周 / 本月 / 本年 / 全部。用户点这些 chip 时离线直接命中，
+    #    不必走本地筛选。这些 query 字典必须逐字等于客户端 `AppViewModel.loadOrders()`
+    #    会发出的参数，否则规范化键对不上（表现就是「在线能看、离线空白」）。
     from datetime import date
 
     today = date.today()
     today_iso = today.isoformat()
-    # 顺序有讲究：「全部时间」放第一个。它本身就是**最新 200 张单**（列表按日期倒序 + LIMIT），
-    # 是其余各档的超集；先由它收集详情，等于「详情优先覆盖最近半年到一年的单」，
-    # 比按「今天」先收（通常只有几张）覆盖得宽得多。
+
+    # 同步区间：默认 2 个月（本月 + 上月），前端可通过 `?months=` 选更长。
+    try:
+        months = int(request.args.get("months") or SNAPSHOT_DEFAULT_MONTHS)
+    except (TypeError, ValueError):
+        months = SNAPSHOT_DEFAULT_MONTHS
+    months = max(1, min(months, SNAPSHOT_MAX_MONTHS))
+    sync_from, sync_to = _sync_span(months)
+
+    order_keys: list[tuple[str, int]] = []
+
+    # ① 备份列表：覆盖整个同步区间，上限放宽
+    backup_query = {"date_mode": "custom", "start_date": sync_from, "end_date": sync_to}
+    backup_payload = _orders_payload(
+        _ArgsView(backup_query), order_type="", customer_id=0, limit=SNAPSHOT_BACKUP_LIMIT
+    )
+    backup_key = _canonical_path("/m/api/orders", backup_query)
+    put("/m/api/orders", backup_query, backup_payload)
+    order_keys.extend(
+        (document["order_type"], int(document["id"]))
+        for document in backup_payload["documents"]
+    )
+
+    # ② 各快捷视图
     range_queries: list[dict] = [
         {"date_mode": "all"},
         # 首次进入（紧凑形态）：只发 date_mode，起止日期留空由服务端补今天。
@@ -675,16 +738,16 @@ def snapshot():
         {"date_mode": "month", "year": str(today.year), "month": str(today.month)},
         {"date_mode": "year", "year": str(today.year)},
     ]
-    order_keys: list[tuple[str, int]] = []
     for query in range_queries:
         payload = _orders_payload(_ArgsView(query), order_type="", customer_id=0)
         put("/m/api/orders", query, payload)
         order_keys.extend(
             (document["order_type"], int(document["id"]))
-            for document in payload["documents"][:SNAPSHOT_ORDER_DETAILS]
+            for document in payload["documents"]
         )
 
-    # 详情：按「最近优先」取前 N 张，去重（同一张单可能在日/月/年三份列表里都出现）。
+    # 详情：按上面的顺序（同步区间内优先、其它视图补后）取前 N 张，去重
+    # （同一张单可能在备份列表与日/月/年视图里都出现）。
     seen_orders: set[tuple[str, int]] = set()
     order_detail_count = 0
     for order_type, document_id in order_keys:
@@ -727,6 +790,11 @@ def snapshot():
         generated_at=timestamp_label(datetime.now().isoformat(timespec="seconds")),
         synced_at=timestamp_label(synced_at) if synced_at else "",
         entry_count=len(entries),
+        sync_from=sync_from,
+        sync_to=sync_to,
+        sync_months=months,
+        backup_key=backup_key,
+        orders_truncated=bool(backup_payload.get("truncated")),
         counts={
             "orders": len(seen_orders),
             "customers": len(customers_payload["customers"]),

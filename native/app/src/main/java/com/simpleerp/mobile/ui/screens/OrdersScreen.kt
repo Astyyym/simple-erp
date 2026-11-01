@@ -239,7 +239,9 @@ fun OrdersScreen(
                         if (state.value.truncated) {
                             item {
                                 Text(
-                                    "只显示了前 200 张，缩小时间范围可以看到更早的。",
+                                    // 不写死张数：在线截断是「最近 400 张」，离线是「同步范围之外」，
+                                    // 一句「更早的请联网或缩小范围」两种情形都说得通（2026-11-01）。
+                                    "只显示了最近一段单据；更早的请联网或缩小时间范围查看。",
                                     color = colors.muted,
                                     fontSize = 11.5.sp,
                                     modifier = Modifier.padding(vertical = 10.dp),

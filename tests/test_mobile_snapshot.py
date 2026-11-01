@@ -232,3 +232,66 @@ def test_snapshot_covers_products_beyond_the_old_sixty_cap(paired_client):
         if f"/m/api/products/{product['id']}" not in entries
     ]
     assert missing == [], f"这些商品在列表里但没有详情缓存：{missing[:5]}"
+
+
+def test_snapshot_returns_sync_span_and_backup_key(paired_client, seeded):
+    """快照要带回同步区间与备份列表键（断网「任意区间本地筛选」靠它）。"""
+    data = _snapshot(paired_client)
+    assert data["sync_from"] and data["sync_to"], "必须带回同步区间"
+    assert data["sync_months"] >= 1
+    backup_key = data["backup_key"]
+    assert backup_key in data["entries"], "备份键必须真的落在 entries 里"
+    assert backup_key.startswith("/m/api/orders?date_mode=custom")
+    # 备份键也必须命中真实端点（规范化键与服务端路由一致）
+    assert paired_client.get(backup_key).status_code == 200
+
+
+def test_sync_span_defaults_to_previous_month_start():
+    """默认 2 个月 = 本月 + 上月，起点必须是上个月 1 号（不是「今天减 60 天」）。"""
+    from datetime import date
+
+    from erp.routes.mobile_api import _sync_span
+
+    start, end = _sync_span(2)
+    today = date.today()
+    y, m = today.year, today.month - 1
+    if m <= 0:
+        m += 12
+        y -= 1
+    assert start == f"{y:04d}-{m:02d}-01", start
+    assert end == today.isoformat()
+
+
+def test_snapshot_backup_covers_previous_month_order(paired_client):
+    """上月 1 号的单必须落进备份列表。
+
+    这是 2026-11-01 用户报的「11 月 1 号就查不到 10 月」的回归锁：过去快照只缓存
+    「本月」，跨月后上月直接消失。现在备份列表覆盖 [上月 1 号, 今天]，本地筛选才有底座。
+    """
+    from datetime import date
+
+    from erp.db import init_db
+    from erp.services import accounting
+
+    init_db()
+    today = date.today()
+    y, m = today.year, today.month - 1
+    if m <= 0:
+        m += 12
+        y -= 1
+    prev_first = date(y, m, 1)
+    order_no = f"MD{y:04d}{m:02d}010001"
+
+    customer_id = accounting.create_customer("上月边界客户")
+    product_id = accounting.create_product("上月边界商品", "个")
+    accounting.create_order_from_typed_rows(
+        customer_id, order_no,
+        [{"product_id": product_id, "product_name": "上月边界商品", "unit": "个",
+          "quantity": "1", "unit_price_yuan": "10"}],
+        status="saved", order_date=prev_first.isoformat(),
+    )
+
+    data = _snapshot(paired_client)
+    backup = json.loads(data["entries"][data["backup_key"]])
+    order_nos = [document["order_no"] for document in backup["documents"]]
+    assert order_no in order_nos, f"上月 1 号的单 {order_no} 不在备份里"

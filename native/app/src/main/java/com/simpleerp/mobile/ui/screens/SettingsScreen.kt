@@ -3,6 +3,8 @@ package com.simpleerp.mobile.ui.screens
 import com.simpleerp.mobile.BuildConfig
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -59,7 +61,10 @@ fun SettingsScreen(
     /** 「立即同步」的状态与上次同步时间（2026-10-24）。 */
     syncState: AppViewModel.SyncState,
     lastSyncAt: Long,
+    /** 同步回溯几个月（含本月），默认 2。 */
+    syncMonths: Int,
     onSyncNow: () -> Unit,
+    onSetSyncMonths: (Int) -> Unit,
     onThemeMode: (ThemeMode) -> Unit,
     onChangeAddress: () -> Unit,
     onRefresh: () -> Unit,
@@ -186,6 +191,27 @@ fun SettingsScreen(
                     color = colors.muted,
                     fontSize = 12.5.sp,
                 )
+                Spacer(Modifier.height(12.dp))
+                // 同步范围（2026-11-01 用户要求：默认两个月，也能自己选更长）。
+                // 它决定离线能翻多久：范围越大，同步越久、占空间越多，但断网能看的越早。
+                Text("同步范围", color = colors.muted, fontSize = 11.5.sp)
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    SYNC_MONTH_OPTIONS.forEach { (months, label) ->
+                        FilterChip(label, syncMonths == months) { onSetSyncMonths(months) }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "断网后能翻最近 ${syncMonths} 个月的单据；更早的请在电脑前把范围选大再同步一次。",
+                    color = colors.muted,
+                    fontSize = 11.5.sp,
+                )
                 Spacer(Modifier.height(10.dp))
                 Text(
                     when (syncState) {
@@ -278,3 +304,14 @@ private fun SmallAction(label: String, onClick: () -> Unit) {
         Text(label, color = colors.primary, fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
     }
 }
+
+/**
+ * 同步回溯范围选项（月 → 文案）。默认 2（本月 + 上月）—— 用户 2026-11-01 要求。
+ * 数值直接对应服务端 `/m/api/snapshot?months=`。
+ */
+private val SYNC_MONTH_OPTIONS = listOf(
+    2 to "近2个月",
+    3 to "近3个月",
+    6 to "近半年",
+    12 to "近1年",
+)

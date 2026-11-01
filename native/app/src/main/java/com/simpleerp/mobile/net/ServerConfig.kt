@@ -25,6 +25,15 @@ class ServerConfig(private val context: Context) {
 
         /** 「这台手机确实和这台电脑配对成功过」——见 [pairedConfirmed] 的说明。 */
         val PAIRED_CONFIRMED = stringPreferencesKey("paired_confirmed")
+
+        // ---- 离线同步范围（2026-11-01）----
+        /** 同步回溯几个月（含本月）。默认 2 = 本月 + 上月。 */
+        val SYNC_MONTHS = stringPreferencesKey("sync_months")
+        /** 最近一次同步覆盖的起止日期（ISO）。断网本地筛选据此判断「区间是否超出」。 */
+        val SYNC_FROM = stringPreferencesKey("sync_from")
+        val SYNC_TO = stringPreferencesKey("sync_to")
+        /** 服务端给的「离线备份列表」缓存键；客户端不自己拼，照抄即可。 */
+        val BACKUP_KEY = stringPreferencesKey("backup_key")
     }
 
     /** 返回形如 `http://192.168.10.5:5001` 的根地址；未配置时为空串。 */
@@ -91,6 +100,37 @@ class ServerConfig(private val context: Context) {
         context.dataStore.edit { it[Keys.LAST_SYNC_AT] = epochMillis.toString() }
     }
 
+    // ---- 离线同步范围（2026-11-01）----
+
+    /** 同步回溯几个月（含本月）。默认 2 = 本月 + 上月。 */
+    suspend fun syncMonths(): Int =
+        context.dataStore.data
+            .map { (it[Keys.SYNC_MONTHS] ?: "").toIntOrNull() ?: DEFAULT_SYNC_MONTHS }
+            .first()
+
+    suspend fun saveSyncMonths(months: Int) {
+        context.dataStore.edit { it[Keys.SYNC_MONTHS] = months.toString() }
+    }
+
+    suspend fun syncFrom(): String =
+        context.dataStore.data.map { it[Keys.SYNC_FROM] ?: "" }.first()
+
+    suspend fun syncTo(): String =
+        context.dataStore.data.map { it[Keys.SYNC_TO] ?: "" }.first()
+
+    /** 服务端算好的「离线备份列表」缓存键（照抄，不自己拼）。 */
+    suspend fun backupKey(): String =
+        context.dataStore.data.map { it[Keys.BACKUP_KEY] ?: "" }.first()
+
+    /** 一次同步成功后，记下本次覆盖的区间与备份列表键。 */
+    suspend fun saveSyncSpan(from: String, to: String, backupKey: String) {
+        context.dataStore.edit {
+            if (from.isNotBlank()) it[Keys.SYNC_FROM] = from
+            if (to.isNotBlank()) it[Keys.SYNC_TO] = to
+            if (backupKey.isNotBlank()) it[Keys.BACKUP_KEY] = backupKey
+        }
+    }
+
     /**
      * 记住上次连上的**公司名称**。
      *
@@ -114,6 +154,12 @@ class ServerConfig(private val context: Context) {
             it.remove(Keys.SHOP_NAME)
             // 上次同步时间一起清：它属于「连的是这台电脑」这件事。
             it.remove(Keys.LAST_SYNC_AT)
+            // 同步区间与备份键一并清：它们指向的是「上一台电脑」的缓存布局，
+            // 换电脑后旧键在新快照里不存在，留着只会让本地筛选读空。
+            it.remove(Keys.SYNC_FROM)
+            it.remove(Keys.SYNC_TO)
+            it.remove(Keys.BACKUP_KEY)
+            // ⚠️ `SYNC_MONTHS`（回溯几个月）是用户的偏好，不随换电脑清掉。
             // 「确认过配对」也属于「连的是这台电脑」：断开后再连回来必须重新确认。
             it.remove(Keys.PAIRED_CONFIRMED)
             // ⚠️ `device_uid` **不能**清 —— 它是「这台手机是谁」，与连哪台电脑无关。
@@ -122,6 +168,9 @@ class ServerConfig(private val context: Context) {
     }
 
     companion object {
+        /** 默认同步回溯月数（含本月）。2 = 本月 + 上月，正好覆盖「跨月后看上个月」。 */
+        const val DEFAULT_SYNC_MONTHS = 2
+
         /**
          * 归一化委托给 [ServerAddress.normalize] —— 那边是纯函数，能被单元测试覆盖。
          * 这里保留同名入口，调用方不用改。
