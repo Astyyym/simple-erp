@@ -23,7 +23,9 @@
 - 安卓：`compileDebugKotlin`、`testDebugUnitTest`、`assembleRelease` 均 `BUILD SUCCESSFUL`（新增 `OfflineOrderFilterTest` 6 条）。
 - **未验**：真机断网翻 10 月、APK 真机安装手感、桌面端 GUI 启动冒烟。
 
-### 产物（本地打包 v4.7.1，2026-11-01；**未推 GitHub**）
+### 产物与校验（GitHub Release v4.7.1，2026-11-01）
+
+已发布到 [Releases v4.7.1](https://github.com/Astyyym/simple-erp/releases/tag/v4.7.1)（Latest，tag `v4.7.1` / 提交 `bd4fd0c`）。下列 SHA256 与 GitHub 侧资产 `digest` 逐一核对一致：
 
 | 资产 | 大小 | SHA256 |
 |---|---|---|
@@ -32,7 +34,7 @@
 | `simple-erp-mobile-v1.4.12.apk` | 8053894 B | `C77BDF81E86A47BDCB8E94882FB8A3D46E379672E67C8FA02D7DEDE77204D362` |
 | 绿色版 `dist\local-v4.7.1\简单ERP`（含 `demo_data` 200 单） | — | — |
 
-> 桌面端与 APK **必须一起更新**才生效：`/m/api/snapshot` 由桌面端提供，只换 APK 拿不到备份列表。
+> 桌面端与 APK **必须一起更新**才生效：`/m/api/snapshot` 由桌面端提供，只换 APK 拿不到备份列表。绿色版（含 `demo_data`）只在本地生成，不随 Release 分发。
 
 ## v4.7.0 - 手机端快照范围扩大与回前台刷新 + 「连不上电脑」页与防火墙可见性 + 开单改名清价（2026-10-31）
 
