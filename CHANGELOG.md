@@ -24,7 +24,21 @@
 ### 验收（本地）
 
 - 新增 `tests/test_order_product_auto_create_policy.py`；改 `test_purchase_product_picker.py`、`test_zero_setup_entry.py`、`test_mobile_product_detail.py`、`test_mobile_queries.py` 等取价期望（退货不再覆盖客户专属价）。
-- 全量 pytest 见本次执行结果；未打包、未升版、未推送。
+- 全量 pytest **1139 passed / 17 skipped / 0 failed**；前端 `node --test tests/frontend/*.test.mjs` **113 passed**。
+- 隔离实例真实页面点过：销售/拿货手输未建档 → 自动建档且不重复；退货/退拿货未建档 → 被拒、不建档；退货选已建档 → 正常保存。README 界面截图已按演示数据重拍。
+
+### 产物与校验（GitHub Release v4.7.2，2026-11-05）
+
+已发布到 [Releases v4.7.2](https://github.com/Astyyym/simple-erp/releases/tag/v4.7.2)（Latest，tag `v4.7.2` / 提交 `9aaf4eb`）。下列 SHA256 与 GitHub 侧资产 `digest` 逐一核对一致：
+
+| 资产 | 大小 | SHA256 |
+|---|---|---|
+| `simple-erp-setup-v4.7.2.exe` | 40908961 B | `FC4B085C7012E1D5B7CB7A112C3BB3D23FFE544F819E45566C8ED6E0B69808C9` |
+| `simple-erp-windows-v4.7.2.zip` | 54699190 B | `639DDD77D93A8926818A046F3BAFF2BE03E848831D53D21FA674A6FD3D5828A1` |
+| `simple-erp-mobile-v1.4.12.apk` | 8053894 B | `C77BDF81E86A47BDCB8E94882FB8A3D46E379672E67C8FA02D7DEDE77204D362` |
+| 绿色版 `dist\local-v4.7.2\简单ERP`（含 `demo_data` 200 单） | — | — |
+
+> 安卓端本版未改动（仍 `1.4.12`），Release 附的 APK 与 v4.7.1 是同一份文件。绿色版（含 `demo_data`）只在本地产出，不随 Release 分发。
 
 ## v4.7.1 - 手机端离线可翻历史区间（本地兜底筛选 + 可配置同步范围）（2026-11-01）
 
