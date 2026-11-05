@@ -195,11 +195,11 @@
 
 ## 基础资料列表页顶部工具区（商品/客户，2026-10-09 重排；2026-10-14 两轮收敛）
 
-商品管理（`products/list.html`）与客户管理（`customers/list.html`）的顶部不再各写一份 `form.row` + 等分 `col`，改为共用 `base.html` 的 `.list-*` 类。旧的等分 `col` 按格子分宽而不是按语义分：1280 窗口下「默认单价(元)」占位需 79px、可用 71px 被裁；每行 78px 高只装 40px 控件，行内空、行间只剩 8px。
+商品管理（`products/list.html`）与客户管理（`customers/list.html`）的顶部不再各写一份 `form.row` + 等分 `col`，改为共用 `base.html` 的 `.list-*` 类。旧的等分 `col` 按格子分宽而不是按语义分：1280 窗口下「默认单价(元)」占位需 79px、可用 71px 被裁（该列已随 2026-10-15 档案价下线删除，此处只作旧布局案例）；每行 78px 高只装 40px 控件，行内空、行间只剩 8px。
 
 - **两页结构必须一致（2026-10-14 第二轮用户要求「两页同步修改」）**：① `.list-import-card`（下载模板 / 导出 / 批量导入 / **新增**）② `.list-tools > .list-search`（查找行）③ `.list-batch-bar`（删除选中在左 + `.list-view-options` 档案筛选 chip 靠右）④ `.list-legend`（常驻图例行）。字段用 `.list-create-fields` 等宽网格 `repeat(auto-fit,minmax(180px,1fr))`——宁可整齐换行，也不把 6 个框压到 116px 挤成一排。
 - **「新增」放在「批量导入」右侧**：`.list-create-panel` 与 `.list-import-panel` 同在 `.list-import-row` 内，两者展开时都 `flex:1 1 100%` 占满整行。改这条位置要同时改两页，并更新 `test_create_panel_sits_right_of_the_import_panel_in_the_import_row`。注意：展开「批量导入」会把「新增」按钮挤到下一行（DOM 顺序决定），这是可接受的既有行为。
-- **档案筛选 chip 统一在批量动作条里**（`.list-batch-bar`，带 `id="productsViewBar"` / `id="customersViewBar"` + `data-refresh-fragment`），旧的 `.list-facet` 类已删除，不许回流。两页都有「全部 / 待补全（N） / 按拼音排序」。「待补全」口径唯一真源是 `services/master_data_quality.py`（来源 `order`+`import`，**商品缺品牌**〔2026-10-15 默认价下线后只剩这一项〕、客户电话与地址都为空；详见 `references/customer-analytics-and-master-data-import.md`）。商品侧「启用状态」列与编辑页「启用状态」格已于 2026-10-15 按用户要求删除，未启用商品由「库存状况」列显示为「未启用」。
+- **档案筛选 chip 统一在批量动作条里**（`.list-batch-bar`，带 `id="productsViewBar"` / `id="customersViewBar"` + `data-refresh-fragment`），旧的 `.list-facet` 类已删除，不许回流。两页都有「全部 / 待补全（N） / 按拼音排序」。「待补全」口径唯一真源是 `services/master_data_quality.py`（来源 `order`+`import`，**商品缺品牌**〔2026-10-15 默认价下线后只剩这一项〕、客户电话与地址都为空；详见 `references/customer-analytics-and-master-data-import.md`）。商品侧「启用状态」与「库存状况」两列已随库存系统一起删除（2026-10-15 删「启用状态」，2026-10-16 / v15 删库存状态），商品列表不再有「未启用」展示。
 - **说明文字必须常驻，不能条件渲染在 chip 行内**（2026-10-14 第二轮修掉的真实缺陷）：原先 hint 只在 `quality=todo` 时插进 `.list-view-options`，而该组是 `margin-left:auto` 的右对齐 flex —— 一点「待补全」整组被顶到左边，按钮位置跳动。现在改 `.list-legend` 常驻一行、文案与筛选状态无关，且放在动作条**之外**（动作条会被就地替换）。回归断言：两种筛选态下 chip / 表格首行的 `getBoundingClientRect()` 必须完全相同。
 - **`.page-body` 必须 `scrollbar-gutter:stable`**（同一轮发现的第二处位移）：`.page-body` 是内层滚动容器，列表行数一跨过视口高度，竖向滚动条出现/消失就会让可用宽度差 **15px**，右对齐的 chip、图例宽度、表格一起横移。1440 视口下两种状态都无滚动条时**看不见这个缺陷**，必须在用户真实窗口宽度（本机 200% 缩放 ≈ **1280 CSS px**）下量。改这条布局后要同时核对 1280 与 1440 两个视口。
 - **按拼音排序**：`sort=pinyin` 走 `pinyin_full COLLATE NOCASE`（空值排最后再回落名称），商品与客户两条路由都要**白名单校验**取值；搜索表单要带 `quality`/`sort` 隐藏域，否则一搜索就丢筛选与排序。
@@ -262,7 +262,7 @@
 
 - 范围：单据列表操作列、单据详情页、工作台最近单据、三个开单页的当天历史面板（**服务端渲染 + JS 重建两处都要改**）、拿货/退拿货详情页；编辑页标题与字段提示里的「重编辑」也一并改。
 - **不纳入**（语义不同，非同一动作）：回收站「恢复 / 确认删除」、设置页「下载回看」（下载归档文件）。
-- 契约测试 `tests/test_action_label_vocabulary.py`：断言旧词在单据相关页为 0、三词顺序固定、端点正确；并断言回收站/归档保留自己的词。**造夹具要注意**：已过账销售单的「编辑」是**禁用按钮**（需用未启用库存的商品才有真链接）、空回收站渲染不出行内按钮（需先造已删除记录）。
+- 契约测试 `tests/test_action_label_vocabulary.py`：断言旧词在单据相关页为 0、三词顺序固定、端点正确；并断言回收站/归档保留自己的词。**造夹具要注意**：v15 起所有非「已作废」单据都可重编辑，只有 `status='void'` 的单据「编辑」才是**禁用按钮**（用一张已作废单造夹具）；空回收站渲染不出行内按钮（需先造已删除记录）。
 
 ## 条件不可用的动作：始终渲染 + 置灰 + 原因（2026-10-10）
 

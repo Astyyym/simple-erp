@@ -14,7 +14,7 @@
 // Prerequisites (a bare "fetch failed" means the first one is missing):
 //   - a Chrome already running with remote debugging enabled, e.g.
 //       chrome --remote-debugging-port=9222 --user-data-dir=/tmp/cdp-profile about:blank
-//   - the `ws` package resolvable from the cwd (`npm i ws`).
+//   - Node 22+ (its global WebSocket is used; no `npm i ws`).
 //
 // Exits non-zero when a page highlights a different set of entries than expected,
 // or when a page loses its scroll offset on a GET-form submit.
@@ -63,7 +63,6 @@ async function main() {
   const page = list.find((t) => t.type === 'page');
   if (!page) throw new Error('no debuggable page found on port ' + port);
 
-  const WebSocket = (await import('ws')).default;
   const ws = new WebSocket(page.webSocketDebuggerUrl);
   let id = 0;
   const pending = new Map();
@@ -72,11 +71,11 @@ async function main() {
     pending.set(mid, res);
     ws.send(JSON.stringify({ id: mid, method, params }));
   });
-  ws.on('message', (raw) => {
-    const msg = JSON.parse(raw.toString());
+  ws.addEventListener('message', (ev) => {
+    const msg = JSON.parse(ev.data.toString());
     if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg.result); pending.delete(msg.id); }
   });
-  await new Promise((r) => ws.on('open', r));
+  await new Promise((r) => ws.addEventListener('open', r));
   await send('Page.enable');
   await send('Runtime.enable');
   // Never trust a cached stylesheet or page: a versioned URL is served from cache.

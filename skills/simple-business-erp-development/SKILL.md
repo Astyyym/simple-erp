@@ -7,7 +7,7 @@ license: MIT
 metadata:
   hermes:
     tags: [simple-erp, flask, sqlite, windows, project]
-    related_skills: [product-acceptance, repository-engineering, xlsx, pdf]
+    related_skills: [agent-development-discipline]
 ---
 
 # 简单 ERP 项目技能

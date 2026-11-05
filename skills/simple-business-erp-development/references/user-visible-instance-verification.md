@@ -56,7 +56,7 @@
 ## 全量测试必须在「看得见 pdftotext」的终端里前台跑
 
 - 本机判据：全量回归要求 **`0 skipped`**。若出现 `SKIPPED [...] installed PDF text extractor is unavailable`（`tests/test_purchase_printing.py:37`，16 条 PDF 文本断言），**先查运行环境，不要记成通过**。
-- 已实测的成因：把 pytest 作为**后台进程**启动时，子进程 PATH 不含 hermes 自带的 git `mingw64\bin`（`…\hermes\tools\git-*\mingw64\bin\pdftotext.EXE`）→ `shutil.which('pdftotext')` 返回 None → 该文件整体跳过；同一条命令**前台**跑则 34 passed / 0 skipped。
+- 已实测的成因：把 pytest 作为**后台进程**启动时，子进程 PATH 不含 agent 环境自带的 git `mingw64\bin`（`…\hermes\tools\git-*\mingw64\bin\pdftotext.EXE`，本机仍在 Hermes 目录）→ `shutil.which('pdftotext')` 返回 None → 该文件整体跳过；同一条命令**前台**跑则 34 passed / 0 skipped。
 - 自查一行命令：`.venv-win/Scripts/python.exe -c "import shutil;print(shutil.which('pdftotext'))"`；为 None 就先补 PATH 再跑全量。
 - 推广规则：任何 `shutil.which(...)` 闸门（`pdftotext`、`node`、PyInstaller）都会随启动方式漂移，**skip 计数不是通过证据**，必须单独跑一次该文件确认它真的执行了。
 

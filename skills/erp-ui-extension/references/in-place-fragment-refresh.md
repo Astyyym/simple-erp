@@ -4,7 +4,7 @@ Use when wiring a filter submit, a pagination link, or an in-page view switch so
 updates results WITHOUT a full navigation — the fix for "点查询后页面闪烁刷新并回到最上方".
 
 Root cause and the measurement that proves it live in
-[`template-styling-and-theming.md`](template-styling-and-theming.md) → "Scroll position
+[`browser-audit-recipes.md`](browser-audit-recipes.md) → "Scroll position
 across a filter submit". This file is the implementation recipe.
 
 ## Shape
@@ -100,7 +100,7 @@ across a filter submit". This file is the implementation recipe.
   populated→empty — because the empty→populated first submit is the one that silently
   no-ops, and a check that only ever re-queries from an already-populated page passes right
   over it. When a transition fails, verify it against a pre-change instance before calling it
-  your regression (see `product-acceptance`).
+  your regression (see `acceptance-and-evidence.md` in this skill).
 - Unit-test the module with a stubbed `document`/`DOMParser`/`fetch`: assert it swaps
   matching ids, drops stale fragments, restores the anchor, and rejects (so the caller
   can fall back) when the response is non-ok or contains no fragment.

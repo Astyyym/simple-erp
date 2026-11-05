@@ -51,7 +51,7 @@ c.close()
 2. **EXE 的 LastAccessTime**——绿色包 `dist\local-vX.Y.Z\简单ERP\简单ERP.exe` 被运行过，
    它的 `LastAccessTime` 就会接近那次日志时间（用 PowerShell `Get-Item ... | Select LastAccessTime`）。
 3. **进程创建时间窗口**——`Get-CimInstance Win32_Process` 按 `CreationDate` 过滤该时间点前后。
-4. **Hermes 侧排除**——`grep` `%LOCALAPPDATA%\hermes\logs\agent.log*`，确认没有会话
+4. **Agent 侧排除**——`grep` `%LOCALAPPDATA%\hermes\logs\agent.log*`（本机 agent 日志仍在 Hermes 目录；DSH 会话记录在 `%USERPROFILE%\.dsh\sessions`），确认没有会话
    （含自己）调用过该 EXE。
 
 绿色版 EXE 旁边没有自己的 `data\`，其 `config.json` 的 `database_path` 是相对路径

@@ -83,11 +83,11 @@ PDF 模板用 `sections[]`；单客户 API 可委托多客户生成。
 
 ## 单据删除契约：入口直删，底层自动冲回
 
-**当前产品规则（2026-10-07 用户决策）**：列表与详情页**没有**独立的「作废」入口，正式单据**可以直接勾选删除**。但这只是入口与文案的简化，**底下的守恒机制必须保留**：
+**当前产品规则（2026-10-07 用户决策）**：列表与详情页**没有**独立的「作废」入口，正式单据**可以直接勾选删除**。但这只是入口与文案的简化，**底下的账款与数据完整性机制必须保留**：
 
-- `/orders/bulk_delete`、`/orders/{id}/delete`、`/purchases/{id}/delete`、`/purchases/return/{id}/delete` 对 `saved`/`printed` 单据先调 `void_*` 反向过账，再软删除进回收站。
+- `/orders/bulk_delete`、`/orders/{id}/delete`、`/purchases/{id}/delete`、`/purchases/return/{id}/delete` 对 `saved`/`printed` 单据先调 `void_*` 作废（v15 起只走状态机，不再反向过账库存），再软删除进回收站。
 - 固定原因集中定义为 `accounting.AUTO_REVERSE_REASON = "列表删除（自动冲回）"`，界面不填原因。
-- 组合服务：`accounting.void_then_delete_order` / `inventory.void_then_delete_purchase_order` / `purchase_returns.void_then_delete`。
+- 组合服务：`accounting.void_then_delete_order` / `purchases.void_then_delete_purchase_order` / `purchase_returns.void_then_delete`。
 - 草稿没有过账，直接进回收站，不写自动冲回原因。
 - 回看页/详情页不再渲染 `order-void-row` / `page-danger-action`；`/orders/{id}/void`、`/purchases/return/{id}/void` 路由**保留**（内部与测试使用），删 UI 不等于删路由。
 - 拿货/退拿货详情「移入回收站」对正式单据也直接可用。
@@ -97,10 +97,10 @@ PDF 模板用 `sections[]`；单客户 API 可委托多客户生成。
 
 **2026-10-07 已按用户决策移除**，不要重新引入：
 
-- `void_order` 原有「必须是该商品最后一笔库存业务，不能作废」与「销售单存在有效退货，不能作废」两道校验已删；`void_purchase_order`、`purchase_returns.void` 的同类「末笔」校验同样已删。
-- 用户口径：**移动均价/成本只是内部预期参考**，不据此定售价，且**不进任何对外打印**（`orders/print_template.html` 只有 序号/名称规格/单位/数量/单价/小计；`pdf.py` 无成本字段）。用户原话「它本来就是移动均价，那移动就移动呗」。
-- 代价是已知且接受的：删非末笔单据时均价会按移动加权平均重算（可能漂），但**库存数量、销售金额、账款余额精确**等于该单从未存在的值。实测见短计划。
-- **必须保留**：`库存不得为负` 的守恒校验；`有历史账务的客户不能物理删除`（账务追溯底线，不是顺序限制）。
+- `void_order` 原有「必须是该商品最后一笔业务，不能作废」与「销售单存在有效退货，不能作废」两道校验已删；`void_purchase_order`、`purchase_returns.void` 的同类「末笔」校验同样已删。
+- 对外打印不含内部数据：`orders/print_template.html` 只有 序号/名称规格/单位/数量/单价/小计；`pdf.py` 无成本字段。（v15 起成本与移动均价本身已删除，本条只剩「对外不暴露内部数据」的约束。）
+- v15 起无库存/成本可重算；单据删除只剩「明细+单据本体」与账款余额两类事实，历史取舍见短计划。
+- **必须保留**：`有历史账务的客户不能物理删除`（账务追溯底线，不是顺序限制）。v15 起「库存不得为负」校验随库存一起删除。
 - 原销售单被删后，退货单的 `source_order_id` 仍指向已删 id；详情页靠 `source_order_available` 判断，显示「（原单已删除）」而不是死链接。
 
 **列表页 `.btn` 居中规则**：`.btn` 必须自带 `display:inline-flex;align-items:center;justify-content:center`。Bootstrap 的 `inline-block` + `min-height` 在 flex/grid 父容器里会被 blockify 成 `block`，`min-height` 富余全堆到内容下方、文字整体上浮（实测最大 −3px、313 个按钮中 281 个偏移）。验证方式：给按钮插一个继承 `line-height` 的隐藏空格 span，比较 line-box 上下留白之差，阈值 0.6px。
@@ -125,11 +125,11 @@ PDF 模板用 `sections[]`；单客户 API 可委托多客户生成。
 
 **现在的规则**：判据改为「**在回收站 + 无活引用**」即可清理，不要重新加回 `status=='draft'`。
 
-- 永久删除顺序：**明细 → 该单据自己的库存流水（含 `:void` 反向流水）→ 单据本体**，不留孤儿。
+- 永久删除顺序：**明细 → 单据本体**，不留孤儿。（v15 起不再有「该单据自己的库存流水」这一步。）
 - **引用顺序自动满足**：`order_items.source_item_id` 是自引用（退货明细 → 销售明细），所以必须先删引用方。`_purge_orders_in_safe_order` 用**多趟扫描**，每趟只删「当前已无活引用」的，剩下的下一趟通过——调用方不需要自己排序。
 - **单条删除被仍在回收站的记录引用时**，抛 `PurgeBlockedByRecycledReference` → 转可读 400（**不是 500**），提示「还有回收站记录引用它的明细」。这与「被**活**单据引用」是两件事：后者是用户需先处理的业务事实，前者只是清理顺序问题。
 - **批量 purge 必须按类型分流**：单据走 `_purge_orders_in_safe_order`，商品/客户走逐条 `_purge_one`。曾把三种 kind 都塞进单据专用函数，导致商品/客户批量失效（测试抓到）。
-- **商品删除**要求先删引用它的单据（活单据依赖库存流水做反向过账）；**有历史账务的客户**始终不物理删除。
+- **商品删除**要求先删引用它的活单据（否则活单据会失去商品指向）；**有历史账务的客户**始终不物理删除。
 
 ## 错误呈现契约：不要返回裸文本
 

@@ -9,6 +9,8 @@
 | Reference | 什么时候读 |
 |---|---|
 | [baseline-extension-checklist.md](./baseline-extension-checklist.md) | 新建页面，或往已验收页面上加东西之前 |
+| [requirement-investigation.md](./requirement-investigation.md) | 把用户反馈变成结论（回归 / 从未实现 / 记错面 / 顺序依赖）、评估字段合并拆分、选择器空库自举、「记住输入值」契约 |
+| [extension-design-patterns.md](./extension-design-patterns.md) | 设计纵向切片或扩展已验收入口/列表：跨页约定、往来方向、显示精度、样式归属、主题适配、第二类单据、合并列表、来源预览 |
 | [document-scope-and-display-rules.md](./document-scope-and-display-rules.md) | 决定某类单据该显示什么、不该显示什么时 |
 | [document-list-and-cross-document-links.md](./document-list-and-cross-document-links.md) | 改单据列表页，或加/改跨单据跳转链接时 |
 | [import-and-completion-flags.md](./import-and-completion-flags.md) | 碰导入逻辑，或「待补全 / 需处理」这类完成标志时 |
@@ -17,7 +19,9 @@
 
 | Reference | 什么时候读 |
 |---|---|
-| [template-styling-and-theming.md](./template-styling-and-theming.md) | 改任何模板的样式或主题之前（最大的一份，按小节挑着读） |
+| [template-styling-and-theming.md](./template-styling-and-theming.md) | 改任何模板的**样式/主题**之前（定位样式定义、主题 token、暗色缺陷） |
+| [layout-parity-and-row-fitting.md](./layout-parity-and-row-fitting.md) | 布局对齐、一排放不下、容器子元素变化时 |
+| [browser-audit-recipes.md](./browser-audit-recipes.md) | 在真实浏览器里验收布局/主题修复、侧栏高亮、滚动位置与审计脚本时 |
 | [in-place-fragment-refresh.md](./in-place-fragment-refresh.md) | 接片段刷新、就地更新、局部重渲染之前 |
 | [autocomplete-suggestion-reliability.md](./autocomplete-suggestion-reliability.md) | 改自动补全、建议列表、键盘选择时 |
 | [rendering-and-layout-measurement.md](./rendering-and-layout-measurement.md) | 声称版式/尺寸/层叠/可读性达标之前；任何几何测量 |

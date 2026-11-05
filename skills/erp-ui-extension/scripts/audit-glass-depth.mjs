@@ -26,7 +26,7 @@ async function main() {
   const page = list.find((t) => t.type === 'page');
   if (!page) throw new Error('no debuggable page found on port ' + port);
 
-  const WebSocket = (await import('ws')).default;
+  // Node 22+ ships a global WebSocket; no `ws` package needed.
   const ws = new WebSocket(page.webSocketDebuggerUrl);
   let id = 0;
   const pending = new Map();
@@ -35,11 +35,11 @@ async function main() {
     pending.set(mid, res);
     ws.send(JSON.stringify({ id: mid, method, params }));
   });
-  ws.on('message', (raw) => {
-    const msg = JSON.parse(raw.toString());
+  ws.addEventListener('message', (ev) => {
+    const msg = JSON.parse(ev.data.toString());
     if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg.result); pending.delete(msg.id); }
   });
-  await new Promise((r) => ws.on('open', r));
+  await new Promise((r) => ws.addEventListener('open', r));
 
   await send('Page.enable');
   // Never trust a cached stylesheet: a versioned URL is served from disk cache.

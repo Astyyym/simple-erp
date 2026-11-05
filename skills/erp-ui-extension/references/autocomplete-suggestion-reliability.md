@@ -71,12 +71,12 @@ await send('Input.dispatchMouseEvent',{type:'mouseWheel',x:700,y:400,deltaX:0,de
 
 - 候选弹层是浏览器原生的浅色列表，**不受页面主题控制**，暗色主题下明显不搭；
 - **没有拼音**：datalist 只做字面匹配，拼音需要自己查（服务端 API 往往已支持，但 datalist 不走 API）；
-- **不能带附加信息**（价格、成本、是否启用库存）；
-- 型号/二级字段的候选**不随一级字段联动**（除非每次重建 option 列表）。
+- **不能带附加信息**（价格、单位、是否启用）；
+- 二级字段的候选**不随一级字段联动**（除非每次重建 option 列表）。
 
 而且它与“自定义 combobox”常在同一应用里并存，导致**同类字段四页两种交互**（销售/退货手输+datalist，拿货/退拿货两级原生下拉）。评审时把这点作为一致性问题单独列出。
 
-**迁移到自定义 combobox 的收益**：走服务端 API（拼音、价格、成本、库存状态都能带）、可主题化、可键盘导航、可让二级字段联动。迁移成本主要在键盘/ARIA 语义与既有测试断言。
+**迁移到自定义 combobox 的收益**：走服务端 API（拼音、价格、单位、启用状态都能带）、可主题化、可键盘导航、可让二级字段联动。迁移成本主要在键盘/ARIA 语义与既有测试断言。
 
 ## 三、自动化能不能驱动原生 datalist？
 
@@ -116,11 +116,11 @@ const erp     = await probe('http://127.0.0.1:PORT/orders/new', '.picker-name-in
 ## 六、把 datalist 换成自定义 combobox 的落地清单（已实测）
 
 - **先统一实现，再接线。** 同一应用常是「一份共享控制器 + 某个页面内联的等价副本」。给那个页面引入共享脚本前必须**先删掉内联副本**，否则同名函数被重定义，联想**静默失效且无报错**。把「统一」当成独立的一步：删内联副本 + 改引脚本 + 把页内独有的滚动跟随并入共享文件并导出，先跑一遍回归，再动具体字段。
-- **共享导出要保住页内调用点**：在内联脚本开头 `const { money, costMoney, bindAutocomplete } = window.ErpEntry;`，比逐个改调用行安全，也便于日后 diff。
+- **共享导出要保住页内调用点**：在内联脚本开头 `const { money, bindAutocomplete } = window.ErpOrderEntry;`，比逐个改调用行安全，也便于日后 diff。
 - **每行的浮层 id 必须唯一**：控制器用 `box.id` 生成 option id 并写 `aria-controls`；克隆行时若各行沿用模板里的同一个 id，多行 ARIA 关系会互相串。绑定行时按序号赋 id（`..._1/2/…`）。**「绑过就跳过」的判重绝不能用 `dataset`/class 标记** —— `cloneNode(true)` 会连 attributes（含 `data-*`）一起复制，新增行被当成已绑定而静默跳过，结果是新增行没有联想、且点击时弹出的是上一行的浮层；改用元素上的 JS 属性（如 `input.__erpBound`，克隆不复制 JS 属性），并在 id 与已有元素冲突时重新生成、顺手收起克隆带过来的 `:popover-open` 展开态。这一处缺陷在同一份代码的其它页面通常也存在，改一处要顺手 grep 其余调用点。
 - **包裹输入框要补一条 flex 规则**：把输入框包进 `.suggest-wrap`（浮层靠绝对定位/popover 相对它定位）后，原先靠输入框自身 flex 撑开的行会塌陷 —— 在同一处加 `.picker-row .suggest-wrap{flex:1 1 auto;min-width:0}`。
 - **窄列复用通用候选浮层要先覆盖 `min-width`**：共享样式常给浮层 `min-width:240px`，而控制器只设 `width` —— min-width 赢，所以 110px 的单位列上浮层会横向压住数量/单价列。在该浮层自己的选择器（提高一层特异性）上覆盖 `min-width:0` 并给 `max-width`；候选行高也按列宽压一压（padding/字号），否则三四项就出现滚动条。
-- **点选候选要复用页内原有的「按商品刷新行」逻辑**：把原先内联在 picker 回调里的行状态更新抽成命名函数（如 `applyProductToRow(product)`），手输命中与点选共用，避免两条路径对单位/单价/成本/常规价的处理漂移。**点选回调里必须显式调用它**：`picker.set(product)` 只写 name/id 两个值、**不触发输入框的 `input` 事件**，所以只调 set 的话单位/单价/成本永不填充 —— 现象是「选了商品，单位却空着」，而手输路径一切正常。
+- **点选候选要复用页内原有的「按商品刷新行」逻辑**：把原先内联在 picker 回调里的行状态更新抽成命名函数（如 `applyProductToRow(product)`），手输命中与点选共用，避免两条路径对单位/单价的处理漂移。**点选回调里必须显式调用它**：`picker.set(product)` 只写 name/id 两个值、**不触发输入框的 `input` 事件**，所以只调 set 的话单位/单价永不填充 —— 现象是「选了商品，单位却空着」，而手输路径一切正常。
 - **未命中后的字段保留是有意语义**：未命中只清 `product_id`，单位/单价按当前输入保留。不要把它当缺陷修（单位落库统一属于另一个阶段）。
 - **源码切片型前端测试要跟着改**：`fs.readFileSync(模板) + indexOf('function x(')` 这类测试在函数搬到共享文件后会取到空片段。移动实现时同步改切片来源与结束锚点（改成共享文件里的下一个函数或导出行），并在用例上方注明这是决策变更，而不是删掉用例。**共享文件里新增的模块级 `const`/`let` 必须落在用例的切片区间内** —— 同一文件的两组用例常按不同锚点切片（一组取 `function money(`→`function closeSuggestions(`，另一组取 `function bindAutocomplete(`→`window.ErpXxx = {`），放错位置就报 `ReferenceError: X is not defined`；优先用不依赖文件布局的写法（元素上的 JS 属性、函数内局部状态）。同理，被切片代码里调用的 DOM API 要容忍 mock 缺方法（`typeof document.getElementById === 'function' ? … : …`），因为 `vm` 上下文里的 `document` 常常只有 `activeElement`。
 - **列表页搜索框的迁移多两条硬约束。** 开单页是「提交表单」语境，列表页搜索框是「就地刷新」语境：

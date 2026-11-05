@@ -26,14 +26,14 @@
 ## 本机 shell 边界
 
 - bash（MSYS）里 `$TMPDIR` 解析为 `/tmp`，而原生 Windows 程序（python/node 等）打不开 MSYS 路径。
-- 给原生工具读写的临时脚本要写显式路径：`%LOCALAPPDATA%\hermes\cache\scratch\...`（即 Hermes scratch 目录，bash 里是 `$TMPDIR` 的真实位置）。
+- 给原生工具读写的临时脚本要写显式路径：`%LOCALAPPDATA%\hermes\cache\scratch\...`（本机仍存在、可用的 scratch 目录，bash 里是 `$TMPDIR` 的真实位置；DSH 自己的缓存根是 `%USERPROFILE%\.dsh\cache`，但没有 `scratch` 子目录）。
 - **在 bash heredoc 里给 Python 写 Windows 路径会把 `\a` 之类转义成控制字符**（`D:\app` 变成 `D:` + BEL + `pp`）。要么用 `write_file` 直接写文件，要么在脚本里用正斜杠 `D:/app/...`。
 
 ## 测试与端口
 
 - `.venv-win` **没装 `pytest-timeout`**：`pytest --timeout=…` 直接报 `unrecognized arguments` 退出，连收集都到不了。防卡死只能靠 `ERP_PORT=5099` 避让 + 事后看进程。
 - 跑全量前先确认端口：`netstat -ano | grep LISTENING | grep -E ":5000|:5099"`（用户机器上常有正在运行的桌面版占着 5000，不要要求他关程序）。
-- 前端测试：`node --test tests/frontend/*.test.mjs`（当前 106 项）。**不要接 `| tail`**——实测会只剩 `stdin is not a tty` 一行；先重定向到文件再读。
+- 前端测试：`node --test tests/frontend/*.test.mjs`（**不要写死条数**：2026-11-05 实测 113 项全绿；引用前以实跑为准）。**不要接 `| tail`**——实测会只剩 `stdin is not a tty` 一行；先重定向到文件再读。
 
 ## 安卓原生客户端（`native/`）与本机模拟器
 

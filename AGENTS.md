@@ -8,7 +8,7 @@
 
 - 正式目录（唯一真源）：本地 Windows 项目根目录
 - GitHub：`Astyyym/simple-erp`，默认分支 `main`
-- 当前源码版本以根目录 `VERSION` 为准；当前工作区 `VERSION` 为 `v4.7.0`（安卓原生端版本见 `native/VERSION`）
+- 当前源码版本以根目录 `VERSION` 为准；当前工作区 `VERSION` 为 `v4.7.2`（安卓原生端版本见 `native/VERSION`）
 - 当前需求权威文档：`docs/需求/消防器材店ERP系统-需求文档.md`
 
 ## 怎么跑
@@ -94,7 +94,7 @@
 
 进入本项目后先读 `memory/README.md`（项目专属长期记忆：业务真实场景、环境边界、已踩过的坑），再按索引按需读取。
 
-- 新增/更新项目记忆写进 `memory/`，不要写回 Hermes 全局记忆；全局记忆不重复本项目细节。
+- 新增/更新项目记忆写进 `memory/`，不要写回全局记忆（DSH 全局层）；全局记忆不重复本项目细节。
 - 分类边界见 `memory/README.md`：可复用规则进 `skills/.../references/`，产品规格进 `docs/需求/`，一次性过程进 `开发短计划/`。
 - 硬规则仍留在本文件正文——`memory/` 不会被自动加载，只放「每次进项目都该知道的长期事实」。
 
@@ -108,4 +108,4 @@
 - 打印、导入、数据目录、打包等细节按索引按需读取对应 `references/`
 - ERP UI 扩展技能（在已验收 UI 上加库存/采购/退货/分析/对账等流程时必读）：`skills/erp-ui-extension/SKILL.md`，专题索引 `skills/erp-ui-extension/references/README.md`，`scripts/audit-*.mjs` 是 UI 几何与主题审计脚本
 
-项目专用技能只服务本项目，不加入 Hermes 全局技能目录。
+项目专用技能只服务本项目，不加入全局技能目录（`~/.dsh/skills`）。

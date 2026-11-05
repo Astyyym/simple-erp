@@ -14,7 +14,7 @@ Use this before reviewing a prototype that extends an accepted ERP UI.
 ## Interaction carry-forward
 
 - [ ] Customer autocomplete: input, ArrowUp, ArrowDown, Enter, Escape, blur recovery
-- [ ] Product autocomplete: concrete product identity, unit, customer price, regular price
+- [ ] Product autocomplete: concrete product identity, unit, customer price
 - [ ] Order entry: one initial line, add row, clear row, clear all, live totals
 - [ ] Date filters: year/month/range modes and stable export actions
 - [ ] Lists: 50-row pagination, current-page selection, selected-count feedback
@@ -26,7 +26,7 @@ Use this before reviewing a prototype that extends an accepted ERP UI.
 - [ ] New workflow attaches to an existing owner or is justified as genuinely new
 - [ ] Old semantics remain labeled and preserved when new semantics differ
 - [ ] Internal fields are visibly separated from customer-facing preview fields
-- [ ] Empty, loading, invalid, negative, unknown-cost, and disabled states are represented
+- [ ] Empty, loading, invalid, negative, and disabled states are represented
 - [ ] Primary path crosses the real task sequence, not only isolated screens
 
 ## Verification order
