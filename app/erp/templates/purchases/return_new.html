@@ -156,7 +156,6 @@
   </div>
   </div>
   <div data-ui-hint class="small text-muted mt-2" id="sourceHint" role="status">单价手输；单位跟随商品档案。</div>
-  {% if not products %}<div class="alert alert-warning mb-0">当前没有已建档商品。请先在商品资料中建档。</div>{% endif %}
   </section>
   <div class="d-flex gap-2 align-items-center justify-content-end" id="returnActions">
     {% if is_edit %}
@@ -366,7 +365,7 @@ function bindRow(tr) {
     requireExisting: true,
     onMissing: name => {
       if (!missingHint) return;
-      missingHint.textContent = `「${name}」未建档：只能选已建档商品，请先到「商品管理」建档。`;
+      missingHint.textContent = `「${name}」未建档：退拿货只能选已建档商品，请先到「商品管理」建档（刚添加请刷新本页）。`;
       missingHint.classList.remove('d-none');
     },
   });
@@ -395,7 +394,7 @@ function bindRow(tr) {
       },
       product => { picker.set(product); applyProduct(product); },
       () => {},
-      '没有匹配的商品 · 只能选已建档商品',
+      '没有匹配的商品 · 退拿货只能选已建档商品',
     );
   }
   if (idField.value) {

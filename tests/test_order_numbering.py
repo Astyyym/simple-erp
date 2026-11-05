@@ -4,7 +4,7 @@ from uuid import uuid4
 from erp import create_app
 from erp.db import get_db, init_db
 from erp.routes.orders import next_order_no
-from erp.services.accounting import create_customer, create_order_from_typed_rows
+from erp.services.accounting import create_customer, create_order_from_typed_rows, create_product
 
 
 def test_next_order_no_uses_md_yyyymmdd_and_four_digit_sequence():
@@ -114,6 +114,7 @@ def test_sale_and_return_share_daily_md_sequence_for_selected_date():
             "quantity": ["1"],
         },
     )
+    b_product_id = create_product("B", "个")
     client.post(
         "/orders/return/create",
         data={
@@ -122,6 +123,7 @@ def test_sale_and_return_share_daily_md_sequence_for_selected_date():
             "order_no": "ignored2",
             "order_date": "2026-07-10",
             "status": "saved",
+            "product_id": [str(b_product_id)],
             "product_name": ["B"],
             "unit": ["个"],
             "unit_price": ["1"],

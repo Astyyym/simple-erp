@@ -29,10 +29,10 @@ def paired_client(app):
 
 
 def _seed_prices() -> dict:
-    """三个客户有专属价（50 / 30 / 20 元），另有一个客户完全没有价。
+    """三个客户有专属价（100 / 50 / 20 元），另有一个客户完全没有价。
 
-    `seed_all()` 本身已学出两个价：
-    - 手机端测试客户：最后一单退货 30 元 → 3000
+    `seed_all()` 本身已学出两个价（2026-11-05 起退货不再学价）：
+    - 手机端测试客户：最近一张**销售单** 100 元 → 10000（退货 30 元不覆盖客户价）
     - 手机端第二客户：跨月销售 50 元 → 5000
     """
     data = seed_all()
@@ -47,9 +47,9 @@ def test_product_customer_prices_sorted_and_equal_to_desktop_card():
     result = readonly_queries.product_customer_prices(data["product_id"])
 
     assert result["product"]["name"] == "手机端测试商品 MFZ/ABC4"
-    assert [price["price_cents"] for price in result["prices"]] == [5000, 3000, 2000]
+    assert [price["price_cents"] for price in result["prices"]] == [10000, 5000, 2000]
     assert [price["customer_name"] for price in result["prices"]] == [
-        "手机端第二客户", "手机端测试客户", "第三客户",
+        "手机端测试客户", "手机端第二客户", "第三客户",
     ]
 
     # 桌面端商品编辑页（routes/products.py:_render_product_edit）的原 SQL
@@ -115,11 +115,11 @@ def test_product_detail_page_shows_every_customer_price(paired_client):
     assert "手机端测试商品 MFZ/ABC4" in html
     assert "客户专属价" in html
     assert html.count('class="row"') == 3, "3 个客户价必须正好 3 行"
-    names = ["手机端第二客户", "手机端测试客户", "第三客户"]
+    names = ["手机端测试客户", "手机端第二客户", "第三客户"]
     assert [html.index(name) for name in names] == sorted(html.index(name) for name in names), "价格降序"
     for name in names:
         assert name in html, name
-    for money in ("¥50", "¥30", "¥20"):
+    for money in ("¥100", "¥50", "¥20"):
         assert money in html, money
     assert f"/m/customers/{data['third_customer_id']}" in html
     assert "看这个客户的全部专属价" in html
@@ -181,7 +181,7 @@ def test_customer_price_list_is_reverse_of_product_query():
     mine = next(
         p for p in product_view["prices"] if p["customer_id"] == data["customer_id"]
     )
-    assert row["price_cents"] == mine["price_cents"] == 3000
+    assert row["price_cents"] == mine["price_cents"] == 10000
     assert row["product_name"] == product_view["product"]["name"]
     assert readonly_queries.customer_price_list(999999) is None
 
@@ -225,7 +225,7 @@ def test_product_price_summary_counts_range_and_search():
     result = readonly_queries.product_price_summary("")
     product = next(p for p in result["products"] if p["id"] == data["product_id"])
     assert product["price_count"] == 3
-    assert (product["min_price_cents"], product["max_price_cents"]) == (2000, 5000)
+    assert (product["min_price_cents"], product["max_price_cents"]) == (2000, 10000)
 
     searched = readonly_queries.product_price_summary("手机端测试商品")
     assert [p["id"] for p in searched["products"]] == [data["product_id"]]
@@ -243,7 +243,7 @@ def test_product_list_is_product_first_and_shows_summary(paired_client):
     assert "搜商品名" in html
     assert 'class="customer-switch"' not in html
     assert "3 个客户" in html
-    assert "¥20 – ¥50" in html
+    assert "¥20 – ¥100" in html
 
 
 def test_customer_detail_see_all_opens_customer_prices_page(paired_client):

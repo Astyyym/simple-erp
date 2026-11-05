@@ -206,6 +206,7 @@ def _purchase_form(*, order=None, error="", form_rows=None, request_key=""):
 @purchases_bp.post("/create")
 def create_purchase():
     product_ids = request.form.getlist("product_id")
+    product_names = request.form.getlist("product_name")
     quantities = request.form.getlist("quantity")
     costs = request.form.getlist("unit_cost_yuan")
     units = request.form.getlist("unit")
@@ -216,12 +217,17 @@ def create_purchase():
     if status not in {"draft", "saved"}:
         status = "saved"
     form_rows = [
-        {"product_id": product_ids[i] if i < len(product_ids) else "", "quantity": quantities[i] if i < len(quantities) else "", "unit_cost_yuan": costs[i] if i < len(costs) else "", "unit": units[i] if i < len(units) else ""}
-        for i in range(max(len(product_ids), len(quantities), len(costs), len(units), 1))
+        {
+            "product_id": product_ids[i] if i < len(product_ids) else "",
+            "product_name": product_names[i] if i < len(product_names) else "",
+            "quantity": quantities[i] if i < len(quantities) else "",
+            "unit_cost_yuan": costs[i] if i < len(costs) else "",
+            "unit": units[i] if i < len(units) else "",
+        }
+        for i in range(max(len(product_ids), len(product_names), len(quantities), len(costs), len(units), 1))
     ]
     rows = [row for row in form_rows if any(str(value).strip() for value in row.values())]
     try:
-        _reject_unknown_products(rows)
         with get_db() as conn:
             existing = conn.execute("SELECT order_no FROM purchase_orders WHERE request_key=?", (request_key,)).fetchone()
             order_no = existing["order_no"] if existing is not None else next_purchase_no(conn, business_date)
@@ -297,12 +303,19 @@ def update_purchase(purchase_id: int):
     if order is None:
         return not_found("拿货单不存在，可能已被移入回收站或从未存在。", back_url=url_for("orders.list_orders"))
     product_ids = request.form.getlist("product_id")
+    product_names = request.form.getlist("product_name")
     quantities = request.form.getlist("quantity")
     costs = request.form.getlist("unit_cost_yuan")
     units = request.form.getlist("unit")
     rows = [
-        {"product_id": product_ids[i] if i < len(product_ids) else "", "quantity": quantities[i] if i < len(quantities) else "", "unit_cost_yuan": costs[i] if i < len(costs) else "", "unit": units[i] if i < len(units) else ""}
-        for i in range(max(len(product_ids), len(quantities), len(costs), len(units), 1))
+        {
+            "product_id": product_ids[i] if i < len(product_ids) else "",
+            "product_name": product_names[i] if i < len(product_names) else "",
+            "quantity": quantities[i] if i < len(quantities) else "",
+            "unit_cost_yuan": costs[i] if i < len(costs) else "",
+            "unit": units[i] if i < len(units) else "",
+        }
+        for i in range(max(len(product_ids), len(product_names), len(quantities), len(costs), len(units), 1))
     ]
     try:
         customer_id = _resolve_purchase_customer_id()
@@ -425,15 +438,17 @@ def new_return():
 
 def _typed_return_rows():
     ids = request.form.getlist('product_id')
+    names = request.form.getlist('product_name')
     quantities = request.form.getlist('quantity')
     prices = request.form.getlist('unit_price_yuan')
     units = request.form.getlist('unit')
     return [
         {'product_id': ids[i] if i < len(ids) else '',
+         'product_name': names[i] if i < len(names) else '',
          'quantity': quantities[i] if i < len(quantities) else '',
          'unit_price_yuan': prices[i] if i < len(prices) else '',
          'unit': units[i] if i < len(units) else ''}
-        for i in range(max(len(ids), len(quantities), len(prices), len(units), 1))
+        for i in range(max(len(ids), len(names), len(quantities), len(prices), len(units), 1))
     ]
 
 
@@ -443,7 +458,6 @@ def create_return():
     form_rows = _typed_return_rows()
     rows = [row for row in form_rows if any(str(value).strip() for value in row.values())]
     try:
-        _reject_unknown_products(rows)
         # 原拿货单只作**参考 / 追溯**（2026-10-13）：落库记住原单号，不约束明细行。
         customer_id = _resolve_purchase_customer_id()
         result = service.create(customer_id=customer_id,business_date=request.form.get('business_date',''),items=rows,request_key=request.form.get('request_key',''),status=request.form.get('status','saved'),notes=request.form.get('notes',''),source_order_id=request.form.get('source_order_id',''))
@@ -581,17 +595,6 @@ def return_action(return_id, action):
             back_url=url_for('purchases.return_detail', return_id=return_id),
         )
     return redirect(url_for('purchases.return_detail',return_id=return_id))
-
-
-def _reject_unknown_products(rows):
-    """P3：拿货 / 退拿货必须命中已建档商品。
-
-    手输未命中时 product_id 是空串，落到 create_purchase_order 里会被 int('') 抛成
-    技术性异常；这里提前给出能照做的中文提示。
-    """
-    for index, row in enumerate(rows, start=1):
-        if not str(row.get("product_id") or "").strip():
-            raise ValueError(f"第 {index} 行没有匹配到已建档商品：只能选已建档商品，请先到「商品管理」建档")
 
 
 @purchases_bp.get('/api/products')

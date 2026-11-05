@@ -1062,6 +1062,8 @@ def _create_order_view(order_type: str):
                 request_key=request.form.get("request_key", ""),
                 # 关联只是参考：明细手输时也要把原单号记下来供对账回溯。
                 source_order_id=source_order_id if order_type == "return" else None,
+                # 2026-11-05 用户口径：退货单不自动建档，未建档名称直接拒单。
+                enforce_existing_products=(order_type == "return"),
             )
     except ValueError as exc:
         return error_response(str(exc), title="订单未保存", back_url=url_for("orders.new_order"))
@@ -1235,6 +1237,8 @@ def update_order_view(order_id: int):
             notes=request.form.get("notes", ""),
             order_type=existing["order_type"],
             expected_version=request.form.get("version", type=int),
+            # 2026-11-05：退货重编辑也不自动建档。
+            enforce_existing_products=(existing["order_type"] == "return"),
         )
     except ValueError as exc:
         return error_response(str(exc), title="无法重编辑",

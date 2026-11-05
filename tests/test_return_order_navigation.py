@@ -58,12 +58,14 @@ def test_return_order_create_records_return_type_and_reduces_customer_balance():
     from datetime import date
 
     from erp import create_app
-    from erp.services.accounting import customer_balance_cents
+    from erp.services.accounting import create_product, customer_balance_cents
 
     client = create_app().test_client()
     suffix = uuid.uuid4().hex[:8]
     customer_name = f"退货客户{suffix}"
     product_name = f"退货商品{suffix}"
+    # 2026-11-05：退货单不自动建档，必须先有档案并选中（真实页面也是选已建档商品）。
+    product_id = create_product(product_name, "个")
 
     response = client.post(
         "/orders/return/create",
@@ -73,6 +75,7 @@ def test_return_order_create_records_return_type_and_reduces_customer_balance():
             "order_date": "2026-07-10",
             "order_no": f"RET-{suffix}",
             "status": "saved",
+            "product_id": [str(product_id)],
             "product_name": [product_name],
             "unit": ["个"],
             "quantity": ["2"],

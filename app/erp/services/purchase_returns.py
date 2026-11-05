@@ -6,6 +6,7 @@ from erp.utils.order_numbering import next_nh_order_no
 from erp.services.purchases import (_scaled_quantity, _date_value, _payload_hash,
     _purchase_customer_id, _price_cents, _subtotal_cents, _decimal)
 from erp.utils.audit import log_action
+from erp.services.product_registry import resolve_existing_product
 
 
 def _result(order):
@@ -54,25 +55,53 @@ def _prepare(items):
 
 
 def _prepare_typed(items):
-    """Validate decoupled manual rows: 商品 + 数量 + 手输单价（+ 可选单位）。"""
+    """Validate decoupled manual rows: 商品 + 数量 + 手输单价（+ 可选单位）。
+
+    2026-11-05：退拿货**不自动建档**。每行商品身份二选一——有 `product_id` 用 id；
+    无 id 但有 `product_name` 时，事务内按名称解析**已建档**商品（容错），解析不到拒单。
+    两者都空报「必须选择具体商品」。
+    """
     if not items:
         raise ValueError('退拿货至少需要一行商品')
     prepared = []
     for raw in items:
-        try:
-            product_id = int(raw.get('product_id'))
-        except (TypeError, ValueError):
-            raise ValueError('必须选择具体商品') from None
+        product_id_text = str(raw.get('product_id') or '').strip()
+        product_name = str(raw.get('product_name') or '').strip()
+        if product_id_text:
+            try:
+                product_id = int(product_id_text)
+            except (TypeError, ValueError):
+                raise ValueError('必须选择具体商品') from None
+            product_name = ''
+        else:
+            product_id = None
+            if not product_name:
+                raise ValueError('必须选择具体商品')
         quantity = _decimal(raw.get('quantity'), '数量')
         if quantity > Decimal('9223372036854775.807'):
             raise ValueError('数量超出支持范围')
         qty = _scaled_quantity(quantity)
         if qty <= 0:
             raise ValueError('本次数量必须大于0')
-        prepared.append({'product_id': product_id, 'quantity_3dp': qty,
+        prepared.append({'product_id': product_id, 'product_name': product_name,
+                         'quantity_3dp': qty,
                          'unit_price_cents': _price_cents(raw.get('unit_price_yuan')),
                          'unit': str(raw.get('unit') or '').strip()})
     return prepared
+
+
+def _resolve_typed_product_ids(conn, prepared):
+    """把无 id 的手输行按名称解析成**已建档**商品 id（只解析，不建档）。
+
+    退拿货是「把货退回去」，不该顺手往商品档案里塞新商品；找不到直接拒单并给出可照做的提示。
+    """
+    for row in prepared:
+        if row.get('product_id') is not None:
+            continue
+        existing = resolve_existing_product(conn, row['product_name'])
+        if existing is None:
+            raise ValueError('退拿货单只能选择已建档商品，请先到「商品管理」建档')
+        row['product_id'] = int(existing['id'])
 
 
 def _all_rows_bound(items) -> bool:
@@ -186,6 +215,7 @@ def create(*, customer_id, business_date, items, request_key, status='saved', no
             customer_name = customer['name']
             if trace_source_id is not None:
                 _assert_trace_source(conn, trace_source_id, customer_id)
+            _resolve_typed_product_ids(conn, prepared)
             total_amount = _typed_total(prepared)
         else:
             source, rows = _allocations(conn,customer_id,source_order_id,business_date,prepared,draft=status=='draft')
@@ -241,6 +271,7 @@ def _update_draft_typed(conn, order, customer_id, prepared, notes, status):
     customer = conn.execute('SELECT name FROM customers WHERE id=? AND deleted_at IS NULL', (customer_id,)).fetchone()
     if customer is None:
         raise ValueError('往来对象不存在')
+    _resolve_typed_product_ids(conn, prepared)
     conn.execute('DELETE FROM purchase_return_items WHERE purchase_return_id=?', (order['id'],))
     _write_typed_items(conn, order['id'], prepared, order['business_date'])
     conn.execute('UPDATE purchase_return_orders SET customer_id=?,customer_name=?,source_order_id=NULL,total_amount_cents=?,notes=?,status=?,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?', (customer_id,customer['name'],_typed_total(prepared),(notes or '').strip(),status,order['id']))

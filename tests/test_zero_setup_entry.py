@@ -134,7 +134,7 @@ def test_purchase_pages_show_zero_setup_hint_and_use_typeable_picker():
     """
     client = _client()
     for path, hint_id, hint_text in (
-        ("/purchases/new", "purchaseZeroSetupHint", "新商品需先到「商品管理」页建档后才能用于拿货单。"),
+        ("/purchases/new", "purchaseZeroSetupHint", "没有匹配则在保存时自动建档并加入商品管理"),
         ("/purchases/return/new", "purchaseReturnZeroSetupHint", "新商品需先到「商品管理」页建档后才能用于退拿货单。"),
     ):
         page = client.get(path).get_data(as_text=True)

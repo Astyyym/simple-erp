@@ -19,6 +19,7 @@ from typing import Any
 
 from erp.db import get_db
 from erp.utils.audit import log_action
+from erp.services.product_registry import ensure_product_for_order
 
 
 _QUANTITY_SCALE = Decimal("1000")
@@ -92,8 +93,14 @@ def _purchase_customer_id(value: Any) -> int:
     return int(text)
 
 
-def _prepared_purchase_items(items: list[dict[str, Any]]) -> list[dict[str, int]]:
+def _prepared_purchase_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """校验并整备拿货明细；同时保留**本单单位**（原始提交值，可能为空）。
+
+    2026-11-05 用户口径：拿货单允许手输商品名，未建档的保存时**自动建档**。
+    因此每行接受的商品身份是二选一：
+    - 有 `product_id`：选中已建档商品（记录 id，不记名称）；
+    - 无 `product_id` 但有 `product_name`：按名称解析/建档（记录规范化名称）。
+    两者都空才报「必须选择具体商品」。
 
     决策（2026-10-12 §4.3 / §六 #16）：拿货页单位可编辑，只作用于本单明细，
     **不回写 `products.unit`**。提交空单位由写入点回落该商品的**档案单位**
@@ -103,16 +110,26 @@ def _prepared_purchase_items(items: list[dict[str, Any]]) -> list[dict[str, int]
         raise ValueError("拿货单至少需要一行商品")
     prepared = []
     for raw in items:
-        try:
-            product_id = int(raw.get("product_id"))
-        except (TypeError, ValueError):
-            raise ValueError("必须选择具体商品") from None
+        product_id_text = str(raw.get("product_id") or "").strip()
+        product_name = str(raw.get("product_name") or "").strip()
+        if product_id_text:
+            try:
+                product_id = int(product_id_text)
+            except (TypeError, ValueError):
+                raise ValueError("必须选择具体商品") from None
+            # 选中路径不按名称建档，名称留空（幂等摘要只需 id）。
+            product_name = ""
+        else:
+            product_id = None
+            if not product_name:
+                raise ValueError("必须选择具体商品")
         quantity_3dp = _scaled_quantity(raw.get("quantity"))
         if quantity_3dp <= 0:
             raise ValueError("数量必须大于0")
         unit_cost_cents = _price_cents(raw.get("unit_cost_yuan"))
         prepared.append({
             "product_id": product_id,
+            "product_name": product_name,
             "quantity_3dp": quantity_3dp,
             "unit_cost_cents": unit_cost_cents,
             "unit": str(raw.get("unit") or "").strip(),
@@ -120,14 +137,25 @@ def _prepared_purchase_items(items: list[dict[str, Any]]) -> list[dict[str, int]
     return prepared
 
 
-def _validate_purchase_items(conn, prepared: list[dict[str, int]]) -> None:
-    """只校验商品存在。
+def _resolve_purchase_items(conn, prepared: list[dict[str, Any]], order_no: str) -> None:
+    """在事务内把每行解析成具体商品 id。
 
-    v15 起不再有库存启用检查与「拿货日期不得早于商品期初」——商品期初已随库存系统删除
-    （用户决策 ②/③），日期下限随之取消。
+    - 有 id：只校验存在（`_product_exists`）。
+    - 无 id：按名称**自动建档**（`origin='order'`）。拿货单价是**成本**，绝不写
+      `customer_prices`；单位只作用于本单明细，不回写商品档案（用户 2026-11-05 口径）。
     """
     for item in prepared:
-        _product_exists(conn, item["product_id"])
+        if item.get("product_id") is not None:
+            _product_exists(conn, item["product_id"])
+        else:
+            item["product_id"] = ensure_product_for_order(
+                conn,
+                item["product_name"],
+                item["unit"],
+                order_no=order_no,
+                write_back_unit=False,
+                learn_customer_price=False,
+            )
 
 
 def create_purchase_order(
@@ -187,7 +215,7 @@ def create_purchase_order(
         if customer is None:
             raise ValueError("往来对象不存在或已停用")
 
-        _validate_purchase_items(conn, prepared)
+        _resolve_purchase_items(conn, prepared, order_no)
 
         cur = conn.execute(
             """
@@ -246,7 +274,7 @@ def update_purchase_draft(
             raise ValueError("往来对象不存在或已停用")
         # Editing never changes the allocated number or original business date.
         business_date = order["business_date"]
-        _validate_purchase_items(conn, prepared)
+        _resolve_purchase_items(conn, prepared, order["order_no"])
         customer_name = order["customer_name"] if order["customer_id"] == customer_id else customer["name"]
         payload = {"order_no": order["order_no"], "customer_id": customer_id, "business_date": business_date, "items": prepared, "source_notes": (source_notes or "").strip(), "status": status}
         conn.execute(
@@ -280,7 +308,7 @@ def finalize_purchase_order(order_id: int) -> dict[str, Any]:
         if conn.execute("SELECT 1 FROM customers WHERE id=? AND deleted_at IS NULL AND is_active=1", (customer_id,)).fetchone() is None:
             raise ValueError("往来对象不存在或已停用")
         items = _order_items_as_prepared(conn, order_id)
-        _validate_purchase_items(conn, items)
+        _resolve_purchase_items(conn, items, order["order_no"])
         conn.execute("UPDATE purchase_orders SET status='saved', updated_at=CURRENT_TIMESTAMP WHERE id=?", (order_id,))
         log_action("finalize_purchase_order", "purchase_order", order_id, f"正式保存拿货单 {order['order_no']}", conn=conn)
         return {"order_id": order_id, "order_no": order["order_no"], "total_amount_cents": int(order["total_amount_cents"]), "status": "saved"}

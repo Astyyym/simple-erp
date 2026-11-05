@@ -155,8 +155,9 @@ def test_product_prices_show_customer_price_and_last_deal():
     data = seed_all()
     result = readonly_queries.product_prices(data["customer_id"])
     product = result["products"][0]
-    # 开单学习出专属价（最后一次手输单价 30 元那单）
-    assert product["customer_price_cents"] == 3_000
+    # 2026-11-05：退货不再学客户专属价，客户价保留销售单学出的 100 元；
+    # 「最近成交价」仍按最近一张有效销售/退货单取（退货 30 元）。
+    assert product["customer_price_cents"] == 10_000
     assert product["last_price_cents"] == 3_000
     assert result["customer"]["id"] == data["customer_id"]
 

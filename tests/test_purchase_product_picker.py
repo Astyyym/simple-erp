@@ -1,9 +1,8 @@
-"""P3（2026-10-13）：四页开单的商品列统一为「手输 + 联想」。
+"""四页开单商品列：统一「手输 + 联想」形态 + 建档口径（2026-11-05 调整）。
 
-冲突处置：原 G-5 规则（拿货/退拿货保持原生下拉、不做手输）与本次用户要求冲突，
-按用户 2026-10-13「和之前冲突的，一本次为准」的答复收口 —— **形态统一**，
-但业务差异保留：拿货 / 退拿货**必须命中已建档商品**，未命中不写 product_id、
-不自动建档（后端拒单并给出可照做的提示）。
+用户口径（2026-11-05）：
+- 销售单 / 拿货单：手输未建档名称 → **保存时自动建档**。
+- 退货单 / 退拿货单：**只能选已建档商品**，未建档拒单，不自动建档。
 """
 from erp import create_app
 from erp.db import get_db, init_db
@@ -27,8 +26,8 @@ def test_all_four_entry_pages_use_typeable_product_picker():
         assert 'class="form-select form-select-sm picker-name"' not in page, path
 
 
-def test_purchase_product_api_lists_only_archived_products():
-    """联想接口只返回已建档商品，按名称/拼音匹配；未建档的名称不会出现在候选里。"""
+def test_purchase_product_api_lists_archived_products():
+    """联想接口只返回已建档商品，按名称/拼音匹配。"""
     client = _client()
     pid = create_product("联想用闸阀DN50", "个")
     data = client.get("/purchases/api/products?q=闸阀").get_json()
@@ -38,28 +37,84 @@ def test_purchase_product_api_lists_only_archived_products():
     assert client.get("/purchases/api/products?q=压根不存在的商品").get_json() == []
 
 
-def test_purchase_pages_never_auto_create_products():
-    """手输未命中：不写 product_id → 保存被拒（提示可照做），且不落任何单/商品。"""
+def test_purchase_auto_creates_new_product_from_typed_name():
+    """拿货单手输未建档名称 → 保存成功并自动建档（origin='order'），不写给客户价。"""
     client = _client()
-    for path in ("/purchases/create", "/purchases/return/create"):
-        resp = client.post(
-            path,
-            data={
-                "customer_name": "未命中往来",
-                "product_name": "从未建档的商品X",
-                "product_id": "",
-                "quantity": "1",
-                "unit": "个",
-                "unit_cost_yuan": "10",
-                "unit_price_yuan": "10",
-                "business_date": "2026-10-13",
-            },
-            headers={"X-Requested-With": "fetch"},
-        )
-        assert resp.status_code == 400, path
-        message = resp.get_json()["message"]
-        assert "已建档商品" in message, (path, message)
+    resp = client.post(
+        "/purchases/create",
+        data={
+            "customer_name": "拿货自动建档往来",
+            "product_name": "从未建档的拿货商品X",
+            "product_id": "",
+            "quantity": "2",
+            "unit": "个",
+            "unit_cost_yuan": "10",
+            "business_date": "2026-10-13",
+        },
+        headers={"X-Requested-With": "fetch"},
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    body = resp.get_json()
+    assert body["ok"] is True
     with get_db() as conn:
-        assert conn.execute("SELECT COUNT(*) FROM purchase_orders").fetchone()[0] == 0
+        product = conn.execute("SELECT id, origin FROM products WHERE name='从未建档的拿货商品X'").fetchone()
+        assert product is not None
+        assert product["origin"] == "order"
+        item = conn.execute(
+            "SELECT product_id FROM purchase_order_items WHERE purchase_order_id=?",
+            (body["order_id"],),
+        ).fetchone()
+        assert item["product_id"] == product["id"]
+        # 拿货单价是成本，不得写进客户专属价。
+        assert conn.execute("SELECT COUNT(*) FROM customer_prices").fetchone()[0] == 0
+
+
+def test_purchase_matches_existing_product_with_normalized_name():
+    """商品管理已有同名商品（全/半角括号、空格差异）→ 拿货直接命中，不重复建档。"""
+    client = _client()
+    pid = create_product("沟槽明阀DN65（开维喜）", "台")
+    resp = client.post(
+        "/purchases/create",
+        data={
+            "customer_name": "规范化命中往来",
+            "product_name": "沟槽明阀DN65(开维喜)",
+            "product_id": "",
+            "quantity": "1",
+            "unit": "台",
+            "unit_cost_yuan": "88",
+            "business_date": "2026-10-13",
+        },
+        headers={"X-Requested-With": "fetch"},
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    with get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 1
+        item = conn.execute(
+            "SELECT product_id FROM purchase_order_items WHERE purchase_order_id=?",
+            (resp.get_json()["order_id"],),
+        ).fetchone()
+        assert item["product_id"] == pid
+
+
+def test_purchase_return_never_auto_creates_products():
+    """退拿货手输未建档名称 → 拒单，不落任何单/商品。"""
+    client = _client()
+    resp = client.post(
+        "/purchases/return/create",
+        data={
+            "customer_name": "退拿货未命中往来",
+            "product_name": "退拿货从未建档商品Y",
+            "product_id": "",
+            "quantity": "1",
+            "unit": "个",
+            "unit_price_yuan": "10",
+            "business_date": "2026-10-13",
+            "request_key": "test-return-auto-001",
+        },
+        headers={"X-Requested-With": "fetch"},
+    )
+    assert resp.status_code == 400
+    assert "已建档商品" in resp.get_json()["message"]
+    with get_db() as conn:
         assert conn.execute("SELECT COUNT(*) FROM purchase_return_orders").fetchone()[0] == 0
         assert conn.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 0

@@ -11,7 +11,7 @@
 ## 当前规则
 
 - 销售单、退货单、拿货单、退拿货单四类互相独立：退货单不依赖销售单，退拿货单不依赖原拿货单。
-- 四类开单的商品选择共用 `app/erp/static/order-product-picker.js`（**v14：商品身份只剩名称，单框**）：销售 / 退货走 `mountHybrid`（单框手输 + 名称建议，未命中交给后端自动建档），拿货 / 退拿货走 `mountRow`（单一下拉，取值是 product id）；目录以 JSON（`#productCatalog`）喂数据，选项文本用 `textContent` 注入，不拼 HTML。**v15 起商品不再有「启用 / 库存」概念**，下拉只显示名称，不再有「未启用，仅可保存草稿」这类标注。
+- 四类开单的商品选择共用 `app/erp/static/order-product-picker.js`（**v14：商品身份只剩名称，单框**）：四页都是「手输 + 名称建议」的 `mountHybrid`。**建档口径（2026-11-05 用户重定）**：销售 / 拿货手输未命中 → 保存时**自动建档**（`origin='order'`）；退货 / 退拿货**必须命中已建档商品**，按名称容错解析（全/半角、空格差异）不到即拒单，绝不自动建档。拿货页不再拦「未建档」——保存时按名称查库/建档，「商品管理里刚加的商品」因容错匹配不会重复建档。目录以 JSON（`#productCatalog`）喂数据，选项文本用 `textContent` 注入，不拼 HTML。**v15 起商品不再有「启用 / 库存」概念**。
 - 退拿货手工开单：往来对象 + 业务日期 + 商品行 + 手输单价；**v15 起不再有任何库存/成本分摊**，只登记业务金额（`services/purchase_returns.py`）。原行不属于所选原拿货单、数量超可退上限、未知商品这三类仍是整单拒绝且不产生半成品。
 - 旧带来源行的退拿货单只读兼容且可作废；`void/delete/restore/edit_notes` 与来源无关（**v15 起作废只改状态与原因**，不再按 `posting_seq` 反向冲回任何流水——该列已随 schema 15 删除）。
 - `purchase_returns.create/update_draft/finalize` 支持双模：传 `source_order_id` 走旧来源路径，否则走手工 `items=[{product_id, quantity, unit_price_yuan}]` 路径。

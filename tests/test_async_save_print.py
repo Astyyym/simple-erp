@@ -6,10 +6,12 @@ import pytest
 
 from erp import create_app
 from erp.db import get_db, init_db
-from erp.services.accounting import create_customer
+from erp.services.accounting import create_customer, create_product
 
 
 def _post_save_print(client, route: str, customer_id: int, customer_name: str, order_no: str):
+    # 退货单不自动建档（2026-11-05），统一先建好商品并传 id，销售/退货两条路由都能走通。
+    product_id = create_product("测试商品", "个")
     return client.post(
         route,
         data={
@@ -18,6 +20,7 @@ def _post_save_print(client, route: str, customer_id: int, customer_name: str, o
             "order_no": order_no,
             "order_date": "2026-07-10",
             "status": "saved",
+            "product_id": [str(product_id)],
             "product_name": ["测试商品"],
             "unit": ["个"],
             "unit_price": ["12.34"],

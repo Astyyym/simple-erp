@@ -12,6 +12,7 @@ from erp.utils.audit import log_action
 from erp.utils.money import cents_to_yuan, line_subtotal_cents, yuan_to_cents
 from erp.utils.pinyin import normalize_name_for_store, pinyin_fields as build_pinyin_fields
 from erp.utils.quantity import format_quantity_3dp
+from erp.services.product_registry import find_product_row, resolve_existing_product
 
 
 def _validate_quantity(value) -> str:
@@ -266,9 +267,11 @@ def create_order(customer_id: int, order_no: str, items: Iterable[dict], status:
     return order_id
 
 
-def _upsert_product_and_customer_price(conn, customer_id: int, product_name: str, unit: str, unit_price_cents: int, *, order_no: str = "") -> int:
+def _upsert_product_and_customer_price(conn, customer_id: int, product_name: str, unit: str, unit_price_cents: int, *, order_no: str = "", learn_price: bool = True) -> int:
     product_name = normalize_product_name(product_name)
-    product = conn.execute("SELECT * FROM products WHERE TRIM(name)=? ORDER BY id LIMIT 1", (product_name,)).fetchone()
+    # 2026-11-05：按名称查库改走容错查找（全/半角、空格差异也能命中），
+    # 避免商品管理里刚加的同名商品因写法差异被当成「全新商品」重复建档。
+    product = find_product_row(conn, product_name)
     if product is None:
         initials, full = build_pinyin_fields(product_name)
         cur_product = conn.execute(
@@ -287,7 +290,9 @@ def _upsert_product_and_customer_price(conn, customer_id: int, product_name: str
         )
         # 新建档案也要学习（2026-10-15）：售价唯一来源 = 客户专属价，建档不再写档案价，
         # 若这里不学，第一次成交的价就丢了，下一单还是空的。
-        _learn_customer_price(conn, customer_id, new_id, unit_price_cents)
+        # 2026-11-05：只有销售路径学价；退货/退拿货不写客户专属价。
+        if learn_price:
+            _learn_customer_price(conn, customer_id, new_id, unit_price_cents)
         return new_id
     product_id = int(product["id"])
     if product["deleted_at"] is not None:
@@ -303,13 +308,15 @@ def _upsert_product_and_customer_price(conn, customer_id: int, product_name: str
             f"开单复用回收站商品档案并恢复可见性：{product_name}".strip(),
             conn=conn,
         )
-        _learn_customer_price(conn, customer_id, product_id, unit_price_cents)
+        if learn_price:
+            _learn_customer_price(conn, customer_id, product_id, unit_price_cents)
         return product_id
     conn.execute(
         "UPDATE products SET unit=?, usage_count=usage_count+1, updated_at=CURRENT_TIMESTAMP WHERE id=?",
         (unit, product_id),
     )
-    _learn_customer_price(conn, customer_id, product_id, unit_price_cents)
+    if learn_price:
+        _learn_customer_price(conn, customer_id, product_id, unit_price_cents)
     return product_id
 
 
@@ -326,7 +333,7 @@ def _learn_customer_price(conn, customer_id: int, product_id: int, unit_price_ce
         )
 
 
-def _select_existing_product(conn, customer_id: int, product_id, unit_price_cents: int, unit: str = "") -> tuple[int, str, str]:
+def _select_existing_product(conn, customer_id: int, product_id, unit_price_cents: int, unit: str = "", *, learn_price: bool = True) -> tuple[int, str, str]:
     """选中已有商品：以**提交的单位**为准（空则回落档案单位），并同步商品档案单位。
 
     决策（2026-10-12 §4.1 / §六 #14）：门店实际动作是「输入商品名 → 命中 → 改单位」，
@@ -350,7 +357,10 @@ def _select_existing_product(conn, customer_id: int, product_id, unit_price_cent
         (effective_unit, product_id),
     )
     # 学习口径与手输路径共用同一个函数（> 0 才写），避免两处漂移。
-    _learn_customer_price(conn, customer_id, product_id, unit_price_cents)
+    # 2026-11-05：退货/退拿货不学客户专属价（退货按原销售单价退、退拿货按原拿货单价退），
+    # 只有销售路径（learn_price=True）才写客户专属价。
+    if learn_price:
+        _learn_customer_price(conn, customer_id, product_id, unit_price_cents)
     return int(product["id"]), product["name"], effective_unit
 
 
@@ -364,6 +374,7 @@ def create_order_from_typed_rows(
     order_type: str = "sale",
     request_key: str | None = None,
     source_order_id: int | None = None,
+    enforce_existing_products: bool = False,
 ) -> int:
     """Create an order from Excel-like typed rows.
 
@@ -420,9 +431,23 @@ def create_order_from_typed_rows(
             unit_price_cents = yuan_to_cents(row.get("unit_price_yuan", "0"))
             if row.get("product_id"):
                 # 选中路径：提交空单位时回落**商品档案**单位（而非硬编码「个」）
-                product_id, product_name, unit = _select_existing_product(conn, customer_id, row["product_id"], unit_price_cents, raw_unit)
+                product_id, product_name, unit = _select_existing_product(
+                    conn, customer_id, row["product_id"], unit_price_cents, raw_unit,
+                    learn_price=(order_type == "sale"),
+                )
+            elif order_type == "return" and enforce_existing_products:
+                # 2026-11-05 用户口径：退货单**不自动建档**，只能选已建档商品。
+                # 路由层对退货单传 enforce_existing_products=True 打开本分支：
+                # 仍按名称实时查库（容错），让「商品管理里刚加的同名商品」保存时能命中；
+                # 查不到就拒单，绝不偷建档案。
+                existing = resolve_existing_product(conn, product_name)
+                if existing is None:
+                    raise ValueError("退货单只能选择已建档商品，请先到「商品管理」建档")
+                product_id = int(existing["id"])
+                product_name = existing["name"]
+                unit = raw_unit or str(existing["unit"] or "") or "个"
             else:
-                product_id = _upsert_product_and_customer_price(conn, customer_id, product_name, unit, unit_price_cents, order_no=order_no)
+                product_id = _upsert_product_and_customer_price(conn, customer_id, product_name, unit, unit_price_cents, order_no=order_no, learn_price=(order_type == "sale"))
             subtotal = line_subtotal_cents(quantity, unit_price_cents)
             total += subtotal * sign
             # 元组顺序：product_id, product_name, unit, quantity, unit_price_cents, subtotal
@@ -680,6 +705,7 @@ def update_order_from_typed_rows(
     notes: str = "",
     order_type: str | None = None,
     expected_version: int | None = None,
+    enforce_existing_products: bool = False,
 ) -> None:
     """Replace an existing order's header/items using the same editable table rows."""
     if status not in {"draft", "saved", "printed"}:
@@ -710,9 +736,20 @@ def update_order_from_typed_rows(
             unit_price_cents = yuan_to_cents(row.get("unit_price_yuan", "0"))
             if row.get("product_id"):
                 # 选中路径：提交空单位时回落**商品档案**单位（而非硬编码「个」）
-                product_id, product_name, unit = _select_existing_product(conn, customer_id, row["product_id"], unit_price_cents, raw_unit)
+                product_id, product_name, unit = _select_existing_product(
+                    conn, customer_id, row["product_id"], unit_price_cents, raw_unit,
+                    learn_price=(order_type == "sale"),
+                )
+            elif order_type == "return" and enforce_existing_products:
+                # 2026-11-05：退货重编辑同样不自动建档、不学客户价。
+                existing = resolve_existing_product(conn, product_name)
+                if existing is None:
+                    raise ValueError("退货单只能选择已建档商品，请先到「商品管理」建档")
+                product_id = int(existing["id"])
+                product_name = existing["name"]
+                unit = raw_unit or str(existing["unit"] or "") or "个"
             else:
-                product_id = _upsert_product_and_customer_price(conn, customer_id, product_name, unit, unit_price_cents, order_no=order_no)
+                product_id = _upsert_product_and_customer_price(conn, customer_id, product_name, unit, unit_price_cents, order_no=order_no, learn_price=(order_type == "sale"))
             subtotal = line_subtotal_cents(quantity, unit_price_cents)
             total += subtotal * sign
             # 元组顺序：order_id, product_id, product_name, unit, quantity, unit_price_cents, subtotal

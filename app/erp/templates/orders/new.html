@@ -140,7 +140,7 @@
   <section class="order-details-card" id="orderDetailsCard" aria-labelledby="orderDetailsTitle">
   <h3 class="section-title" id="orderDetailsTitle">{{ '退货信息' if is_return else '订单信息' }}</h3>
   <p data-ui-hint class="text-muted small mb-2">
-    商品名称可直接手输：命中已有商品会自动带出单位/单价；没有匹配则会新建商品档案（型号请直接写进名称，如 闸阀DN50）。
+    {% if is_return %}商品名称可直接手输：退货单只能选择已建档商品，没有匹配请先到「商品管理」建档。{% else %}商品名称可直接手输：命中已有商品会自动带出单位/单价；没有匹配则会新建商品档案（型号请直接写进名称，如 闸阀DN50）。{% endif %}
   </p>
   <div class="order-table-scroll"><table class="table table-bordered order-table" id="orderTable">
     <thead class="table-light"><tr><th style="width:50px">序号</th><th style="min-width:340px">产品名称</th><th style="width:110px">单位</th><th style="width:120px">数量</th><th style="width:140px">单价(元)</th><th style="width:140px">金额</th><th style="width:80px">操作</th></tr></thead>
@@ -452,6 +452,8 @@ function bindRow(tr) {
     refineProductRow(tr, product);
     tr.querySelector('.quantity').focus();
   }
+  // 退货单只能选已建档商品（2026-11-05，后端强校验）；销售单未命中交给后端自动建档。
+  // 这里不传 requireExisting：退货的「未建档拒单」由后端统一拦截，前端手输仍可比对实时库。
   const picker = ErpProductPicker.mountHybrid(tr, productCatalog, product => applyProductToRow(product));
   tr.__picker = picker;
   // 商品名自有联想（替换原先的原生 datalist）：服务端按名称/拼音匹配，点选即带入单位与单价。
@@ -482,7 +484,7 @@ function bindRow(tr) {
         applyProductToRow(product);
       },
       () => {},
-      '无匹配项 · 保存时会新建该商品',
+      '无匹配项 · 销售单保存时会新建该商品；退货单只能选已建档商品',
     );
   }
   // Re-edit: restore the picked name/model from the stored product id.

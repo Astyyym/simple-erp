@@ -1,5 +1,5 @@
 from erp.db import get_db, init_db
-from erp.services.accounting import create_customer, create_order_from_typed_rows, customer_balance_cents, update_order_from_typed_rows
+from erp.services.accounting import create_customer, create_order_from_typed_rows, create_product, customer_balance_cents, update_order_from_typed_rows
 from erp import create_app
 
 
@@ -68,12 +68,15 @@ def test_return_order_edit_keeps_negative_total_and_balance():
 def test_return_order_create_review_edit_review_flow_keeps_negative_amount():
     init_db()
     client = create_app().test_client()
+    # 2026-11-05：退货单不自动建档，先建档案（真实页面也是选已建档商品）。
+    valve_id = create_product("消防阀门", "个")
 
     created = client.post(
         "/orders/return/create",
         data={
             "customer_name": "退货用户路径客户",
             "status": "saved",
+            "product_id": [str(valve_id)],
             "product_name": ["消防阀门"],
             "unit": ["个"],
             "unit_price": ["20"],
@@ -99,6 +102,7 @@ def test_return_order_create_review_edit_review_flow_keeps_negative_amount():
             "customer_id": str(customer_id),
             "customer_name": "退货用户路径客户",
             "status": "saved",
+            "product_id": [str(valve_id)],
             "product_name": ["消防阀门"],
             "unit": ["个"],
             "unit_price": ["30"],
