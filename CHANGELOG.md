@@ -32,17 +32,19 @@
 
 - 全量 pytest **1191 passed / 17 skipped**；前端 `node --test tests/frontend/*.test.mjs` **113 passed**。
 - 隔离实例真实页面核过：/search、/settings、/orders、/docs、/analytics 均 200 且关键元素/截图通过；README 桌面截图已重拍。
-### 产物（本地打包，2026-11-07；未推送 / 未发 Release）
+### 产物与校验（GitHub Release v4.8.0，2026-11-07）
+
+已发布到 [Releases v4.8.0](https://github.com/Astyyym/simple-erp/releases/tag/v4.8.0)（tag `v4.8.0` / 提交 `2db157b`）。下列 SHA256 与 GitHub 侧资产 `digest` 逐一核对一致：
 
 | 资产 | 大小 | SHA256 |
 |---|---|---|
 | `dist\simple-erp-setup-v4.8.0.exe` | 46211985 B | `4DD002CA55AD10226401639AF7669BDC549C745D98C3108EDDA25B1899D1D38E` |
 | `dist\simple-erp-windows-v4.8.0.zip` | 63447118 B | `3CDCC67D4D6DDE1DB72C47AD569A62578946C237749ECAA5041CE709CEA9D010` |
+| `simple-erp-mobile-v1.4.12.apk`（本轮未重打，随包附带） | 8053894 B | `C77BDF81E86A47BDCB8E94882FB8A3D46E379672E67C8FA02D7DEDE77204D362` |
 | 绿色版 `dist\local-v4.8.0\简单ERP`（含 demo_data 200 单） | — | — |
-| `simple-erp-mobile-v1.4.12.apk`（本轮未重打） | 8053894 B | — |
 
 - 安装包与 ZIP **不含 `demo_data`**（已核）；绿色版含 200 条演示数据（已核）；包内 `_internal` 含 `_pillow_heif.cp311-win_amd64.pyd` 与 `libheif-*.dll`，HEIC 依赖已收集。
-- **未核验**：打包形态 GUI 实跑 HEIC 上传/预览、`os.startfile` 打开/打印、真实打印机实打；也未 `git push` / 发 GitHub Release，需用户确认后再做。
+- **未核验**：打包形态 GUI 实跑 HEIC 上传/预览、`os.startfile` 打开/打印、真实打印机实打（需真机；Release 已上传，但实机验收仍独立记录）。
 
 ## v4.7.2 - 开单商品建档口径调整（2026-11-05）
 
