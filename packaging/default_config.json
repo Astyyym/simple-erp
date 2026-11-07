@@ -7,6 +7,7 @@
   "database_path": "data/erp.db",
   "backup_retention_days": 30,
   "monthly_backup_retention_months": 12,
+  "document_max_size_mb": 30,
   "print_offset_x_mm": 0,
   "print_offset_y_mm": 0,
   "print_scale": 1.0,

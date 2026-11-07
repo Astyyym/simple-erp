@@ -210,6 +210,10 @@
     /* E8：状态点由 /health 实际结果驱动；失败时变红并给出提示文案。 */
     .page-topbar .status.status-down{color:var(--erp-danger)}
     .page-topbar .status.status-down:before{background:var(--erp-danger);box-shadow:0 0 0 3px color-mix(in srgb,var(--erp-danger) 22%,transparent)}
+    /* 1-C 全局搜索：顶栏常驻悬浮搜索框（不占侧栏、不跳页也能搜）。 */
+    .page-topbar .topbar-search{display:flex;align-items:center;gap:6px;flex:0 1 360px;min-width:150px;margin:0 16px}
+    .page-topbar .topbar-search .form-control{height:32px;font-size:13px;border-radius:6px}
+    .page-topbar .topbar-search .btn{min-height:32px;padding:3px 12px;font-size:13px;white-space:nowrap}
     .logout-form{margin:0}
     .logout-form .btn{min-height:30px;font-size:12px;padding:3px 10px}
     h1,h2,h3,h4{color:var(--erp-ink);font-weight:650;letter-spacing:-.02em}h1{font-size:calc(28px * var(--erp-scale))}h2{font-size:calc(23px * var(--erp-scale));margin-bottom:20px}h3{font-size:calc(18px * var(--erp-scale));margin-top:26px}h4{font-size:16px}
@@ -804,6 +808,7 @@
     <div class="nav-label">基础资料</div>
     <a class="{{'active' if nav.products else ''}}" href="/products/">商品管理</a>
     <a class="{{'active' if nav.customers else ''}}" href="/customers/">客户管理</a>
+    <a class="{{'active' if nav.docs else ''}}" href="/docs/">资料文档</a>
     </section>
     <div class="nav-divider" aria-hidden="true"></div>
     <section class="nav-group" aria-label="回收站">
@@ -818,6 +823,12 @@
   <main class="content">
     <div class="page-topbar">
       <div class="company">{{ shop_name }}</div>
+      <form class="topbar-search" method="get" action="{{ url_for('search.search_results') }}" role="search">
+        <input class="form-control form-control-sm" type="search" name="q"
+               value="{{ request.args.get('q', '') if request.endpoint == 'search.search_results' else '' }}"
+               placeholder="搜索单号 / 客户 / 商品 / 资料…" aria-label="全局搜索" autocomplete="off">
+        <button class="btn btn-sm btn-outline-primary" type="submit">搜索</button>
+      </form>
       <div class="topbar-clock" id="topbarClock" aria-hidden="true"></div>
       <div class="status-wrap">
         <div class="status" id="localStatus">本地数据已连接</div>

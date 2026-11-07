@@ -1,6 +1,6 @@
 import zipfile
 
-from erp.db import get_db, init_db, integrity_check
+from erp.db import CURRENT_SCHEMA_VERSION, get_db, init_db, integrity_check
 from erp.utils.backup import create_backup
 
 
@@ -11,8 +11,9 @@ def test_init_db_enables_wal_and_schema_version():
         version = conn.execute("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1").fetchone()[0]
     assert journal_mode == "wal"
     # 决策变更（v14）：商品身份 = 单一名称（spec 并入 name）。
-    # 决策变更（2026-10-16 ③，schema v15）：库存三表与 9 个库存/成本列物理删除，版本推进到 15。
-    assert version == 15
+    # 决策变更（2026-10-16 ③，schema v15）：库存三表与 9 个库存/成本列物理删除。
+    # v16：新增资料文档库两表（只加表）。
+    assert version == CURRENT_SCHEMA_VERSION
     assert integrity_check() == "ok"
 
 

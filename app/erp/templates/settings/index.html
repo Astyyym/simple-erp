@@ -257,6 +257,34 @@
   <div class="settings-group-head"><h2>数据与备份</h2><span class="settings-group-note">下面这些卡片不在上面的表单里，<strong>点按钮当场生效，不需要先点「保存设置」</strong></span></div>
 </section>
 
+<section class="settings-card settings-instant mt-4" id="healthSection">
+  <h3>系统健康</h3>
+  <p data-ui-hint class="text-muted small">快速确认「系统能不能正常运行、有没有备份」。数值与各页同源，不是业务待办统计。</p>
+  <dl class="settings-dl">
+    <dt>数据库完整性</dt>
+    <dd>
+      {% if health.db_ok %}
+      <span class="badge bg-success">正常</span>
+      {% else %}
+      <span class="badge bg-danger">异常</span>
+      <strong class="text-danger">{{ health.db_integrity }}</strong>
+      {% endif %}
+    </dd>
+    <dt>最近备份</dt>
+    <dd>
+      {% if health.backup_count %}
+      {{ health.last_backup_display }}（共 {{ health.backup_count }} 份）
+      {% else %}
+      <span class="text-danger">还没有任何备份，建议先点下面「立即备份」。</span>
+      {% endif %}
+    </dd>
+    <dt>当前数据目录</dt>
+    <dd><code>{{ health.data_root }}</code></dd>
+    <dt>程序版本</dt>
+    <dd>{{ health.version or '未知' }}</dd>
+  </dl>
+</section>
+
 <section class="settings-card settings-instant mt-4" id="dataLocationSection">
   <h3>数据存储位置</h3>
   <p data-ui-hint class="text-muted small">业务数据在数据根目录下的 <code>data/erp.db</code> 等文件夹。路径记忆在本机 LocalAppData，不跟程序安装包走。</p>
@@ -295,6 +323,15 @@
   </p>
   <form method="post" action="{{ url_for('settings.backup_create') }}" class="mb-3">
     <button type="submit" class="btn btn-primary">立即备份</button>
+  </form>
+
+  <form method="post" action="{{ url_for('settings.backup_import') }}" enctype="multipart/form-data"
+        class="settings-inline-form mb-3"
+        onsubmit="return confirm('导入只是把这份备份复制到下面的备份列表，不会覆盖当前数据。确定导入？');">
+    <label class="settings-inline-label">从文件导入备份（.zip）
+      <input class="form-control form-control-sm" type="file" name="file" accept=".zip,application/zip" required>
+    </label>
+    <button type="submit" class="btn btn-outline-primary">导入备份</button>
   </form>
 
   {% if backups %}

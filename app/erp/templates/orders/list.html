@@ -102,6 +102,8 @@
       <a id="exportSummaryBtn" class="btn btn-info" title="按筛选范围内有单据的客户分段打印销售+退货汇总；不受上方「订单类型」筛选影响" href="/orders/summary_pdf{% if is_desktop %}?desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>导出汇总表</a>
       <a id="exportSalesExcelBtn" class="btn btn-outline-success" href="/orders/export/sales.xlsx">导出销售单Excel</a>
       <a id="exportReturnsExcelBtn" class="btn btn-outline-success" href="/orders/export/returns.xlsx">导出退货单Excel</a>
+      <a id="exportPurchasesExcelBtn" class="btn btn-outline-success" href="/orders/export/purchases.xlsx">导出拿货单Excel</a>
+      <a id="exportPurchaseReturnsExcelBtn" class="btn btn-outline-success" href="/orders/export/purchase_returns.xlsx">导出退拿货单Excel</a>
     </div>
   </div>
   <div data-ui-hint class="filter-hint">切换时间模式仅调整日期输入项；点击「筛选」后更新下方结果。</div>
@@ -259,6 +261,8 @@
   const exportBtn = document.getElementById('exportSummaryBtn');
   const exportSalesExcelBtn = document.getElementById('exportSalesExcelBtn');
   const exportReturnsExcelBtn = document.getElementById('exportReturnsExcelBtn');
+  const exportPurchasesExcelBtn = document.getElementById('exportPurchasesExcelBtn');
+  const exportPurchaseReturnsExcelBtn = document.getElementById('exportPurchaseReturnsExcelBtn');
   const syncModePanels = () => {
     const mode = form.querySelector('input[name="date_mode"]:checked')?.value || 'range';
     panels.forEach(panel => {
@@ -286,6 +290,12 @@
     }
     if (exportReturnsExcelBtn) {
       exportReturnsExcelBtn.href = '/orders/export/returns.xlsx' + (qs ? '?' + qs : '');
+    }
+    if (exportPurchasesExcelBtn) {
+      exportPurchasesExcelBtn.href = '/orders/export/purchases.xlsx' + (qs ? '?' + qs : '');
+    }
+    if (exportPurchaseReturnsExcelBtn) {
+      exportPurchaseReturnsExcelBtn.href = '/orders/export/purchase_returns.xlsx' + (qs ? '?' + qs : '');
     }
   };
   modeInputs.forEach(input => input.addEventListener('change', () => { syncModePanels(); syncExportLink(); }));

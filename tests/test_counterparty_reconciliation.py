@@ -129,7 +129,7 @@ def test_empty_legacy_snapshot_migration_preserves_deleted_id_high_water():
     sid = service.create_reconciliation_snapshot(cid)
     assert sid == 78  # Never reuse a snapshot identity held by another window.
     with get_db() as conn:
-        assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0] == 15
+        assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0] == 16
         assert conn.execute("SELECT name FROM sqlite_master WHERE name='synthetic_recon_hash'").fetchone()
         assert conn.execute('PRAGMA foreign_key_check').fetchall() == []
 
@@ -198,7 +198,7 @@ def test_legacy_snapshot_migration_is_byte_preserving_orders_only_and_retryable(
     with conn: db.apply_schema(conn)
     with conn: db.apply_schema(conn)
     assert tuple(conn.execute('SELECT * FROM reconciliation_snapshots').fetchone()) == (*old,1)
-    assert conn.execute('SELECT COUNT(*) FROM schema_version WHERE version=15').fetchone()[0] == 1
+    assert conn.execute('SELECT COUNT(*) FROM schema_version WHERE version=16').fetchone()[0] == 1
     assert conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND tbl_name='reconciliation_snapshots'").fetchone()[0] == 2
     conn.close()
     result = service.get_reconciliation_snapshot(41)

@@ -22,12 +22,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SEED_SCRIPT = PROJECT_ROOT / "packaging" / "seed_demo_data.py"
 
 # v15 现存的业务表（不含 sqlite 内部表）：多出任何一张都说明 schema 被改回去了。
+# v16 起多了资料文档库两表（只加表，不动业务表）。
 ALLOWED_TABLES = {
     "schema_version", "customers", "products", "customer_prices",
     "orders", "order_items", "order_number_sequences",
     "purchase_orders", "purchase_order_items", "purchase_number_sequences",
     "purchase_return_orders", "purchase_return_items", "purchase_return_number_sequences",
     "payments", "adjustments", "audit_logs", "reconciliation_snapshots",
+    "document_categories", "document_files",
 }
 # v15 现有列：商品档案只保留名称 / 品牌 / 单位，销售明细只保留业务字段。
 ALLOWED_PRODUCT_COLUMNS = {

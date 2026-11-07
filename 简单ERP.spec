@@ -57,12 +57,15 @@ a = Analysis(
         'pydyf',
         'pypinyin',
         'qrcode',
+        # HEIC/HEIF 支持：pillow_heif 的扩展与数据由 packaging/hooks 里的 hook 收集。
+        'pillow_heif',
+        '_pillow_heif',
         # 原生安卓端用的 JSON 接口蓝图。它由 mobile_app.py 直接 import，
         # 但显式列出来更保险 —— 漏掉的话源码运行正常、装出来的 EXE 上
         # /m/api/* 全部 404，而且没有任何测试会失败（架构文档 §4 约束 11）。
         'erp.routes.mobile_api',
     ],
-    hookspath=[],
+    hookspath=[str(project_root / 'packaging' / 'hooks')],
     hooksconfig={},
     runtime_hooks=[],
     excludes=['pytest'],

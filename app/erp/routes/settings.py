@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from erp.utils.backup import (
     backup_dir,
     copy_backup_to,
     create_backup,
+    import_backup,
     inspect_backup,
     list_backups,
     read_backup_schema_version,
@@ -64,6 +66,7 @@ def _settings_template_context(**extra) -> dict:
     flash 渲染在页面顶部，用户点了按钮只会看到「页面刷新了、什么也没出现」。
     """
     config = load_config()
+    backups = list_backups()
     context = {
         "config": config,
         "data_root_path": str(data_root()),
@@ -74,16 +77,43 @@ def _settings_template_context(**extra) -> dict:
         "ui_font_weight_choices": UI_FONT_WEIGHT_CHOICES,
         "ui_font_weight_labels": UI_FONT_WEIGHT_LABELS,
         "is_desktop": bool(os.environ.get("ERP_DESKTOP") or os.environ.get("ERP_DESKTOP_SHELL")),
-        "backups": list_backups(),
+        "backups": backups,
         "backup_retention_days": config.get("backup_retention_days", 30),
         "archives": list_archives(),
         "mobile": mobile_panel_context(),
         "mobile_notice": session.pop("mobile_notice", None),
         "mobile_code": "",
         "mobile_code_seconds": 0,
+        "health": system_health_snapshot(backups),
     }
     context.update(extra)
     return context
+
+
+def system_health_snapshot(backups: list[dict] | None = None) -> dict:
+    """1-E 系统健康卡的数据（只回答「系统能不能正常跑、有没有备份」）。
+
+    与各页共用同源函数：数据库完整性走 `db.integrity_check()`，备份信息复用
+    `list_backups()` 的结果，数据根与版本分别取 `config.data_root()` 与
+    `current_app.config['ERP_VERSION']`。**不含业务待办数量**（那不是系统健康）。
+    """
+    from erp.db import integrity_check
+
+    if backups is None:
+        backups = list_backups()
+    try:
+        integrity = integrity_check()
+    except Exception as exc:  # noqa: BLE001 — 库打不开本身就是「不健康」
+        integrity = f"无法检查：{exc}"
+    newest = backups[0] if backups else None
+    return {
+        "db_integrity": integrity,
+        "db_ok": integrity == "ok",
+        "backup_count": len(backups),
+        "last_backup_display": newest["created_at_display"] if newest else "",
+        "data_root": str(data_root()),
+        "version": str(current_app.config.get("ERP_VERSION", "") or ""),
+    }
 
 
 @settings_bp.get("/")
@@ -392,6 +422,38 @@ def backup_create():
         flash(f"已创建备份：{path.name}", "success")
     except Exception as exc:  # noqa: BLE001
         flash(f"备份失败：{exc}", "danger")
+    return redirect(url_for("settings.settings_page") + "#backupSection")
+
+
+@settings_bp.post("/backup/import")
+def backup_import():
+    """从本机任意位置导入一份备份 zip（只校验 + 复制进 backups/，不覆盖当前数据）。
+
+    校验三层：扩展名 → `inspect_backup`（zip/含 erp.db/无穿越路径）→ 库版本与完整性。
+    备份版本高于当前程序会被拒绝（恢复后重开会触发不可逆升级）；失败不留脏文件。
+    """
+    uploaded = request.files.get("file")
+    if uploaded is None or not (uploaded.filename or "").strip():
+        flash("请选择要导入的备份 zip 文件", "danger")
+        return redirect(url_for("settings.settings_page") + "#backupSection")
+    if not (uploaded.filename or "").lower().endswith(".zip"):
+        flash("只能导入 .zip 备份文件", "danger")
+        return redirect(url_for("settings.settings_page") + "#backupSection")
+    fd, tmp_name = tempfile.mkstemp(suffix=".zip", prefix="backup_upload_")
+    os.close(fd)
+    try:
+        uploaded.save(tmp_name)
+        target = import_backup(tmp_name)
+        flash(f"已导入备份：{target.name}。可在下面列表中「恢复」。", "success")
+    except RestoreError as exc:
+        flash(f"导入失败：{exc}", "danger")
+    except Exception as exc:  # noqa: BLE001 — 界面给中文原因
+        flash(f"导入失败：{exc}", "danger")
+    finally:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
     return redirect(url_for("settings.settings_page") + "#backupSection")
 
 

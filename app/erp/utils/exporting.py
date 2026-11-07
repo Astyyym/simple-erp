@@ -8,6 +8,7 @@ from typing import Iterable, Sequence
 from flask import send_file
 
 from erp.utils.money import cents_to_yuan
+from erp.utils.quantity import format_quantity_3dp
 
 # Deferred openpyxl seam: resolved on the first Excel export so app boot does not
 # pay openpyxl's import cost. Kept as a module-level name (None) so existing
@@ -32,6 +33,17 @@ ORDER_STATUS_LABELS = {
     "saved": "已保存",
     "printed": "已打印",
     "void": "作废",
+}
+
+# 拿货/退拿货单据类型与流水类型的中文名（导出表头与页面口径一致）。
+PURCHASE_TYPE_LABELS = {"purchase": "拿货单", "purchase_return": "退拿货单"}
+LEDGER_TYPE_LABELS = {
+    "sale": "销售单",
+    "return": "退货单",
+    "purchase": "拿货单",
+    "purchase_return": "退拿货单",
+    "payment": "收款",
+    "adjustment": "账务调整",
 }
 
 
@@ -148,6 +160,71 @@ def order_line_export_rows(lines: Iterable) -> list[list[object]]:
                 cents_to_yuan(int(line["subtotal_cents"] or 0)),
                 line["notes"] or "",
                 cents_to_yuan(int(line["total_amount_cents"] or 0)),
+            ]
+        )
+    return rows
+
+
+def purchase_line_export_headers() -> list[str]:
+    """拿货 / 退拿货单据导出（一明细行一 Excel 行，列与单据管理列表口径一致）。"""
+    return [
+        "单号",
+        "日期",
+        "往来对象",
+        "单据类型",
+        "状态",
+        "品名",
+        "单位",
+        "数量",
+        "单价（元）",
+        "金额（元）",
+        "备注",
+        "单据合计（元）",
+    ]
+
+
+def purchase_line_export_rows(lines: Iterable) -> list[list[object]]:
+    rows: list[list[object]] = []
+    for line in lines:
+        order_type = line["order_type"] if "order_type" in line.keys() else "purchase"
+        status = line["status"] if "status" in line.keys() else ""
+        unit = line["unit"] or ""
+        rows.append(
+            [
+                line["order_no"] or "",
+                line["business_date"] or "",
+                line["customer_name"] or "",
+                PURCHASE_TYPE_LABELS.get(order_type, order_type or ""),
+                ORDER_STATUS_LABELS.get(status, status or ""),
+                line["product_name"] or "",
+                unit,
+                format_quantity_3dp(int(line["quantity_3dp"] or 0), unit),
+                cents_to_yuan(int(line["unit_price_cents"] or 0)),
+                cents_to_yuan(int(line["subtotal_cents"] or 0)),
+                line["notes"] or "",
+                cents_to_yuan(int(line["total_amount_cents"] or 0)),
+            ]
+        )
+    return rows
+
+
+def ledger_export_headers() -> list[str]:
+    """客户往来流水（账款管理）导出，列与页面流水表 + 摘要一致。"""
+    return ["日期", "类型", "摘要", "单号 / 方式", "发生金额（元）", "余额影响（元）", "状态"]
+
+
+def ledger_export_rows(entries: Iterable) -> list[list[object]]:
+    rows: list[list[object]] = []
+    for entry in entries:
+        rows.append(
+            [
+                entry["date"] or "",
+                LEDGER_TYPE_LABELS.get(entry["type"], entry["type"] or ""),
+                entry["description"] or "",
+                entry["reference"] or "",
+                cents_to_yuan(int(entry["amount_cents"] or 0)),
+                cents_to_yuan(int(entry["balance_delta_cents"] or 0)),
+                "已作废" if entry["status"] == "void" else "生效",
             ]
         )
     return rows

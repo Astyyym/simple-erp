@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import shutil
 import sqlite3
@@ -24,7 +25,7 @@ from erp import db as db_module
 _BACKUP_NAME_RE = re.compile(r"^backup_(\d{8}_\d{6})_(.+)\.zip$")
 
 # 需要随备份一起走的数据根目录（存在才收）。
-_DATA_DIR_NAMES = ("product_images", "legacy_archive")
+_DATA_DIR_NAMES = ("product_images", "legacy_archive", "documents")
 
 
 def backup_dir() -> Path:
@@ -233,6 +234,114 @@ def copy_backup_to(zip_path: Path | str, destination_dir: Path | str) -> Path:
         raise ValueError("另存目录与当前备份目录相同，请选择其他位置")
     shutil.copy2(source, destination)
     return destination
+
+
+# ---------------------------------------------------------------------------
+# 1-A：从文件导入外部备份（backups/ 之外的 zip）
+# ---------------------------------------------------------------------------
+
+
+def _probe_backup_database(zip_path: Path | str) -> tuple[int | None, str]:
+    """读取备份包内 `erp.db` 的 (schema 版本, 完整性结果)。
+
+    - 版本 None 表示库内没有 `schema_version` 表（很老的备份）或读不出；
+    - 完整性必须为 "ok"，否则视为损坏、拒绝导入。
+    """
+    path = Path(zip_path)
+    with zipfile.ZipFile(path) as zf:
+        if "erp.db" not in zf.namelist():
+            raise RestoreError("备份缺少 erp.db，无法导入")
+        with tempfile.TemporaryDirectory(prefix="backup_import_probe_") as tmp:
+            staged = Path(tmp) / "erp.db"
+            with zf.open("erp.db") as source, staged.open("wb") as target:
+                shutil.copyfileobj(source, target)
+            try:
+                conn = sqlite3.connect(f"file:{staged}?mode=ro", uri=True)
+            except sqlite3.Error as exc:  # 不是可读的 SQLite 文件
+                raise RestoreError(f"备份内的数据库无法打开：{exc}") from exc
+            try:
+                try:
+                    row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
+                    version = int(row[0]) if row and row[0] is not None else None
+                except sqlite3.Error:
+                    version = None
+                try:
+                    integrity = str(conn.execute("PRAGMA integrity_check").fetchone()[0])
+                except sqlite3.Error as exc:
+                    raise RestoreError(f"备份内的数据库无法读取：{exc}") from exc
+            finally:
+                conn.close()
+    return version, integrity
+
+
+def import_backup(source_path: Path | str) -> Path:
+    """校验一份外部备份 zip 并复制进 `backups/`（不覆盖既有文件、不动当前数据）。
+
+    - 只校验 + 落盘，**不做恢复**；
+    - 备份库版本高于当前程序 → 拒绝（db 的降级守卫会在恢复后重开时直接抛错）；
+    - 损坏/缺少 `erp.db` → 明确报错，且不留下任何脏文件。
+    """
+    path = Path(source_path)
+    inspect_backup(path)  # 校验 zip / erp.db / 含非法路径即抛 RestoreError
+    version, integrity = _probe_backup_database(path)
+    if version is not None and version > db_module.CURRENT_SCHEMA_VERSION:
+        raise RestoreError(
+            f"这份备份的数据库版本是 v{version}，高于当前程序（v{db_module.CURRENT_SCHEMA_VERSION}），"
+            "请升级程序后再导入。"
+        )
+    if integrity != "ok":
+        raise RestoreError(f"备份内数据库完整性检查失败：{integrity}")
+
+    target_dir = backup_dir()
+    target_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base = target_dir / f"backup_{stamp}_imported.zip"
+    target = base
+    suffix = 2
+    while target.exists():
+        target = target_dir / f"backup_{stamp}_imported_{suffix}.zip"
+        suffix += 1
+    shutil.copy2(path, target)
+    return target
+
+
+# ---------------------------------------------------------------------------
+# 1-B：自动备份（启动 1 次 + 正常退出 1 次，带防抖）
+# ---------------------------------------------------------------------------
+
+# 防抖间隔（分钟）：距上次 auto* 备份不足该间隔就跳过，避免频繁启停刷出一堆备份。
+AUTO_BACKUP_INTERVAL_MINUTES = 10
+
+
+def _auto_interval_minutes() -> int:
+    try:
+        value = int(config_module.load_config().get("auto_backup_interval_minutes", AUTO_BACKUP_INTERVAL_MINUTES))
+    except (OSError, ValueError, TypeError):
+        return AUTO_BACKUP_INTERVAL_MINUTES
+    return value if value >= 0 else AUTO_BACKUP_INTERVAL_MINUTES
+
+
+def last_auto_backup() -> dict | None:
+    """最近一份自动备份（reason 以 `auto` 开头），没有返回 None。"""
+    for entry in list_backups():  # list_backups 已按时间倒序
+        if str(entry.get("reason") or "").startswith("auto"):
+            return entry
+    return None
+
+
+def auto_backup_if_due(reason: str = "auto") -> Path | None:
+    """到期才自动备份；未到期或失败都安静返回 None，绝不抛出影响启动/退出。"""
+    try:
+        interval = _auto_interval_minutes()
+        last = last_auto_backup()
+        if last is not None and last.get("created_at") is not None:
+            elapsed = datetime.now() - last["created_at"]
+            if elapsed.total_seconds() < interval * 60:
+                return None
+        return create_backup(reason)
+    except Exception:  # noqa: BLE001 — 自动备份失败只记日志
+        logging.getLogger(__name__).warning("自动备份失败（已忽略）：%s", reason, exc_info=True)
+        return None
 
 
 class RestoreError(ValueError):

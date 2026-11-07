@@ -315,8 +315,8 @@ def test_schema10_return_migration_rolls_back_all_new_tables_then_retries(tmp_pa
     assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0]==10
     with conn: db.apply_schema(conn)
     with conn: db.apply_schema(conn)
-    assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0]==15
-    assert conn.execute('SELECT COUNT(*) FROM schema_version WHERE version=15').fetchone()[0]==1
+    assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0]==16
+    assert conn.execute('SELECT COUNT(*) FROM schema_version WHERE version=16').fetchone()[0]==1
     assert conn.execute('PRAGMA foreign_key_check').fetchall()==[]
     conn.close()
 

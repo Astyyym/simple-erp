@@ -450,6 +450,13 @@ def main() -> None:
         except Exception as exc:
             logging.getLogger(__name__).exception("本地服务启动失败")
             raise RuntimeError(f"简单ERP启动失败：{exc}") from exc
+        # 1-B：桌面壳启动后自动备份 1 次（带 10 分钟防抖，失败不影响启动）。
+        try:
+            from erp.utils.backup import auto_backup_if_due
+
+            auto_backup_if_due("auto_start")
+        except Exception:  # noqa: BLE001 — 自动备份绝不影响启动
+            logging.getLogger(__name__).warning("自动备份（启动）失败", exc_info=True)
         threading.Thread(
             target=_run_server, args=(startup_errors,), kwargs={"app": app}, daemon=True
         ).start()
@@ -559,6 +566,14 @@ def main() -> None:
     try:
         webview.start()
     finally:
+        # 1-B：桌面壳正常退出再自动备份 1 次（仅当本次确实由本进程起了服务）。
+        if app is not None:
+            try:
+                from erp.utils.backup import auto_backup_if_due
+
+                auto_backup_if_due("auto_exit")
+            except Exception:  # noqa: BLE001 — 退出备份失败不该改变退出码
+                logging.getLogger(__name__).warning("自动备份（退出）失败", exc_info=True)
         # 退出时关掉第二监听并等线程结束；否则下次启动端口仍被占（会报「被占用」）。
         try:
             from erp.mobile_server import stop_mobile_listener

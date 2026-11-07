@@ -42,6 +42,9 @@ CLEARED_TABLES = (
     "reconciliation_snapshots",
     "customers",
     "audit_logs",
+    # v16 资料文档库：清空所有数据时一并清空（文件由 CLEARED_DIRNAMES 里的 documents 删）。
+    "document_files",
+    "document_categories",
 )
 
 # 序列表单独处理：清空后要把保留的流水高位写回，不能简单 DELETE。
@@ -52,7 +55,7 @@ SEQUENCE_TABLES = (
 )
 
 # 清空的运行目录（数据根下）。backups/ 与 legacy_archive/ 明确保留。
-CLEARED_DIRNAMES = ("product_images", "temp_pdf", "logs")
+CLEARED_DIRNAMES = ("product_images", "temp_pdf", "logs", "documents")
 
 _MD_ORDER_NO = re.compile(r"^MD(\d{8})(\d{4})$")
 

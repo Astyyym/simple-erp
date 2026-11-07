@@ -229,6 +229,37 @@ def summarize_analytics(
             int(r["sign"]) * int(r["total_amount_cents"] or 0) for r in flow_rows
         )
 
+        # 3-A 客户排行 / 月度趋势：只算销售 + 退货（净销售口径），只到数量与金额，
+        # 不复活任何利润/成本字段。跟随日期与往来对象；不套商品筛选（与「单据流水」同口径）。
+        dim_conditions = [
+            "o.deleted_at IS NULL",
+            "o.status IN ('saved', 'printed')",
+            "o.order_type IN ('sale', 'return')",
+        ]
+        dim_params: list[Any] = []
+        if start_date:
+            dim_conditions.append("o.order_date >= ?")
+            dim_params.append(start_date)
+        if end_date:
+            dim_conditions.append("o.order_date <= ?")
+            dim_params.append(end_date)
+        if customer_id is not None:
+            dim_conditions.append("o.customer_id = ?")
+            dim_params.append(int(customer_id))
+        dim_rows = conn.execute(
+            f"""
+            SELECT o.customer_id AS customer_id, COALESCE(c.name, '') AS customer_name,
+                   o.order_date AS business_date, o.order_type AS order_type,
+                   oi.quantity AS quantity, oi.subtotal_cents AS subtotal_cents
+            FROM orders o
+            JOIN customers c ON c.id = o.customer_id
+            JOIN order_items oi ON oi.order_id = o.id
+            WHERE {' AND '.join(dim_conditions)}
+            ORDER BY o.order_date, o.id, oi.id
+            """,
+            dim_params,
+        ).fetchall()
+
     by_product = {int(row["id"]): _empty_product(row) for row in products}
     heatmap = defaultdict(lambda: {"sales_quantity_3dp": 0, "returns_quantity_3dp": 0, "sales_amount_cents": 0, "returns_amount_cents": 0, "has_transactions": False})
     for row in rows:
@@ -256,6 +287,68 @@ def summarize_analytics(
             heatmap[row["order_date"]]["sales_amount_cents"] += amount_cents
         target["net_sales_quantity_3dp"] += sign * quantity_3dp
         target["net_sales_amount_cents"] += sign * amount_cents
+
+    # 客户维度排行与按月趋势（销售 + 退货净额口径；数量按千分位整数累计）。
+    customer_map: dict[int, dict[str, Any]] = {}
+    month_map: dict[str, dict[str, Any]] = {}
+    for row in dim_rows:
+        quantity_3dp = int(
+            (Decimal(str(row["quantity"])) * Decimal("1000")).quantize(
+                Decimal("1"), rounding=ROUND_HALF_UP
+            )
+        )
+        amount_cents = int(row["subtotal_cents"] or 0)
+        sign = -1 if row["order_type"] == "return" else 1
+        ckey = int(row["customer_id"])
+        centry = customer_map.setdefault(
+            ckey,
+            {
+                "customer_id": ckey,
+                "customer_name": row["customer_name"] or "（未知客户）",
+                "sales_quantity_3dp": 0,
+                "returns_quantity_3dp": 0,
+                "net_sales_quantity_3dp": 0,
+                "sales_amount_cents": 0,
+                "returns_amount_cents": 0,
+                "net_sales_amount_cents": 0,
+            },
+        )
+        if sign > 0:
+            centry["sales_quantity_3dp"] += quantity_3dp
+            centry["sales_amount_cents"] += amount_cents
+        else:
+            centry["returns_quantity_3dp"] += quantity_3dp
+            centry["returns_amount_cents"] += amount_cents
+        centry["net_sales_quantity_3dp"] += sign * quantity_3dp
+        centry["net_sales_amount_cents"] += sign * amount_cents
+
+        mkey = str(row["business_date"])[:7]
+        mentry = month_map.setdefault(
+            mkey,
+            {
+                "month": mkey,
+                "sales_amount_cents": 0,
+                "returns_amount_cents": 0,
+                "net_sales_amount_cents": 0,
+                "net_sales_quantity_3dp": 0,
+            },
+        )
+        if sign > 0:
+            mentry["sales_amount_cents"] += amount_cents
+        else:
+            mentry["returns_amount_cents"] += amount_cents
+        mentry["net_sales_amount_cents"] += sign * amount_cents
+        mentry["net_sales_quantity_3dp"] += sign * quantity_3dp
+
+    customer_rows = sorted(
+        customer_map.values(),
+        key=lambda row: (-int(row["net_sales_amount_cents"]), int(row["customer_id"])),
+    )
+    customer_rows = [
+        row for row in customer_rows
+        if int(row["net_sales_amount_cents"]) != 0 or int(row["net_sales_quantity_3dp"]) != 0
+    ]
+    monthly_trend = [month_map[month] for month in sorted(month_map)]
 
     observed_dates = [row["order_date"] for row in rows]
     days = _date_range(start_date, end_date, observed_dates)
@@ -357,4 +450,6 @@ def summarize_analytics(
         "flow_totals": flow_totals,
         "rankings": rankings,
         "ranking_groups": ranking_groups,
+        "customer_rows": customer_rows,
+        "monthly_trend": monthly_trend,
     }

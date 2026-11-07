@@ -696,3 +696,49 @@ def api_today_history():
     with get_db() as conn:
         orders = _purchase_today_history(conn, today)
     return jsonify({'date': today, 'orders': orders})
+
+
+@purchases_bp.get('/api/last_order')
+def api_last_order():
+    """1-F 复制上一单（拿货页）：取同往来对象（未选则最近一张）最近一张有效拿货单明细。
+
+    拿货单价是手输的单据金额，照抄上一单更省事；用户仍可改。
+    """
+    customer_id = request.args.get('customer_id', type=int)
+    with get_db() as conn:
+        where = "o.deleted_at IS NULL AND o.status='saved'"
+        params: list = []
+        if customer_id:
+            where += " AND o.customer_id=?"
+            params.append(customer_id)
+        row = conn.execute(
+            f"SELECT o.id, o.order_no FROM purchase_orders o WHERE {where} "
+            "ORDER BY o.business_date DESC, o.id DESC LIMIT 1",
+            params,
+        ).fetchone()
+        if row is None:
+            return jsonify({
+                "ok": False,
+                "message": "没有可复制的历史拿货单（该往来对象下还没有正式保存的拿货单）。",
+                "items": [],
+            })
+        items = conn.execute(
+            """SELECT product_id, product_name, unit, quantity_3dp, unit_cost_cents
+               FROM purchase_order_items WHERE purchase_order_id=? ORDER BY id""",
+            (row['id'],),
+        ).fetchall()
+    return jsonify({
+        "ok": True,
+        "order_id": row['id'],
+        "order_no": row['order_no'],
+        "items": [
+            {
+                "product_id": item['product_id'],
+                "product_name": item['product_name'],
+                "unit": item['unit'],
+                "quantity": f"{item['quantity_3dp'] / 1000:g}",
+                "unit_price": f"{item['unit_cost_cents'] / 100:.2f}",
+            }
+            for item in items
+        ],
+    })

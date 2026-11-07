@@ -22,6 +22,12 @@ from erp.services.reconciliation import (
 )
 from erp.utils.errors import error_response, not_found, RecordNotFound
 from erp.utils.money import yuan_to_cents, cents_to_yuan
+from erp.utils.exporting import (
+    export_filename,
+    ledger_export_headers,
+    ledger_export_rows,
+    workbook_download,
+)
 from erp.utils.pdf import (
     ensure_account_summary_printable,
     generate_account_summary_pdf,
@@ -110,6 +116,17 @@ def accounts():
     elif customer_query:
         customer_error = "请从下拉候选里选择客户后再查询流水。"
 
+    ledger_export_url = ""
+    if customer_id:
+        export_params: dict = {"customer_id": customer_id}
+        if start_date:
+            export_params["start_date"] = start_date
+        if end_date:
+            export_params["end_date"] = end_date
+        if type_filter:
+            export_params["type"] = type_filter
+        ledger_export_url = url_for("accounts.export_ledger_excel", **export_params)
+
     return render_template(
         "accounts/index.html",
         customers=customers,
@@ -121,7 +138,34 @@ def accounts():
         start_date=start_date,
         end_date=end_date,
         type_filter=type_filter,
+        ledger_export_url=ledger_export_url,
         cents_to_yuan=cents_to_yuan,
+    )
+
+
+@accounts_bp.get("/export.xlsx")
+def export_ledger_excel():
+    """导出当前客户往来流水（Excel）：字段与页面流水表一致、金额分→元、沿用当前筛选。"""
+    customer_id = request.args.get("customer_id", type=int)
+    if not customer_id:
+        return error_response(
+            "请先在账款管理页选择客户，再导出流水。",
+            title="未选择客户",
+            back_url=url_for("accounts.accounts"),
+        )
+    start_date = request.args.get("start_date", "").strip()
+    end_date = request.args.get("end_date", "").strip()
+    type_filter = [t for t in request.args.getlist("type") if t]
+    try:
+        ledger = get_customer_account_ledger(customer_id, start_date, end_date, type_filter)
+    except ValueError as exc:
+        return error_response(str(exc), title="流水未能导出", back_url=url_for("accounts.accounts"))
+    customer_name = (ledger["customer"].get("name") or "").strip()
+    return workbook_download(
+        ledger_export_headers(),
+        ledger_export_rows(ledger["entries"]),
+        sheet_title="客户往来流水",
+        filename=export_filename(f"往来流水_{customer_name}" if customer_name else "往来流水"),
     )
 
 @accounts_bp.get("/summary_pdf")

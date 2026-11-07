@@ -151,7 +151,7 @@
         <td class="text-center row-no">{{loop.index}}</td>
         <td class="product-picker"><div class="picker-row"><div class="row-copy-tools"><button type="button" class="row-tool-btn" data-row-action="copy" title="复制本行（Ctrl+D）" aria-label="复制本行"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><rect x="5.5" y="1.5" width="8" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M3.5 4.5h-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button><button type="button" class="row-tool-btn" data-row-action="paste" title="粘贴本行" aria-label="粘贴本行"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><rect x="3" y="2.5" width="10" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="6" y="1" width="4" height="2.6" rx="1" fill="currentColor"/><path d="M5.5 7h5M5.5 10h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button></div><span class="row-copy-sep" aria-hidden="true"></span><input type="hidden" name="product_id" class="product-id" value="{{item.product_id if item else ''}}"><input type="hidden" name="source_item_id" class="source-item-id" value="{{item.source_item_id or ''}}"><input type="hidden" name="product_name" class="product-name" value="{{item.product_name if item else ''}}"><div class="suggest-wrap product-suggest-wrap"><input class="form-control form-control-sm picker-name-input" autocomplete="off" aria-label="第 {{loop.index}} 行产品名称" placeholder="输入或选择商品名" value="{{item.product_name if item else ''}}"><div class="suggest-list d-none product-suggestions" role="listbox" aria-label="商品建议"></div></div></div></td>
         <td><div class="unit-cell suggest-wrap"><input name="unit" class="unit form-control form-control-sm" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="单位" aria-label="第 {{loop.index}} 行单位" aria-expanded="false" data-unit-options="{{ (unit_options or ['个','套','件'])|join('|') }}" value="{{item.unit if item else ''}}"><div class="suggest-list d-none unit-suggestions" role="listbox" aria-label="单位建议"></div></div></td>
-        <td><input name="quantity" class="quantity" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0" value="{{item.quantity if item else ''}}"></td>
+        <td><input name="quantity" class="quantity" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0" value="{{item.quantity if item else '1'}}"></td>
         <td class="price-cell"><input name="unit_price" class="unit-price" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.00" value="{{cents_to_yuan(item.unit_price_cents) if item else ''}}"></td>
         <td><div class="readonly-total line-total">0.00</div></td>
         <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="clearRow(this)">清空</button></td>
@@ -164,6 +164,7 @@
     <button type="button" class="btn btn-outline-primary" id="addRowButton" onclick="addRow()">新增一行</button>
     <button type="button" class="btn btn-outline-secondary" id="removeRowButton" onclick="removeRow()" disabled>删除一行</button>
     <button type="button" class="btn btn-outline-secondary" onclick="clearAllRows()">一键清空</button>
+    {% if not is_return %}<button type="button" class="btn btn-outline-secondary" id="copyLastOrderButton" title="把该客户（未选客户则取最近一张）最近一张有效单据的明细带入，单价仍按客户专属价重取">复制上一单</button>{% endif %}
   </div>
   </div>
   <textarea class="form-control mt-3" name="notes" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="备注">{{order.notes if is_edit else ''}}</textarea>
@@ -953,5 +954,70 @@ orderForm.addEventListener('submit', async event => {
 refreshSlipNotices();
 recalc();
 syncRowToolState();
+
+/* 1-F：数量回车跳下一格 —— 录入键盘流。回车在数量格时跳到下一条数据行的商品名；
+   已是最后一行就新增一行再跳，避免浏览器默认提交表单。 */
+document.getElementById('orderBody').addEventListener('keydown', event => {
+  const input = event.target;
+  if (!input.classList || !input.classList.contains('quantity')) return;
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  const rows = orderDataRows(document.getElementById('orderBody'));
+  const current = input.closest('tr');
+  let next = rows[rows.indexOf(current) + 1];
+  if (!next) next = addRow();
+  const target = next.querySelector('.picker-name-input');
+  if (target) target.focus();
+});
+
+/* 1-F：复制上一单 —— 按当前客户（未选则最近一张）取同类型最近一张有效单，带入明细。
+   单价**不照抄**旧单：清空后交给 repriceRowsForCustomer() 按当前客户专属价重取，
+   保持「单价取客户专属价、无则留空手输」的既有规则不被破坏。 */
+(() => {
+  const btn = document.getElementById('copyLastOrderButton');
+  if (!btn) return;
+  const orderType = {{ 'return' if is_return else 'sale' }};
+  btn.addEventListener('click', async () => {
+    const customerId = document.getElementById('customer_id').value || '';
+    let payload;
+    try {
+      payload = await fetchJson('/orders/api/last_order?type=' + encodeURIComponent(orderType)
+        + '&customer_id=' + encodeURIComponent(customerId));
+    } catch (_) {
+      alert('读取上一单失败，请稍后重试。');
+      return;
+    }
+    if (!payload || !payload.ok || !Array.isArray(payload.items) || !payload.items.length) {
+      alert((payload && payload.message) || '没有可复制的历史单据。');
+      return;
+    }
+    const label = orderType === 'return' ? '退货单' : '销售单';
+    if (!confirm('将用最近一张' + label + '（' + payload.order_no + '）的 ' + payload.items.length
+      + ' 行明细覆盖当前明细，继续？')) return;
+    const tbody = document.getElementById('orderBody');
+    let rows = orderDataRows(tbody);
+    while (rows.length > 1) { rows[rows.length - 1].remove(); rows = orderDataRows(tbody); }
+    while (rows.length < payload.items.length) { addRow(); rows = orderDataRows(tbody); }
+    payload.items.forEach((item, i) => {
+      const tr = rows[i];
+      if (!tr) return;
+      tr.querySelector('.product-id').value = item.product_id || '';
+      tr.querySelector('.product-name').value = item.product_name || '';
+      const nameInput = tr.querySelector('.picker-name-input');
+      if (nameInput) nameInput.value = item.product_name || '';
+      const existing = productCatalog.find(p => String(p.id) === String(item.product_id));
+      if (existing && tr.__picker) tr.__picker.set(existing);
+      tr.querySelector('.unit').value = item.unit || '';
+      tr.querySelector('.quantity').value = item.quantity || '1';
+      tr.querySelector('.unit-price').value = '';
+      const srcField = tr.querySelector('.source-item-id');
+      if (srcField) srcField.value = '';
+    });
+    refreshSlipNotices();
+    recalc();
+    syncRowToolState();
+    repriceRowsForCustomer();
+  });
+})();
 </script>
 {% endblock %}

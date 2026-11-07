@@ -136,7 +136,7 @@ def test_init_db_merges_spec_into_name_and_drops_the_column():
         assert "spec" not in index_sql
         assert "TRIM(name)" in index_sql
         version = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0]
-        assert version == CURRENT_SCHEMA_VERSION == 15
+        assert version == CURRENT_SCHEMA_VERSION == 16
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
 
     after = snapshot()

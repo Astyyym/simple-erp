@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>全局搜索</h2>
+
+<form class="d-flex flex-wrap gap-2 mb-4" method="get" action="{{ url_for('search.search_results') }}" role="search" style="max-width:640px">
+  <input class="form-control" type="search" name="q" value="{{ q }}" placeholder="搜索单号 / 客户 / 商品 / 资料文档" autofocus>
+  <button class="btn btn-primary text-nowrap" type="submit">搜索</button>
+</form>
+
+{% if not q %}
+<p class="text-muted">输入关键词开始搜索。只搜索未删除的数据；已作废单据仍可搜到并标注「已作废」。</p>
+{% else %}
+<p class="text-muted">关键词「{{ q }}」共命中 <strong>{{ total }}</strong> 条{% if total >= group_limit %}（每组最多显示前 {{ group_limit }} 条，可加更多关键词缩小范围）{% endif %}。</p>
+{% endif %}
+
+{% for group in groups %}
+{% if group['items'] %}
+<section class="mb-4" aria-labelledby="searchGroup-{{ group.key }}">
+  <h3 id="searchGroup-{{ group.key }}">{{ group.title }} <span class="text-muted">（{{ group['items']|length }}）</span></h3>
+  {% if group.key == 'orders' %}
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th scope="col">单号</th><th scope="col">日期</th><th scope="col">类型</th><th scope="col">客户</th><th scope="col">金额</th><th scope="col">操作</th></tr></thead>
+      <tbody>
+        {% for item in group['items'] %}
+        <tr>
+          <td>{{ item.order_no }}{% if item.is_void %} <span class="badge bg-danger">已作废</span>{% endif %}</td>
+          <td>{{ item.business_date }}</td>
+          <td>{{ item.type_label }}</td>
+          <td>{{ item.customer_name or '—' }}</td>
+          <td>¥{{ cents_to_yuan(item.amount_cents) }}</td>
+          <td><a class="btn btn-sm btn-outline-primary" href="{{ item.url }}">查看</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% elif group.key == 'customers' %}
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th scope="col">客户</th><th scope="col">电话</th><th scope="col">操作</th></tr></thead>
+      <tbody>
+        {% for item in group['items'] %}
+        <tr><td>{{ item.name }}</td><td>{{ item.phone or '—' }}</td>
+          <td><a class="btn btn-sm btn-outline-primary" href="{{ item.url }}">查看/编辑</a></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% elif group.key == 'products' %}
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th scope="col">商品</th><th scope="col">单位</th><th scope="col">操作</th></tr></thead>
+      <tbody>
+        {% for item in group['items'] %}
+        <tr><td>{{ item.name }}</td><td>{{ item.unit }}</td>
+          <td><a class="btn btn-sm btn-outline-primary" href="{{ item.url }}">查看/编辑</a></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% elif group.key == 'documents' %}
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th scope="col">标题</th><th scope="col">原文件名</th><th scope="col">操作</th></tr></thead>
+      <tbody>
+        {% for item in group['items'] %}
+        <tr><td>{{ item.title }}</td><td>{{ item.original_name }}</td>
+          <td><a class="btn btn-sm btn-outline-primary" href="{{ item.url }}">打开</a></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+{% endfor %}
+
+{% if q and total == 0 %}
+<div class="alert alert-light border">没有找到与「{{ q }}」相关的单据、客户、商品或资料。</div>
+{% endif %}
+{% endblock %}

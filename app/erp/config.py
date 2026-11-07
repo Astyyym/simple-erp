@@ -50,6 +50,8 @@ CONFIG_DEFAULTS: dict[str, Any] = {
     "database_path": "data/erp.db",
     "backup_retention_days": 30,
     "monthly_backup_retention_months": 12,
+    # 资料文档库单个文件大小上限（MB）。
+    "document_max_size_mb": 30,
     "print_offset_x_mm": 0,
     "print_offset_y_mm": 0,
     "print_scale": 1.0,
@@ -100,7 +102,7 @@ UI_SCALE_CHOICES = ("100", "125", "150")
 UI_THEME_CHOICES = ("light", "dark", "system")
 UI_FONT_WEIGHT_CHOICES = ("standard", "medium", "strong")
 UI_FONT_WEIGHT_LABELS = {"standard": "标准", "medium": "稍粗", "strong": "加粗"}
-MIGRATE_DIRNAMES = ("data", "backups", "imports", "logs", "product_images", "legacy_archive")
+MIGRATE_DIRNAMES = ("data", "backups", "imports", "logs", "product_images", "legacy_archive", "documents")
 APP_STORAGE_DIRNAME = "简单ERP"
 DEFAULT_DATA_ROOT_DIRNAME = "简单ERP数据"
 
@@ -203,7 +205,7 @@ def project_path(*parts: str) -> Path:
 
 def ensure_runtime_dirs(root: Path | None = None) -> None:
     base = Path(root) if root is not None else data_root()
-    for dirname in ["data", "backups", "logs", "imports", "temp_pdf", "product_images", "legacy_archive"]:
+    for dirname in ["data", "backups", "logs", "imports", "temp_pdf", "product_images", "legacy_archive", "documents"]:
         (base / dirname).mkdir(parents=True, exist_ok=True)
 
 

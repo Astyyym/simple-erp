@@ -112,8 +112,8 @@ def test_schema2_application_startup_preserves_legacy_business_rows():
             assert client.get(path).status_code == 200, path
     with db.get_db() as conn:
         assert_legacy_rows_unchanged(conn, before)
-        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == db.CURRENT_SCHEMA_VERSION == 15
-        assert conn.execute("SELECT COUNT(*) FROM schema_version WHERE version=15").fetchone()[0] == 1
+        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == db.CURRENT_SCHEMA_VERSION == 16
+        assert conn.execute("SELECT COUNT(*) FROM schema_version WHERE version=16").fetchone()[0] == 1
         assert {"request_key", "payload_hash", "version"} <= db._columns(conn, "orders")
         assert any(row[1] == "idx_orders_request_key" and row[2] for row in conn.execute("PRAGMA index_list(orders)"))
         # v15 决策变更：成本快照列已删，只剩追溯用的 source_item_id。
@@ -147,6 +147,6 @@ def test_schema2_failed_index_creation_rolls_back_and_can_retry():
         assert_legacy_rows_unchanged(conn, before)
     db.init_db()
     with db.get_db() as conn:
-        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == db.CURRENT_SCHEMA_VERSION == 15
+        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == db.CURRENT_SCHEMA_VERSION == 16
         assert_inventory_system_gone(conn)
         assert_legacy_rows_unchanged(conn, before)

@@ -370,7 +370,7 @@ def test_restoring_a_legacy_backup_warns_about_irreversible_upgrade():
     )
     text = restored.get_data(as_text=True)
     assert "已从备份恢复" in text
-    assert "会自动升级到 v15" in text
+    assert "会自动升级到 v16" in text
     assert "无法回退" in text
 
 

@@ -177,11 +177,58 @@ def _analysis_presentation(result):
                 "rows": _rank_bar_rows(key, group["rows"], size),
                 "total_count": len(group["rows"]), "shown_count": len(shown),
             })
+    quantity_comparable = bool(result["summary"]["quantity_comparable"])
+    quantity_unit = result["summary"].get("quantity_unit") or ""
+    customer_bars = _customer_bar_rows(result.get("customer_rows", []), quantity_comparable, quantity_unit)
+    monthly_bars = _monthly_bar_rows(result.get("monthly_trend", []), quantity_comparable, quantity_unit)
     return {"sort": sort, "tab": tab,
             "product_rows": rows, "heatmap": result["heatmap"],
             "calendars": _month_calendars(result["heatmap"]),
             "day": selected_day, "day_detail": detail, "rank_groups": rank_groups,
-            "rank_key": rank_key, "rank_size": raw_size}
+            "rank_key": rank_key, "rank_size": raw_size,
+            "customer_bars": customer_bars, "customer_total": len(result.get("customer_rows", [])),
+            "monthly_bars": monthly_bars, "monthly_count": len(result.get("monthly_trend", [])),
+            "quantity_comparable": quantity_comparable, "quantity_unit": quantity_unit}
+
+
+def _quantity_text(quantity_3dp, comparable: bool, unit: str) -> str:
+    if not comparable:
+        return ""
+    return f"{format_quantity_3dp(quantity_3dp, unit)} {unit or ''}".strip()
+
+
+def _customer_bar_rows(rows, comparable: bool, unit: str, limit: int = 20):
+    """3-A 客户排行柱：同一张榜内按净销售额等比缩放（只到数量与金额）。"""
+    shown = rows[:limit]
+    peak = max((abs(int(row["net_sales_amount_cents"])) for row in shown), default=0)
+    bars = []
+    for row in shown:
+        value = int(row["net_sales_amount_cents"])
+        bars.append({
+            "label": row["customer_name"],
+            "value_text": f"¥{cents_to_yuan(value)}",
+            "bar_height_px": round(abs(value) * RANK_BAR_MAX_HEIGHT_PX / peak, 1) if peak else 0,
+            "is_negative": value < 0,
+            "quantity_text": _quantity_text(row["net_sales_quantity_3dp"], comparable, unit),
+            "net_sales_quantity_3dp": int(row["net_sales_quantity_3dp"]),
+        })
+    return bars
+
+
+def _monthly_bar_rows(rows, comparable: bool, unit: str):
+    """3-A 按月趋势柱：柱高按净销售额等比缩放；数量随附（同单位才展示）。"""
+    peak = max((abs(int(row["net_sales_amount_cents"])) for row in rows), default=0)
+    bars = []
+    for row in rows:
+        value = int(row["net_sales_amount_cents"])
+        bars.append({
+            "month": row["month"],
+            "value_text": f"¥{cents_to_yuan(value)}",
+            "bar_height_px": round(abs(value) * RANK_BAR_MAX_HEIGHT_PX / peak, 1) if peak else 0,
+            "is_negative": value < 0,
+            "quantity_text": _quantity_text(row["net_sales_quantity_3dp"], comparable, unit),
+        })
+    return bars
 
 
 @analytics_bp.get("/")

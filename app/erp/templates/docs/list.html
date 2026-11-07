@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>资料文档</h2>
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for category, message in messages %}
+  <div class="alert alert-{{ 'danger' if category == 'danger' else ('success' if category == 'success' else 'info') }}" role="alert">{{ message }}</div>
+  {% endfor %}
+{% endwith %}
+<p data-ui-hint class="text-muted small mb-3">
+  纯文件柜：存检验报告、合格证、资质证书等。不关联客户/商品；可直接用本机程序打开，也可直接调用打印机打印。
+  单个文件最大 {{ max_size_mb }}MB；不支持 SVG 与可执行文件。
+</p>
+
+<div class="card card-body mb-3">
+  <form class="d-flex flex-wrap gap-2 align-items-end mb-3" method="get" action="{{ url_for('docs.list_docs') }}">
+    {% if category_id %}<input type="hidden" name="category_id" value="{{ category_id }}">{% endif %}
+    <div class="flex-grow-1" style="min-width:220px">
+      <label class="form-label mb-1" for="docsSearchInput">搜索</label>
+      <input class="form-control" id="docsSearchInput" type="search" name="q" value="{{ q }}" placeholder="标题 / 原文件名 / 备注">
+    </div>
+    <button class="btn btn-primary" type="submit">搜索</button>
+    {% if q %}<a class="btn btn-outline-secondary" href="{{ url_for('docs.list_docs', category_id=category_id) }}">清除搜索</a>{% endif %}
+  </form>
+
+  <form class="d-flex flex-wrap gap-2 align-items-end" method="post" action="{{ url_for('docs.upload_docs') }}" enctype="multipart/form-data">
+    <input type="hidden" name="next" value="{{ current_back_url }}">
+    <div style="min-width:240px">
+      <label class="form-label mb-1" for="docsUploadFiles">上传文件（可多选）</label>
+      <input class="form-control" id="docsUploadFiles" type="file" name="files" multiple
+             accept=".jpg,.jpeg,.png,.gif,.bmp,.webp,.avif,.tif,.tiff,.heic,.heif,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf" required>
+    </div>
+    <div style="min-width:160px">
+      <label class="form-label mb-1" for="docsUploadCategory">分类</label>
+      <select class="form-select" id="docsUploadCategory" name="category_id">
+        <option value="">未分类</option>
+        {% for c in categories %}<option value="{{ c.id }}" {% if category_id == c.id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="flex-grow-1" style="min-width:180px">
+      <label class="form-label mb-1" for="docsUploadNote">备注（可选）</label>
+      <input class="form-control" id="docsUploadNote" name="note" placeholder="同一批文件共用本备注">
+    </div>
+    <button class="btn btn-success" type="submit">上传</button>
+  </form>
+
+  <form class="d-flex gap-2 align-items-end mt-2" method="post" action="{{ url_for('docs.create_category') }}">
+    <div style="min-width:200px">
+      <label class="form-label mb-1" for="docsNewCategory">新增自定义分类</label>
+      <input class="form-control" id="docsNewCategory" name="name" placeholder="例如：检测报告补充" maxlength="40">
+    </div>
+    <button class="btn btn-outline-primary" type="submit">新增分类</button>
+  </form>
+</div>
+
+<ul class="nav nav-pills flex-wrap gap-1 mb-3">
+  <li class="nav-item">
+    <a class="nav-link {% if not category_id %}active{% endif %}" href="{{ url_for('docs.list_docs', q=q or None) }}">全部 <span class="text-muted">({{ total_all }})</span></a>
+  </li>
+  {% for c in categories %}
+  <li class="nav-item">
+    <a class="nav-link {% if category_id == c.id %}active{% endif %}" href="{{ url_for('docs.list_docs', category_id=c.id, q=q or None) }}">{{ c.name }} <span class="text-muted">({{ counts.get(c.id, 0) }})</span></a>
+  </li>
+  {% endfor %}
+</ul>
+
+{% if documents %}
+<div class="table-responsive">
+  <table class="table align-middle">
+    <thead><tr>
+      <th scope="col" style="width:84px">预览</th>
+      <th scope="col">标题</th>
+      <th scope="col">分类</th>
+      <th scope="col">大小</th>
+      <th scope="col">上传时间</th>
+      <th scope="col">操作</th>
+    </tr></thead>
+    <tbody>
+      {% for d in documents %}
+      <tr>
+        <td>
+          {% if d.preview_url %}
+          <a href="{{ d.file_url }}" target="_blank" rel="noopener"><img src="{{ d.preview_url }}" alt="预览" style="width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--erp-border,#ddd)"></a>
+          {% elif d.is_pdf %}
+          <a class="btn btn-sm btn-outline-secondary" href="{{ d.file_url }}" target="_blank" rel="noopener">PDF 预览</a>
+          {% else %}
+          <span class="text-muted small">—</span>
+          {% endif %}
+        </td>
+        <td>
+          <div class="fw-semibold">{{ d.title }}</div>
+          <div class="text-muted small">{{ d.original_name }}</div>
+          {% if d.note %}<div class="text-muted small">{{ d.note }}</div>{% endif %}
+        </td>
+        <td>{{ d.category_name or '未分类' }}</td>
+        <td>{{ d.size_display }}</td>
+        <td>{{ d.created_at }}</td>
+        <td>
+          <div class="d-flex flex-wrap gap-1">
+            <form method="post" action="{{ d.open_url }}"><input type="hidden" name="next" value="{{ current_back_url }}"><button class="btn btn-sm btn-outline-primary" type="submit">打开</button></form>
+            <form method="post" action="{{ d.print_url }}"><input type="hidden" name="next" value="{{ current_back_url }}"><button class="btn btn-sm btn-outline-secondary" type="submit">打印</button></form>
+            <a class="btn btn-sm btn-outline-secondary" href="{{ d.file_url }}">下载</a>
+            <a class="btn btn-sm btn-outline-secondary" href="{{ d.edit_url }}">编辑</a>
+            <form method="post" action="{{ d.delete_url }}" onsubmit="return confirm('确认删除《{{ d.title }}》？文件会被物理删除，无法找回。');">
+              <input type="hidden" name="next" value="{{ current_back_url }}">
+              <input type="hidden" name="confirm_text" value="删除">
+              <button class="btn btn-sm btn-danger" type="submit">删除</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if total_pages > 1 %}
+<nav class="d-flex gap-2 align-items-center" aria-label="分页">
+  {% if page > 1 %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('docs.list_docs', category_id=category_id, q=q or None, page=page-1) }}">上一页</a>{% endif %}
+  <span class="text-muted small">第 {{ page }} / {{ total_pages }} 页 · 共 {{ total }} 条</span>
+  {% if page < total_pages %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('docs.list_docs', category_id=category_id, q=q or None, page=page+1) }}">下一页</a>{% endif %}
+</nav>
+{% endif %}
+
+{% else %}
+<div class="alert alert-light border">还没有资料文档。用上面的表单上传检验报告、合格证等文件。</div>
+{% endif %}
+{% endblock %}

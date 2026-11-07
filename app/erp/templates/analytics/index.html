@@ -12,6 +12,7 @@
   <span class="analytics-sections-cap">分区</span>
   <a href="#analysisMetrics">金额汇总</a>
   <a href="#layeredAnalysis">热力图与排行</a>
+  <a href="#customerTrendAnalysis">客户与趋势</a>
   <a href="#productAnalysis">具体产品</a>
 </nav>
 {% if error %}<div class="alert alert-danger" id="analyticsError" data-refresh-fragment role="alert">{{ error }} 筛选未生效，请修正输入后重新查询。<div id="invalidScopeInputs" style="overflow-wrap:anywhere">原始条件：日期 {{filters.start_date or '不限'}} 至 {{filters.end_date or '不限'}}；往来对象 ID {{filters.customer_id or '全部'}}；商品 {{filters.product_name or '全部'}}。</div></div>{% endif %}
@@ -158,6 +159,43 @@
       <div class="rank-pagination"><span class="help">符合条件 {{group.total_count}} 项{% if group.shown_count < group.total_count %} · 当前显示前 {{group.shown_count}} 项{% endif %}</span></div>
     </article>{% else %}<div class="empty-state">暂无符合条件商品。</div>{% endfor %}</section>{% endfor %}
   </section>
+</section>
+<style>
+.analytics-dimension-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+.analytics-dimension-grid .rank-columns{margin-top:8px}
+</style>
+{# 3-A（2026-11-07）：客户维度排行 + 按月趋势。口径：只算销售+退货净额，只到数量与金额，
+   不含任何利润/成本字段；复用自绘条形（.rank-bar-*），不引入图表库。随筛选「查询」就地刷新。 #}
+<section id="customerTrendAnalysis" class="analytics-panel analytics-section" data-analytics-fragment aria-labelledby="customerTrendTitle">
+  <div class="section-heading"><div><h2 id="customerTrendTitle">客户排行与月度趋势</h2><p data-ui-hint class="help">按净销售口径（销售 +、退货 −）统计，只展示数量与金额，不含利润/成本。柱高按同一张图内最大值等比缩放，柱顶为实际净销售额。</p></div></div>
+  <div class="analytics-dimension-grid">
+    <article class="ranking-card" aria-label="客户排行">
+      <h3>客户排行（按净销售额）</h3>
+      <div class="rank-columns" role="list">
+        {% for row in view.customer_bars %}
+        <div class="rank-column {{'negative' if row.is_negative else ''}}" role="listitem">
+          <span class="rank-bar-track"><span class="rank-bar-fill" style="height:{{row.bar_height_px}}px"></span><span class="rank-bar-value" style="bottom:{{row.bar_height_px}}px">{{row.value_text}}</span></span>
+          <span class="rank-bar-label" title="{{row.label}}">{{row.label}}</span>
+          {% if row.quantity_text %}<span class="help">{{row.quantity_text}}</span>{% endif %}
+        </div>
+        {% else %}<div class="empty-state">暂无客户数据</div>{% endfor %}
+      </div>
+      <div class="rank-pagination"><span class="help">共 {{view.customer_total}} 个客户{% if view.customer_total > view.customer_bars|length %} · 当前显示前 {{view.customer_bars|length}} 个{% endif %}</span></div>
+    </article>
+    <article class="ranking-card" aria-label="月度趋势">
+      <h3>月度趋势（按净销售额）</h3>
+      <div class="rank-columns" role="list">
+        {% for row in view.monthly_bars %}
+        <div class="rank-column {{'negative' if row.is_negative else ''}}" role="listitem">
+          <span class="rank-bar-track"><span class="rank-bar-fill" style="height:{{row.bar_height_px}}px"></span><span class="rank-bar-value" style="bottom:{{row.bar_height_px}}px">{{row.value_text}}</span></span>
+          <span class="rank-bar-label">{{row.month}}</span>
+          {% if row.quantity_text %}<span class="help">{{row.quantity_text}}</span>{% endif %}
+        </div>
+        {% else %}<div class="empty-state">暂无月度数据</div>{% endfor %}
+      </div>
+      <div class="rank-pagination"><span class="help">共 {{view.monthly_count}} 个月</span></div>
+    </article>
+  </div>
 </section>
 {#
   批次 2：「具体产品分析」与「产品排行」是同一分析对象的两种视图（柱状图 / 表格明细），

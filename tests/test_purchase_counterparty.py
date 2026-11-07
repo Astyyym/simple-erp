@@ -174,8 +174,8 @@ def test_schema9_migration_keeps_legacy_purchases_and_balances(tmp_path):
     db.init_db()
     db.init_db()
     with db.get_db() as conn:
-        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == db.CURRENT_SCHEMA_VERSION == 15
-        assert conn.execute("SELECT COUNT(*) FROM schema_version WHERE version=15").fetchone()[0] == 1
+        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == db.CURRENT_SCHEMA_VERSION == 16
+        assert conn.execute("SELECT COUNT(*) FROM schema_version WHERE version=16").fetchone()[0] == 1
         columns = {r['name']: r for r in conn.execute('PRAGMA table_info(purchase_orders)')}
         assert columns['customer_id']['notnull'] == 0
         assert columns['customer_name']['notnull'] == 1
@@ -212,7 +212,7 @@ def test_schema9_partial_migration_failure_rolls_back_columns_and_version(tmp_pa
     assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0] == 9
     with conn:
         db.apply_schema(conn)
-    assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0] == db.CURRENT_SCHEMA_VERSION == 15
+    assert conn.execute('SELECT MAX(version) FROM schema_version').fetchone()[0] == db.CURRENT_SCHEMA_VERSION == 16
     conn.close()
 
 

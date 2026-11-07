@@ -56,6 +56,8 @@ _OWNER_BY_ENDPOINT: dict[str, str] = {
     "products.edit_product": "products",
     "customers.list_customers": "customers",
     "customers.edit_customer": "customers",
+    "docs.list_docs": "docs",
+    "docs.edit_doc": "docs",
     "recycle.recycle_bin": "recycle",
     "settings.settings_page": "settings",
 }
@@ -72,6 +74,7 @@ _NAV_KEYS = (
     "analytics",
     "products",
     "customers",
+    "docs",
     "recycle",
     "settings",
 )

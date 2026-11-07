@@ -36,10 +36,12 @@ from .routes.accounts import accounts_bp
 from .routes.analytics import analytics_bp
 from .routes.auth import auth_bp
 from .routes.customers import customers_bp
+from .routes.docs import docs_bp
 from .routes.orders import orders_bp
 from .routes.products import products_bp
 from .routes.purchases import purchases_bp
 from .routes.recycle import recycle_bp
+from .routes.search import search_bp
 from .routes.settings import settings_bp
 from .utils.logging import setup_logging
 from .utils.nav import nav_state
@@ -230,9 +232,11 @@ def create_app() -> Flask:
     app.register_blueprint(purchases_bp)
     app.register_blueprint(customers_bp)
     app.register_blueprint(orders_bp)
+    app.register_blueprint(docs_bp)
     app.register_blueprint(accounts_bp)
     app.register_blueprint(analytics_bp)
     app.register_blueprint(recycle_bp)
+    app.register_blueprint(search_bp)
     app.register_blueprint(settings_bp)
 
     @app.get("/")

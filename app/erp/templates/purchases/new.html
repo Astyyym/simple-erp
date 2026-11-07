@@ -125,6 +125,7 @@
     <button type="button" class="btn btn-outline-primary" id="addRowButton" onclick="addRow()">新增一行</button>
     <button type="button" class="btn btn-outline-secondary" id="removeRowButton" onclick="removeRow()" disabled>删除一行</button>
     <button type="button" class="btn btn-outline-secondary" onclick="clearAllRows()">一键清空</button>
+    <button type="button" class="btn btn-outline-secondary" id="copyLastOrderButton" title="把该往来对象（未选则取最近一张）最近一张有效拿货单的明细带入">复制上一单</button>
   </div>
   </div>
   </section>
@@ -328,6 +329,9 @@ function bindRow(tr) {
       tr.__pastedPrice = null;
     }
     clearMissingHint(tr);
+    // 1-F：选中商品后数量默认 1（空行不预填，避免空白行被当成有效明细提交）。
+    const qtyInput = tr.querySelector('.quantity');
+    if (qtyInput && !String(qtyInput.value || '').trim()) qtyInput.value = '1';
     recalc();
     tr.querySelector('.quantity').focus();
   }
@@ -554,5 +558,61 @@ purchaseForm.addEventListener('submit', async event => {
   });
 })();
 {% endif %}
+
+/* 1-F：数量回车跳下一格（拿货页）：回车在数量格跳到下一条数据行的商品名，末行则新增行。 */
+document.getElementById('purchaseRows').addEventListener('keydown', event => {
+  const input = event.target;
+  if (!input.classList || !input.classList.contains('quantity')) return;
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  const rows = purchaseDataRows(document.getElementById('purchaseRows'));
+  const current = input.closest('tr');
+  let next = rows[rows.indexOf(current) + 1];
+  if (!next) next = addRow();
+  const target = next.querySelector('.picker-name-input');
+  if (target) target.focus();
+});
+
+/* 1-F：复制上一单（拿货页）—— 取该往来对象（未选则最近一张）最近一张有效拿货单的明细带入。
+   拿货单价是手输的单据金额，照抄上一单更省事；用户仍可改。 */
+(() => {
+  const btn = document.getElementById('copyLastOrderButton');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const customerId = document.getElementById('customer_id').value || '';
+    let payload;
+    try {
+      payload = await fetchJson('/purchases/api/last_order?customer_id=' + encodeURIComponent(customerId));
+    } catch (_) {
+      alert('读取上一单失败，请稍后重试。');
+      return;
+    }
+    if (!payload || !payload.ok || !Array.isArray(payload.items) || !payload.items.length) {
+      alert((payload && payload.message) || '没有可复制的历史拿货单。');
+      return;
+    }
+    if (!confirm('将用最近一张拿货单（' + payload.order_no + '）的 ' + payload.items.length + ' 行明细覆盖当前明细，继续？')) return;
+    const tbody = document.getElementById('purchaseRows');
+    let rows = purchaseDataRows(tbody);
+    while (rows.length > 1) { rows[rows.length - 1].remove(); rows = purchaseDataRows(tbody); }
+    while (rows.length < payload.items.length) { addRow(); rows = purchaseDataRows(tbody); }
+    payload.items.forEach((item, i) => {
+      const tr = rows[i];
+      if (!tr) return;
+      tr.querySelector('.product-id').value = item.product_id || '';
+      tr.querySelector('.product-name').value = item.product_name || '';
+      const nameInput = tr.querySelector('.picker-name-input');
+      if (nameInput) nameInput.value = item.product_name || '';
+      const existing = catalogById.get(String(item.product_id));
+      if (existing && tr.__picker) tr.__picker.set(existing);
+      tr.querySelector('.unit').value = item.unit || '';
+      tr.querySelector('.quantity').value = item.quantity || '1';
+      tr.querySelector('.unit-price').value = item.unit_price || '';
+    });
+    refreshSlipNotices();
+    recalc();
+    syncRowToolState();
+  });
+})();
 </script>
 {% endblock %}

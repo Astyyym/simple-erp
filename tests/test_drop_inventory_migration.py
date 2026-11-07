@@ -146,8 +146,8 @@ def _assert_inventory_system_gone(conn):
     assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == CURRENT_SCHEMA_VERSION
-    assert CURRENT_SCHEMA_VERSION == 15
-    assert conn.execute("SELECT COUNT(*) FROM schema_version WHERE version=15").fetchone()[0] == 1
+    assert CURRENT_SCHEMA_VERSION == 16
+    assert conn.execute("SELECT COUNT(*) FROM schema_version WHERE version=16").fetchone()[0] == 1
 
 
 def test_v14_database_drops_inventory_tables_and_columns():

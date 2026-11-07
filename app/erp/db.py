@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 from .config import project_path
 
-CURRENT_SCHEMA_VERSION = 15
+CURRENT_SCHEMA_VERSION = 16
 
 # Phase 2（v14）：商品身份 = 单一名称。这四张表都带 `spec` 快照列，迁移时整表重建。
 PRODUCT_SPEC_TABLES = ("products", "order_items", "purchase_order_items", "purchase_return_items")
@@ -24,7 +24,10 @@ DROP_INVENTORY_COLUMNS: dict[str, tuple[str, ...]] = {
     "purchase_return_orders": ("posted_once",),
 }
 # 版本行 notes：写进 `schema_version.notes` 说明这一版做了什么（只作留痕，无逻辑依赖）。
-SCHEMA_VERSION_NOTES = "v15: 删除库存系统（3 张库存表 + 9 个成本/安全库存列）"
+SCHEMA_VERSION_NOTES = "v16: 新增资料文档库（document_categories / document_files 两表）"
+
+# v16 资料文档库：预置内置分类（is_builtin=1，不可删）；顺序即展示顺序。
+DOCUMENT_CATEGORY_DEFAULTS = ("检验报告", "合格证", "资质证书", "其他")
 
 # Correlated NOT EXISTS is NULL-safe for historical unbound purchases.
 CUSTOMER_REFERENCE_GUARD_SQL = " AND ".join(
@@ -62,6 +65,9 @@ def init_db() -> None:
     # SCHEMA_SQL 已无这些表与列，老库要先被重建，否则两套 schema 分叉。
     # 内部会先自动整库备份（pre_drop_inventory）。
     migrate_drop_inventory_system()
+    # v16：资料文档库（只加两表，不改任何现有表/列）。写库前自动整库备份
+    # （pre_document_library）；两表由 SCHEMA_SQL 的 CREATE TABLE IF NOT EXISTS 建立。
+    migrate_add_document_library()
     with get_db() as conn:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
@@ -78,6 +84,7 @@ def init_db() -> None:
         ensure_customer_pinyin_field(conn)
         ensure_pinyin_full_fields(conn)
         ensure_name_norm_fields(conn)
+        ensure_document_categories(conn)
         backfill_product_pinyin_initials(conn)
         backfill_customer_pinyin_initials(conn)
         backfill_product_pinyin_full(conn)
@@ -865,6 +872,49 @@ def migrate_drop_inventory_system() -> None:
         conn.close()
 
 
+def migrate_add_document_library() -> None:
+    """v16：新增资料文档库两表（`document_categories` / `document_files`）。
+
+    只**加表**，不改任何现有表/列，所以不需要重建；两张表由 SCHEMA_SQL 的
+    `CREATE TABLE IF NOT EXISTS` 建立。这里只负责**写库前自动整库备份**
+    （`pre_document_library`，与 `pre_drop_inventory` / `pre_merge_product_spec` 同款）。
+
+    四条铁约束：
+    - 全新库（还没有 `schema_version` 表）直接返回，不为空库造备份；
+    - 版本门：`version >= CURRENT` 直接返回（不对更新程序建的库动 DDL）；
+    - 幂等：资料文档表已存在时直接返回，不重复备份；
+    - 备份失败向上抛（宁可升级中止，也不能在没备份的情况下写库）。
+    """
+    path = db_path()
+    if not path.exists():
+        return
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    try:
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_version'").fetchone() is None:
+            return  # 全新库：没有历史数据可备份
+        row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
+        version = row[0] if row else None
+        if version is None or version >= CURRENT_SCHEMA_VERSION:
+            return
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='document_files'").fetchone() is not None:
+            return  # 已经是 v16 形态
+        from erp.utils.backup import create_backup  # 延迟导入避免循环引用
+
+        create_backup("pre_document_library")
+    finally:
+        conn.close()
+
+
+def ensure_document_categories(conn: sqlite3.Connection) -> None:
+    """预置内置四档分类（`is_builtin=1`，不可删）。幂等：已存在同名分类即跳过。"""
+    for order, name in enumerate(DOCUMENT_CATEGORY_DEFAULTS):
+        conn.execute(
+            "INSERT OR IGNORE INTO document_categories(name, sort_order, is_builtin) VALUES (?, ?, 1)",
+            (name, order),
+        )
+
+
 class PurgeBlockedByRecycledReference(ValueError):
     """该记录被另一条**仍在回收站**的记录引用，先清引用方再试。
 
@@ -1277,4 +1327,29 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     summary TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+-- v16：资料文档库（纯文件柜，不关联客户/商品）。只加两表，不改任何现有表/列。
+CREATE TABLE IF NOT EXISTS document_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    is_builtin INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS document_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    category_id INTEGER REFERENCES document_categories(id),
+    stored_name TEXT NOT NULL,
+    original_name TEXT NOT NULL,
+    ext TEXT NOT NULL DEFAULT '',
+    size_bytes INTEGER NOT NULL DEFAULT 0,
+    mime TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TEXT,
+    delete_reason TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_document_files_category ON document_files(category_id);
+CREATE INDEX IF NOT EXISTS idx_document_files_deleted ON document_files(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_document_files_created ON document_files(created_at);
 """

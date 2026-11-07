@@ -97,6 +97,7 @@
       {% endfor %}
     </form>
     <a class="btn btn-outline-primary" id="reconEntryLink" href="{{ url_for('accounts.reconciliation', customer_id=selected_customer.id, start_date=start_date, end_date=end_date) }}">往来对账</a>
+    {% if ledger_export_url %}<a class="btn btn-outline-success" id="exportLedgerExcelBtn" href="{{ ledger_export_url }}">导出流水Excel</a>{% endif %}
   </div>
   <div class="table-responsive"><table class="table align-middle ledger-table">
     <caption class="visually-hidden">按筛选日期展示销售、退货、收款和账务调整流水</caption>

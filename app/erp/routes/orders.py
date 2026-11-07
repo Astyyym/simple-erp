@@ -9,6 +9,8 @@ from erp.utils.exporting import (
     export_filename,
     order_line_export_headers,
     order_line_export_rows,
+    purchase_line_export_headers,
+    purchase_line_export_rows,
     workbook_download,
 )
 from erp.utils.errors import error_response, not_found
@@ -663,6 +665,114 @@ def export_return_orders_excel():
     )
 
 
+def _purchase_export_filter_context(fixed_order_type: str):
+    """拿货 / 退拿货 Excel 导出：与「单据管理」列表共用客户 + 日期筛选口径。
+
+    `fixed_order_type`: `purchase` | `purchase_return`。拿货/退拿货在单据管理里
+    与销售/退货同屏展示，导出按钮也在这里，所以沿用列表的筛选参数解析。
+    """
+    if fixed_order_type not in {"purchase", "purchase_return"}:
+        raise ValueError("未知的拿货单据类型")
+    is_purchase = fixed_order_type == "purchase"
+    purchase_table = "purchase_orders" if is_purchase else "purchase_return_orders"
+    item_table = "purchase_order_items" if is_purchase else "purchase_return_items"
+    item_fk = "purchase_order_id" if is_purchase else "purchase_return_id"
+    price_column = "unit_cost_cents" if is_purchase else "unit_price_cents"
+    notes_column = "source_notes" if is_purchase else "notes"
+
+    args = _filter_args_from_request()
+    customer_q = args["customer_q"]
+    with get_db() as conn:
+        scope, customer_row, _, _ = _resolve_customer_scope(conn, customer_q)
+        if scope == "customer":
+            bounds = conn.execute(
+                f"SELECT MIN(business_date) AS first_date, MAX(business_date) AS last_date "
+                f"FROM {purchase_table} WHERE customer_id=? AND deleted_at IS NULL",
+                (customer_row["id"],),
+            ).fetchone()
+        else:
+            bounds = conn.execute(
+                f"SELECT MIN(business_date) AS first_date, MAX(business_date) AS last_date "
+                f"FROM {purchase_table} WHERE deleted_at IS NULL"
+            ).fetchone()
+        (
+            _date_mode,
+            _year,
+            _month,
+            start_date,
+            end_date,
+            _start_day,
+            _end_day,
+            _sy,
+            _sm,
+            _ey,
+            _em,
+        ) = _resolve_date_range(
+            args["date_mode_raw"],
+            args["year_raw"],
+            args["month_raw"],
+            args["start_date_raw"],
+            args["end_date_raw"],
+            bounds["first_date"] if bounds else None,
+            bounds["last_date"] if bounds else None,
+            args["start_year_raw"],
+            args["start_month_raw"],
+            args["end_year_raw"],
+            args["end_month_raw"],
+        )
+
+        conditions = ["o.deleted_at IS NULL", "o.business_date >= ?", "o.business_date <= ?"]
+        params: list = [start_date, end_date]
+        if scope == "customer":
+            conditions.append("o.customer_id=?")
+            params.append(customer_row["id"])
+        elif customer_q:
+            # 拿货表只有客户名快照（无拼音列）→ 拼音回查客户档案，与列表口径一致。
+            conditions.append(
+                "(o.customer_name LIKE ? OR EXISTS (SELECT 1 FROM customers c"
+                f" WHERE c.id = o.customer_id AND c.deleted_at IS NULL AND {name_match_clause('c.')}))"
+            )
+            params.append(name_like_pattern(customer_q))
+            params.extend(name_match_params(customer_q))
+        where_clause = " AND ".join(conditions)
+        rows = conn.execute(
+            f"""
+            SELECT o.order_no, o.business_date, o.status, o.{notes_column} AS notes,
+                   o.total_amount_cents, o.customer_name,
+                   i.product_name, i.unit, i.quantity_3dp,
+                   i.{price_column} AS unit_price_cents, i.subtotal_cents
+            FROM {purchase_table} o
+            JOIN {item_table} i ON i.{item_fk} = o.id
+            WHERE {where_clause}
+            ORDER BY o.business_date ASC, o.id ASC, i.id ASC
+            """,
+            params,
+        ).fetchall()
+    return [dict(row) | {"order_type": fixed_order_type} for row in rows]
+
+
+@orders_bp.get("/export/purchases.xlsx")
+def export_purchase_orders_excel():
+    lines = _purchase_export_filter_context("purchase")
+    return workbook_download(
+        purchase_line_export_headers(),
+        purchase_line_export_rows(lines),
+        sheet_title="拿货单导出",
+        filename=export_filename("拿货单导出"),
+    )
+
+
+@orders_bp.get("/export/purchase_returns.xlsx")
+def export_purchase_return_orders_excel():
+    lines = _purchase_export_filter_context("purchase_return")
+    return workbook_download(
+        purchase_line_export_headers(),
+        purchase_line_export_rows(lines),
+        sheet_title="退拿货单导出",
+        filename=export_filename("退拿货单导出"),
+    )
+
+
 @orders_bp.get("/new")
 def new_order():
     return _new_order_form("sale")
@@ -1293,6 +1403,57 @@ def api_next_order_no():
     with get_db() as conn:
         order_no = next_order_no(conn, order_date)
     return jsonify({"order_date": order_date, "order_no": order_no})
+
+
+@orders_bp.get("/api/last_order")
+def api_last_order():
+    """1-F 复制上一单：取同类型最近一张有效单据的明细，供新建页一键带入。
+
+    - 传 `customer_id` 时只在该客户范围内找；不传则取该类型最近一张；
+    - 只认未删除且已保存/已打印（作废、草稿不算）；
+    - 只返回商品与数量；**不返回成交价**——单价仍由前端按当前客户专属价重取。
+    """
+    order_type = request.args.get("type", "sale").strip()
+    if order_type not in {"sale", "return"}:
+        order_type = "sale"
+    customer_id = request.args.get("customer_id", type=int)
+    with get_db() as conn:
+        where = "o.order_type=? AND o.deleted_at IS NULL AND o.status IN ('saved','printed')"
+        params: list = [order_type]
+        if customer_id:
+            where += " AND o.customer_id=?"
+            params.append(customer_id)
+        row = conn.execute(
+            f"SELECT o.id, o.order_no FROM orders o WHERE {where} "
+            "ORDER BY o.order_date DESC, o.id DESC LIMIT 1",
+            params,
+        ).fetchone()
+        if row is None:
+            return jsonify({
+                "ok": False,
+                "message": "没有可复制的历史单据（该客户或该类型下还没有正式保存的单据）。",
+                "items": [],
+            })
+        items = conn.execute(
+            "SELECT product_id, product_name, unit, quantity, unit_price_cents "
+            "FROM order_items WHERE order_id=? ORDER BY id",
+            (row["id"],),
+        ).fetchall()
+    return jsonify({
+        "ok": True,
+        "order_id": row["id"],
+        "order_no": row["order_no"],
+        "items": [
+            {
+                "product_id": item["product_id"],
+                "product_name": item["product_name"],
+                "unit": item["unit"],
+                "quantity": item["quantity"],
+                "unit_price": cents_to_yuan(int(item["unit_price_cents"] or 0)),
+            }
+            for item in items
+        ],
+    })
 
 
 @orders_bp.get("/<int:order_id>/pdf")
