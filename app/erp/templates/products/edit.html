@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros_upload.html" import upload_modal %}
 {% block content %}
 {#
   2026-10-14「主次与分组」重构 + 同日用户调整（见 开发短计划/2026-10-14_档案编辑页主次与分组重构_执行计划.md）：
@@ -86,14 +87,22 @@
     <section class="card">
       <div class="card-body">
         <div class="card-head"><h3>商品图片</h3><span class="card-cap">仅 JPEG/PNG，≤5MB</span></div>
-        <form method="post" action="/products/{{product.id}}/image" enctype="multipart/form-data" class="img-stack">
+        <div class="img-stack">
           <div class="img-thumb">{% if product.image_path %}<img src="/products/{{product.id}}/image" alt="{{product.name}}">{% else %}无图片{% endif %}</div>
-          <input class="form-control" type="file" name="image" accept="image/jpeg,image/png" required>
-          <button class="btn btn-outline-secondary">上传/替换图片</button>
-        </form>
+          <button type="button" class="btn btn-outline-secondary" data-upload-open="productImageModal">上传/替换图片</button>
+        </div>
         <p data-ui-hint class="field-hint">系统会重新编码并保存到数据目录。</p>
       </div>
     </section>
   </div>
 </div>
+{% call upload_modal('productImageModal', '上传商品图片', '上传/替换图片', 'productImageForm') %}
+  <form id="productImageForm" method="post" action="/products/{{product.id}}/image" enctype="multipart/form-data" class="m-0 d-flex flex-column gap-2">
+    <div>
+      <label class="form-label" for="productImageFile">选择图片</label>
+      <input class="form-control" id="productImageFile" type="file" name="image" accept="image/jpeg,image/png" required>
+    </div>
+    <p class="erp-modal-hint mb-0">仅 JPEG/PNG，≤5MB；系统会重新编码并保存到数据目录。</p>
+  </form>
+{% endcall %}
 {% endblock %}

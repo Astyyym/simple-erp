@@ -1,0 +1,29 @@
+{# 通用上传弹窗宏（2026-11-08）
+   全站文件上传统一走「居中弹窗 + 灰色蒙版」。
+   用法：
+     {% from "_macros_upload.html" import upload_modal %}
+     <button type="button" class="btn ..." data-upload-open="modalX">...</button>
+     {% call upload_modal('modalX', '标题', '提交按钮文字', 'formId', open=false) %}
+       <form id="formId" ...>...</form>
+     {% endcall %}
+   提交按钮通过 form="formId" 关联到 body 里的表单（HTML 不允许按钮跨层级提交，form 属性可以）。
+#}
+{% macro upload_modal(id, title, submit_label, form_id, open=false, subtitle='') %}
+<div class="erp-modal{{ ' is-open' if open }}" id="{{ id }}"{% if not open %} hidden{% endif %}>
+  <div class="erp-modal-backdrop" data-upload-close></div>
+  <div class="erp-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="{{ id }}Title">
+    <div class="erp-modal-head">
+      <h3 id="{{ id }}Title">{{ title }}</h3>
+      <button type="button" class="erp-modal-close" data-upload-close aria-label="关闭">×</button>
+    </div>
+    <div class="erp-modal-body">
+      {% if subtitle %}<p class="erp-modal-sub">{{ subtitle }}</p>{% endif %}
+      {{ caller() }}
+    </div>
+    <div class="erp-modal-foot">
+      <button type="button" class="btn btn-outline-secondary" data-upload-close>取消</button>
+      <button type="submit" class="btn btn-primary" form="{{ form_id }}">{{ submit_label }}</button>
+    </div>
+  </div>
+</div>
+{% endmacro %}

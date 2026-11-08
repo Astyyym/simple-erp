@@ -1,6 +1,22 @@
 {% extends "base.html" %}
+{% from "_macros_upload.html" import upload_modal %}
 {% block content %}
 <h2>资料文档</h2>
+<style>
+  /* 去乱（2026-11-08，方案 B）：默认只留一行「搜索」，上传表单折进居中弹窗。 */
+  .docs-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--erp-surface);border:1px solid var(--erp-border);border-radius:var(--erp-radius);box-shadow:var(--erp-shadow,0 1px 2px rgba(16,24,40,.05));padding:14px 16px;margin-bottom:14px}
+  .docs-search-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:1 1 320px;min-width:0;margin:0}
+  .docs-search{display:flex;align-items:center;gap:8px;flex:1 1 220px;min-width:0;height:38px;border:1px solid var(--erp-border);border-radius:8px;padding:0 12px;background:var(--erp-surface)}
+  .docs-search svg{width:16px;height:16px;color:var(--erp-muted);flex:0 0 auto}
+  .docs-search input{border:0;outline:none;flex:1;height:100%;font:inherit;font-size:13.5px;background:transparent;color:var(--erp-ink)}
+  .docs-toolbar .docs-spacer{flex:0 1 auto}
+  .docs-toolbar .btn{min-height:38px}
+  .docs-advanced{margin:0 0 14px}
+  .docs-advanced>summary{list-style:none;display:inline-flex;align-items:center;gap:6px;cursor:pointer;color:var(--erp-primary);font-size:13px;font-weight:600;padding:4px 0}
+  .docs-advanced>summary::-webkit-details-marker{display:none}
+  .docs-advanced>summary::before{content:"▾";font-size:12px;transition:transform .15s}
+  .docs-advanced:not([open])>summary::before{transform:rotate(-90deg)}
+</style>
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% for category, message in messages %}
   <div class="alert alert-{{ 'danger' if category == 'danger' else ('success' if category == 'success' else 'info') }}" role="alert">{{ message }}</div>
@@ -11,46 +27,30 @@
   单个文件最大 {{ max_size_mb }}MB；不支持 SVG 与可执行文件。
 </p>
 
-<div class="card card-body mb-3">
-  <form class="d-flex flex-wrap gap-2 align-items-end mb-3" method="get" action="{{ url_for('docs.list_docs') }}">
+<div class="docs-toolbar">
+  <form class="docs-search-form" method="get" action="{{ url_for('docs.list_docs') }}">
     {% if category_id %}<input type="hidden" name="category_id" value="{{ category_id }}">{% endif %}
-    <div class="flex-grow-1" style="min-width:220px">
-      <label class="form-label mb-1" for="docsSearchInput">搜索</label>
-      <input class="form-control" id="docsSearchInput" type="search" name="q" value="{{ q }}" placeholder="标题 / 原文件名 / 备注">
-    </div>
-    <button class="btn btn-primary" type="submit">搜索</button>
+    <label class="docs-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="docsSearchInput" type="search" name="q" value="{{ q }}" placeholder="搜索标题 / 原文件名 / 备注">
+    </label>
+    <button class="btn btn-outline-secondary" type="submit">搜索</button>
     {% if q %}<a class="btn btn-outline-secondary" href="{{ url_for('docs.list_docs', category_id=category_id) }}">清除搜索</a>{% endif %}
   </form>
+  <span class="docs-spacer"></span>
+  <button type="button" class="btn btn-primary" data-upload-open="docsUploadModal">＋ 上传文件</button>
+</div>
 
-  <form class="d-flex flex-wrap gap-2 align-items-end" method="post" action="{{ url_for('docs.upload_docs') }}" enctype="multipart/form-data">
-    <input type="hidden" name="next" value="{{ current_back_url }}">
-    <div style="min-width:240px">
-      <label class="form-label mb-1" for="docsUploadFiles">上传文件（可多选）</label>
-      <input class="form-control" id="docsUploadFiles" type="file" name="files" multiple
-             accept=".jpg,.jpeg,.png,.gif,.bmp,.webp,.avif,.tif,.tiff,.heic,.heif,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf" required>
-    </div>
-    <div style="min-width:160px">
-      <label class="form-label mb-1" for="docsUploadCategory">分类</label>
-      <select class="form-select" id="docsUploadCategory" name="category_id">
-        <option value="">未分类</option>
-        {% for c in categories %}<option value="{{ c.id }}" {% if category_id == c.id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
-      </select>
-    </div>
-    <div class="flex-grow-1" style="min-width:180px">
-      <label class="form-label mb-1" for="docsUploadNote">备注（可选）</label>
-      <input class="form-control" id="docsUploadNote" name="note" placeholder="同一批文件共用本备注">
-    </div>
-    <button class="btn btn-success" type="submit">上传</button>
-  </form>
-
+<details class="docs-advanced">
+  <summary class="docs-advanced-toggle">新增自定义分类</summary>
   <form class="d-flex gap-2 align-items-end mt-2" method="post" action="{{ url_for('docs.create_category') }}">
     <div style="min-width:200px">
-      <label class="form-label mb-1" for="docsNewCategory">新增自定义分类</label>
+      <label class="form-label mb-1" for="docsNewCategory">分类名称</label>
       <input class="form-control" id="docsNewCategory" name="name" placeholder="例如：检测报告补充" maxlength="40">
     </div>
     <button class="btn btn-outline-primary" type="submit">新增分类</button>
   </form>
-</div>
+</details>
 
 <ul class="nav nav-pills flex-wrap gap-1 mb-3">
   <li class="nav-item">
@@ -103,7 +103,7 @@
             <form method="post" action="{{ d.delete_url }}" onsubmit="return confirm('确认删除《{{ d.title }}》？文件会被物理删除，无法找回。');">
               <input type="hidden" name="next" value="{{ current_back_url }}">
               <input type="hidden" name="confirm_text" value="删除">
-              <button class="btn btn-sm btn-danger" type="submit">删除</button>
+              <button class="btn btn-sm btn-outline-danger" type="submit">删除</button>
             </form>
           </div>
         </td>
@@ -122,6 +122,30 @@
 {% endif %}
 
 {% else %}
-<div class="alert alert-light border">还没有资料文档。用上面的表单上传检验报告、合格证等文件。</div>
+<div class="alert alert-light border">还没有资料文档。点右上「＋ 上传文件」上传检验报告、合格证等文件。</div>
 {% endif %}
+
+{# 上传弹窗：全站统一居中弹窗（2026-11-08） #}
+{% call upload_modal('docsUploadModal', '上传文件', '上传', 'docsUploadForm') %}
+  <form id="docsUploadForm" method="post" action="{{ url_for('docs.upload_docs') }}" enctype="multipart/form-data" class="m-0 d-flex flex-column gap-2">
+    <input type="hidden" name="next" value="{{ current_back_url }}">
+    <div>
+      <label class="form-label" for="docsUploadFiles">选择文件（可多选）</label>
+      <input class="form-control" id="docsUploadFiles" type="file" name="files" multiple
+             accept=".jpg,.jpeg,.png,.gif,.bmp,.webp,.avif,.tif,.tiff,.heic,.heif,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf" required>
+    </div>
+    <div>
+      <label class="form-label" for="docsUploadCategory">分类</label>
+      <select class="form-select" id="docsUploadCategory" name="category_id">
+        <option value="">未分类</option>
+        {% for c in categories %}<option value="{{ c.id }}" {% if category_id == c.id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="form-label" for="docsUploadNote">备注（可选）</label>
+      <input class="form-control" id="docsUploadNote" name="note" placeholder="同一批文件共用本备注">
+    </div>
+    <p class="erp-modal-hint mb-0">单个文件最大 {{ max_size_mb }}MB；不支持 SVG 与可执行文件。</p>
+  </form>
+{% endcall %}
 {% endblock %}

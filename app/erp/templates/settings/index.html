@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros_upload.html" import upload_modal %}
 {% block content %}
 <h2>设置</h2>
 <p data-ui-hint class="text-muted mb-3">保存后页面自动更新；有未保存修改时切换页面，会询问是否先保存。</p>
@@ -325,14 +326,7 @@
     <button type="submit" class="btn btn-primary">立即备份</button>
   </form>
 
-  <form method="post" action="{{ url_for('settings.backup_import') }}" enctype="multipart/form-data"
-        class="settings-inline-form mb-3"
-        onsubmit="return confirm('导入只是把这份备份复制到下面的备份列表，不会覆盖当前数据。确定导入？');">
-    <label class="settings-inline-label">从文件导入备份（.zip）
-      <input class="form-control form-control-sm" type="file" name="file" accept=".zip,application/zip" required>
-    </label>
-    <button type="submit" class="btn btn-outline-primary">导入备份</button>
-  </form>
+  <button type="button" class="btn btn-outline-primary mb-3" data-upload-open="backupImportModal">导入备份</button>
 
   {% if backups %}
   {#
@@ -689,17 +683,7 @@
     <strong>此存档只作留底凭证，不参与账款计算</strong>——旧软件口径与本系统不同，硬塞进去只会污染账款。
     客户来问「这 5000 怎么来的」时，人工翻档核对。
   </p>
-  <form method="post" action="{{ url_for('settings.legacy_archive_upload') }}" enctype="multipart/form-data" class="d-flex flex-wrap gap-2 align-items-end mb-3">
-    <div>
-      <label class="form-label" for="legacy_archive_file">旧欠款清单文件</label>
-      <input class="form-control" id="legacy_archive_file" type="file" name="file" accept=".xlsx,.xls,.csv,.txt" required>
-    </div>
-    <div>
-      <label class="form-label" for="legacy_archive_note">备注（可选）</label>
-      <input class="form-control" id="legacy_archive_note" name="note" placeholder="例如：截至 2026-10-01 未结欠款">
-    </div>
-    <button class="btn btn-outline-primary">存档（仅留底）</button>
-  </form>
+  <button type="button" class="btn btn-outline-primary mb-3" data-upload-open="legacyArchiveModal">上传旧账存档</button>
   {% if archives %}
   {# 同上一块：表格只是卡片里的内容，不再自带一层玻璃（否则又是「卡片套卡片」）。 #}
   <div class="settings-table-shell">
@@ -1659,4 +1643,26 @@
     setInterval(poll, 4000);
   })();
 </script>
+{% call upload_modal('backupImportModal', '导入备份', '导入备份', 'backupImportForm') %}
+  <form id="backupImportForm" method="post" action="{{ url_for('settings.backup_import') }}" enctype="multipart/form-data" class="m-0 d-flex flex-column gap-2" onsubmit="return confirm('导入只是把这份备份复制到下面的备份列表，不会覆盖当前数据。确定导入？');">
+    <div>
+      <label class="form-label" for="backupImportFile">备份文件（.zip）</label>
+      <input class="form-control" id="backupImportFile" type="file" name="file" accept=".zip,application/zip" required>
+    </div>
+    <p class="erp-modal-hint mb-0">导入只是把这份备份复制到备份列表，不会覆盖当前数据。</p>
+  </form>
+{% endcall %}
+{% call upload_modal('legacyArchiveModal', '上传旧账存档', '存档（仅留底）', 'legacyArchiveForm') %}
+  <form id="legacyArchiveForm" method="post" action="{{ url_for('settings.legacy_archive_upload') }}" enctype="multipart/form-data" class="m-0 d-flex flex-column gap-2">
+    <div>
+      <label class="form-label" for="legacy_archive_file">旧欠款清单文件</label>
+      <input class="form-control" id="legacy_archive_file" type="file" name="file" accept=".xlsx,.xls,.csv,.txt" required>
+    </div>
+    <div>
+      <label class="form-label" for="legacy_archive_note">备注（可选）</label>
+      <input class="form-control" id="legacy_archive_note" name="note" placeholder="例如：截至 2026-10-01 未结欠款">
+    </div>
+    <p class="erp-modal-hint mb-0">旧软件导出的欠款清单原样留底到 legacy_archive/，只作凭证，不参与账款计算。</p>
+  </form>
+{% endcall %}
 {% endblock %}

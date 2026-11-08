@@ -708,6 +708,23 @@
       /* 窄屏仍保持商品选择器可用；靠 .order-table-scroll 横向滚动，不把下拉压到不可用 */
       .product-picker .picker-row{min-width:300px}
     }
+    /* ===== 通用上传弹窗（2026-11-08）：全站文件上传统一走「居中弹窗 + 灰色蒙版」 ===== */
+    .erp-modal{position:fixed;inset:0;z-index:3000;display:none;align-items:center;justify-content:center;padding:20px}
+    .erp-modal.is-open{display:flex}
+    .erp-modal[hidden]{display:none!important}
+    .erp-modal-backdrop{position:absolute;inset:0;background:rgba(15,20,30,.5);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+    .erp-modal-dialog{position:relative;width:min(460px,100%);max-height:calc(100vh - 40px);overflow:auto;background:var(--erp-surface);color:var(--erp-ink);border:1px solid var(--erp-border);border-radius:12px;box-shadow:0 24px 60px rgba(15,23,42,.35)}
+    .erp-modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 18px;border-bottom:1px solid var(--erp-border)}
+    .erp-modal-head h3{margin:0;font-size:17px}
+    .erp-modal-close{display:grid;place-items:center;width:32px;height:32px;border:0;border-radius:8px;background:transparent;color:var(--erp-muted);font-size:22px;line-height:1;cursor:pointer}
+    .erp-modal-close:hover{background:var(--erp-surface-soft);color:var(--erp-ink)}
+    .erp-modal-body{padding:16px 18px;display:flex;flex-direction:column;gap:14px}
+    .erp-modal-sub{margin:0;color:var(--erp-muted);font-size:12.5px;line-height:1.6}
+    .erp-modal-hint{margin:0;color:var(--erp-muted);font-size:12px;line-height:1.6;background:var(--erp-surface-soft);border:1px solid var(--erp-border);border-radius:8px;padding:9px 11px}
+    .erp-modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:13px 18px;border-top:1px solid var(--erp-border)}
+    body.erp-modal-open{overflow:hidden}
+    .erp-modal-body .list-import-form{flex-direction:column;align-items:stretch;margin:0;gap:12px;flex-basis:auto}
+    .erp-modal-body .list-import-form input[type="file"],.erp-modal-body .list-import-form .form-select{flex:0 0 auto;width:100%}
   </style>
   <script>
     async function postAndRemoveRow(form) {
@@ -876,6 +893,38 @@
     }
     render();
     setInterval(render, 1000);
+  })();
+  // 通用上传弹窗（2026-11-08）：[data-upload-open="id"] 打开；[data-upload-close]/蒙版/Esc 关闭。
+  (function () {
+    // 弹窗若留在 .content 内，会被其 backdrop-filter 形成的包含块困在内容区，蒙版盖不到左侧栏；
+    // 统一把弹窗挂到 body 上，让 fixed 蒙版覆盖整个视口（含侧栏）。
+    document.querySelectorAll('.erp-modal').forEach(function (m) {
+      if (m.parentNode !== document.body) document.body.appendChild(m);
+    });
+    function openUploadModal(id) {
+      var m = document.getElementById(id);
+      if (!m) return;
+      m.classList.add('is-open');
+      m.removeAttribute('hidden');
+      document.body.classList.add('erp-modal-open');
+      var f = m.querySelector('.erp-modal-body input:not([type="hidden"]), .erp-modal-body select, .erp-modal-body textarea');
+      if (f) { try { f.focus(); } catch (e) {} }
+    }
+    function closeUploadModal(m) {
+      if (!m) return;
+      m.classList.remove('is-open');
+      m.setAttribute('hidden', '');
+      document.body.classList.remove('erp-modal-open');
+    }
+    document.addEventListener('click', function (e) {
+      var opener = e.target.closest('[data-upload-open]');
+      if (opener) { e.preventDefault(); openUploadModal(opener.getAttribute('data-upload-open')); return; }
+      var closer = e.target.closest('[data-upload-close]');
+      if (closer) { e.preventDefault(); closeUploadModal(closer.closest('.erp-modal')); return; }
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { document.querySelectorAll('.erp-modal.is-open').forEach(closeUploadModal); }
+    });
   })();
 </script>
 </body>

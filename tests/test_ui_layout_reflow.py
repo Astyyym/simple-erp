@@ -62,8 +62,8 @@ def test_recycle_bins_are_two_column_cards_not_full_width_tables():
     assert page.count('class="recycle-scroll"') == 3
     # 空状态不再留空白表体。
     assert page.count('class="recycle-empty"') == 3
-    # 单据卡带四类类型筛选（与单据管理页同一套语义）。
-    assert 'class="recycle-layer"' in page
+    # 单据卡带四类类型筛选（与单据管理页同一套语义），2026-11-08 收进单行工具带。
+    assert 'class="recycle-toolbar"' in page
     assert 'class="recycle-type-options"' in page
     for value in ("sale", "return", "purchase", "purchase_return"):
         assert f'id="recycleType{value}"' in page

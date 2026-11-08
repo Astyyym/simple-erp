@@ -262,27 +262,28 @@ def test_import_forms_keep_multipart_upload_and_same_name_policy():
         assert 'style="max-width:280px"' not in form, path
 
 
-def test_import_panel_is_collapsed_but_exports_stay_visible():
-    """批量导入默认收起；但「下载Excel模板」「导出Excel」是日常动作，必须留在面板外可见。
-
-    整块卡片一起收起会把导出也藏了——那是高频动作，不能跟着低频的上传一起收。
+def test_import_is_behind_modal_trigger_and_exports_stay_visible():
+    """批量导入改成居中弹窗触发（2026-11-08）；「下载Excel模板」「导出Excel」是日常动作，
+    必须留在弹窗触发按钮之前的可见区，不能跟着低频的上传一起藏起来。
     """
+    triggers = {
+        "/products/": 'data-upload-open="prodImportModal"',
+        "/customers/": 'data-upload-open="custImportModal"',
+    }
     for path in PAGES:
         html = _html(path)
-        assert 'class="list-import-panel"' in html, path
-        assert 'class="list-import-toggle"' in html, path
-        panel = html.split('class="list-import-panel"', 1)[1].split(">", 1)[0]
-        assert "open" not in panel, f"{path} 默认应收起"
-        # 导出/模板链接必须在 <details> 之外（列表前面），不能被收进面板。
-        before_panel = html.split('class="list-import-panel"', 1)[0]
-        assert "导出Excel" in before_panel, path
-        assert "下载Excel模板" in before_panel, path
-        # 面板内的上传控件仍在（只是收起后不可见）。
+        assert triggers[path] in html, path
+        # 导出/模板链接在触发按钮之前（列表前面），不被收进弹窗。
+        before_trigger = html.split(triggers[path], 1)[0]
+        assert "导出Excel" in before_trigger, path
+        assert "下载Excel模板" in before_trigger, path
+        # 上传表单仍在页面里（弹窗内），multipart 不丢。
         assert 'class="list-import-form"' in html, path
+        assert 'enctype="multipart/form-data"' in html, path
 
 
-def test_import_failure_reopens_the_panel():
-    """导入失败时面板必须自动展开，否则用户看不到错误原因。"""
+def test_import_failure_opens_the_modal():
+    """导入失败时弹窗必须以打开态渲染，否则用户看不到错误原因。"""
     init_db()
     client = create_app().test_client()
     response = client.post(
@@ -293,12 +294,12 @@ def test_import_failure_reopens_the_panel():
     assert response.status_code == 400
     html = response.get_data(as_text=True)
     assert "仅支持 .xlsx 或 .csv 文件" in html
-    panel = html.split('class="list-import-panel"', 1)[1].split(">", 1)[0]
-    assert "open" in panel, "导入失败后应自动展开面板"
+    assert 'id="prodImportModal"' in html
+    assert 'class="erp-modal is-open"' in html, "导入失败后弹窗应自动打开"
 
 
-def test_import_result_reopens_the_panel():
-    """导入完成（预览或确认）后面板要展开，让用户看到结果摘要。"""
+def test_import_result_opens_the_modal():
+    """导入完成（预览/确认）后弹窗以打开态渲染，让用户看到结果摘要。"""
     init_db()
     client = create_app().test_client()
     name = f"导入面板商品-{uuid.uuid4().hex[:8]}"
@@ -319,8 +320,8 @@ def test_import_result_reopens_the_panel():
     assert confirmed.status_code == 200
     html = confirmed.get_data(as_text=True)
     assert name in html
-    panel = html.split('class="list-import-panel"', 1)[1].split(">", 1)[0]
-    assert "open" in panel, "导入完成后面板应展开显示结果"
+    assert 'id="prodImportModal"' in html
+    assert 'class="erp-modal is-open"' in html, "导入完成后弹窗应打开显示结果"
 
 
 def test_customer_table_colgroup_matches_header_column_count():

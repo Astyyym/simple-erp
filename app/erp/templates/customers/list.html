@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros_upload.html" import upload_modal %}
 {% block content %}
 <h2>客户管理</h2>
 {% if not has_backup %}
@@ -23,18 +24,7 @@
       <a class="btn btn-outline-primary" href="/customers/import/template">下载Excel模板</a>
       <a class="btn btn-outline-success" href="/customers/export.xlsx{% if q %}?q={{ q|urlencode }}{% endif %}">导出Excel</a>
     </div>
-    <details class="list-import-panel" {% if import_error or import_open %}open{% endif %}>
-      <summary class="list-import-toggle">批量导入</summary>
-      <form class="list-import-form" method="post" action="/customers/import" enctype="multipart/form-data">
-        <input class="form-control" type="file" name="file" accept=".xlsx,.csv" required>
-        <select class="form-select" name="same_name">
-          <option value="skip" selected>同名：跳过</option>
-          <option value="update">同名：更新</option>
-        </select>
-        <button class="btn btn-primary text-nowrap">预检并导入</button>
-      </form>
-      <p data-ui-hint class="list-import-hint">支持.xlsx/.csv，最大5MB；列：客户名称/电话/地址/期初余额（元）/备注；旧单列表头仍兼容。<strong>电话、地址可留空：留空的行照样导入，并在列表里标记为「待补全」</strong>；模板第二个 sheet「填写说明」有同一份规则。期初填**未结欠款**（正数=客户欠我）。</p>
-    </details>
+    <button type="button" class="btn btn-outline-secondary" data-upload-open="custImportModal">批量导入</button>
     <!-- 2026-10-14 第二轮（用户要求）：新增放在「批量导入」右侧，两页同构。 -->
     <details class="list-create-panel" {% if create_open %}open{% endif %}>
       <summary class="list-create-toggle">新增客户</summary>
@@ -149,4 +139,20 @@
   );
 })();
 </script>
+{% call upload_modal('custImportModal', '导入客户信息表', '预检并导入', 'custImportForm', open=(import_error or import_open)) %}
+  <form id="custImportForm" class="list-import-form" method="post" action="/customers/import" enctype="multipart/form-data">
+    <div>
+      <label class="form-label" for="custImportFile">Excel / CSV 文件</label>
+      <input class="form-control" id="custImportFile" type="file" name="file" accept=".xlsx,.csv" required>
+    </div>
+    <div>
+      <label class="form-label" for="custImportSameName">同名客户</label>
+      <select class="form-select" id="custImportSameName" name="same_name">
+        <option value="skip" selected>同名：跳过</option>
+        <option value="update">同名：更新</option>
+      </select>
+    </div>
+    <p data-ui-hint class="list-import-hint">支持.xlsx/.csv，最大5MB；列：客户名称/电话/地址/期初余额（元）/备注；旧单列表头仍兼容。<strong>电话、地址可留空：留空的行照样导入，并在列表里标记为「待补全」</strong>；模板第二个 sheet「填写说明」有同一份规则。期初填**未结欠款**（正数=客户欠我）。</p>
+  </form>
+{% endcall %}
 {% endblock %}
