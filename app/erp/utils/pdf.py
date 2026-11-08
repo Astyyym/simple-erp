@@ -173,7 +173,7 @@ def settings_summary_preview_context() -> dict:
 
 
 def settings_reconciliation_preview_context() -> dict:
-    """Fixed sample for the Settings 往来交易对账单 preview.
+    """Fixed sample for the Settings 往来对账单 preview.
 
     形状与 `get_reconciliation_print_context` 的输出对齐（snapshot + documents），
     数字自洽：四类总额相加 = 流水总额 281.00，加资金流水合计 −200.00 得汇总 81.00。
@@ -274,7 +274,7 @@ def generate_settings_summary_preview_pdf() -> Path:
 
 
 def generate_settings_reconciliation_preview_pdf() -> Path:
-    """Render Settings' 往来交易对账单 sample with the real A4 statement template."""
+    """Render Settings' 往来对账单 sample with the real A4 statement template."""
     context = settings_reconciliation_preview_context()
     return _write_sample_pdf(
         "settings_reconciliation_preview.pdf",

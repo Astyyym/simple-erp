@@ -123,7 +123,8 @@
       return (Array.isArray(rows) ? rows : []).map(row => ({id: row.id, name: row.name}));
     },
     item => { const node = document.createElement('span'); node.textContent = item.name; return node; },
-    item => { hidden.value = item.id; },
+    // 选中后把完整对象名写回可见输入框（只写 hidden id 会留下半截输入，像「点了没反应」）。
+    item => { input.value = item.name; hidden.value = item.id; },
     // 改字即清空已选 id，避免「改了名字却仍按上一个对象建快照」。
     () => { hidden.value = ''; },
   );

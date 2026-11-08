@@ -309,7 +309,9 @@
       return (Array.isArray(rows) ? rows : []).map(row => ({id: row.id, name: row.name}));
     },
     item => { const node = document.createElement('span'); node.textContent = item.name; return node; },
-    item => { hidden.value = item.id; },
+    // 选中后把完整客户名写回可见输入框：只写 hidden id 的话，框里还留着半截输入，
+    // 用户看到的就是「点了候选没反应、名字不上去」（2026-11-08 修复）。
+    item => { input.value = item.name; hidden.value = item.id; },
     // 改字即清空已选 id：否则「选了 A 再把名字改成 B」会带着 A 的 id 去查流水。
     () => { hidden.value = ''; },
   );

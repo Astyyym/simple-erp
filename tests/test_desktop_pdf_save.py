@@ -151,7 +151,7 @@ def test_settings_page_exposes_html_and_pdf_preview_entries(monkeypatch):
     assert "/settings/print-preview.pdf?desktop_preview=1" in html
     assert "/settings/print-preview/summary.pdf?desktop_preview=1" in html
     assert "/settings/print-preview/reconciliation.pdf?desktop_preview=1" in html
-    assert "客户货款汇总表" in html and "往来交易对账单" in html
+    assert "客户货款汇总表" in html and "往来对账单" in html
     # 未保存修改的确认提示必须挂在全部三个 PDF 样张链接上。
     # 2026-10-17：HTML 样张入口已删除，计数从 6 降到 3（不是删断言、是跟着契约走）。
     assert html.count("data-print-preview href=") == 3

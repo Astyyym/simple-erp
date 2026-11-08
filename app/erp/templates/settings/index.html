@@ -156,7 +156,7 @@
     <p data-ui-hint class="text-muted small">
       打印分两套纸型，不要混用：<strong>销售单 / 退货单 / 拿货单 / 退拿货单</strong> 走
       <strong>241mm 两侧走纸孔连续纸</strong>（PDF 逻辑页 215.9×139.7mm，页内左右各留 7.3mm 版心）；
-      <strong>客户货款汇总 / 往来交易对账单</strong> 走
+      <strong>客户货款汇总 / 往来对账单</strong> 走
       <strong>A4 竖向（210×297mm）</strong>。
       <code>NantianPR-LQ</code> 驱动请选择 <strong>A4 横向、实际大小/100%、不要“适合页面”或缩放</strong>，
       连续纸由驱动居中映射。下面的偏移与缩放仅作用于四类开单及设置样张，不作用于账款汇总/对账；
@@ -216,7 +216,7 @@
             </td>
           </tr>
           <tr>
-            <td>往来交易对账单</td>
+            <td>往来对账单</td>
             <td>A4 竖版（210×297mm）</td>
             <td class="text-end">
               <a class="btn btn-sm btn-outline-info" id="settingsReconPreviewPdf" data-print-preview href="{{ url_for('settings.reconciliation_print_preview_pdf', desktop_preview=1, return_to=request.full_path) if is_desktop else url_for('settings.reconciliation_print_preview_pdf') }}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>生成预览 PDF</a>

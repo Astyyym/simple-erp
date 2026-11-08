@@ -1,6 +1,7 @@
 from decimal import InvalidOperation
 
 from flask import Blueprint, render_template, request, redirect, url_for, send_file, jsonify
+import re
 import sqlite3
 
 from erp.db import get_db
@@ -428,22 +429,44 @@ def reconciliation_order_detail(snapshot_id: int, order_id: int):
     return jsonify(detail)
 
 
+# 对账单保存文件名 = 客户名 + 日期区间 + 「往来对账单」（2026-11-08 用户要求）。
+# Windows 文件名不允许 \ / : * ? " < > | 及控制字符，统一替换成下划线。
+_ILLEGAL_FILENAME_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+
+
+def _reconciliation_pdf_filename(snapshot: dict) -> str:
+    customer = snapshot.get("customer") or {}
+    name = str(customer.get("name") or "").strip() or "客户"
+    start = str(snapshot.get("start_date") or "").strip()
+    end = str(snapshot.get("end_date") or "").strip()
+    if start and end:
+        period = start if start == end else f"{start}至{end}"
+    elif start:
+        period = f"{start}起"
+    elif end:
+        period = f"截至{end}"
+    else:
+        period = "全部日期"
+    base = _ILLEGAL_FILENAME_CHARS.sub("_", f"{name}_{period}_往来对账单").strip() or "往来对账单"
+    return f"{base}.pdf"
+
+
 @accounts_bp.get("/reconciliation/pdf/<int:snapshot_id>")
 def reconciliation_pdf(snapshot_id: int):
     if wants_desktop_preview():
         # 预览页只渲染工具栏；PDF 由 iframe 再请求一次（一次点击只渲染一次）。
         try:
             # 对账单的校验口径在 get_reconciliation_print_context 内（快照非法/未选单据即抛错）。
-            get_reconciliation_print_context(snapshot_id)
+            context = get_reconciliation_print_context(snapshot_id)
         except RecordNotFound as exc:
             return not_found(str(exc), title="对账查询不存在", back_url=url_for("accounts.reconciliation"))
         except ValueError as exc:
             return error_response(str(exc), title="对账单未能生成", back_url=url_for("accounts.reconciliation"))
-        return render_desktop_preview("往来交易对账单.pdf", "往来交易对账单")
+        return render_desktop_preview(_reconciliation_pdf_filename(context["snapshot"]), "往来对账单")
     try:
         path = generate_reconciliation_pdf(snapshot_id)
     except RecordNotFound as exc:
         return not_found(str(exc), title="对账查询不存在", back_url=url_for("accounts.reconciliation"))
     except ValueError as exc:
         return error_response(str(exc), title="对账单未能生成", back_url=url_for("accounts.reconciliation"))
-    return send_pdf_for_preview(path, "往来交易对账单.pdf", "往来交易对账单")
+    return send_pdf_for_preview(path, _reconciliation_pdf_filename(get_reconciliation_snapshot(snapshot_id)), "往来对账单")

@@ -163,6 +163,12 @@ def test_reconciliation_statement_summary_block_and_keeps_print_whitelist(tmp_pa
     assert rendered.count('class="col-doc-total"></td>') == 1
     assert "document-total" not in rendered  # 旧的合计横条已删除
 
+    # 单据标头只留「日期 · 单号」，类型/方向不再上纸；副标题统一「往来对账单」（2026-11-08 用户要求）。
+    assert "2026-10-01 · MD202610010201" in rendered
+    assert "· 销售单 ·" not in rendered
+    assert "卖给对方" not in rendered
+    assert '<div class="subtitle">往来对账单</div>' in rendered
+
     # 对外打印白名单哨兵：内部字段一律不得出现。
     for sentinel in ("unit_cost", "毛利润", "库存", "货源", "成本价"):
         assert sentinel not in rendered, sentinel
@@ -237,3 +243,27 @@ def test_reconciliation_keeps_selection_across_result_pages():
     updated = get_reconciliation_snapshot(snapshot_id)
     assert updated["selected_count"] == len(snapshot["scope_ids"]) - 1
     assert second_page_id not in updated["selected_ids"]
+
+
+def test_reconciliation_pdf_filename_uses_customer_and_period():
+    """对账单保存文件名 = 客户名 + 日期区间 + 「往来对账单」（2026-11-08 用户要求）。"""
+    from erp.routes.accounts import _reconciliation_pdf_filename
+
+    assert _reconciliation_pdf_filename(
+        {"customer": {"name": "联想测试客户"}, "start_date": "2026-11-01", "end_date": "2026-11-08"}
+    ) == "联想测试客户_2026-11-01至2026-11-08_往来对账单.pdf"
+    # 单日区间不重复写日期
+    assert _reconciliation_pdf_filename(
+        {"customer": {"name": "甲"}, "start_date": "2026-11-01", "end_date": "2026-11-01"}
+    ) == "甲_2026-11-01_往来对账单.pdf"
+    # 无日期 → 全部日期
+    assert _reconciliation_pdf_filename(
+        {"customer": {"name": "乙"}, "start_date": "", "end_date": ""}
+    ) == "乙_全部日期_往来对账单.pdf"
+    # 非法文件名字符被清洗，不残留路径分隔符等
+    cleaned = _reconciliation_pdf_filename(
+        {"customer": {"name": "A/B:C*?"}, "start_date": "", "end_date": ""}
+    )
+    for bad in ("/", "\\", ":", "*", "?", '"', "<", ">", "|"):
+        assert bad not in cleaned
+    assert cleaned.endswith("_往来对账单.pdf")

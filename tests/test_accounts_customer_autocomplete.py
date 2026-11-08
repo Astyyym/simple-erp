@@ -111,3 +111,12 @@ def test_reconciliation_empty_state_is_refresh_fragment():
     _seed()
     html = create_app().test_client().get("/accounts/reconciliation").get_data(as_text=True)
     assert 'id="reconPanel" data-refresh-fragment' in html
+
+
+def test_customer_pick_writes_name_back_into_visible_input():
+    """点选候选必须把客户名写回可见输入框：只写 hidden id 会留半截输入，像「点了没反应」。"""
+    init_db()
+    _seed()
+    client = create_app().test_client()
+    assert "input.value = item.name" in client.get("/accounts/").get_data(as_text=True)
+    assert "input.value = item.name" in client.get("/accounts/reconciliation").get_data(as_text=True)
