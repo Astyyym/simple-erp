@@ -27,7 +27,17 @@
 
 ### 产物与校验（GitHub Release v4.9.0，2026-11-08）
 
-（打包并发布后回填三资产 SHA256 与链接。）
+已发布到 [Releases v4.9.0](https://github.com/Astyyym/simple-erp/releases/tag/v4.9.0)（Latest，tag `v4.9.0` / 提交 `6209568`）。下列 SHA256 与 GitHub 侧资产 `digest` 逐一核对一致：
+
+| 资产 | 大小 | SHA256 |
+|---|---|---|
+| `dist\simple-erp-setup-v4.9.0.exe` | 46213380 B | `50F0067A55D963DDABF8A2289ABDD74FF8DD4F1AB82A0CD8080543F561EDAD57` |
+| `dist\simple-erp-windows-v4.9.0.zip` | 63456279 B | `95EC7038CD3242FDE72481D19F8DCADBF54A2A592B2A16C17837C4A43BC8CABB` |
+| `simple-erp-mobile-v1.4.12.apk`（本轮未重打，随包附带） | 8053894 B | `C77BDF81E86A47BDCB8E94882FB8A3D46E379672E67C8FA02D7DEDE77204D362` |
+| 绿色版 `dist\local-v4.9.0\简单ERP`（含 demo_data 200 单） | — | — |
+
+- 安装包与 ZIP **不含 `demo_data`**（已核 zip：690 项、无 `demo_data`、`_internal/VERSION`=`v4.9.0`）；绿色版含 200 条演示数据（seed 校验 warnings / problems 均空）。
+- **未核验**：打包形态 GUI 实跑、真实打印机实打（需真机；Release 已上传，实机验收独立记录）。
 
 ## v4.8.0 - 功能增强三期与资料文档库（2026-11-07）
 
