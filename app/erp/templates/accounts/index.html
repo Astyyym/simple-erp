@@ -18,6 +18,13 @@
   .summary-help,.ledger-hint,.entry-note { margin-top:6px;color:var(--erp-muted);font-size:11px; }
   .breakdown { display:flex;flex-wrap:wrap;gap:5px 13px;margin-top:9px;padding-top:8px;border-top:1px solid var(--erp-border);color:var(--erp-muted);font-size:11px; }
   .ledger-heading { display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 9px; }.ledger-heading h3 { margin:0;font-size:17px; }
+  /* 去乱（2026-11-08）：流水工具栏收拢，类型筛选收进「高级筛选」折叠面板。 */
+  .ledger-toolbar { display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap; }
+  .ledger-adv { margin:0 0 10px;padding:12px 14px;border:1px solid var(--erp-border);border-radius:8px;background:var(--erp-surface-soft); }
+  .ledger-adv[hidden] { display:none; }
+  .ledger-adv .ledger-type-filter { margin-left:0; }
+  .adv-count { display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--erp-primary);color:#fff;font-size:11px;font-weight:700;margin-left:4px; }
+  .link-action { color:var(--erp-primary);font-weight:600;text-decoration:none; }.link-action:hover { text-decoration:underline; }
   .ledger-type-filter { display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto; }
   .ledger-type-filter .filter-label { color:var(--erp-muted);font-size:12px;font-weight:650; }
   .type-chip { display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border:1px solid var(--erp-border-strong);border-radius:4px;font-size:12px;color:var(--erp-ink);background:var(--erp-glass-bg-strong);cursor:pointer;white-space:nowrap; }
@@ -87,6 +94,13 @@
 
 <section aria-labelledby="ledgerHeading">
   <div class="ledger-heading"><div><h3 id="ledgerHeading">{{ selected_customer.name }} · 客户往来流水</h3><div data-ui-hint class="ledger-hint">收款按余额减少显示；退货、拿货为负向；退拿货为正向。作废记录保留查看，余额影响为 ¥0.00。</div></div>
+    <div class="ledger-toolbar">
+      <button class="btn btn-outline-secondary" type="button" id="ledgerAdvToggle" aria-expanded="false" aria-controls="ledgerAdvPanel">高级筛选{% if type_filter %} <span class="adv-count">{{ type_filter|length }}</span>{% endif %}</button>
+      <a class="btn btn-outline-primary" id="reconEntryLink" href="{{ url_for('accounts.reconciliation', customer_id=selected_customer.id, start_date=start_date, end_date=end_date) }}">往来对账</a>
+      {% if ledger_export_url %}<a class="btn btn-outline-success" id="exportLedgerExcelBtn" href="{{ ledger_export_url }}">导出流水</a>{% endif %}
+    </div>
+  </div>
+  <div class="ledger-adv" id="ledgerAdvPanel" hidden>
     <form class="ledger-type-filter" id="ledgerTypeFilter" method="get" data-inplace action="{{ url_for('accounts.accounts') }}">
       <input type="hidden" name="customer_id" value="{{ selected_customer.id }}">
       <input type="hidden" name="start_date" value="{{ start_date }}"><input type="hidden" name="end_date" value="{{ end_date }}">
@@ -96,8 +110,6 @@
       <label class="type-chip"><input type="checkbox" name="type" value="{{ key }}" {{ 'checked' if key in active_types else '' }} onchange="this.form.requestSubmit()">{{ label }}</label>
       {% endfor %}
     </form>
-    <a class="btn btn-outline-primary" id="reconEntryLink" href="{{ url_for('accounts.reconciliation', customer_id=selected_customer.id, start_date=start_date, end_date=end_date) }}">往来对账</a>
-    {% if ledger_export_url %}<a class="btn btn-outline-success" id="exportLedgerExcelBtn" href="{{ ledger_export_url }}">导出流水Excel</a>{% endif %}
   </div>
   <div class="table-responsive"><table class="table align-middle ledger-table">
     <caption class="visually-hidden">按筛选日期展示销售、退货、收款和账务调整流水</caption>
@@ -285,7 +297,7 @@
   {% if customer_error %}<div class="alert alert-danger" role="alert">{{ customer_error }}</div>{% endif %}
   <h3 id="customerBalancesHeading">客户当前余额</h3>
   {% if customers %}<div class="table-responsive"><table class="table align-middle"><thead><tr><th scope="col">客户</th><th scope="col">当前余额</th><th scope="col">操作</th></tr></thead><tbody>
-    {% for customer in customers %}<tr><td>{{ customer.name }}</td><td class="amount">{{ balance_money(balances.get(customer.id, 0)) }}</td><td><a class="btn btn-sm btn-primary" href="{{ url_for('accounts.accounts', customer_id=customer.id) }}">查看流水</a></td></tr>{% endfor %}
+    {% for customer in customers %}<tr><td>{{ customer.name }}</td><td class="amount">{{ balance_money(balances.get(customer.id, 0)) }}</td><td><a class="link-action" href="{{ url_for('accounts.accounts', customer_id=customer.id) }}">查看流水 →</a></td></tr>{% endfor %}
   </tbody></table></div>{% else %}<p class="text-muted">还没有客户资料。</p>{% endif %}
 </section>
 {% endif %}
@@ -315,6 +327,19 @@
     // 改字即清空已选 id：否则「选了 A 再把名字改成 B」会带着 A 的 id 去查流水。
     () => { hidden.value = ''; },
   );
+})();
+</script>
+<script>
+/* 流水「高级筛选」折叠（2026-11-08 去乱）：默认收起，点按钮展开类型筛选。 */
+(() => {
+  const btn = document.getElementById('ledgerAdvToggle');
+  const panel = document.getElementById('ledgerAdvPanel');
+  if (!btn || !panel) return;
+  btn.addEventListener('click', () => {
+    const willOpen = panel.hasAttribute('hidden');
+    if (willOpen) panel.removeAttribute('hidden'); else panel.setAttribute('hidden', '');
+    btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+  });
 })();
 </script>
 {% endblock %}

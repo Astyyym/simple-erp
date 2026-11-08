@@ -49,6 +49,8 @@
       </div>
     </div>
   </div>
+  <details class="orders-advanced">
+  <summary class="orders-advanced-toggle">高级筛选（订单类型 / 单据状态）</summary>
   <div class="filter-tier-conditions">
     <div class="filter-field-type">
       <div class="filter-type-row" role="group" aria-label="订单类型筛选">
@@ -81,6 +83,7 @@
       <div data-ui-hint class="form-text filter-type-hint">不勾选=全部状态。拿货与退拿货没有「已打印」状态。</div>
     </div>
   </div>
+  </details>
   {% if filter_chips %}
   <div class="filter-chips" data-refresh-fragment id="ordersChips" aria-label="已选条件">
     <span class="filter-chips-cap">已选条件</span>
@@ -201,6 +204,12 @@
 </section>
 <style>
 /* 筛选卡排版已统一到 base.html 的 .filter-card（与数据分析页共用），本页只保留单据管理专有部分。 */
+/* 去乱（2026-11-08）：订单类型 / 单据状态两排 chip 收进「高级筛选」折叠面板，默认收起。 */
+.orders-advanced{margin-top:8px}
+.orders-advanced>summary{list-style:none;display:inline-flex;align-items:center;gap:6px;cursor:pointer;color:var(--erp-primary);font-size:13px;font-weight:600;padding:4px 0}
+.orders-advanced>summary::-webkit-details-marker{display:none}
+.orders-advanced>summary::before{content:"▾";font-size:12px;transition:transform .15s}
+.orders-advanced:not([open])>summary::before{transform:rotate(-90deg)}
 .purchase-dashboard-layout{
   display:grid;
   grid-template-columns:minmax(0,1fr) minmax(300px,min(420px,38%));

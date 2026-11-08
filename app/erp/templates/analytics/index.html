@@ -48,6 +48,8 @@
     </div>
     {# 分析页筛选区（2026-10-17 用户截图反馈）：第一行只放时间筛选，
        客户与商品名称下移第二行，并排成一组。 #}
+    <details class="analytics-advanced">
+      <summary class="analytics-advanced-toggle">高级筛选（客户 / 商品）</summary>
     <div class="filter-row-counterparty">
       <div class="filter-field-plain">
         <div class="filter-inline">
@@ -69,6 +71,7 @@
         </div>
       </div>
     </div>
+    </details>
   </div>
   <div class="filter-tier-conditions">
     <div class="filter-field-type">
@@ -163,6 +166,12 @@
 <style>
 .analytics-dimension-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
 .analytics-dimension-grid .rank-columns{margin-top:8px}
+/* 去乱（2026-11-08）：客户 / 商品筛选收进「高级筛选」折叠面板，默认收起。 */
+.analytics-advanced{margin-top:10px}
+.analytics-advanced>summary{list-style:none;display:inline-flex;align-items:center;gap:6px;cursor:pointer;color:var(--erp-primary);font-size:13px;font-weight:600;padding:4px 0}
+.analytics-advanced>summary::-webkit-details-marker{display:none}
+.analytics-advanced>summary::before{content:"▾";font-size:12px;transition:transform .15s}
+.analytics-advanced:not([open])>summary::before{transform:rotate(-90deg)}
 </style>
 {# 3-A（2026-11-07）：客户维度排行 + 按月趋势。口径：只算销售+退货净额，只到数量与金额，
    不含任何利润/成本字段；复用自绘条形（.rank-bar-*），不引入图表库。随筛选「查询」就地刷新。 #}
