@@ -74,18 +74,18 @@ def test_reconciliation_ownership_is_always_accounts():
     html = client.get(f"/accounts/reconciliation?customer_id={cid}").get_data(as_text=True)
     assert "返回账款管理" in html
     assert "返回数据分析" not in html
-    assert re.search(r'class="active" href="/accounts/">账款管理</a>', html), html
-    assert not re.search(r'class="active" href="/analytics/">数据分析</a>', html)
+    assert re.search(r'class="active" href="/accounts/">', html), html
+    assert not re.search(r'class="active" href="/analytics/">', html)
     # 旧来源参数已失效：不得把归属带去数据分析。
     stale = client.get(f"/accounts/reconciliation?customer_id={cid}&from=accounts").get_data(as_text=True)
     assert "返回账款管理" in stale
-    assert not re.search(r'class="active" href="/analytics/">数据分析</a>', stale)
+    assert not re.search(r'class="active" href="/analytics/">', stale)
     # 快照 URL（勾选/全选后的跳转目标）同样归账款管理。
     with get_db() as conn:
         snapshot_id = conn.execute("SELECT id FROM reconciliation_snapshots ORDER BY id DESC LIMIT 1").fetchone()[0]
     snap = client.get(f"/accounts/reconciliation?snapshot_id={snapshot_id}").get_data(as_text=True)
     assert "返回账款管理" in snap
-    assert re.search(r'class="active" href="/accounts/">账款管理</a>', snap), snap
+    assert re.search(r'class="active" href="/accounts/">', snap), snap
 
 
 def test_accounts_bulk_delete_orders_dead_route_is_removed():

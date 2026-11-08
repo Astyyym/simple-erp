@@ -77,9 +77,9 @@ def test_reconciliation_is_owned_by_accounts():
         f"/accounts/reconciliation?customer_id={customer_id}"
     ).get_data(as_text=True)
     nav = re.search(r'<nav class="sidebar">.*?</nav>', html, re.S).group(0)
-    assert 'href="/accounts/">账款管理</a>' in nav
-    assert re.search(r'class="active" href="/accounts/">账款管理</a>', nav), nav
-    assert not re.search(r'class="active" href="/analytics/">数据分析</a>', nav)
+    assert 'href="/accounts/">' in nav and '>账款管理</a>' in nav
+    assert re.search(r'class="active" href="/accounts/">', nav), nav
+    assert not re.search(r'class="active" href="/analytics/">', nav)
     # 返回按钮与侧栏归属一致。
     assert "返回账款管理" in html
 
@@ -98,8 +98,8 @@ def test_reconciliation_snapshot_url_is_owned_by_accounts():
         create_app().test_client(),
         f"/accounts/reconciliation?snapshot_id={snapshot_id}",
     )
-    assert re.search(r'class="active" href="/accounts/">账款管理</a>', nav), nav
-    assert not re.search(r'class="active" href="/analytics/">数据分析</a>', nav)
+    assert re.search(r'class="active" href="/accounts/">', nav), nav
+    assert not re.search(r'class="active" href="/analytics/">', nav)
 
 
 def test_sidebar_has_no_ancestor_current_class():

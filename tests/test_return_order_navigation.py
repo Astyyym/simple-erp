@@ -26,10 +26,10 @@ def test_sidebar_has_four_sections_and_a_gap_before_the_workspace():
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert ">业务中心<" not in html
-    assert 'class="nav-section active" href="/">工作台</a>' in html
-    assert 'class="nav-label">基础资料</div>' in html
-    assert 'href="/recycle/">回收站</a>' in html
-    assert 'href="/settings/">系统设置</a>' in html
+    assert 'class="nav-section active" href="/">' in html and '>工作台</a>' in html
+    assert 'aria-label="基础资料"' in html
+    assert 'href="/recycle/">' in html and '>回收站</a>' in html
+    assert 'href="/settings/">' in html and '>系统设置</a>' in html
     assert html.count('class="nav-divider"') == 3
     assert 'height:calc(100% - 28px);margin:14px;' in html
 

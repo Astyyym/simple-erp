@@ -67,8 +67,8 @@ def test_sidebar_has_named_groups_without_changing_routes():
     for label in ("工作台", "基础资料", "回收站", "系统设置"):
         assert f'class="nav-group" aria-label="{label}"' in html
     assert html.count('class="nav-divider"') == 3
-    assert 'href="/">工作台</a>' in html
-    assert 'href="/settings/">系统设置</a>' in html
+    assert 'href="/">' in html and '>工作台</a>' in html
+    assert 'href="/settings/">' in html and '>系统设置</a>' in html
 
 
 def test_light_sidebar_uses_soft_scrollbar_tokens_and_vertical_scrollport():

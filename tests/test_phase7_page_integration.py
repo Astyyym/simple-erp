@@ -1,3 +1,5 @@
+import re
+
 from erp import create_app
 from erp.config import save_config
 from erp.db import init_db
@@ -28,11 +30,16 @@ def test_phase7_shared_navigation_exposes_each_business_area_without_new_duplica
     init_db()
     html = create_app().test_client().get("/").get_data(as_text=True)
 
-    assert html.count('href="/orders/">单据管理</a>') == 1
-    assert html.count('href="/accounts/">账款管理</a>') == 1
-    assert html.count('href="/analytics/">数据分析</a>') == 1
-    assert html.count('href="/products/">商品管理</a>') == 1
-    assert html.count('href="/customers/">客户管理</a>') == 1
+    nav = re.search(r'<nav class="sidebar">.*?</nav>', html, re.S).group(0)
+    for href, label in (
+        ('/orders/', '单据管理'),
+        ('/accounts/', '账款管理'),
+        ('/analytics/', '数据分析'),
+        ('/products/', '商品管理'),
+        ('/customers/', '客户管理'),
+    ):
+        assert nav.count(f'href="{href}"') == 1, href
+        assert f'>{label}</a>' in nav, href
 
 
 def test_phase7_orders_page_has_explicit_empty_state_for_empty_result():
