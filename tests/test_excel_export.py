@@ -86,9 +86,11 @@ def test_excel_export_endpoints_and_headers():
     orders_page = client.get("/orders/").get_data(as_text=True)
     assert "导出Excel" in customers_page and "/customers/export.xlsx" in customers_page
     assert "导出Excel" in products_page and "/products/export.xlsx" in products_page
-    assert "导出销售单Excel" in orders_page and "/orders/export/sales.xlsx" in orders_page
-    assert "导出退货单Excel" in orders_page and "/orders/export/returns.xlsx" in orders_page
+    # 2026-11-09 用户要求：单据管理页撤掉四个「导出 *Excel」按钮，只留「导出汇总表」。
+    # 端点本身不动，下面仍直接请求 /orders/export/*.xlsx 验证文件内容。
     assert "导出汇总表" in orders_page and "/orders/summary_pdf" in orders_page
+    assert "/orders/export/sales.xlsx" not in orders_page
+    assert "/orders/export/returns.xlsx" not in orders_page
 
     customer_rows = _sheet_rows(client.get("/customers/export.xlsx"))
     assert list(customer_rows[0]) == customer_export_headers()

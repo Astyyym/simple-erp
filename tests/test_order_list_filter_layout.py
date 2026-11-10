@@ -16,12 +16,15 @@ def test_order_filter_uses_one_stable_action_area_in_every_date_mode(mode):
     fields, actions = form.split('class="filter-actions"', 1)
     assert 'name="date_mode"' in fields
     assert 'data-mode="year"' in fields and 'data-mode="month"' in fields and 'data-mode="range"' in fields
-    expected = ["筛选", "清除筛选条件", "导出汇总表", "导出销售单Excel", "导出退货单Excel"]
+    # 2026-11-09 用户要求：动作条与数据分析页对齐（查询 / 重置），并撤掉「新建订单」与
+    # 四个「导出 *Excel」按钮，动作条只剩「查询 · 重置 · 删除选中 · 导出汇总表」。
+    expected = ["查询", "重置", "导出汇总表"]
     assert all(label in actions for label in expected)
-    assert actions.index('id="exportSummaryBtn"') < actions.index('id="exportSalesExcelBtn"') < actions.index('id="exportReturnsExcelBtn"')
+    assert "清除筛选条件" not in actions
+    assert "新建订单" not in actions
+    assert "/orders/export/sales.xlsx" not in actions
+    assert 'id="exportSummaryBtn"' in actions
     assert 'id="exportSummaryBtn"' not in fields
-    assert 'id="exportSalesExcelBtn"' not in fields
-    assert 'id="exportReturnsExcelBtn"' not in fields
     assert 'filter-actions-extra' in actions
     assert 'gap:' in html
 
@@ -32,8 +35,9 @@ def test_filter_date_mode_switch_only_changes_fields_and_keeps_export_contract()
     assert "panel.hidden = !active" in html
     assert "el.disabled = !active" in html
     assert "summaryParams.delete('order_type')" in html
-    assert "'/orders/export/sales.xlsx'" in html
-    assert "'/orders/export/returns.xlsx'" in html
+    # 四个 *Excel 按钮 2026-11-09 撤掉后，页面 JS 不再拼这些 href（后端接口本身保留，
+    # 由 tests/test_excel_export.py 直接打端点验证）。
+    assert "/orders/export/sales.xlsx" not in html
 
 
 def test_date_mode_choices_are_separate_buttons_with_spacing():
@@ -72,13 +76,23 @@ def test_order_filter_type_block_keeps_bulk_buttons_on_the_type_row():
     assert ".filter-field-composite{flex:1.2 1 320px" in html
 
 
-def test_order_filter_actions_split_primary_and_export_groups():
-    """操作条：主操作靠左、导出组贴右，按钮同高。"""
+def test_order_filter_actions_are_one_left_aligned_row_without_dividers():
+    """操作条（2026-11-10 用户要求）：一条左对齐的行，组间不要竖线，导出不要贴右。
+
+    顺序固定为 查询 · 重置 · 删除选中 · 导出汇总表。
+    """
     init_db()
     html = create_app().test_client().get("/orders/").get_data(as_text=True)
+    form = html.split('id="ordersFilterForm"', 1)[1].split("</form>", 1)[0]
+    actions = form.split('class="filter-actions"', 1)[1]
 
-    # 批次 2（2026-10-16）：动作条按功能分三组（筛选 / 单据 / 导出），导出组左侧加竖分隔线，
-    # 该规则从「只有 margin-left:auto」扩为「贴右 + 分隔线」。保护点仍是「导出组贴右」。
-    assert ".filter-actions-extra{margin-left:auto" in html
+    order = ["查询", "重置", "删除选中", "导出汇总表"]
+    positions = [actions.index(label) for label in order]
+    assert positions == sorted(positions), "动作顺序必须固定为 查询 · 重置 · 删除选中 · 导出汇总表"
+
+    # 竖线分隔与右推都已取消（两条规则都不许再带 border-left / margin-left:auto）。
+    assert ".filter-actions-records{border-left" not in html
+    assert ".filter-actions-extra{margin-left:auto" not in html
+    assert ".filter-actions-extra{border-left" not in html
     assert ".filter-actions{" in html
     assert "border-top:1px solid var(--erp-border)" in html

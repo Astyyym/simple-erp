@@ -48,9 +48,13 @@
         </div>
       </div>
     </div>
+    {# 高级筛选触发件（2026-11-09 用户指定位置）：常驻查询行末尾、右对齐。
+       按钮与面板必须拆开 —— 面板若跟着按钮留在这一行里，展开就会把整行挤变形。
+       面板在行外（见下方 .filter-advanced-panel），开关逻辑在 base.html 的统一脚本里。 #}
+    {% set advanced_count = (order_types|length) + (order_statuses|length) %}
+    <button type="button" class="filter-advanced-toggle" data-filter-advanced-toggle aria-expanded="true" aria-controls="ordersAdvancedPanel" title="订单类型 / 单据状态">高级筛选{% if advanced_count %}<span class="filter-advanced-badge" title="已生效 {{ advanced_count }} 项">{{ advanced_count }}</span>{% endif %}</button>
   </div>
-  <details class="orders-advanced">
-  <summary class="orders-advanced-toggle">高级筛选（订单类型 / 单据状态）</summary>
+  <div class="filter-advanced-panel" id="ordersAdvancedPanel">
   <div class="filter-tier-conditions">
     <div class="filter-field-type">
       <div class="filter-type-row" role="group" aria-label="订单类型筛选">
@@ -83,7 +87,7 @@
       <div data-ui-hint class="form-text filter-type-hint">不勾选=全部状态。拿货与退拿货没有「已打印」状态。</div>
     </div>
   </div>
-  </details>
+  </div>
   {% if filter_chips %}
   <div class="filter-chips" data-refresh-fragment id="ordersChips" aria-label="已选条件">
     <span class="filter-chips-cap">已选条件</span>
@@ -91,25 +95,22 @@
   </div>
   {% endif %}
   <div class="filter-actions">
+    {# 2026-11-09 用户要求：动作条与数据分析页对齐 ——「筛选」改「查询」、「清除筛选条件」改「重置」，
+       并且撤掉「新建订单」与四个「导出 *Excel」按钮（红框圈掉的都不要）。
+       开单入口仍在左侧栏「开单 → 销售单/退货单/拿货单/退拿货单」；
+       Excel 导出接口本身保留（/orders/export/*.xlsx），只是本页不再挂按钮。 #}
     <div class="filter-actions-primary">
-      <button class="btn btn-primary" type="submit">筛选</button>
-      <a class="btn btn-outline-secondary" href="/orders/">清除筛选条件</a>
+      <button class="btn btn-primary" type="submit">查询</button>
+      <a class="btn btn-outline-secondary" href="/orders/">重置</a>
     </div>
-    {# 批次 2：新建/删除选中原先夹在筛选卡与结果表之间单独占一行（孤儿条），
-       与「删除选中」同属对结果集的操作 → 提升进动作条，与筛选类、导出类并列成第三类。 #}
     <div class="filter-actions-records" role="group" aria-label="单据操作">
-      <a class="btn btn-primary" href="/orders/new">新建订单</a>
       <button class="btn btn-danger" type="button" onclick="submitSelected('bulkOrdersForm','确认删除选中的单据吗？正式单据会先自动作废并冲回账款，再移入回收站。')">删除选中</button>
     </div>
     <div class="filter-actions-extra orders-filter-export-group">
       <a id="exportSummaryBtn" class="btn btn-info" title="按筛选范围内有单据的客户分段打印销售+退货汇总；不受上方「订单类型」筛选影响" href="/orders/summary_pdf{% if is_desktop %}?desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>导出汇总表</a>
-      <a id="exportSalesExcelBtn" class="btn btn-outline-success" href="/orders/export/sales.xlsx">导出销售单Excel</a>
-      <a id="exportReturnsExcelBtn" class="btn btn-outline-success" href="/orders/export/returns.xlsx">导出退货单Excel</a>
-      <a id="exportPurchasesExcelBtn" class="btn btn-outline-success" href="/orders/export/purchases.xlsx">导出拿货单Excel</a>
-      <a id="exportPurchaseReturnsExcelBtn" class="btn btn-outline-success" href="/orders/export/purchase_returns.xlsx">导出退拿货单Excel</a>
     </div>
   </div>
-  <div data-ui-hint class="filter-hint">切换时间模式仅调整日期输入项；点击「筛选」后更新下方结果。</div>
+  <div data-ui-hint class="filter-hint">切换时间模式仅调整日期输入项；点击「查询」后更新下方结果。</div>
   {% if summary_hint %}
   <div data-ui-hint class="filter-hint" id="summaryExportHint">{{ summary_hint }}</div>
   {% endif %}
@@ -146,22 +147,25 @@
     {# 金额颜色与类型标签同色（用户 2026-10-24 要求，与手机端单据列表一致）。 #}
     <td><span class="order-amount order-amount--{{o.order_type}}">¥{{cents_to_yuan(o.total_amount_cents)}}</span></td>
     <td><span class="badge {{o.status_badge}}">{{o.status_label}}</span></td>
+    {# 2026-11-09 用户要求：行操作改「彩色描边 + 白底」，不再用实心色块填充 ——
+       与商品管理列表的行操作同一形态（用户以商品管理为样板）。语义仍按动作区分颜色：
+       查看=灰 / 编辑=蓝 / 打印=浅蓝 / 删除=红。 #}
     <td class="action-cell"><div class="action-wrap">
-      <a class="btn btn-sm btn-secondary" href="{{o.detail_url}}">查看</a>
+      <a class="btn btn-sm btn-outline-secondary" href="{{o.detail_url}}">查看</a>
       {% if o.editable %}
-      <a class="btn btn-sm btn-primary" href="{{o.edit_url}}">编辑</a>
+      <a class="btn btn-sm btn-outline-primary" href="{{o.edit_url}}">编辑</a>
       {% else %}
-      <button class="btn btn-sm btn-primary" type="button" disabled title="{{o.edit_block_reason}}" aria-disabled="true">编辑</button>
+      <button class="btn btn-sm btn-outline-primary" type="button" disabled title="{{o.edit_block_reason}}" aria-disabled="true">编辑</button>
       {% endif %}
       {% if o.order_type in ('sale', 'return') %}
-      <a class="btn btn-sm btn-info" href="/orders/{{o.id}}/pdf{% if is_desktop %}?desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>打印</a>
+      <a class="btn btn-sm btn-outline-info" href="/orders/{{o.id}}/pdf{% if is_desktop %}?desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>打印</a>
       {% elif o.order_type == 'purchase' %}
-      <a class="btn btn-sm btn-info" href="/purchases/{{o.id}}/pdf{% if is_desktop %}?desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>打印</a>
+      <a class="btn btn-sm btn-outline-info" href="/purchases/{{o.id}}/pdf{% if is_desktop %}?desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>打印</a>
       {% else %}
-      <a class="btn btn-sm btn-info" href="/purchases/return/{{o.id}}/pdf{% if is_desktop %}?desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>打印</a>
+      <a class="btn btn-sm btn-outline-info" href="/purchases/return/{{o.id}}/pdf{% if is_desktop %}?desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>打印</a>
       {% endif %}
       {% if o.deletable %}
-      <form class="d-inline ajax-delete-form" method="post" action="{{o.delete_url}}"><button class="btn btn-sm btn-danger">删除</button></form>
+      <form class="d-inline ajax-delete-form" method="post" action="{{o.delete_url}}"><button class="btn btn-sm btn-outline-danger">删除</button></form>
       {% endif %}
     </div></td>
   </tr>
@@ -204,12 +208,13 @@
 </section>
 <style>
 /* 筛选卡排版已统一到 base.html 的 .filter-card（与数据分析页共用），本页只保留单据管理专有部分。 */
-/* 去乱（2026-11-08）：订单类型 / 单据状态两排 chip 收进「高级筛选」折叠面板，默认收起。 */
-.orders-advanced{margin-top:8px}
-.orders-advanced>summary{list-style:none;display:inline-flex;align-items:center;gap:6px;cursor:pointer;color:var(--erp-primary);font-size:13px;font-weight:600;padding:4px 0}
-.orders-advanced>summary::-webkit-details-marker{display:none}
-.orders-advanced>summary::before{content:"▾";font-size:12px;transition:transform .15s}
-.orders-advanced:not([open])>summary::before{transform:rotate(-90deg)}
+/* 「高级筛选」按钮与面板样式见 base.html 的 .filter-advanced-toggle / .filter-advanced-panel（两页共用）。 */
+/* 时间块按内容宽度、不让客户名称把它挤窄（2026-11-09 加「高级筛选」按钮后实测）：
+   被压到 429px 时「按日到日」右侧的日期框会折到第二行，等于把 2026-10-24 定下的
+   「日期框与模式按钮同行」又改回去。这里只在宽档固定时间块宽度，窄档仍用 base 的整行规则。 */
+@media (min-width:1181px){
+  #ordersFilterForm .filter-field-composite{flex:0 0 auto}
+}
 .purchase-dashboard-layout{
   display:grid;
   grid-template-columns:minmax(0,1fr) minmax(300px,min(420px,38%));
@@ -268,10 +273,6 @@
   const modeInputs = form.querySelectorAll('input[name="date_mode"]');
   const panels = form.querySelectorAll('.filter-field-date');
   const exportBtn = document.getElementById('exportSummaryBtn');
-  const exportSalesExcelBtn = document.getElementById('exportSalesExcelBtn');
-  const exportReturnsExcelBtn = document.getElementById('exportReturnsExcelBtn');
-  const exportPurchasesExcelBtn = document.getElementById('exportPurchasesExcelBtn');
-  const exportPurchaseReturnsExcelBtn = document.getElementById('exportPurchaseReturnsExcelBtn');
   const syncModePanels = () => {
     const mode = form.querySelector('input[name="date_mode"]:checked')?.value || 'range';
     panels.forEach(panel => {
@@ -280,32 +281,17 @@
       panel.querySelectorAll('input,select').forEach(el => { el.disabled = !active; });
     });
   };
+  // 只剩「导出汇总表」需要跟着筛选条件走（四个 *Excel 按钮 2026-11-09 按用户要求撤掉，
+  // 接口 /orders/export/*.xlsx 仍在，只是本页不再挂入口）。
   const syncExportLink = () => {
-    const params = new URLSearchParams(new FormData(form));
-    if (exportBtn) {
-      const summaryParams = new URLSearchParams(params);
-      summaryParams.delete('order_type');
-      if (isDesktopShell()) {
-        summaryParams.set('desktop_preview', '1');
-        summaryParams.set('return_to', window.location.pathname + window.location.search);
-      }
-      exportBtn.href = '/orders/summary_pdf?' + summaryParams.toString();
+    if (!exportBtn) return;
+    const summaryParams = new URLSearchParams(new FormData(form));
+    summaryParams.delete('order_type');
+    if (isDesktopShell()) {
+      summaryParams.set('desktop_preview', '1');
+      summaryParams.set('return_to', window.location.pathname + window.location.search);
     }
-    // Sales/return Excel endpoints already pin order_type; drop list filter to avoid confusion.
-    params.delete('order_type');
-    const qs = params.toString();
-    if (exportSalesExcelBtn) {
-      exportSalesExcelBtn.href = '/orders/export/sales.xlsx' + (qs ? '?' + qs : '');
-    }
-    if (exportReturnsExcelBtn) {
-      exportReturnsExcelBtn.href = '/orders/export/returns.xlsx' + (qs ? '?' + qs : '');
-    }
-    if (exportPurchasesExcelBtn) {
-      exportPurchasesExcelBtn.href = '/orders/export/purchases.xlsx' + (qs ? '?' + qs : '');
-    }
-    if (exportPurchaseReturnsExcelBtn) {
-      exportPurchaseReturnsExcelBtn.href = '/orders/export/purchase_returns.xlsx' + (qs ? '?' + qs : '');
-    }
+    exportBtn.href = '/orders/summary_pdf?' + summaryParams.toString();
   };
   modeInputs.forEach(input => input.addEventListener('change', () => { syncModePanels(); syncExportLink(); }));
   form.addEventListener('change', syncExportLink);

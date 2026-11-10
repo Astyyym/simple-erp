@@ -46,10 +46,16 @@
         </div>
       </div>
     </div>
-    {# 分析页筛选区（2026-10-17 用户截图反馈）：第一行只放时间筛选，
-       客户与商品名称下移第二行，并排成一组。 #}
-    <details class="analytics-advanced">
-      <summary class="analytics-advanced-toggle">高级筛选（客户 / 商品）</summary>
+    {# 高级筛选触发件（2026-11-09 用户指定位置）：常驻时间行末尾、右对齐。
+       按钮与面板必须拆开 —— 面板若跟着按钮留在这一行里，展开就会把时间行挤变形
+       （上一版 <details> 当 flex 子项，展开后客户/商品输入并进日期行、箭头浮到右上角）。
+       面板在行外（见下方 .filter-advanced-panel），开关逻辑在 base.html 的统一脚本里。 #}
+    {# 角标口径要跟着面板内容走：订单类型进面板后，它的已选项也算「折叠里生效的条件」，
+       否则只勾了「销售单」时角标是空的，用户看不出筛选被藏起来了。 #}
+    {% set advanced_count = (1 if filters['customer_id'] else 0) + (1 if filters['product_name'] else 0) + (selected_document_types|length) %}
+    <button type="button" class="filter-advanced-toggle" data-filter-advanced-toggle aria-expanded="true" aria-controls="analyticsAdvancedPanel" title="客户 / 商品">高级筛选{% if advanced_count %}<span class="filter-advanced-badge" title="已生效 {{ advanced_count }} 项">{{ advanced_count }}</span>{% endif %}</button>
+  </div>
+  <div class="filter-advanced-panel" id="analyticsAdvancedPanel">
     <div class="filter-row-counterparty">
       <div class="filter-field-plain">
         <div class="filter-inline">
@@ -71,23 +77,25 @@
         </div>
       </div>
     </div>
-    </details>
-  </div>
-  <div class="filter-tier-conditions">
-    <div class="filter-field-type">
-      <div class="filter-type-row" role="group" aria-label="订单类型筛选">
-        <label class="form-label">订单类型（可多选）</label>
-        <div class="filter-type-options">
-          {% for value, label in [('sale','销售单'),('return','退货单'),('purchase','拿货单'),('purchase_return','退拿货单')] %}
-          <input type="checkbox" class="btn-check" name="document_type" id="analyticsDocType{{value}}" value="{{value}}" autocomplete="off" {{ 'checked' if value in selected_document_types else '' }}>
-          <label class="btn btn-outline-primary" for="analyticsDocType{{value}}">{{label}}</label>
-          {% endfor %}
+    {# 2026-11-10 用户要求：点开高级筛选后，**订单类型也一起进这块淡蓝圆角面板**，
+       与单据管理页（订单类型 + 单据状态都在面板里）保持同一形态。
+       此前它留在面板外面，展开后只有客户/商品进框，下面一行裸露在外，看着像半成品。 #}
+    <div class="filter-tier-conditions">
+      <div class="filter-field-type">
+        <div class="filter-type-row" role="group" aria-label="订单类型筛选">
+          <label class="form-label">订单类型（可多选）</label>
+          <div class="filter-type-options">
+            {% for value, label in [('sale','销售单'),('return','退货单'),('purchase','拿货单'),('purchase_return','退拿货单')] %}
+            <input type="checkbox" class="btn-check" name="document_type" id="analyticsDocType{{value}}" value="{{value}}" autocomplete="off" {{ 'checked' if value in selected_document_types else '' }}>
+            <label class="btn btn-outline-primary" for="analyticsDocType{{value}}">{{label}}</label>
+            {% endfor %}
+          </div>
+          <div class="filter-type-bulk" role="group" aria-label="订单类型批量操作">
+            <button type="button" class="btn btn-outline-secondary analytics-type-none" data-type-none="1">清空</button>
+          </div>
         </div>
-        <div class="filter-type-bulk" role="group" aria-label="订单类型批量操作">
-          <button type="button" class="btn btn-outline-secondary analytics-type-none" data-type-none="1">清空</button>
-        </div>
+        <div data-ui-hint class="form-text filter-type-hint">不勾选=四类全部；净销售额与产品排行只算销售 + 退货，拿货/退拿货只影响金额汇总与流水热力图。</div>
       </div>
-      <div data-ui-hint class="form-text filter-type-hint">不勾选=四类全部；净销售额与产品排行只算销售 + 退货，拿货/退拿货只影响金额汇总与流水热力图。</div>
     </div>
   </div>
   {# 已选条件行**始终渲染**（空时用 .is-empty 隐藏）：page-refresh.mjs 只替换「当前文档里已有」的同 id 区块，
@@ -166,12 +174,9 @@
 <style>
 .analytics-dimension-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
 .analytics-dimension-grid .rank-columns{margin-top:8px}
-/* 去乱（2026-11-08）：客户 / 商品筛选收进「高级筛选」折叠面板，默认收起。 */
-.analytics-advanced{margin-top:10px}
-.analytics-advanced>summary{list-style:none;display:inline-flex;align-items:center;gap:6px;cursor:pointer;color:var(--erp-primary);font-size:13px;font-weight:600;padding:4px 0}
-.analytics-advanced>summary::-webkit-details-marker{display:none}
-.analytics-advanced>summary::before{content:"▾";font-size:12px;transition:transform .15s}
-.analytics-advanced:not([open])>summary::before{transform:rotate(-90deg)}
+/* 去乱（2026-11-08）：客户 / 商品筛选收进「高级筛选」面板，默认收起。
+   2026-11-09：按钮与面板样式上收到 base.html 的 .filter-advanced-toggle / .filter-advanced-panel
+   （与单据管理共用），本页不再自带样式 —— 旧样式就是「只有蓝字、没有按钮外观」的来源。 */
 </style>
 {# 3-A（2026-11-07）：客户维度排行 + 按月趋势。口径：只算销售+退货净额，只到数量与金额，
    不含任何利润/成本字段；复用自绘条形（.rank-bar-*），不引入图表库。随筛选「查询」就地刷新。 #}

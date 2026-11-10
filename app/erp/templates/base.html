@@ -255,6 +255,9 @@
     .btn-outline-success{color:var(--erp-outline-success);border-color:var(--erp-outline-success)}.btn-outline-success:hover,.btn-outline-success:focus{background:var(--erp-primary-soft);color:var(--erp-outline-success);border-color:var(--erp-outline-success)}
     .btn-outline-danger{color:var(--erp-outline-danger);border-color:var(--erp-outline-danger)}.btn-outline-danger:hover,.btn-outline-danger:focus{background:var(--erp-surface-soft);color:var(--erp-outline-danger);border-color:var(--erp-outline-danger)}
     .btn-outline-info{color:var(--erp-outline-info);border-color:var(--erp-outline-info)}.btn-outline-info:hover,.btn-outline-info:focus{background:var(--erp-surface-soft);color:var(--erp-outline-info);border-color:var(--erp-outline-info)}
+    /* 行内中性动作（查看/详情）：描边保留，但文字提回正文色 ——
+       outline-secondary 的 muted 灰在表格里会被读成「禁用」（2026-11-09 单据列表描边化实测）。 */
+    .stable-table .action-wrap .btn-outline-secondary{color:var(--erp-ink)}
     /* 行内操作失败的就地提示：不跳页、不用 alert，保留页面上下文。 */
     .row-action-error{
       display:flex;align-items:flex-start;gap:12px;margin:0 0 12px;padding:11px 14px;
@@ -396,6 +399,10 @@
     .filter-type-row .form-label{margin:0}
     .filter-type-options,.filter-type-bulk{display:flex;flex-wrap:wrap;gap:8px}
     .filter-type-options .btn,.filter-type-bulk .btn{white-space:nowrap;min-height:34px;padding:4px 12px;font-size:13px}
+    /* 「清空」要和前面的类型 chip 读成同一尺寸的圆角矩形：盒子本来就等高（实测都是 34px），
+       看着更小是次要按钮的浅灰字 + 浅灰边造成的。这里把文字提回正文色、给一个与 chip
+       相当的宽度、边框加深一档，视觉重量对齐（用户 2026-11-09 指出「大小不一致」）。 */
+    .filter-type-bulk .btn{min-width:64px;color:var(--erp-ink);border-color:color-mix(in srgb,var(--erp-ink) 24%,var(--erp-border))}
     .filter-type-hint{margin-top:2px;color:var(--erp-muted);font-size:12px}
     /* ③ 已选条件 chip */
     .filter-chips{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid var(--erp-border)}
@@ -403,15 +410,50 @@
     .filter-chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;border:1px solid color-mix(in srgb,var(--erp-primary) 30%,var(--erp-border));background:var(--erp-primary-soft);color:var(--erp-primary);font-size:12.5px;text-decoration:none}
     .filter-chip:hover{background:color-mix(in srgb,var(--erp-primary) 16%,var(--erp-surface));text-decoration:none;color:var(--erp-primary)}
     .filter-chip .filter-chip-x{font-weight:700;opacity:.75}
-    /* 动作条：按功能分三组，组间竖线隔开，全部常显（用户 2026-10-16：分类分区，不折叠）。
-       ①筛选类 ②单据类（新建/删除选中）③导出类（贴右）。
-       导出三按钮必须留在 `.filter-actions` 内且顺序固定 —— 契约见
-       tests/test_order_list_filter_layout.py:19-25，故用「贴右归一类」而非搬走。 */
+    /* 动作条：全部常显、不折叠（用户 2026-10-16：分类分区，不折叠）。
+       2026-11-10 用户要求取消组间竖线并取消右推：查询 · 重置 · 删除选中 · 导出汇总表 依次靠左排开。 */
     .filter-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:16px;padding-top:16px;border-top:1px solid var(--erp-border)}
     .filter-actions-primary,.filter-actions-extra,.filter-actions-records{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-    .filter-actions-records{border-left:1px solid var(--erp-border);padding-left:10px}
-    .filter-actions-extra{margin-left:auto;border-left:1px solid var(--erp-border);padding-left:10px}
+    /* 2026-11-10 用户要求：动作条不再分组分隔 ——「删除选中」紧跟「重置」靠左，
+       「导出汇总表」紧挨着「删除选中」，中间不要竖线，也不要被推到右端。 */
+    .filter-actions-records{padding-left:0}
+    .filter-actions-extra{padding-left:0}
     .filter-hint{color:var(--erp-muted);font-size:12px;margin-top:10px}
+    /*
+      ④ 高级筛选（2026-11-09 用户要求，单据管理与数据分析共用）：
+         a) 触发件是**按钮**（边框 + 底色 + 折角箭头），常驻查询行末尾、右对齐 —— 用户指定位置；
+         b) 面板是**查询行之外的块**，独占整宽。绝不能把面板塞进 `.filter-tier-query` 那个 flex
+            行里：上一版把 <details> 当 flex 子项，展开后被挤到行尾、客户/商品输入并进时间行、
+            整行高度与对齐全乱（用户截图实测「点开就变形」）。所以触发件与面板必须拆开：
+            按钮留在行内，面板落在行外，由 JS 开关（无 JS 时面板常显，功能不丢）。
+         c) 折叠时按钮上带角标显示已生效条件条数，避免筛选藏在折叠里看不见。
+         d) 面板内上下内边距对称 —— 用户 2026-11-09 指出内容偏上、没在面板里垂直居中。
+    */
+    .filter-advanced-toggle{
+      display:inline-flex;align-items:center;gap:8px;min-height:40px;margin-left:auto;padding:6px 12px;
+      border:1px solid var(--erp-border-strong);border-radius:6px;background:var(--erp-glass-bg-strong);
+      color:var(--erp-ink);font-size:13px;font-weight:600;line-height:1.4;white-space:nowrap;
+      cursor:pointer;user-select:none;transition:border-color .15s,background .15s,color .15s;
+    }
+    .filter-advanced-toggle:hover{border-color:var(--erp-primary);background:var(--erp-primary-soft);color:var(--erp-primary)}
+    .filter-advanced-toggle:focus-visible{outline:2px solid var(--erp-primary);outline-offset:2px}
+    .filter-advanced-toggle::after{
+      content:"";width:6px;height:6px;margin-left:2px;border-right:1.6px solid currentColor;border-bottom:1.6px solid currentColor;
+      transform:rotate(45deg) translate(-1px,-1px);transition:transform .15s;
+    }
+    .filter-advanced-toggle[aria-expanded="true"]::after{transform:rotate(225deg) translate(-1px,-1px)}
+    .filter-advanced-badge{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--erp-primary);color:#fff;font-size:11px;font-weight:700;line-height:1}
+    /* 上下内边距对称：内容（40px 输入框）在面板里垂直居中，不再被下边距挤得偏上。
+       底色是「淡蓝」而不是纯灰白：5% 主色混进 surface，两页（单据管理 / 数据分析）共用同一块。 */
+    .filter-advanced-panel{margin-top:12px;padding:12px 14px;border:1px solid var(--erp-border);border-radius:8px;background:color-mix(in srgb,var(--erp-primary) 5%,var(--erp-surface))}
+    .filter-advanced-panel[hidden]{display:none!important}
+    /* 面板内条件栏不再自带虚线分隔与上边距（面板本身已是一块）。
+       面板里改单列：两列时每列约 490px，「标签 + 四个类型 chip + 清空」放不下，
+       「清空」被挤到第二行、左右两组高度还不一致（实测截图很毛糙）。单列后每组正好一行。 */
+    .filter-advanced-panel .filter-tier-conditions{grid-template-columns:minmax(0,1fr);margin-top:0;padding-top:0;border-top:0}
+    /* 面板内多段条件之间用虚线分隔（单据管理：类型 / 状态；数据分析：客户+商品 / 订单类型）。 */
+    .filter-advanced-panel .filter-row-counterparty+.filter-tier-conditions,
+    .filter-advanced-panel .filter-field-type+.filter-field-type{margin-top:10px;padding-top:10px;border-left:0;padding-left:0;border-top:1px dashed var(--erp-border)}
     /* 条件多选行仍沿用 .filter-field-type 类名（两页模板按此行分组） */
     .filter-field-type{min-width:0}
     @media(max-width:1180px){
@@ -425,8 +467,6 @@
       .filter-tier-conditions{grid-template-columns:minmax(0,1fr)}
       .filter-field-type+.filter-field-type{border-left:0;padding-left:0}
       .filter-field-composite,.filter-field-plain{flex:1 1 100%}
-      .filter-actions-extra{margin-left:0;border-left:0;padding-left:0}
-      .filter-actions-records{border-left:0;padding-left:0}
     }
     /*
       基础资料列表页（商品管理 / 客户管理）顶部工具区：两页共用同一套类，只写一次。
@@ -932,6 +972,26 @@
     });
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') { document.querySelectorAll('.erp-modal.is-open').forEach(closeUploadModal); }
+    });
+  })();
+  // 高级筛选折叠（2026-11-09）：按钮留在查询行末尾，面板落在行外，两者用 aria-controls 关联。
+  // 面板默认**可见**（无 JS 时功能不丢），脚本加载后立即收起 —— 折叠是增强，不是前提。
+  // 用事件委托而不是逐个 bind：就地刷新替换区块后依然有效。
+  (function () {
+    document.querySelectorAll('[data-filter-advanced-toggle]').forEach(function (btn) {
+      var panel = document.getElementById(btn.getAttribute('aria-controls'));
+      if (!panel) return;
+      panel.hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+    });
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-filter-advanced-toggle]');
+      if (!btn) return;
+      var panel = document.getElementById(btn.getAttribute('aria-controls'));
+      if (!panel) return;
+      var willOpen = panel.hidden;
+      panel.hidden = !willOpen;
+      btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
     });
   })();
 </script>

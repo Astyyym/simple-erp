@@ -38,7 +38,8 @@ def test_orders_mark_return_orders_red_and_account_ledger_preserves_return_sign_
     accounts_html = client.get(f"/accounts/?customer_id={customer_id}").get_data(as_text=True)
 
     assert 'href="/orders/"' in orders_html
-    assert "清除筛选条件" in orders_html
+    # 2026-11-09：与数据分析页对齐，「清除筛选条件」改名「重置」。
+    assert "重置" in orders_html
     # 行上仍带语义钩子（不再带 table-danger），红色落在标签与金额上。
     assert '<tr class="return-order-row" data-order-type="return"' in orders_html
     assert 'class="order-type-tag order-type-tag--return"' in orders_html

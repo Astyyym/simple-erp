@@ -55,7 +55,7 @@ PDF 模板用 `sections[]`；单客户 API 可委托多客户生成。
   .filter-field-type              grid-column:1/-1，内部：
     .filter-type-row              标签 + .filter-type-options + .filter-type-bulk **同一行**
     .filter-type-hint             说明文案（不要塞进 row 里，会破坏「同行」判定）
-  .filter-actions                 整行，.filter-actions-extra{margin-left:auto} 让导出组贴右
+  .filter-actions                 整行，动作依次靠左（查询 · 重置 · 删除选中 · 导出汇总表）
 ```
 
 - **订单类型批量按钮**：`标签 + 四类复选框 + 全选 + 清空` 同一行**左对齐**，四类→全选间距 8px。禁止 `justify-content:space-between` / `flex-end` 把全选/清空推到卡片最右（用户明确否决过）。

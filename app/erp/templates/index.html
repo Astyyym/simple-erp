@@ -9,31 +9,14 @@
   .metric-card{min-width:0;min-height:112px;padding:14px 15px;background:var(--erp-glass-bg-strong);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);box-shadow:var(--erp-shadow);-webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.15);backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.15)}
   .metric-card.net-card{border-color:color-mix(in srgb,var(--erp-primary) 32%,var(--erp-border))}.metric-head{display:flex;align-items:center;justify-content:space-between;gap:8px;color:var(--erp-muted);font-size:12px;font-weight:650}.metric-period{padding:2px 6px;color:var(--erp-primary);background:var(--erp-primary-soft);border-radius:4px;font-size:11px}.metric-value{margin:10px 0 4px;color:var(--erp-ink);font-size:27px;font-weight:720;line-height:1.15;font-variant-numeric:tabular-nums}.metric-value.count{font-size:23px}.metric-help{margin:0;color:var(--erp-muted);font-size:12px}
   .dashboard-layout{width:100%;margin:0 auto}
-  .dashboard-main{display:grid;grid-template-columns:minmax(0,1fr) 250px;grid-template-areas:"head actions" "metrics actions" "recent actions" "flow actions";align-items:start;gap:20px;min-width:0}
+  /* 2026-11-09 用户要求：撤掉右侧「快速操作」竖排卡（开单与各页入口已由左侧栏承担），
+     工作台改单列铺满，指标 / 最近业务 / 日常流程依次占满整宽，表格不再被 250px 挤窄。 */
+  .dashboard-main{display:grid;grid-template-columns:minmax(0,1fr);grid-template-areas:"head" "metrics" "recent" "flow";align-items:start;gap:20px;min-width:0}
   .dashboard-head{grid-area:head}
   .metric-grid{grid-area:metrics}
   .recent-panel{grid-area:recent}
-  .workspace-panel{grid-area:flow}
-  .quick-actions{
-    position:sticky;top:12px;grid-area:actions;align-self:start;padding:16px;border:1px solid var(--erp-glass-border);border-radius:16px;
-    background:var(--erp-glass-bg);box-shadow:var(--erp-glass-shadow);
-    -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25)
-  }
-  .quick-actions h2{margin:0;font-size:16px}
-  .quick-action-list{display:grid;gap:8px;margin-top:12px}
-  .quick-action{
-    min-height:48px;display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--erp-border);
-    border-radius:8px;color:var(--erp-ink);background:var(--erp-surface);font-size:13px;font-weight:600;text-decoration:none;
-    transition:transform .15s,border-color .15s,background .15s
-  }
-  .quick-action:hover{transform:translateY(-1px);border-color:var(--erp-primary);color:var(--erp-ink)}
-  .quick-action.primary{border-color:var(--erp-primary);color:#fff;background:var(--erp-primary)}
-  .quick-action.primary:hover{border-color:var(--erp-primary-hover);color:#fff;background:var(--erp-primary-hover)}
-  .quick-action-mark{width:24px;height:24px;flex:0 0 24px;display:grid;place-items:center;border-radius:6px;color:var(--erp-primary);background:var(--erp-primary-soft);font-size:13px}
-  .quick-action.primary .quick-action-mark{color:#fff;background:rgba(255,255,255,.16)}
-  .quick-action-arrow{margin-left:auto;color:var(--erp-muted);font-size:15px}
-  .quick-action.primary .quick-action-arrow{color:rgba(255,255,255,.75)}
   .workspace-panel{
+    grid-area:flow;
     background:var(--erp-glass-bg);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);padding:20px;
     box-shadow:var(--erp-glass-shadow);-webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25)
   }
@@ -58,10 +41,10 @@
   .firstrun-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:16px}
   .firstrun-actions .firstrun-spacer{flex:1 1 auto}
   .firstrun-tip{margin:10px 0 0;color:var(--erp-muted);font-size:12px;line-height:1.5}
-  @media(max-width:1100px){.dashboard-main{grid-template-columns:minmax(0,1fr) 220px;grid-template-areas:"head actions" "metrics actions" "recent actions" "flow actions";gap:14px}.quick-actions{padding:14px}.dashboard-head{align-items:flex-start;flex-direction:column;gap:8px}.day-chip{align-items:flex-start;text-align:left}/* 五张指标卡：窄档回落两列，净业务额独占一行（1.45fr 的宽卡压到 1/2 会裁数字）。 */ .metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.metric-card.net-card{grid-column:1/-1}.flow{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.flow-step,.flow-step:first-child,.flow-step:last-child{border:1px solid var(--erp-border);border-radius:7px}}
-  @media(max-width:760px){.sidebar{display:none}.content{height:calc(100% - 20px);margin:10px;border-radius:18px}.page-topbar{padding:0 12px}.page-topbar .company{min-width:0;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.page-body{padding:15px 11px 22px}.dashboard-main{grid-template-columns:minmax(0,1fr);grid-template-areas:"head" "metrics" "actions" "recent" "flow";gap:14px}.quick-actions{position:static}.quick-action-list{grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-head{align-items:flex-start;flex-direction:column;gap:8px}.day-chip{align-items:flex-start}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.metric-card{min-height:108px;padding:12px}.metric-card.net-card{grid-column:1/-1}.metric-value{font-size:24px}.recent-head{align-items:flex-start;flex-direction:column}.recent-table-wrap{overflow:visible}.recent-table{min-width:0}.recent-table thead{display:none}.recent-table,.recent-table tbody{display:block;width:100%}.recent-table tbody tr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 9px;padding:10px;border-top:1px solid var(--erp-border)}.recent-table tbody td{min-width:0;padding:2px 0;border:0}.recent-table tbody td:nth-child(1){grid-column:1/-1}.recent-table tbody td:nth-child(2){grid-column:1/-1;color:var(--erp-muted)}.recent-table tbody td:nth-child(3){grid-column:1;color:var(--erp-muted);font-size:12px}.recent-table tbody td:nth-child(4){grid-column:2;color:var(--erp-muted);text-align:right;font-size:12px}.recent-table tbody td:nth-child(5){grid-column:1}.recent-table tbody td:nth-child(6){grid-column:2;text-align:right}}
+  @media(max-width:1100px){.dashboard-main{gap:14px}.dashboard-head{align-items:flex-start;flex-direction:column;gap:8px}.day-chip{align-items:flex-start;text-align:left}/* 五张指标卡：窄档回落两列，净业务额独占一行（1.45fr 的宽卡压到 1/2 会裁数字）。 */ .metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.metric-card.net-card{grid-column:1/-1}.flow{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.flow-step,.flow-step:first-child,.flow-step:last-child{border:1px solid var(--erp-border);border-radius:7px}}
+  @media(max-width:760px){.sidebar{display:none}.content{height:calc(100% - 20px);margin:10px;border-radius:18px}.page-topbar{padding:0 12px}.page-topbar .company{min-width:0;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.page-body{padding:15px 11px 22px}.dashboard-main{gap:14px}.dashboard-head{align-items:flex-start;flex-direction:column;gap:8px}.day-chip{align-items:flex-start}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.metric-card{min-height:108px;padding:12px}.metric-card.net-card{grid-column:1/-1}.metric-value{font-size:24px}.recent-head{align-items:flex-start;flex-direction:column}.recent-table-wrap{overflow:visible}.recent-table{min-width:0}.recent-table thead{display:none}.recent-table,.recent-table tbody{display:block;width:100%}.recent-table tbody tr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 9px;padding:10px;border-top:1px solid var(--erp-border)}.recent-table tbody td{min-width:0;padding:2px 0;border:0}.recent-table tbody td:nth-child(1){grid-column:1/-1}.recent-table tbody td:nth-child(2){grid-column:1/-1;color:var(--erp-muted)}.recent-table tbody td:nth-child(3){grid-column:1;color:var(--erp-muted);font-size:12px}.recent-table tbody td:nth-child(4){grid-column:2;color:var(--erp-muted);text-align:right;font-size:12px}.recent-table tbody td:nth-child(5){grid-column:1}.recent-table tbody td:nth-child(6){grid-column:2;text-align:right}}
   @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
-    .quick-actions,.quick-action:not(.primary),.workspace-panel,.metric-card,.recent-panel{background:var(--erp-surface)}
+    .workspace-panel,.metric-card,.recent-panel{background:var(--erp-surface)}
     .flow-step{background:var(--erp-surface-soft)}
   }
 </style>
@@ -111,7 +94,7 @@
     </div>
   </div>
   {% endif %}
-  <section class="dashboard-main" aria-label="工作台概况、快捷操作与最近业务">
+  <section class="dashboard-main" aria-label="工作台概况与最近业务">
     <div class="dashboard-head">
       <div><h1>业务工作台</h1></div>
       <div class="day-chip"><span>{{ shop_name or '简单ERP' }}</span><strong>统计日期 · {{ today_display }}</strong></div>
@@ -146,16 +129,6 @@
         <p data-ui-hint class="metric-help">正式保存</p>
       </article>
     </section>
-    <aside class="quick-actions" id="dashboardQuickActions" aria-labelledby="quickActionsTitle">
-      <h2 id="quickActionsTitle">快捷操作</h2>
-      <div class="quick-action-list">
-        <a class="quick-action primary" href="/orders/new"><span class="quick-action-mark" aria-hidden="true">＋</span>新建销售单<span class="quick-action-arrow" aria-hidden="true">→</span></a>
-        <a class="quick-action" href="/orders/return/new"><span class="quick-action-mark" aria-hidden="true">↩</span>新建退货单<span class="quick-action-arrow" aria-hidden="true">→</span></a>
-        <a class="quick-action" href="/orders/"><span class="quick-action-mark" aria-hidden="true">≡</span>单据管理<span class="quick-action-arrow" aria-hidden="true">→</span></a>
-        <a class="quick-action" href="/accounts/"><span class="quick-action-mark" aria-hidden="true">¥</span>账款管理<span class="quick-action-arrow" aria-hidden="true">→</span></a>
-        <a class="quick-action" href="/analytics/"><span class="quick-action-mark" aria-hidden="true">↗</span>数据分析<span class="quick-action-arrow" aria-hidden="true">→</span></a>
-      </div>
-    </aside>
     <section class="recent-panel" aria-labelledby="recentTitle">
   <div class="recent-head">
     <div><h2 id="recentTitle">最近业务</h2></div>

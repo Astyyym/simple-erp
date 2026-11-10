@@ -16,7 +16,7 @@
 | 销售单 | `GET /orders/export/sales.xlsx` | `销售单导出_YYYYMMDD.xlsx` |
 | 退货单 | `GET /orders/export/returns.xlsx` | `退货单导出_YYYYMMDD.xlsx` |
 
-列表页按钮：客户/商品「导出Excel」；单据管理「导出销售单Excel」「导出退货单Excel」。保留「导出汇总表」PDF 入口不动。
+列表页按钮：客户/商品「导出Excel」。单据管理页 2026-11-09 按用户要求撤掉了「导出销售单Excel」等四个按钮，只保留「导出汇总表」PDF 入口；`/orders/export/*.xlsx` 接口仍在（拿货/退拿货导出见 `purchases.xlsx` / `purchase_returns.xlsx`），需要时直接请求端点或用 `curl`，不要因为页面没按钮就删后端路由。
 
 ## 字段（最小可用）
 

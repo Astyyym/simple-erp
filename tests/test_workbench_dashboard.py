@@ -96,18 +96,20 @@ def test_workbench_recent_five_uses_created_time_across_order_dates_and_excludes
     assert "WB-INVALID-DELETED" not in recent_rows
 
 
-def test_workbench_groups_existing_quick_links_into_the_floating_operations_area():
+def test_workbench_drops_the_quick_actions_column():
+    """2026-11-09 用户要求：撤掉右侧「快速操作」竖排卡，工作台改单列铺满。
+
+    开单与各页入口已由左侧栏承担，右栏只是把侧栏再念一遍，还让最近业务表少 250px 宽。
+    """
     init_db()
     html = create_app().test_client().get("/").get_data(as_text=True)
 
     assert 'class="dashboard-layout"' in html
-    assert '<aside class="quick-actions" id="dashboardQuickActions"' in html
-    assert html.index('class="metric-grid"') < html.index('id="dashboardQuickActions"') < html.index('class="recent-panel"')
-    quick_actions = html.split('id="dashboardQuickActions"', 1)[1].split("</aside>", 1)[0]
-    assert 'href="/orders/new"' in quick_actions
-    assert 'href="/orders/return/new"' in quick_actions
-    assert 'href="/orders/"' in quick_actions
-    assert 'href="/accounts/"' in quick_actions
+    assert 'id="dashboardQuickActions"' not in html
+    assert "quick-actions" not in html
+    # 单列：不再有第二列（250px/220px 的动作栏），也没有 actions 网格区。
+    assert 'grid-template-areas:"head" "metrics" "recent" "flow"' in html
+    assert '"actions"' not in html
 
 
 def test_workbench_hides_decorative_explanations_and_preserves_metric_rules():
@@ -122,7 +124,8 @@ def test_workbench_hides_decorative_explanations_and_preserves_metric_rules():
     assert "客户与商品字典" not in html
     assert "按单据日期统计；销售为正，退货为负" in html
     assert "正式保存或已打印" in html
-    assert "快捷操作" in html
+    # 2026-11-09：右侧「快捷操作」卡整块撤掉，页面上不再出现这块标题。
+    assert "快捷操作" not in html
     assert "最近业务" in html
 
 

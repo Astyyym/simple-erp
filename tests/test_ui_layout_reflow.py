@@ -264,10 +264,36 @@ def test_both_filter_cards_share_one_full_row_field_grid():
     assert ".erp-analytics .analytics-card-net{grid-column:span 2" in css
     # 窄档必须把 span 收掉，否则 1 列网格里 span 2 会撑出隐式列、产生横向溢出。
     assert ".erp-analytics .analytics-card-net{grid-column:span 1}" in css
-    # 筛选区：客户+商品并排在时间控件**右侧**同一行（2026-10-17 第三轮用户截图要求；
-    # 此前是 column 的两行布局）。放不下时由 flex-wrap 折行，窄档规则见媒体查询。
+    # 筛选区：客户+商品收在「高级筛选」面板里（2026-11-08 去乱）。
     assert 'class="filter-row-counterparty"' in analytics
     assert ".erp-analytics .filter-tier-query{display:flex;flex-direction:row;flex-wrap:wrap" in css
+    # 回归守卫（2026-11-09 用户两次反馈后的定稿）：
+    #   ① 按钮常驻查询行末尾、右对齐（用户指定位置）；
+    #   ② 面板必须在行**外** —— 面板若跟着按钮进 flex 行，展开就把整行挤变形（上一版实测）。
+    row_tag = analytics.index('class="filter-tier-query"')
+    row_start = analytics.rindex("<div", 0, row_tag)
+    panel_start = analytics.index('class="filter-advanced-panel"')
+    # 切到面板标记前，并去掉面板自己的开始标签，剩下的就是查询行本体。
+    segment = analytics[row_start:panel_start].rsplit("<div", 1)[0]
+    assert 'data-filter-advanced-toggle' in segment
+    assert 'aria-controls="analyticsAdvancedPanel"' in segment
+    # 行内 div 全部闭合 = 面板不在行里。
+    assert segment.count("<div") == segment.count("</div>")
+    assert 'id="analyticsAdvancedPanel"' in analytics
+    # 2026-11-10 用户要求：订单类型条件也进同一块淡蓝圆角面板（与单据管理页同形态），
+    # 展开后不许有一行条件裸露在面板外。
+    panel_html = analytics.split('class="filter-advanced-panel"', 1)[1].split('id="analyticsChips"', 1)[0]
+    assert 'class="filter-row-counterparty"' in panel_html
+    assert 'class="filter-tier-conditions"' in panel_html
+    # 触发件是按钮（边框 + 折角箭头 + 行末右对齐），不能只是一行蓝字。
+    assert ".filter-advanced-toggle{" in analytics
+    assert "border:1px solid var(--erp-border-strong)" in analytics
+    assert "margin-left:auto" in analytics
+    # 面板上下内边距对称（用户 2026-11-09：内容没在面板里垂直居中）。
+    assert ".filter-advanced-panel{margin-top:12px;padding:12px 14px" in analytics
+    # 开关逻辑在 base.html 统一实现（事件委托，就地刷新后依然有效）。
+    assert "data-filter-advanced-toggle" in analytics
+    assert "panel.hidden = true" in analytics
     # 时间块内部排布（2026-10-24 用户第三张截图要求：**日期输入框放在「按日到日」右侧同一行**）。
     # 此前是 grid 两行（第一行「时间范围 + 模式按钮」，第二行起止日期占整行），
     # 用户圈出日期框要求与模式按钮同行 → 改成单行 flex，放不下才换行。
@@ -275,3 +301,39 @@ def test_both_filter_cards_share_one_full_row_field_grid():
     # 日期块不再独占整行（旧规则 `.dates{grid-column:1 / -1}` 必须消失，否则两行结构又回来）。
     assert ".erp-analytics .filter-field-composite .filter-inline>.dates{grid-column:1 / -1" not in css
     assert ".erp-analytics .filter-field-composite .filter-inline>.dates{margin:0;flex:0 0 auto}" in css
+
+
+def test_advanced_filter_button_and_outlined_row_actions():
+    """2026-11-09 用户要求（第二~五张截图）：
+
+    ① 「高级筛选」两页都必须是**按钮**（边框 + 折角箭头），不能只是一行蓝字；
+    ② 单据管理列表的行操作改成**彩色描边**、不再实心填充 —— 以商品管理为样板。
+
+    行操作要真造一张单据才渲染得出来（空列表会让断言假失败）。
+    """
+    for path in ("/orders/", "/analytics/"):
+        html = _html(path)
+        assert 'class="filter-advanced-toggle"' in html, path
+        assert 'class="filter-advanced-panel"' in html, path
+        # 按钮外观来自 base.html 共用规则（有边框、有底色、可聚焦、行末右对齐）。
+        assert ".filter-advanced-toggle{" in html, path
+        assert "border:1px solid var(--erp-border-strong)" in html, path
+        # 面板：独占整宽的块 + 上下内边距对称（内容垂直居中）。
+        assert ".filter-advanced-panel{" in html, path
+        assert "padding:12px 14px" in html, path
+
+    app = create_app()
+    with app.app_context():
+        customer_id = accounting.create_customer("行操作描边测试客户", opening_balance_cents=0)
+        accounting.create_order_from_typed_rows(
+            customer_id, "MD202611090001",
+            [{"product_name": "行操作描边测试商品", "unit": "个",
+              "quantity": "1", "unit_price_yuan": "10.00"}],
+            status="saved", order_date="2026-11-09",
+        )
+    body = app.test_client().get("/orders/").get_data(as_text=True).split('id="ordersResults"', 1)[1]
+    for cls in ("btn-outline-secondary", "btn-outline-primary", "btn-outline-info", "btn-outline-danger"):
+        assert f'class="btn btn-sm {cls}"' in body, cls
+    # 反例：实心色块不许回到行操作（禁用的「编辑」由 .btn:disabled 统一样式，不再是实心蓝）。
+    for cls in ("btn btn-sm btn-primary", "btn btn-sm btn-secondary", "btn btn-sm btn-info", "btn btn-sm btn-danger"):
+        assert cls not in body, cls
