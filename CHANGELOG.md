@@ -34,6 +34,20 @@
 - 隔离实例 CDP 量几何：按钮贴查询行末、与输入框同高；展开后行高不变、面板内上下留白 13/13；动作条文本实测 `查询 重置 删除选中 导出汇总表`；角标 `/analytics/?document_type=sale` → 1、两类 → 2。
 - README 桌面截图按演示数据重拍。手机端本轮未改（走独立的 `mobile/base.html`，不加载本次改的桌面样式），其截图 11-09 已重拍、与当前界面一致。
 
+### 产物与校验（GitHub Release v4.9.1，2026-11-10）
+
+已发布到 [Releases v4.9.1](https://github.com/Astyyym/simple-erp/releases/tag/v4.9.1)（Latest，tag `v4.9.1` / 提交 `bda3394`）。下列 SHA256 与 GitHub 侧资产 `digest` 逐一核对一致：
+
+| 资产 | 大小 | SHA256 |
+|---|---|---|
+| `dist\simple-erp-setup-v4.9.1.exe` | 46217534 B | `3A8C855294918E7FA5D081B06296E1924254189FAB09006B590BE62C983FF408` |
+| `dist\simple-erp-windows-v4.9.1.zip` | 63458097 B | `B3E00AB0DC26EE5195850B1EBA9B9CB0BF9C827F81E4C46E361C6ECF64BBE420` |
+| `simple-erp-mobile-v1.4.12.apk`（本轮未重打，随包附带） | 8053894 B | `C77BDF81E86A47BDCB8E94882FB8A3D46E379672E67C8FA02D7DEDE77204D362` |
+| 绿色版 `dist\local-v4.9.1\简单ERP`（含 demo_data 200 单） | — | — |
+
+- 安装包与 ZIP **不含 `demo_data`**（已核 zip：690 项、无 `demo_data`、`_internal/VERSION`=`v4.9.1`，包内模板已含本次新 UI 标记）；绿色版含 200 笔演示数据（销售 90 / 退货 35 / 拿货 45 / 退拿货 30，seed 校验 warnings / problems 均空）。
+- **未核验**：打包形态 GUI 实跑、真实打印机实打（需真机；Release 已上传，实机验收独立记录）。
+
 ## v4.9.0 - 界面去乱收口与侧栏图标层级（2026-11-08）
 
 > 桌面端 `VERSION` `v4.8.0` → **`v4.9.0`**；安卓端未改动（仍 `1.4.12`）。
