@@ -35,6 +35,22 @@
 - 三套主题（浅色 / 深色 / 跟随系统）实测：深色下按钮 `#3b82f6`、删除 `#fca5a5`，均跟随 `--erp-*` 变量。
 - 测试断言按新约定重写，保留原保护意图（动作必须齐全、不许回到实心色块），并新增「描边按钮也不许回来」的反例断言。
 
+### 产物与校验（GitHub Release v4.9.2，2026-11-14）
+
+已发布到 [Releases v4.9.2](https://github.com/Astyyym/simple-erp/releases/tag/v4.9.2)（Latest，tag `v4.9.2` / 提交 `954a954`）。下列 SHA256 与 GitHub 侧资产 `digest` 逐一核对一致：
+
+| 资产 | 大小 | SHA256 |
+|---|---|---|
+| `dist\simple-erp-setup-v4.9.2.exe` | 46585690 B | `726D81F2961B22A07EC4218E15064C05B2320EC4606EACC83A6B56231067157D` |
+| `dist\simple-erp-windows-v4.9.2.zip` | 63949704 B | `080FDBDE6474D97B06D895C38B9606F262FD5D0E127DB82DCD397C36C4C24604` |
+| `simple-erp-mobile-v1.4.12.apk`（本轮未重打，随包附带） | 8053894 B | `C77BDF81E86A47BDCB8E94882FB8A3D46E379672E67C8FA02D7DEDE77204D362` |
+| 绿色版 `dist\local-v4.9.2\简单ERP`（含 demo_data 200 单） | — | — |
+
+- 安装包与 ZIP **不含 `demo_data`**（已核 zip：691 项、无 `demo_data`、`_internal/VERSION`=`v4.9.2`、包内模板含 10 处 `.ract` 新样式）；绿色版含 200 笔演示数据（销售 90 / 退货 35 / 拿货 45 / 退拿货 30，seed 校验 warnings / problems 均空）。
+- **实跑核验**：绿色版 exe 以隔离端口启动后，单据列表 50 行逐行量几何——越界 0、操作列 200px、`page-body` 横向溢出 0。
+- README 中 `shot-orders.jpg` / `shot-products.jpg` 已用 `packaging/seed_demo_data.py` 的演示数据在隔离实例重拍（单号 `MD20261114*`，与门店真实账本 `MD20261018*` 物理隔离）。
+- **未核验**：真实打印机实打（需真机）。
+
 ## v4.9.1 - 界面去乱补丁：高级筛选按钮化、工作台单列与动作条去分隔（2026-11-10）
 
 > 桌面端 `VERSION` `v4.9.0` → **`v4.9.1`**；安卓端未改动（仍 `1.4.12`）。
