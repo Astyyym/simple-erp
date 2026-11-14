@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>账款管理 · 去乱原型</title>
+<link rel="stylesheet" href="_shell.css">
+<style>
+.pill.pay{background:rgba(23,128,61,.10);color:var(--success)}
+.pill.adj{background:rgba(245,158,11,.12);color:var(--warn)}
+.entry-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}
+.entry-form{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end}
+</style></head><body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3.6H9C7.3 3.6 5.9 5 5.9 6.7V17.3C5.9 19 7.3 20.4 9 20.4H15C16.7 20.4 18.1 19 18.1 17.3V7.7L14 3.6ZM14 3.6V6C14 7.3 15.1 8.4 16.4 8.4H18.1M9 12.4H10.6M13.4 12.4H15M9 15.8H10.6M13.4 15.8H15"/></svg></span><span class="brand-title">简单ERP</span></div>
+    <a href="#">工作台</a>
+    <div class="nav-label">开单</div>
+    <a class="sub" href="#">销售单</a><a class="sub" href="#">退货单</a><a class="sub" href="#">拿货单</a><a class="sub" href="#">退拿货单</a>
+    <div class="nav-label">业务</div>
+    <a href="#">单据管理</a><a class="active" href="#">账款管理</a><a href="#">数据分析</a>
+    <div class="nav-label">基础资料</div>
+    <a href="#">商品管理</a><a href="#">客户管理</a><a href="#">资料文档</a>
+    <div class="nav-label">其他</div>
+    <a href="#">回收站</a><a href="#">系统设置</a>
+  </aside>
+  <div class="content">
+    <div class="topbar">
+      <div class="search"><input placeholder="搜索单号 / 客户 / 商品 / 资料…"><button class="btn primary" style="height:36px">搜索</button></div>
+      <div class="clock" id="clock">2026-11-08 16:40:00</div>
+      <div class="status"><i></i>本地数据已连接</div>
+    </div>
+    <div class="page-body">
+      <div class="page-head"><h1>账款管理</h1></div>
+
+      <div class="toolbar">
+        <div class="filter-row">
+          <div class="field" style="min-width:240px"><label>客户</label><input value="联想测试客户" placeholder="输入客户名或拼音首字母"></div>
+          <div class="field"><label>开始日期</label><div class="date-field"><input type="date" value="2026-10-01"></div></div>
+          <div class="field"><label>结束日期</label><div class="date-field"><input type="date" value="2026-11-08"></div></div>
+          <button class="btn primary" data-toast="已查询（示例）">查询</button>
+          <div class="rel">
+            <button class="btn ghost" id="advToggle">高级筛选 <span class="adv-badge" id="advCount" style="display:none">0</span><svg class="chev" id="advChev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg></button>
+          </div>
+        </div>
+        <div class="adv-panel" id="advPanel"><div class="adv-inner"><div class="adv-box">
+          <div class="adv-group"><span class="adv-label">单据类型</span>
+            <button class="chip" data-kind="type" data-val="销售">销售</button>
+            <button class="chip" data-kind="type" data-val="退货">退货</button>
+            <button class="chip" data-kind="type" data-val="拿货">拿货</button>
+            <button class="chip" data-kind="type" data-val="退拿货">退拿货</button>
+            <span class="adv-actions"><button class="btn text" id="resetChips">重置</button></span>
+          </div>
+        </div></div></div>
+        <div class="active-tags" id="activeTags"></div>
+      </div>
+
+      <div class="summary-grid">
+        <div class="summary-card"><div class="slabel"><span>当前余额</span><span>全历史 · 不受日期筛选影响</span></div><div class="sval neg">−¥2,853.85</div></div>
+        <div class="summary-card"><div class="slabel"><span>筛选区间净变动</span><span>2026-10-01 至 2026-11-08</span></div><div class="sval">+¥320.00</div></div>
+      </div>
+
+      <div class="section-head">
+        <h3>联想测试客户 · 客户往来流水</h3>
+        <span class="spacer"></span>
+        <button class="btn outline" data-toast="进入往来对账（示例）">往来对账</button>
+        <button class="btn ghost" data-toast="已导出流水 Excel（示例）">导出流水</button>
+      </div>
+      <div class="table-card">
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th style="width:120px">日期</th><th style="width:90px">类型</th><th>摘要</th><th style="width:150px">单号 / 方式</th><th style="width:120px;text-align:right">发生金额</th><th style="width:120px;text-align:right">余额影响</th><th style="width:90px">状态</th><th style="width:90px;text-align:right">操作</th></tr></thead>
+            <tbody>
+              <tr><td>2026-11-05</td><td><span class="pill sale">销售单</span></td><td>销售商品</td><td class="mono">MD202611050001</td><td class="num">+¥5,692.72</td><td class="num">+¥5,692.72</td><td><span class="st saved"><i></i>生效</span></td><td><div class="row-actions"><button class="btn text">展开</button></div></td></tr>
+              <tr><td>2026-11-04</td><td><span class="pill ret">退货单</span></td><td>客户退货</td><td class="mono">MD202611040002</td><td class="num neg">−¥503.13</td><td class="num neg">−¥503.13</td><td><span class="st saved"><i></i>生效</span></td><td><div class="row-actions"><button class="btn text">展开</button></div></td></tr>
+              <tr><td>2026-11-03</td><td><span class="pill pay">收款</span></td><td>现金收款</td><td class="mono">现金</td><td class="num">¥1,000.00</td><td class="num neg">−¥1,000.00</td><td><span class="st saved"><i></i>生效</span></td><td><div class="row-actions"><button class="btn text" style="color:var(--danger)" data-toast="作废这条收款（示例）">作废</button></div></td></tr>
+              <tr><td>2026-11-02</td><td><span class="pill adj">账务调整</span></td><td>差额补记</td><td class="mono">—</td><td class="num">+¥80.00</td><td class="num">+¥80.00</td><td><span class="st saved"><i></i>生效</span></td><td><div class="row-actions"><button class="btn text" style="color:var(--danger)" data-toast="作废这条调整（示例）">作废</button></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="entry-grid">
+        <div class="panel"><h3>登记收款</h3>
+          <div class="entry-form">
+            <div class="field"><label>收款金额（元）</label><input placeholder="例如 500.00"></div>
+            <div class="field"><label>收款方式</label><input value="现金"></div>
+            <button class="btn success" data-toast="已保存收款（示例）">保存收款</button>
+          </div>
+        </div>
+        <div class="panel"><h3>账务调整</h3>
+          <div class="entry-form">
+            <div class="field"><label>调整金额（元）</label><input placeholder="可输入负数"></div>
+            <div class="field"><label>调整原因</label><input placeholder="填写可追溯原因"></div>
+            <button class="btn ghost" data-toast="已保存调整（示例）">保存调整</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script src="_shell.js"></script>
+</body></html>

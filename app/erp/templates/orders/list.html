@@ -126,10 +126,12 @@
      同色 + 加粗 —— 两者都比原来宽 10–15px；而日期列原本只有 101px、需要 125px
      （一直截成 `2026-...`，属于既存缺陷，本轮顺带补上）。
      实测需要（1440 视口、表宽 1055）：日期 125 / 类型 114 / 金额 126 / 状态 98，
-     扣掉勾选 44 与操作 300 后剩 711 → 这四列先给够，单号与往来对象平分剩余。
+     扣掉勾选 44 与操作 200 后剩 811 → 这四列先给够，单号与往来对象平分剩余。
+     操作列 2026-11-14 从 274 收到 200（行操作改密集文字按钮，见 base.html 的 .ract 注释），
+     省出的 78px 全部让给单号与往来对象（13.2% → 17.4%）。
      为什么不用固定 px：窄屏（1280/1100）表宽只有 895/831，固定 px 会把单号与往来对象
      压到 0；百分比至少让它们同比缩小，而这两列本来就靠 title 悬停看全（历史口径）。 #}
-  <colgroup><col style="width:44px"><col style="width:13.2%"><col style="width:13.2%"><col style="width:12.3%"><col style="width:11%"><col style="width:12.2%"><col style="width:10%"><col style="width:274px"></colgroup>
+  <colgroup><col style="width:44px"><col style="width:17.4%"><col style="width:17.4%"><col style="width:12.3%"><col style="width:11%"><col style="width:12.2%"><col style="width:10%"><col style="width:200px"></colgroup>
   <thead><tr><th class="selection-cell"><input type="checkbox" onclick="toggleAll(this,'ids')"></th><th>单号</th><th>往来对象</th><th>日期</th><th>类型</th><th>金额</th><th>状态</th><th class="action-cell">操作</th></tr></thead>
   <tbody>
   {% for o in documents %}
@@ -147,25 +149,26 @@
     {# 金额颜色与类型标签同色（用户 2026-10-24 要求，与手机端单据列表一致）。 #}
     <td><span class="order-amount order-amount--{{o.order_type}}">¥{{cents_to_yuan(o.total_amount_cents)}}</span></td>
     <td><span class="badge {{o.status_badge}}">{{o.status_label}}</span></td>
-    {# 2026-11-09 用户要求：行操作改「彩色描边 + 白底」，不再用实心色块填充 ——
-       与商品管理列表的行操作同一形态（用户以商品管理为样板）。语义仍按动作区分颜色：
-       查看=灰 / 编辑=蓝 / 打印=浅蓝 / 删除=红。 #}
+    {# 2026-11-14 用户决策：行操作改「密集纯文字」，四个动作全部平铺可见、不做 ⋯ 折叠。
+       理由与量化依据见 base.html 的 .ract 注释与 memory/project-context.md。
+       语义靠文字色区分：查看/编辑/打印=主色，删除=危险色；hover 才出淡底。
+       注意：仍用 <a>/<button> 承载真实链接与表单，只换外观，不动交互。 #}
     <td class="action-cell"><div class="action-wrap">
-      <a class="btn btn-sm btn-outline-secondary" href="{{o.detail_url}}">查看</a>
+      <a class="ract" href="{{o.detail_url}}" title="查看单据详情">查看</a>
       {% if o.editable %}
-      <a class="btn btn-sm btn-outline-primary" href="{{o.edit_url}}">编辑</a>
+      <a class="ract" href="{{o.edit_url}}" title="编辑单据">编辑</a>
       {% else %}
-      <button class="btn btn-sm btn-outline-primary" type="button" disabled title="{{o.edit_block_reason}}" aria-disabled="true">编辑</button>
+      <a class="ract" role="button" aria-disabled="true" title="{{o.edit_block_reason}}">编辑</a>
       {% endif %}
       {% if o.order_type in ('sale', 'return') %}
-      <a class="btn btn-sm btn-outline-info" href="/orders/{{o.id}}/pdf{% if is_desktop %}?desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>打印</a>
+      <a class="ract" href="/orders/{{o.id}}/pdf{% if is_desktop %}?desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %} title="打印">打印</a>
       {% elif o.order_type == 'purchase' %}
-      <a class="btn btn-sm btn-outline-info" href="/purchases/{{o.id}}/pdf{% if is_desktop %}?desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>打印</a>
+      <a class="ract" href="/purchases/{{o.id}}/pdf{% if is_desktop %}?desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %} title="打印">打印</a>
       {% else %}
-      <a class="btn btn-sm btn-outline-info" href="/purchases/return/{{o.id}}/pdf{% if is_desktop %}?desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %}>打印</a>
+      <a class="ract" href="/purchases/return/{{o.id}}/pdf{% if is_desktop %}?desktop_preview=1&amp;return_to={{ request.full_path|urlencode }}{% endif %}" {% if not is_desktop %}target="_blank" rel="noopener"{% endif %} title="打印">打印</a>
       {% endif %}
       {% if o.deletable %}
-      <form class="d-inline ajax-delete-form" method="post" action="{{o.delete_url}}"><button class="btn btn-sm btn-outline-danger">删除</button></form>
+      <form class="ajax-delete-form" method="post" action="{{o.delete_url}}"><button class="ract del" type="submit" title="删除（正式单据会先作废并冲回账款，再移入回收站）">删除</button></form>
       {% endif %}
     </div></td>
   </tr>

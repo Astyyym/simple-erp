@@ -109,7 +109,7 @@
   {% for c in customers %}
   <tr>
     <td class="selection-cell"><input form="bulkCustomersForm" type="checkbox" name="ids" value="{{c.id}}"></td><td title="{{c.name}}">{{c.name}}{% if customer_needs_completion(c) %}<span class="badge text-bg-warning ms-1" title="缺联系方式：请补全电话或地址，便于后续对账联系">待补全</span>{% endif %}</td><td title="{{c.phone}}">{{c.phone}}</td><td title="{{c.address}}">{{c.address}}</td><td><span class="customer-balance {{ 'is-owed' if c.balance_cents > 0 else ('is-overpaid' if c.balance_cents < 0 else '') }}" title="{{ '客户欠我 ' if c.balance_cents > 0 else ('我欠客户 ' if c.balance_cents < 0 else '已结清') }}">¥{{cents_to_yuan(c.balance_cents)}}</span></td><td>{{ origin_label(c.origin) }}</td>
-    <td class="action-cell"><div class="action-wrap"><a class="btn btn-sm btn-outline-primary" href="/customers/{{c.id}}/edit">编辑</a><form class="d-inline ajax-delete-form" method="post" action="/customers/{{c.id}}/delete"><button class="btn btn-sm btn-outline-danger">删除</button></form></div></td>
+    <td class="action-cell"><div class="action-wrap"><a class="ract" href="/customers/{{c.id}}/edit" title="编辑客户">编辑</a><form class="ajax-delete-form" method="post" action="/customers/{{c.id}}/delete"><button class="ract del" type="submit" title="删除客户">删除</button></form></div></td>
   </tr>
   {% endfor %}
   </tbody>

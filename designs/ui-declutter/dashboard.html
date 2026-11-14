@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>工作台 · 去乱原型</title>
+<link rel="stylesheet" href="_shell.css">
+</head><body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3.6H9C7.3 3.6 5.9 5 5.9 6.7V17.3C5.9 19 7.3 20.4 9 20.4H15C16.7 20.4 18.1 19 18.1 17.3V7.7L14 3.6ZM14 3.6V6C14 7.3 15.1 8.4 16.4 8.4H18.1M9 12.4H10.6M13.4 12.4H15M9 15.8H10.6M13.4 15.8H15"/></svg></span><span class="brand-title">简单ERP</span></div>
+    <a class="active" href="#"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>工作台</a>
+    <div class="nav-label">开单</div>
+    <a class="sub" href="#">销售单</a><a class="sub" href="#">退货单</a><a class="sub" href="#">拿货单</a><a class="sub" href="#">退拿货单</a>
+    <div class="nav-label">业务</div>
+    <a href="#">单据管理</a><a href="#">账款管理</a><a href="#">数据分析</a>
+    <div class="nav-label">基础资料</div>
+    <a href="#">商品管理</a><a href="#">客户管理</a><a href="#">资料文档</a>
+    <div class="nav-label">其他</div>
+    <a href="#">回收站</a><a href="#">系统设置</a>
+  </aside>
+  <div class="content">
+    <div class="topbar">
+      <div class="search"><input placeholder="搜索单号 / 客户 / 商品 / 资料…"><button class="btn primary" style="height:36px">搜索</button></div>
+      <div class="clock" id="clock">2026-11-08 16:40:00</div>
+      <div class="status"><i></i>本地数据已连接</div>
+    </div>
+    <div class="page-body">
+      <div class="page-head"><div><h1>业务工作台</h1><div class="sub">统计日期 · 2026年11月8日</div></div></div>
+
+      <div class="metrics">
+        <div class="metric"><div class="label"><span>今日净业务额</span><span>今日</span></div><div class="val blue">¥0.00</div></div>
+        <div class="metric small"><div class="label"><span>销售单</span><span>今日</span></div><div class="val">0 笔</div></div>
+        <div class="metric small"><div class="label"><span>退货单</span><span>今日</span></div><div class="val">0 笔</div></div>
+        <div class="metric small"><div class="label"><span>拿货单</span><span>今日</span></div><div class="val">0 笔</div></div>
+        <div class="metric small"><div class="label"><span>退拿货单</span><span>今日</span></div><div class="val">0 笔</div></div>
+      </div>
+
+      <div class="two-col">
+        <div class="panel">
+          <div class="section-head"><h3>最近业务</h3><span class="spacer"></span><button class="btn text" data-toast="查看全部单据（示例）">查看全部 →</button></div>
+          <div class="table-card" style="box-shadow:none;border:0">
+            <table style="min-width:0">
+              <thead><tr><th>单据</th><th>客户</th><th>日期</th><th style="text-align:right">金额</th><th style="text-align:right">操作</th></tr></thead>
+              <tbody>
+                <tr><td><span class="pill ret">退货单</span> <span class="mono">MD202609120002</span></td><td>沸腾鱼乡饭店</td><td>2026-09-12</td><td class="num neg">−¥58.33</td><td><div class="row-actions"><button class="btn text">查看</button></div></td></tr>
+                <tr><td><span class="pill ret">退货单</span> <span class="mono">MD202607270001</span></td><td>汇通能源加油站</td><td>2026-07-27</td><td class="num neg">−¥322.12</td><td><div class="row-actions"><button class="btn text">查看</button></div></td></tr>
+                <tr><td><span class="pill ret">退货单</span> <span class="mono">MD202607090002</span></td><td>星辰宾馆</td><td>2026-07-09</td><td class="num neg">−¥12.87</td><td><div class="row-actions"><button class="btn text">查看</button></div></td></tr>
+                <tr><td><span class="pill ret">退货单</span> <span class="mono">MD202610130002</span></td><td>实验中学</td><td>2026-10-13</td><td class="num neg">−¥441.15</td><td><div class="row-actions"><button class="btn text">查看</button></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>快捷操作</h3>
+          <div class="quick-card">
+            <button class="quick-btn primary" data-toast="新建销售单（示例）"><span>＋ 新建销售单</span><span class="arrow">→</span></button>
+            <button class="quick-btn" data-toast="新建退货单（示例）"><span>新建退货单</span><span class="arrow">→</span></button>
+            <button class="quick-btn" data-toast="进入单据管理（示例）"><span>单据管理</span><span class="arrow">→</span></button>
+            <button class="quick-btn" data-toast="进入账款管理（示例）"><span>账款管理</span><span class="arrow">→</span></button>
+            <button class="quick-btn" data-toast="进入数据分析（示例）"><span>数据分析</span><span class="arrow">→</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script src="_shell.js"></script>
+</body></html>

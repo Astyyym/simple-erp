@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="zh-CN" data-ui-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>简单ERP · 单据管理（去乱原型）</title>
+<style>
+:root{
+  --primary:#2563eb;--primary-hover:#1d4ed8;--primary-soft:#eff6ff;
+  --success:#17803d;--danger:#c73535;--warn:#b45309;
+  --ink:#172033;--muted:#667085;--border:#dfe3ea;--border-strong:#c8ced8;
+  --surface:#fff;--surface-soft:#f8fafc;
+  --sidebar:#f1f3f6;--sidebar-hover:#e7ebf1;--sidebar-ink:#475467;--sidebar-muted:#5b6675;--sidebar-active:#e4ecfb;--sidebar-active-ink:#1e4fae;
+  --radius:10px;
+  --shadow:0 1px 2px rgba(16,24,40,.04),0 8px 24px rgba(16,24,40,.05);
+  --shadow-pop:0 12px 34px rgba(16,24,40,.16);
+  --wash:linear-gradient(165deg,#d9e6f7 0%,#eef2f8 38%,#e4ebf5 100%);
+  --mesh:radial-gradient(980px 480px at 10% -10%,rgba(37,99,235,.16),transparent 58%),radial-gradient(760px 400px at 92% 6%,rgba(14,116,144,.10),transparent 52%),radial-gradient(640px 320px at 55% 110%,rgba(99,102,241,.08),transparent 55%);
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{
+  font-family:"Microsoft YaHei UI","Segoe UI",system-ui,-apple-system,sans-serif;
+  font-size:15px;line-height:1.5;color:var(--ink);overflow:hidden;
+  background:var(--wash),#f3f5f8;
+}
+.app-shell{display:flex;height:100vh;width:100%;position:relative;overflow:hidden}
+.app-shell:before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;background:var(--mesh)}
+/* ---------- sidebar ---------- */
+.sidebar{position:relative;z-index:100;flex:0 0 224px;width:224px;height:100%;background:var(--sidebar);display:flex;flex-direction:column;padding:0 12px 18px;overflow-y:auto;border-right:1px solid rgba(23,32,51,.10)}
+.brand{min-height:72px;display:flex;align-items:center;gap:11px;padding:10px;border-bottom:1px solid rgba(23,32,51,.10);margin-bottom:8px}
+.brand-mark{width:34px;height:34px;border-radius:6px;background:var(--primary);color:#fff;display:grid;place-items:center;flex:0 0 auto}
+.brand-mark svg{width:20px;height:20px}
+.brand-title{font-size:15px;font-weight:650;letter-spacing:.02em}
+.nav-label{margin:0;padding:12px 12px 5px;color:var(--sidebar-ink);font-size:12.5px;font-weight:700;letter-spacing:.04em;opacity:.68}
+.sidebar a{display:flex;align-items:center;gap:9px;min-height:38px;padding:8px 12px;margin:2px 0;border-radius:7px;color:var(--sidebar-ink);text-decoration:none;font-size:14px;font-weight:500;transition:background .16s,color .16s}
+.sidebar a:hover{background:var(--sidebar-hover);color:var(--sidebar-ink)}
+.sidebar a.active{background:var(--sidebar-active);color:var(--sidebar-active-ink);font-weight:600}
+.sidebar a.sub{min-height:34px;margin-left:14px;padding-left:30px;font-size:13px;color:var(--sidebar-muted);position:relative}
+.sidebar a.sub:before{content:"";position:absolute;left:15px;width:5px;height:5px;border-radius:50%;background:var(--sidebar-muted)}
+.sidebar a.sub.active{color:var(--sidebar-active-ink);background:var(--sidebar-active)}
+.sidebar a.sub.active:before{background:var(--primary)}
+.nav-ico{width:18px;height:18px;flex:0 0 auto;opacity:.7}
+.sidebar a.active .nav-ico,.sidebar a:hover .nav-ico{opacity:1}
+/* ---------- content ---------- */
+.content{position:relative;z-index:1;flex:1 1 auto;min-width:0;height:calc(100% - 28px);margin:14px;display:flex;flex-direction:column;overflow:hidden;background:var(--surface);border:1px solid rgba(255,255,255,.88);border-radius:14px;box-shadow:var(--shadow)}
+.topbar{display:flex;align-items:center;justify-content:space-between;flex:0 0 auto;min-height:58px;padding:0 26px;background:rgba(255,255,255,.6);-webkit-backdrop-filter:blur(16px) saturate(1.3);backdrop-filter:blur(16px) saturate(1.3);border-bottom:1px solid rgba(255,255,255,.55);z-index:50}
+.topbar .search{display:flex;gap:8px;flex:1;max-width:420px}
+.topbar .search input{flex:1;height:36px;border:1px solid var(--border);border-radius:8px;padding:0 12px;font:inherit;font-size:14px;background:#fff;color:var(--ink);transition:border-color .16s,box-shadow .16s}
+.topbar .search input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.14)}
+.topbar .clock{color:var(--muted);font-size:14px;font-variant-numeric:tabular-nums}
+.topbar .status{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:13px}
+.topbar .status i{width:8px;height:8px;border-radius:50%;background:var(--success);box-shadow:0 0 0 3px rgba(23,128,61,.15)}
+.page-body{flex:1 1 auto;min-height:0;overflow:auto;padding:22px 26px 40px}
+.page-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.page-head h1{margin:0;font-size:26px;font-weight:700;letter-spacing:.01em}
+.head-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.anno-toggle{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);cursor:pointer;user-select:none;margin-left:4px}
+.anno-toggle input{accent-color:var(--primary);width:16px;height:16px}
+/* ---------- buttons ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:38px;padding:0 15px;border-radius:8px;border:1px solid transparent;font:inherit;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s,border-color .15s,box-shadow .15s,transform .08s}
+.btn:active{transform:scale(.97)}
+.btn.primary{background:var(--primary);color:#fff;box-shadow:0 1px 2px rgba(37,99,235,.35)}
+.btn.primary:hover{background:var(--primary-hover)}
+.btn.ghost{background:#fff;color:var(--ink);border-color:var(--border-strong)}
+.btn.ghost:hover{background:var(--surface-soft);border-color:var(--muted)}
+.btn.outline{background:#fff;color:var(--primary);border-color:rgba(37,99,235,.45)}
+.btn.outline:hover{background:var(--primary-soft)}
+.btn.icon{width:38px;padding:0;background:#fff;border-color:var(--border-strong);color:var(--muted);font-size:18px;line-height:1}
+.btn.icon:hover{background:var(--surface-soft);color:var(--ink)}
+.btn.text{background:transparent;border:0;color:var(--primary);padding:0 8px;height:30px;font-weight:600}
+.btn.text:hover{background:var(--primary-soft);border-radius:6px}
+.chev{width:12px;height:12px;transition:transform .18s}
+.menu-wrap{position:relative}
+.menu{position:absolute;top:calc(100% + 6px);right:0;min-width:168px;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow-pop);padding:6px;opacity:0;transform:translateY(-6px) scale(.98);transform-origin:top right;pointer-events:none;transition:opacity .16s ease,transform .16s ease;z-index:200}
+.menu.open{opacity:1;transform:none;pointer-events:auto}
+.menu button{display:flex;align-items:center;gap:9px;width:100%;height:36px;padding:0 10px;border:0;background:transparent;border-radius:7px;font:inherit;font-size:14px;color:var(--ink);cursor:pointer;text-align:left;transition:background .14s}
+.menu button:hover{background:var(--surface-soft)}
+.menu button.danger{color:var(--danger)}
+.menu button.danger:hover{background:rgba(199,53,53,.08)}
+.menu .sep{height:1px;background:var(--border);margin:5px 4px}
+/* ---------- toolbar ---------- */
+.toolbar{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px 16px;margin-bottom:16px}
+.filter-row{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.tfilter{display:flex;flex-direction:column;gap:8px}
+.tfilter-label{font-size:13px;color:var(--muted);font-weight:650}
+.tfilter-row{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.seg{display:inline-flex;background:var(--surface-soft);border:1px solid var(--border);border-radius:8px;padding:3px;gap:2px;height:38px}
+.seg button{height:30px;padding:0 12px;border:0;background:transparent;border-radius:6px;font:inherit;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;transition:background .15s,color .15s,box-shadow .15s}
+.seg button.active{background:#fff;color:var(--primary);box-shadow:0 1px 2px rgba(16,24,40,.10)}
+.field{display:flex;flex-direction:column;gap:5px}
+.field > label{font-size:12px;color:var(--muted);font-weight:650}
+.field input,.date-field input{height:36px;border:1px solid var(--border);border-radius:8px;padding:0 10px;font:inherit;font-size:13px;background:#fff;color:var(--ink);transition:border-color .15s,box-shadow .15s}
+.field input:focus,.date-field input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.13)}
+.date-field{display:flex;align-items:center;gap:8px}
+.date-field input{width:150px}
+.date-field span{color:var(--muted)}
+.cust-field input{width:220px}
+.adv-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--primary);color:#fff;font-size:11px;font-weight:700}
+.adv-panel{display:grid;grid-template-rows:0fr;opacity:0;margin-top:0;transition:grid-template-rows .24s cubic-bezier(.2,0,0,1),opacity .2s ease,margin-top .24s}
+.adv-panel.open{grid-template-rows:1fr;opacity:1;margin-top:14px}
+.adv-inner{overflow:hidden;min-height:0}
+.adv-box{border-top:1px solid var(--border);padding-top:14px;display:flex;flex-direction:column;gap:12px}
+.adv-group{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.adv-label{font-size:12px;color:var(--muted);font-weight:650;width:60px;flex:0 0 auto}
+.chip{display:inline-flex;align-items:center;height:30px;padding:0 13px;border:1px solid var(--border-strong);border-radius:16px;background:#fff;font-size:13px;color:var(--ink);cursor:pointer;transition:background .15s,border-color .15s,color .15s,transform .08s}
+.chip:hover{border-color:var(--primary)}
+.chip:active{transform:scale(.96)}
+.chip.active{background:var(--primary-soft);border-color:var(--primary);color:var(--primary-hover);font-weight:600}
+.adv-actions{margin-left:auto}
+.active-tags{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
+.active-tags:empty{display:none}
+.tag{display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 8px 0 11px;border-radius:7px;background:var(--primary-soft);color:var(--primary-hover);font-size:12.5px;font-weight:600}
+.tag button{display:grid;place-items:center;width:18px;height:18px;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer;font-size:14px;line-height:1}
+.tag button:hover{background:rgba(37,99,235,.16)}
+.action-row{display:flex;align-items:center;gap:12px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)}
+.action-hint{color:var(--muted);font-size:12.5px}
+.action-left{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.action-right{display:flex;align-items:center;gap:8px;margin-left:auto}
+/* ---------- table ---------- */
+.table-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+.table-scroll{overflow:auto;max-height:calc(100vh - 300px)}
+table{width:100%;border-collapse:collapse;min-width:920px}
+thead th{position:sticky;top:0;z-index:5;background:var(--surface-soft);text-align:left;font-size:12.5px;font-weight:700;color:var(--muted);padding:12px 14px;border-bottom:1px solid var(--border);letter-spacing:.02em}
+tbody td{padding:12px 14px;border-bottom:1px solid #eef1f5;font-size:13.5px;vertical-align:middle}
+tbody tr{transition:background .14s}
+tbody tr:hover{background:#f6f9ff}
+tbody tr.selected{background:var(--primary-soft)}
+.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;font-weight:650}
+.num.neg{color:var(--danger)}
+.mono{font-family:Consolas,"Courier New",monospace;font-size:12.5px;white-space:nowrap;color:var(--ink)}
+.pill{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:12px;font-size:12px;font-weight:600;white-space:nowrap}
+.pill.sale{background:rgba(37,99,235,.10);color:#1d4ed8}
+.pill.ret{background:rgba(199,53,53,.10);color:var(--danger)}
+.pill.pur{background:rgba(14,116,144,.10);color:#0e7490}
+.pill.pret{background:rgba(124,58,237,.10);color:#7c3aed}
+.st{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600}
+.st i{width:7px;height:7px;border-radius:50%}
+.st.saved{color:var(--success)}.st.saved i{background:var(--success)}
+.st.printed{color:#1d4ed8}.st.printed i{background:#2563eb}
+.st.void{color:var(--muted)}.st.void i{background:#98a2b3}
+.st.draft{color:var(--warn)}.st.draft i{background:#d97706}
+.row-actions{display:flex;align-items:center;justify-content:flex-end;gap:4px}
+.ck{width:16px;height:16px;accent-color:var(--primary);cursor:pointer}
+/* ---------- batch bar ---------- */
+.batch-bar{position:fixed;left:50%;bottom:24px;transform:translate(-50%,0);display:flex;align-items:center;gap:14px;background:rgba(23,32,51,.80);-webkit-backdrop-filter:blur(10px) saturate(1.25);backdrop-filter:blur(10px) saturate(1.25);color:#fff;padding:10px 14px 10px 16px;border-radius:12px;box-shadow:0 16px 40px rgba(15,23,42,.30);border:1px solid rgba(255,255,255,.12);z-index:400;transition:transform .28s cubic-bezier(.2,0,0,1),opacity .2s}
+.batch-selected{display:flex;align-items:center;gap:14px}
+.batch-bar strong{font-size:14px;font-weight:700}
+.batch-bar .b-actions{display:flex;gap:8px}
+.batch-bar .btn{height:34px}
+.btn.light{background:rgba(255,255,255,.14);color:#fff;border-color:transparent}
+.btn.light:hover{background:rgba(255,255,255,.24)}
+.btn.danger{background:var(--danger);color:#fff}
+.btn.danger:hover{background:#b91c1c}
+/* ---------- toast ---------- */
+.toast{position:fixed;left:50%;bottom:90px;transform:translate(-50%,20px);background:#172033;color:#fff;padding:10px 16px;border-radius:10px;font-size:13.5px;box-shadow:0 12px 30px rgba(15,23,42,.3);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:500}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+/* ---------- annotations ---------- */
+body:not(.show-anno) .anno-mark{display:none}
+.anno-mark{position:absolute;top:-9px;right:-9px;width:20px;height:20px;border-radius:50%;background:#f59e0b;color:#fff;font-size:12px;font-weight:800;display:grid;place-items:center;box-shadow:0 2px 6px rgba(180,83,9,.4);z-index:6;cursor:default}
+.anno-mark:after{content:attr(data-note);position:absolute;bottom:26px;right:0;width:220px;background:#172033;color:#fff;font-size:12px;font-weight:500;line-height:1.5;padding:8px 10px;border-radius:8px;opacity:0;transform:translateY(4px);pointer-events:none;transition:opacity .16s,transform .16s;text-align:left;white-space:normal}
+.anno-mark:hover:after{opacity:1;transform:none}
+.rel{position:relative}
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3.6H9C7.3 3.6 5.9 5 5.9 6.7V17.3C5.9 19 7.3 20.4 9 20.4H15C16.7 20.4 18.1 19 18.1 17.3V7.7L14 3.6ZM14 3.6V6C14 7.3 15.1 8.4 16.4 8.4H18.1M9 12.4H10.6M13.4 12.4H15M9 15.8H10.6M13.4 15.8H15"/></svg></span>
+      <span class="brand-title">简单ERP</span>
+    </div>
+    <a href="#"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>工作台</a>
+    <div class="nav-label">开单</div>
+    <a class="sub" href="#">销售单</a>
+    <a class="sub" href="#">退货单</a>
+    <a class="sub" href="#">拿货单</a>
+    <a class="sub" href="#">退拿货单</a>
+    <div class="nav-label">业务</div>
+    <a class="active" href="#"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg>单据管理</a>
+    <a href="#">账款管理</a>
+    <a href="#">数据分析</a>
+    <div class="nav-label">基础资料</div>
+    <a href="#">商品管理</a>
+    <a href="#">客户管理</a>
+    <a href="#">资料文档</a>
+    <div class="nav-label">其他</div>
+    <a href="#">回收站</a>
+    <a href="#">系统设置</a>
+  </aside>
+
+  <div class="content">
+    <div class="topbar">
+      <div class="search"><input placeholder="搜索单号 / 客户 / 商品 / 资料…"><button class="btn primary" style="height:36px">搜索</button></div>
+      <div class="clock" id="clock">2026-11-08 16:20:15</div>
+      <div class="status"><i></i>本地数据已连接</div>
+    </div>
+
+    <div class="page-body">
+      <div class="page-head">
+        <h1>单据管理</h1>
+        <label class="anno-toggle"><input type="checkbox" id="annoSwitch">显示改动标注</label>
+      </div>
+
+      <div class="toolbar">
+        <div class="tfilter">
+          <div class="tfilter-label">按时间范围</div>
+          <div class="tfilter-row">
+            <div class="seg" id="seg">
+              <button type="button">按年</button>
+              <button type="button">按月到月</button>
+              <button type="button" class="active">按日到日</button>
+            </div>
+            <div class="date-field"><input type="date" value="2026-05-16"><span>—</span><input type="date" value="2026-11-05"></div>
+            <div class="field cust-field">
+              <input id="custInput" placeholder="输入客户名或拼音首字母" autocomplete="off">
+            </div>
+            <button class="btn primary" id="queryBtn">查询</button>
+            <div class="rel">
+              <span class="anno-mark" data-note="类型 / 状态这类低频多选不再平铺，收进可折叠的「高级筛选」。"></span>
+              <button class="btn ghost" id="advToggle">高级筛选 <span class="adv-badge" id="advCount" style="display:none">0</span><svg class="chev" id="advChev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="adv-panel" id="advPanel">
+          <div class="adv-inner">
+            <div class="adv-box">
+              <div class="adv-group">
+                <span class="adv-label">单据类型</span>
+                <button class="chip" data-kind="type" data-val="销售单">销售单</button>
+                <button class="chip" data-kind="type" data-val="退货单">退货单</button>
+                <button class="chip" data-kind="type" data-val="拿货单">拿货单</button>
+                <button class="chip" data-kind="type" data-val="退拿货单">退拿货单</button>
+              </div>
+              <div class="adv-group">
+                <span class="adv-label">单据状态</span>
+                <button class="chip" data-kind="status" data-val="草稿">草稿</button>
+                <button class="chip" data-kind="status" data-val="正式保存">正式保存</button>
+                <button class="chip" data-kind="status" data-val="已打印">已打印</button>
+                <button class="chip" data-kind="status" data-val="已作废">已作废</button>
+                <span class="adv-actions"><button class="btn text" id="resetChips">重置</button></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="active-tags" id="activeTags"></div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:44px"><input type="checkbox" class="ck" id="checkAll" aria-label="全选"></th>
+                <th style="width:170px">单号</th>
+                <th>往来对象</th>
+                <th style="width:130px">日期</th>
+                <th style="width:100px">类型</th>
+                <th style="width:140px;text-align:right">金额</th>
+                <th style="width:110px">状态</th>
+                <th style="width:120px;text-align:right">操作</th>
+              </tr>
+            </thead>
+            <tbody id="tbody">
+              <tr>
+                <td><input type="checkbox" class="ck row-ck"></td>
+                <td><span class="mono rel">MD202611050001<span class="anno-mark" data-note="单号列加宽，完整显示，不再截成 MD202611…"></span></span></td>
+                <td>德邦物流园区</td><td>2026-11-05</td>
+                <td><span class="pill ret">退货单</span></td>
+                <td class="num neg">−¥87.40</td>
+                <td><span class="st void"><i></i>已作废</span></td>
+                <td><div class="row-actions"><button class="btn text">查看</button><div class="menu-wrap"><button class="btn icon" data-menu="row1" aria-label="更多">⋯</button><div class="menu" id="row1"><button data-toast="查看详情（示例）">查看详情</button><button data-toast="编辑（示例）">编辑</button><button data-toast="打印（示例）">打印</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" class="ck row-ck"></td>
+                <td><span class="mono">MD202611050002</span></td>
+                <td>苏果超市东关店</td><td>2026-11-05</td>
+                <td><span class="pill ret">退货单</span></td>
+                <td class="num neg">−¥503.13</td>
+                <td><span class="st saved"><i></i>正式保存</span></td>
+                <td><div class="row-actions"><button class="btn text">查看</button><div class="menu-wrap"><button class="btn icon" data-menu="row2" aria-label="更多">⋯</button><div class="menu" id="row2"><button data-toast="查看详情（示例）">查看详情</button><button data-toast="编辑（示例）">编辑</button><button data-toast="打印（示例）">打印</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" class="ck row-ck"></td>
+                <td><span class="mono">MD202611040003</span></td>
+                <td>东星纺织厂</td><td>2026-11-04</td>
+                <td><span class="pill ret">退货单</span></td>
+                <td class="num neg">−¥81.08</td>
+                <td><span class="st saved"><i></i>正式保存</span></td>
+                <td><div class="row-actions"><button class="btn text">查看</button><div class="menu-wrap"><button class="btn icon" data-menu="row3" aria-label="更多">⋯</button><div class="menu" id="row3"><button data-toast="查看详情（示例）">查看详情</button><button data-toast="编辑（示例）">编辑</button><button data-toast="打印（示例）">打印</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" class="ck row-ck"></td>
+                <td><span class="mono">MD202611040004</span></td>
+                <td>安宁物业管理有限公司</td><td>2026-11-04</td>
+                <td><span class="pill ret">退货单</span></td>
+                <td class="num neg">−¥74.00</td>
+                <td><span class="st saved"><i></i>正式保存</span></td>
+                <td><div class="row-actions"><button class="btn text">查看</button><div class="menu-wrap"><button class="btn icon" data-menu="row4" aria-label="更多">⋯</button><div class="menu" id="row4"><button data-toast="查看详情（示例）">查看详情</button><button data-toast="编辑（示例）">编辑</button><button data-toast="打印（示例）">打印</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" class="ck row-ck"></td>
+                <td><span class="mono">MD202611030005</span></td>
+                <td>德邦物流园区</td><td>2026-11-03</td>
+                <td><span class="pill sale">销售单</span></td>
+                <td class="num">¥5,692.72</td>
+                <td><span class="st saved"><i></i>正式保存</span></td>
+                <td><div class="row-actions"><button class="btn text">查看</button><div class="menu-wrap"><button class="btn icon" data-menu="row5" aria-label="更多">⋯</button><div class="menu" id="row5"><button data-toast="查看详情（示例）">查看详情</button><button data-toast="编辑（示例）">编辑</button><button data-toast="打印（示例）">打印</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" class="ck row-ck"></td>
+                <td><span class="mono">MD202611030006</span></td>
+                <td>仁和医院</td><td>2026-11-03</td>
+                <td><span class="pill sale">销售单</span></td>
+                <td class="num">¥183.50</td>
+                <td><span class="st printed"><i></i>已打印</span></td>
+                <td><div class="row-actions"><button class="btn text">查看</button><div class="menu-wrap"><button class="btn icon" data-menu="row6" aria-label="更多">⋯</button><div class="menu" id="row6"><button data-toast="查看详情（示例）">查看详情</button><button data-toast="编辑（示例）">编辑</button><button data-toast="打印（示例）">打印</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" class="ck row-ck"></td>
+                <td><span class="mono">MD202611020007</span></td>
+                <td>苏果超市东关店</td><td>2026-11-02</td>
+                <td><span class="pill ret">退货单</span></td>
+                <td class="num neg">−¥97.28</td>
+                <td><span class="st saved"><i></i>正式保存</span></td>
+                <td><div class="row-actions"><button class="btn text">查看</button><div class="menu-wrap"><button class="btn icon" data-menu="row7" aria-label="更多">⋯</button><div class="menu" id="row7"><button data-toast="查看详情（示例）">查看详情</button><button data-toast="编辑（示例）">编辑</button><button data-toast="打印（示例）">打印</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" class="ck row-ck"></td>
+                <td><span class="mono">MD202611020008</span></td>
+                <td>万达影城</td><td>2026-11-02</td>
+                <td><span class="pill sale">销售单</span></td>
+                <td class="num">¥325.42</td>
+                <td><span class="st saved"><i></i>正式保存</span></td>
+                <td><div class="row-actions"><button class="btn text">查看</button><div class="menu-wrap"><button class="btn icon" data-menu="row8" aria-label="更多">⋯</button><div class="menu" id="row8"><button data-toast="查看详情（示例）">查看详情</button><button data-toast="编辑（示例）">编辑</button><button data-toast="打印（示例）">打印</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="batch-bar" id="batchBar">
+  <div class="batch-default" id="batchDefault">
+    <button class="btn light" data-toast="已全量导出（示例）"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" style="margin-right:6px"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>全量导出</button>
+  </div>
+  <div class="batch-selected" id="batchSelected" style="display:none">
+    <strong>已选 <span id="selCount">0</span> 条</strong>
+    <div class="b-actions">
+      <button class="btn light" data-toast="已导出选中（示例）">导出选中</button>
+      <button class="btn danger" data-toast="删除选中（示例）">删除</button>
+      <button class="btn light" id="clearSel">取消</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  var clock=document.getElementById('clock');
+  function tick(){var d=new Date();var p=function(n){return String(n).padStart(2,'0')};clock.textContent=d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());}
+  tick();setInterval(tick,1000);
+
+  var annoSwitch=document.getElementById('annoSwitch');
+  annoSwitch.addEventListener('change',function(){document.body.classList.toggle('show-anno',annoSwitch.checked);});
+
+  document.querySelectorAll('#seg button').forEach(function(b){
+    b.addEventListener('click',function(){document.querySelectorAll('#seg button').forEach(function(x){x.classList.remove('active');});b.classList.add('active');});
+  });
+
+  var openMenu=null;
+  function closeMenus(){if(openMenu){openMenu.classList.remove('open');openMenu=null;}}
+  document.querySelectorAll('[data-menu]').forEach(function(trigger){
+    trigger.addEventListener('click',function(e){
+      e.stopPropagation();
+      var menu=document.getElementById(trigger.getAttribute('data-menu'));
+      if(!menu)return;
+      var wasOpen=menu.classList.contains('open');
+      closeMenus();
+      if(!wasOpen){menu.classList.add('open');openMenu=menu;}
+    });
+  });
+  document.addEventListener('click',function(){closeMenus();});
+
+  var advPanel=document.getElementById('advPanel');
+  var advToggle=document.getElementById('advToggle');
+  var advChev=document.getElementById('advChev');
+  function setAdv(open){advPanel.classList.toggle('open',open);advChev.style.transform=open?'rotate(180deg)':'';}
+  advToggle.addEventListener('click',function(e){e.stopPropagation();setAdv(!advPanel.classList.contains('open'));});
+
+  var activeByKind={type:new Set(),status:new Set()};
+  var activeTags=document.getElementById('activeTags');
+  var advCount=document.getElementById('advCount');
+  function rebuildTags(){
+    activeTags.innerHTML='';var total=0;
+    ['type','status'].forEach(function(kind){
+      activeByKind[kind].forEach(function(val){
+        total++;
+        var tag=document.createElement('span');tag.className='tag';
+        tag.innerHTML=(kind==='type'?'类型':'状态')+'：'+val+' <button aria-label="移除">&times;</button>';
+        tag.querySelector('button').addEventListener('click',function(){activeByKind[kind].delete(val);syncChips();rebuildTags();});
+        activeTags.appendChild(tag);
+      });
+    });
+    if(total>0){advCount.textContent=total;advCount.style.display='';}else{advCount.style.display='none';}
+  }
+  function syncChips(){document.querySelectorAll('.chip').forEach(function(chip){var kind=chip.getAttribute('data-kind'),val=chip.getAttribute('data-val');chip.classList.toggle('active',activeByKind[kind].has(val));});}
+  document.querySelectorAll('.chip').forEach(function(chip){
+    chip.addEventListener('click',function(){var kind=chip.getAttribute('data-kind'),val=chip.getAttribute('data-val');if(activeByKind[kind].has(val))activeByKind[kind].delete(val);else activeByKind[kind].add(val);syncChips();rebuildTags();});
+  });
+  document.getElementById('resetChips').addEventListener('click',function(){activeByKind.type.clear();activeByKind.status.clear();syncChips();rebuildTags();});
+
+  var checkAll=document.getElementById('checkAll');
+  var rowCks=[].slice.call(document.querySelectorAll('.row-ck'));
+  var batchBar=document.getElementById('batchBar');
+  var selCount=document.getElementById('selCount');
+  var batchDefault=document.getElementById('batchDefault');
+  var batchSelected=document.getElementById('batchSelected');
+  function refreshBatch(){
+    var n=rowCks.filter(function(c){return c.checked;}).length;
+    selCount.textContent=n;
+    batchDefault.style.display=n>0?'none':'flex';
+    batchSelected.style.display=n>0?'flex':'none';
+    rowCks.forEach(function(c){c.closest('tr').classList.toggle('selected',c.checked);});
+    checkAll.checked=n>0&&n===rowCks.length;
+    checkAll.indeterminate=n>0&&n<rowCks.length;
+  }
+  checkAll.addEventListener('change',function(){rowCks.forEach(function(c){c.checked=checkAll.checked;});refreshBatch();});
+  rowCks.forEach(function(c){c.addEventListener('change',refreshBatch);});
+  document.getElementById('clearSel').addEventListener('click',function(){rowCks.forEach(function(c){c.checked=false;});refreshBatch();});
+
+  var toast=document.getElementById('toast');var toastTimer=null;
+  function showToast(msg){toast.textContent=msg;toast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(function(){toast.classList.remove('show');},1800);}
+  document.querySelectorAll('[data-toast]').forEach(function(el){el.addEventListener('click',function(e){e.stopPropagation();closeMenus();showToast(el.getAttribute('data-toast'));});});
+  document.getElementById('queryBtn').addEventListener('click',function(){showToast('已按当前条件查询（示例）');});
+  var newBtn=document.getElementById('newBtn'); if(newBtn){newBtn.addEventListener('click',function(){showToast('新建订单（示例）');});}
+
+  // 演示态：?demo=expanded 展开高级筛选并选中 2 单，用于截图展示
+  var params=new URLSearchParams(location.search);
+  if(params.get('demo')==='expanded'){
+    setAdv(true);
+    activeByKind.type.add('退货单');activeByKind.status.add('正式保存');syncChips();rebuildTags();
+    [1,2].forEach(function(i){if(rowCks[i])rowCks[i].checked=true;});
+    refreshBatch();
+  }
+  if(params.get('demo')==='select'){
+    [1,2].forEach(function(i){if(rowCks[i])rowCks[i].checked=true;});
+    refreshBatch();
+  }
+  if(params.get('anno')==='1'){document.body.classList.add('show-anno');annoSwitch.checked=true;}
+
+  refreshBatch();
+})();
+</script>
+</body>
+</html>

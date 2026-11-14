@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>商品管理 · 去乱原型</title>
+<link rel="stylesheet" href="_shell.css">
+<style>
+.name-cell{display:flex;align-items:center;gap:8px}
+.price-link{color:var(--primary);font-weight:600;text-decoration:none;cursor:pointer}
+.price-link:hover{text-decoration:underline}
+</style></head><body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3.6H9C7.3 3.6 5.9 5 5.9 6.7V17.3C5.9 19 7.3 20.4 9 20.4H15C16.7 20.4 18.1 19 18.1 17.3V7.7L14 3.6ZM14 3.6V6C14 7.3 15.1 8.4 16.4 8.4H18.1M9 12.4H10.6M13.4 12.4H15M9 15.8H10.6M13.4 15.8H15"/></svg></span><span class="brand-title">简单ERP</span></div>
+    <a href="#">工作台</a>
+    <div class="nav-label">开单</div>
+    <a class="sub" href="#">销售单</a><a class="sub" href="#">退货单</a><a class="sub" href="#">拿货单</a><a class="sub" href="#">退拿货单</a>
+    <div class="nav-label">业务</div>
+    <a href="#">单据管理</a><a href="#">账款管理</a><a href="#">数据分析</a>
+    <div class="nav-label">基础资料</div>
+    <a class="active" href="#">商品管理</a><a href="#">客户管理</a><a href="#">资料文档</a>
+    <div class="nav-label">其他</div>
+    <a href="#">回收站</a><a href="#">系统设置</a>
+  </aside>
+  <div class="content">
+    <div class="topbar">
+      <div class="search"><input placeholder="搜索单号 / 客户 / 商品 / 资料…"><button class="btn primary" style="height:36px">搜索</button></div>
+      <div class="clock" id="clock">2026-11-08 16:40:00</div>
+      <div class="status"><i></i>本地数据已连接</div>
+    </div>
+    <div class="page-body">
+      <div class="page-head"><h1>商品管理</h1><button class="btn primary" data-toast="新增商品（示例）">＋ 新增商品</button></div>
+
+      <div class="toolbar">
+        <div class="filter-row">
+          <div class="field" style="flex:1;min-width:240px"><label>查找商品</label><input placeholder="输入相似字符查找商品"></div>
+          <button class="btn primary" data-toast="已查找（示例）">查询</button>
+          <div class="rel">
+            <button class="btn ghost" id="advToggle">高级筛选 <span class="adv-badge" id="advCount" style="display:none">0</span><svg class="chev" id="advChev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg></button>
+          </div>
+          <div class="menu-wrap" style="margin-left:auto">
+            <button class="btn ghost" data-menu="ioMenu">导入 / 导出 <svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg></button>
+            <div class="menu" id="ioMenu">
+              <button data-toast="下载 Excel 模板（示例）">下载 Excel 模板</button>
+              <button data-toast="批量导入（示例）">批量导入</button>
+              <div class="sep"></div>
+              <button data-toast="导出商品 Excel（示例）">导出商品 Excel</button>
+            </div>
+          </div>
+        </div>
+        <div class="adv-panel" id="advPanel"><div class="adv-inner"><div class="adv-box">
+          <div class="adv-group"><span class="adv-label">档案筛选</span>
+            <button class="chip" data-kind="档案" data-val="全部">全部</button>
+            <button class="chip" data-kind="档案" data-val="待补全">待补全 (3)</button>
+            <button class="chip" data-kind="排序" data-val="按拼音">按拼音排序</button>
+            <button class="chip" data-kind="排序" data-val="价格">按价格</button>
+            <span class="adv-actions"><button class="btn text" id="resetChips">重置</button></span>
+          </div>
+        </div></div></div>
+        <div class="active-tags" id="activeTags"></div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-scroll">
+          <table>
+            <thead><tr>
+              <th>名称</th><th style="width:110px">品牌</th><th style="width:70px">单位</th><th style="width:120px">专属价</th><th style="width:110px">来源</th><th style="width:120px;text-align:right">操作</th>
+            </tr></thead>
+            <tbody>
+              <tr><td><div class="name-cell">LED吸顶声光控灯 <span class="chip-lite warn">待补全</span></div></td><td></td><td>套</td><td><a class="price-link" data-toast="查看专属价（示例）">查看</a></td><td>开单赚出</td><td><div class="row-actions"><button class="btn text">详情</button><div class="menu-wrap"><button class="btn icon" data-menu="p1" aria-label="更多">⋯</button><div class="menu" id="p1"><button data-toast="查看专属价（示例）">查看专属价</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td></tr>
+              <tr><td><div class="name-cell">Y型过滤器DN50</div></td><td></td><td>个</td><td><a class="price-link" data-toast="查看专属价（示例）">查看</a></td><td>手工新建</td><td><div class="row-actions"><button class="btn text">详情</button><div class="menu-wrap"><button class="btn icon" data-menu="p2" aria-label="更多">⋯</button><div class="menu" id="p2"><button data-toast="查看专属价（示例）">查看专属价</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td></tr>
+              <tr><td><div class="name-cell">二氧化碳灭火器5kg</div></td><td>金枪</td><td>具</td><td><a class="price-link" data-toast="查看专属价（示例）">查看</a></td><td>手工新建</td><td><div class="row-actions"><button class="btn text">详情</button><div class="menu-wrap"><button class="btn icon" data-menu="p3" aria-label="更多">⋯</button><div class="menu" id="p3"><button data-toast="查看专属价（示例）">查看专属价</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td></tr>
+              <tr><td><div class="name-cell">信号蝶阀DN100</div></td><td>远大</td><td>台</td><td><a class="price-link" data-toast="查看专属价（示例）">查看</a></td><td>手工新建</td><td><div class="row-actions"><button class="btn text">详情</button><div class="menu-wrap"><button class="btn icon" data-menu="p4" aria-label="更多">⋯</button><div class="menu" id="p4"><button data-toast="查看专属价（示例）">查看专属价</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td></tr>
+              <tr><td><div class="name-cell">内扣式接口KD65</div></td><td></td><td>个</td><td><a class="price-link" data-toast="查看专属价（示例）">查看</a></td><td>手工新建</td><td><div class="row-actions"><button class="btn text">详情</button><div class="menu-wrap"><button class="btn icon" data-menu="p5" aria-label="更多">⋯</button><div class="menu" id="p5"><button data-toast="查看专属价（示例）">查看专属价</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td></tr>
+              <tr><td><div class="name-cell">减压阀DN65</div></td><td></td><td>个</td><td><a class="price-link" data-toast="查看专属价（示例）">查看</a></td><td>手工新建</td><td><div class="row-actions"><button class="btn text">详情</button><div class="menu-wrap"><button class="btn icon" data-menu="p6" aria-label="更多">⋯</button><div class="menu" id="p6"><button data-toast="查看专属价（示例）">查看专属价</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td></tr>
+              <tr><td><div class="name-cell">地下式消防水泵接合器 <span class="chip-lite warn">待补全</span></div></td><td></td><td>件</td><td><a class="price-link" data-toast="查看专属价（示例）">查看</a></td><td>开单赚出</td><td><div class="row-actions"><button class="btn text">详情</button><div class="menu-wrap"><button class="btn icon" data-menu="p7" aria-label="更多">⋯</button><div class="menu" id="p7"><button data-toast="查看专属价（示例）">查看专属价</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td></tr>
+              <tr><td><div class="name-cell">声光报警器</div></td><td>北大青鸟</td><td>只</td><td><a class="price-link" data-toast="查看专属价（示例）">查看</a></td><td>手工新建</td><td><div class="row-actions"><button class="btn text">详情</button><div class="menu-wrap"><button class="btn icon" data-menu="p8" aria-label="更多">⋯</button><div class="menu" id="p8"><button data-toast="查看专属价（示例）">查看专属价</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script src="_shell.js"></script>
+</body></html>

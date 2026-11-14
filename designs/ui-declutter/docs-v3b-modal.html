@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>资料文档 · 上传弹窗原型</title>
+<link rel="stylesheet" href="_shell.css">
+<style>
+  .dc-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;margin-bottom:16px}
+  .dc-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .dc-bar .spacer{flex:1}
+  .dc-search{display:flex;align-items:center;gap:8px;flex:1 1 320px;min-width:240px;height:38px;border:1px solid var(--border);border-radius:8px;padding:0 12px;background:#fff}
+  .dc-search svg{width:16px;height:16px;color:var(--muted);flex:0 0 auto}
+  .dc-search input{border:0;outline:none;flex:1;height:100%;font:inherit;font-size:13.5px;background:transparent}
+  .dc-fold-hint{color:var(--muted);font-size:12px;margin-top:10px}
+  .dc-fold-hint b{color:var(--primary)}
+  .dc-preview{width:54px;height:54px;border-radius:8px;background:linear-gradient(135deg,#5b7db1,#3f5d8a);border:1px solid var(--border)}
+  .dc-title{font-weight:650}.dc-sub{color:var(--muted);font-size:12px}
+
+  /* ===== 通用上传弹窗（拟落地到 base.html）===== */
+  .erp-modal{position:fixed;inset:0;z-index:3000;display:flex;align-items:center;justify-content:center;padding:24px}
+  .erp-modal-backdrop{position:absolute;inset:0;background:rgba(15,20,30,.5)}
+  .erp-modal-dialog{position:relative;width:min(440px,100%);max-height:calc(100vh - 48px);overflow:auto;background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:0 24px 64px rgba(15,23,42,.35)}
+  .erp-modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 18px;border-bottom:1px solid var(--border)}
+  .erp-modal-head h3{margin:0;font-size:17px}
+  .erp-modal-close{border:0;background:transparent;font-size:22px;line-height:1;color:var(--muted);cursor:pointer;width:32px;height:32px;border-radius:8px}
+  .erp-modal-close:hover{background:var(--surface-soft)}
+  .erp-modal-body{padding:16px 18px;display:flex;flex-direction:column;gap:14px}
+  .mfield{display:flex;flex-direction:column;gap:6px}
+  .mfield>label{font-size:12.5px;font-weight:650;color:var(--muted)}
+  .mcontrol{height:38px;border:1px solid var(--border);border-radius:8px;padding:0 10px;font:inherit;font-size:13.5px;background:#fff;color:var(--ink);width:100%}
+  .mfile{display:flex;align-items:center;justify-content:center;height:66px;border:1px dashed var(--border-strong);border-radius:10px;color:var(--muted);font-size:13px;background:var(--surface-soft);cursor:pointer}
+  .mfile b{color:var(--primary);margin-right:5px}
+  .erp-modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:13px 18px;border-top:1px solid var(--border)}
+  .var-tag{display:inline-flex;align-items:center;height:28px;padding:0 12px;border-radius:14px;background:#7c3aed;color:#fff;font-size:12.5px;font-weight:700}
+</style>
+</head><body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3.6H9C7.3 3.6 5.9 5 5.9 6.7V17.3C5.9 19 7.3 20.4 9 20.4H15C16.7 20.4 18.1 19 18.1 17.3V7.7L14 3.6ZM14 3.6V6C14 7.3 15.1 8.4 16.4 8.4H18.1M9 12.4H10.6M13.4 12.4H15M9 15.8H10.6M13.4 15.8H15"/></svg></span><span class="brand-title">简单ERP</span></div>
+    <a href="#"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>工作台</a>
+    <div class="nav-label">开单</div>
+    <a class="sub" href="#">销售单</a><a class="sub" href="#">退货单</a><a class="sub" href="#">拿货单</a><a class="sub" href="#">退拿货单</a>
+    <div class="nav-label">业务</div>
+    <a href="#">单据管理</a><a href="#">账款管理</a><a href="#">数据分析</a>
+    <div class="nav-label">基础资料</div>
+    <a href="#">商品管理</a><a href="#">客户管理</a><a class="active" href="#">资料文档</a>
+    <div class="nav-label">其他</div>
+    <a href="#">回收站</a><a href="#">系统设置</a>
+  </aside>
+  <div class="content">
+    <div class="topbar">
+      <div class="search"><input placeholder="搜索单号 / 客户 / 商品 / 资料…"><button class="btn primary" style="height:36px">搜索</button></div>
+      <div class="clock" id="clock">2026-11-08 19:00:00</div>
+      <div class="status"><i></i>本地数据已连接</div>
+    </div>
+    <div class="page-body">
+      <div class="page-head">
+        <div><h1>资料文档</h1><div class="sub">纯文件柜：检验报告、合格证、资质证书等；可直接打开或打印。</div></div>
+        <span class="var-tag">弹窗示意 · 资料文档上传</span>
+      </div>
+      <section class="dc-card">
+        <div class="dc-bar">
+          <label class="dc-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input type="search" placeholder="搜索标题 / 原文件名 / 备注，回车搜索"></label>
+          <button class="btn ghost">搜索</button>
+          <span class="spacer"></span>
+          <button class="btn primary">＋ 上传文件</button>
+        </div>
+        <p class="dc-fold-hint">点 <b>＋ 上传文件</b> → 弹出下面这个居中小窗。</p>
+      </section>
+      <div class="tabs">
+        <button class="active">全部 <span class="muted">(1)</span></button><button>检验报告 <span class="muted">(1)</span></button><button>合格证 <span class="muted">(0)</span></button><button>资质证书 <span class="muted">(0)</span></button><button>其他 <span class="muted">(0)</span></button>
+      </div>
+      <div class="table-card">
+        <table style="min-width:760px">
+          <thead><tr><th style="width:84px">预览</th><th>标题</th><th>分类</th><th>大小</th><th>上传时间</th><th style="text-align:right">操作</th></tr></thead>
+          <tbody><tr><td><div class="dc-preview"></div></td><td><div class="dc-title">演示检验报告</div><div class="dc-sub">演示检验报告.png</div></td><td>检验报告</td><td>339 B</td><td class="muted">2026-11-08 10:09</td><td><div class="row-actions"><button class="btn sm outline">打开</button><button class="btn sm ghost">打印</button><button class="btn sm ghost">下载</button><button class="btn sm ghost">编辑</button><button class="btn sm ghost" style="color:var(--danger);border-color:rgba(199,53,53,.4)">删除</button></div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 上传弹窗（打开状态用于示意）===== -->
+<div class="erp-modal" id="uploadModal">
+  <div class="erp-modal-backdrop"></div>
+  <div class="erp-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="uploadTitle">
+    <div class="erp-modal-head"><h3 id="uploadTitle">上传文件</h3><button class="erp-modal-close" type="button" aria-label="关闭">×</button></div>
+    <div class="erp-modal-body">
+      <div class="mfield"><label>选择文件（可多选）</label><label class="mfile"><b>＋ 选择文件</b> · 未选择任何文件</label></div>
+      <div class="mfield"><label>分类</label><select class="mcontrol"><option>未分类</option><option>检验报告</option><option>合格证</option><option>资质证书</option><option>其他</option></select></div>
+      <div class="mfield"><label>备注（可选）</label><input class="mcontrol" placeholder="同一批文件共用本备注"></div>
+    </div>
+    <div class="erp-modal-foot"><button class="btn ghost" type="button">取消</button><button class="btn primary" type="button">上传</button></div>
+  </div>
+</div>
+<script src="_shell.js"></script>
+</body></html>

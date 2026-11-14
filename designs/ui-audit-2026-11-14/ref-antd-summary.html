@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Ant Design Table · summary 真实渲染</title>
+<link rel="stylesheet" href="./vendor/reset.css">
+<style>
+  body{margin:0;padding:26px 30px;background:#fff;font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .note{font-size:13px;color:#555;margin-bottom:14px;line-height:1.7}
+  .note b{color:#1677ff}
+  .note code{background:#f2f4f7;padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="note">
+  <b>Ant Design v5 Table</b> 的 <code>summary</code> 能力在本地真实渲染（离线打包 antd 5.21.6，非截图）。数据为简单ERP 真实 demo 余额。
+</div>
+<div id="root"></div>
+<script src="./vendor/dayjs.js"></script>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./vendor/antd.js"></script>
+<script>
+const antdLib = window.antd || (window.antd = (function(){ return this && this.antd; })());
+const { Table, ConfigProvider } = antdLib;
+const data = [{"id": 24, "name": "陈老板商行", "debt": 33942.24, "prepaid": 0, "d30": 0, "d60": 33942.24, "d90": 0, "dover": 0, "days": 42}, {"id": 14, "name": "鑫源纸张厂", "debt": 32636.2, "prepaid": 0, "d30": 0, "d60": 32636.2, "d90": 0, "dover": 0, "days": 36}, {"id": 28, "name": "Andy Fire Supply", "debt": 25853.85, "prepaid": 0, "d30": 25853.85, "d60": 0, "d90": 0, "dover": 0, "days": 18}, {"id": 17, "name": "蓝天幼儿园", "debt": 17429.1, "prepaid": 0, "d30": 0, "d60": 0, "d90": 0, "dover": 17429.1, "days": 94}, {"id": 22, "name": "张强", "debt": 16358.78, "prepaid": 0, "d30": 16358.78, "d60": 0, "d90": 0, "dover": 0, "days": 22}, {"id": 21, "name": "市政绿化管理处", "debt": 15518.88, "prepaid": 0, "d30": 0, "d60": 0, "d90": 0, "dover": 15518.88, "days": 999}, {"id": 6, "name": "锦华酒店", "debt": 12003.73, "prepaid": 0, "d30": 12003.73, "d60": 0, "d90": 0, "dover": 0, "days": 29}, {"id": 4, "name": "星辰宾馆", "debt": 7411.02, "prepaid": 0, "d30": 7411.02, "d60": 0, "d90": 0, "dover": 0, "days": 23}, {"id": 9, "name": "万达影城", "debt": 6208.53, "prepaid": 0, "d30": 0, "d60": 6208.53, "d90": 0, "dover": 0, "days": 33}, {"id": 7, "name": "实验中学", "debt": 5967.61, "prepaid": 0, "d30": 5967.61, "d60": 0, "d90": 0, "dover": 0, "days": 15}, {"id": 12, "name": "老李五金店", "debt": 3330.97, "prepaid": 0, "d30": 3330.97, "d60": 0, "d90": 0, "dover": 0, "days": 15}, {"id": 16, "name": "西山养老院", "debt": 3041.59, "prepaid": 0, "d30": 0, "d60": 0, "d90": 3041.59, "dover": 0, "days": 73}, {"id": 23, "name": "王秀芬", "debt": 2528.14, "prepaid": 0, "d30": 2528.14, "d60": 0, "d90": 0, "dover": 0, "days": 26}, {"id": 10, "name": "悦动KTV", "debt": 1573.26, "prepaid": 0, "d30": 0, "d60": 1573.26, "d90": 0, "dover": 0, "days": 56}, {"id": 20, "name": "汇通能源加油站", "debt": 648.26, "prepaid": 0, "d30": 0, "d60": 648.26, "d90": 0, "dover": 0, "days": 39}, {"id": 3, "name": "宏图建设集团第三项目部", "debt": 468.8, "prepaid": 0, "d30": 0, "d60": 468.8, "d90": 0, "dover": 0, "days": 38}, {"id": 1, "name": "宏伟消防工程店", "debt": 0, "prepaid": 2510.9, "d30": 0, "d60": 0, "d90": 0, "dover": 0, "days": 21}, {"id": 2, "name": "安宁物业管理有限公司", "debt": 0, "prepaid": 387.89, "d30": 0, "d60": 0, "d90": 0, "dover": 0, "days": 9}, {"id": 5, "name": "万象购物中心", "debt": 0, "prepaid": 325.42, "d30": 0, "d60": 0, "d90": 0, "dover": 0, "days": 30}, {"id": 8, "name": "仁和医院", "debt": 0, "prepaid": 267.89, "d30": 0, "d60": 0, "d90": 0, "dover": 0, "days": 10}, {"id": 11, "name": "中通快递分拨中心", "debt": 0, "prepaid": 211.37, "d30": 0, "d60": 0, "d90": 0, "dover": 0, "days": 152}, {"id": 13, "name": "大刘建材经营部", "debt": 0, "prepaid": 423.92, "d30": 0, "d60": 0, "d90": 0, "dover": 0, "days": 59}, {"id": 15, "name": "东星纺织厂", "debt": 0, "prepaid": 10.98, "d30": 0, "d60": 0, "d90": 0, "dover": 0, "days": 9}, {"id": 18, "name": "沸腾鱼乡饭店", "debt": 0, "prepaid": 464.61, "d30": 0, "d60": 0, "d90": 0, "dover": 0, "days": 19}, {"id": 19, "name": "速8酒店火车站店", "debt": 0, "prepaid": 210.95, "d30": 0, "d60": 0, "d90": 0, "dover": 0, "days": 50}, {"id": 25, "name": "苏果超市东关店", "debt": 0, "prepaid": 1164.92, "d30": 0, "d60": 0, "d90": 0, "dover": 0, "days": 9}, {"id": 26, "name": "德邦物流园区", "debt": 0, "prepaid": 6229.8, "d30": 0, "d60": 0, "d90": 0, "dover": 0, "days": 9}, {"id": 27, "name": "晨光文具批发", "debt": 0, "prepaid": 4588.14, "d30": 0, "d60": 0, "d90": 0, "dover": 0, "days": 16}];
+const money = v => v > 0 ? v.toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—';
+const dim = { color:'#c9cfda' };
+
+const columns = [
+  { title:'客户', dataIndex:'name', key:'name', width:210, sorter:(a,b)=>a.name.localeCompare(b.name,'zh') },
+  { title:'欠款（应收）', dataIndex:'debt', key:'debt', width:145, align:'right',
+    sorter:(a,b)=>a.debt-b.debt, defaultSortOrder:'descend',
+    render:v=> v>0 ? React.createElement('b',null,money(v)) : React.createElement('span',{style:dim},'—') },
+  { title:'预存', dataIndex:'prepaid', key:'prepaid', width:120, align:'right',
+    sorter:(a,b)=>a.prepaid-b.prepaid,
+    render:v=> React.createElement('span',{style:{color:v>0?'#0a7d4f':'#c9cfda'}},money(v)) },
+  { title:'0–30 天', dataIndex:'d30', key:'d30', width:115, align:'right',
+    render:v=> React.createElement('span',{style:{color:v>0?'#172033':'#c9cfda'}},money(v)) },
+  { title:'31–60 天', dataIndex:'d60', key:'d60', width:115, align:'right',
+    render:v=> React.createElement('span',{style:{color:v>0?'#172033':'#c9cfda'}},money(v)) },
+  { title:'61–90 天', dataIndex:'d90', key:'d90', width:115, align:'right',
+    render:v=> React.createElement('span',{style:{color:v>0?'#172033':'#c9cfda'}},money(v)) },
+  { title:'90 天以上', dataIndex:'dover', key:'dover', width:125, align:'right',
+    render:v=> v>0 ? React.createElement('b',{style:{color:'#cf1322'}},money(v)) : React.createElement('span',{style:dim},'—') },
+  { title:'', key:'op', width:100, render:()=> React.createElement('a',{style:{color:'#2563eb'}},'查看流水 →') },
+];
+
+const total = f => data.reduce((s,r)=>s+(r[f]||0),0);
+const H = React.createElement;
+
+function App(){
+  return H(ConfigProvider, { theme:{ token:{ colorPrimary:'#2563eb', borderRadius:7, fontSize:14 } } },
+    H(Table, {
+      dataSource: data, columns, rowKey:'id', size:'middle',
+      pagination: false, scroll:{ y: 430 },
+      summary: () => H(Table.Summary, { fixed:true },
+        H(Table.Summary.Row, { style:{ background:'#f7f9fc' } },
+          H(Table.Summary.Cell, { index:0 }, H('b', null, '合计（' + data.length + ' 户）')),
+          H(Table.Summary.Cell, { index:1, align:'right' }, H('b', null, money(total('debt')))),
+          H(Table.Summary.Cell, { index:2, align:'right' }, H('b', { style:{color:'#0a7d4f'} }, money(total('prepaid')))),
+          H(Table.Summary.Cell, { index:3, align:'right' }, H('b', null, money(total('d30')))),
+          H(Table.Summary.Cell, { index:4, align:'right' }, H('b', null, money(total('d60')))),
+          H(Table.Summary.Cell, { index:5, align:'right' }, H('b', null, money(total('d90')))),
+          H(Table.Summary.Cell, { index:6, align:'right' }, H('b', { style:{color:'#cf1322'} }, money(total('dover')))),
+          H(Table.Summary.Cell, { index:7 })
+        )
+      )
+    })
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(H(App));
+</script>
+</body>
+</html>

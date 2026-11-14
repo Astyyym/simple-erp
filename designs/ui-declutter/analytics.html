@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>数据分析 · 去乱原型</title>
+<link rel="stylesheet" href="_shell.css">
+<style>
+.metrics4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px}
+.metric .val.neg{color:var(--danger)}
+.chart-placeholder{height:180px;display:grid;place-items:center;color:var(--muted);background:var(--surface-soft);border:1px dashed var(--border);border-radius:var(--radius);font-size:13px}
+.tfilter{display:flex;flex-direction:column;gap:8px}
+.tfilter-label{font-size:13px;color:var(--muted);font-weight:650}
+.tfilter-row{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.tfilter .field input{width:150px}
+.adv-input{height:32px;border:1px solid var(--border);border-radius:8px;padding:0 10px;font:inherit;font-size:13px;background:#fff;color:var(--ink);width:240px}
+.adv-input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.13)}
+</style></head><body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3.6H9C7.3 3.6 5.9 5 5.9 6.7V17.3C5.9 19 7.3 20.4 9 20.4H15C16.7 20.4 18.1 19 18.1 17.3V7.7L14 3.6ZM14 3.6V6C14 7.3 15.1 8.4 16.4 8.4H18.1M9 12.4H10.6M13.4 12.4H15M9 15.8H10.6M13.4 15.8H15"/></svg></span><span class="brand-title">简单ERP</span></div>
+    <a href="#">工作台</a>
+    <div class="nav-label">开单</div>
+    <a class="sub" href="#">销售单</a><a class="sub" href="#">退货单</a><a class="sub" href="#">拿货单</a><a class="sub" href="#">退拿货单</a>
+    <div class="nav-label">业务</div>
+    <a href="#">单据管理</a><a href="#">账款管理</a><a class="active" href="#">数据分析</a>
+    <div class="nav-label">基础资料</div>
+    <a href="#">商品管理</a><a href="#">客户管理</a><a href="#">资料文档</a>
+    <div class="nav-label">其他</div>
+    <a href="#">回收站</a><a href="#">系统设置</a>
+  </aside>
+  <div class="content">
+    <div class="topbar">
+      <div class="search"><input placeholder="搜索单号 / 客户 / 商品 / 资料…"><button class="btn primary" style="height:36px">搜索</button></div>
+      <div class="clock" id="clock">2026-11-08 16:40:00</div>
+      <div class="status"><i></i>本地数据已连接</div>
+    </div>
+    <div class="page-body">
+      <div class="page-head"><h1>数据分析中心</h1></div>
+
+      <div class="tabs">
+        <button class="active">金额汇总</button>
+        <button data-toast="热力图与排行（示例）">热力图与排行</button>
+        <button data-toast="客户与趋势（示例）">客户与趋势</button>
+        <button data-toast="具体产品（示例）">具体产品</button>
+      </div>
+
+      <div class="toolbar">
+        <div class="tfilter">
+          <div class="tfilter-label">按时间范围</div>
+          <div class="tfilter-row">
+            <div class="seg"><button>按年</button><button>按月到月</button><button class="active">按日到日</button></div>
+            <div class="date-field"><input type="date" value="2026-11-01"><span>—</span><input type="date" value="2026-11-08"></div>
+            <button class="btn primary" data-toast="已查询（示例）">查询</button>
+            <button class="btn ghost" data-toast="已重置（示例）">重置</button>
+            <div class="rel">
+              <button class="btn ghost" id="advToggle">高级筛选 <span class="adv-badge" id="advCount" style="display:none">0</span><svg class="chev" id="advChev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <div class="adv-panel" id="advPanel"><div class="adv-inner"><div class="adv-box">
+          <div class="adv-group"><span class="adv-label">订单类型</span>
+            <button class="chip" data-kind="type" data-val="销售单">销售单</button>
+            <button class="chip" data-kind="type" data-val="退货单">退货单</button>
+            <button class="chip" data-kind="type" data-val="拿货单">拿货单</button>
+            <button class="chip" data-kind="type" data-val="退拿货单">退拿货单</button>
+          </div>
+          <div class="adv-group"><span class="adv-label">客户</span><input class="adv-input" placeholder="输入客户名或拼音首字母"></div>
+          <div class="adv-group"><span class="adv-label">商品名称</span><input class="adv-input" placeholder="输入商品名或拼音首字母"></div>
+          <div class="adv-group"><span class="adv-label"></span><span class="adv-actions" style="margin-left:0"><button class="btn text" id="resetChips">重置</button></span></div>
+        </div></div></div>
+        <div class="active-tags" id="activeTags"></div>
+      </div>
+
+      <div class="section-head"><h3>金额汇总</h3></div>
+      <div class="metrics4">
+        <div class="metric"><div class="label"><span>销售金额</span></div><div class="val">¥6,517.49</div><div class="muted" style="font-size:12px;margin-top:4px">3 张销售单</div></div>
+        <div class="metric"><div class="label"><span>退货金额</span></div><div class="val neg">−¥755.49</div><div class="muted" style="font-size:12px;margin-top:4px">4 张退货单</div></div>
+        <div class="metric"><div class="label"><span>拿货金额</span></div><div class="val">¥0.00</div><div class="muted" style="font-size:12px;margin-top:4px">0 张拿货单</div></div>
+        <div class="metric"><div class="label"><span>退拿货金额</span></div><div class="val">¥0.00</div><div class="muted" style="font-size:12px;margin-top:4px">0 张退拿货单</div></div>
+      </div>
+      <div class="summary-grid">
+        <div class="summary-card"><div class="slabel"><span>净销售额</span><span>销售 − 退货</span></div><div class="sval">¥5,762.00</div></div>
+        <div class="summary-card"><div class="slabel"><span>流水净额</span><span>销售 + / 退货 − / 拿货 − / 退拿货 +</span></div><div class="sval">¥7,272.98</div></div>
+      </div>
+
+      <div class="section-head"><h3>流水热力图</h3><span class="spacer"></span><button class="btn text" data-toast="产品排行（示例）">产品排行</button></div>
+      <div class="chart-placeholder">流水热力图（示意）</div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script src="_shell.js"></script>
+</body></html>

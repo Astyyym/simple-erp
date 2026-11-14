@@ -114,7 +114,10 @@ def test_recycle_action_cells_reserve_width_so_buttons_are_not_clipped():
     _seed_recycle_bin()
     page = _html("/recycle/")
     # 三张表（单据 / 商品 / 客户）都给出操作列宽度。
-    assert ".recycle-scroll .action-cell{width:150px;min-width:150px}" in page
+    # 2026-11-14：行操作改密集文字按钮后，回收站要容纳「恢复」+「确认删除」两个文字动作
+    #（实测需要 46 + 76 + 2 = 124px，加左右各 6px 内距共 136px），故从 150px 提到 196px，
+    # 与全站 .stable-table .action-cell 的 200px 保持同一量级。保护点不变：列必须自己占宽。
+    assert ".recycle-scroll .action-cell{width:196px;min-width:196px}" in page
     assert page.count('class="action-cell"') >= 3
     # 反例：action-wrap 不能再直接当单元格用。
     assert '<td class="action-wrap"' not in page
@@ -332,8 +335,19 @@ def test_advanced_filter_button_and_outlined_row_actions():
             status="saved", order_date="2026-11-09",
         )
     body = app.test_client().get("/orders/").get_data(as_text=True).split('id="ordersResults"', 1)[1]
-    for cls in ("btn-outline-secondary", "btn-outline-primary", "btn-outline-info", "btn-outline-danger"):
-        assert f'class="btn btn-sm {cls}"' in body, cls
-    # 反例：实心色块不许回到行操作（禁用的「编辑」由 .btn:disabled 统一样式，不再是实心蓝）。
+    # 2026-11-14 用户决策：行操作由「彩色描边按钮」改为「密集纯文字按钮」（.ract），
+    # 四个动作（查看/编辑/打印/删除）全部平铺可见、不做 ⋯ 折叠。
+    # 变更理由见 base.html 的 .ract 注释与 memory/project-context.md：
+    #   ① 描边强化视觉权重，抢走正文注意力；② 描边按钮受 min-width:60px 硬撑，
+    #   4 个动作需 258px，而当时操作列可用内容宽仅 246px，本来就在溢出。
+    # 保护点：四个动作必须都在，且删除必须走危险色语义（.ract.del）。
+    assert 'class="ract"' in body
+    assert 'class="ract del"' in body
+    for label in ("查看", "编辑", "打印", "删除"):
+        assert f'>{label}</a>' in body or f'>{label}</button>' in body, label
+    # 反例一：实心色块不许回到行操作（禁用的「编辑」由 .ract[aria-disabled] 统一成灰）。
     for cls in ("btn btn-sm btn-primary", "btn btn-sm btn-secondary", "btn btn-sm btn-info", "btn btn-sm btn-danger"):
         assert cls not in body, cls
+    # 反例二：描边按钮也不许回到行操作（它会重新引入视觉权重与 60px 硬撑）。
+    for cls in ("btn-outline-secondary", "btn-outline-primary", "btn-outline-info", "btn-outline-danger"):
+        assert f'class="btn btn-sm {cls}"' not in body, cls

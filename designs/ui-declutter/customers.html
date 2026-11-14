@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>客户管理 · 去乱原型</title>
+<link rel="stylesheet" href="_shell.css">
+</head><body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3.6H9C7.3 3.6 5.9 5 5.9 6.7V17.3C5.9 19 7.3 20.4 9 20.4H15C16.7 20.4 18.1 19 18.1 17.3V7.7L14 3.6ZM14 3.6V6C14 7.3 15.1 8.4 16.4 8.4H18.1M9 12.4H10.6M13.4 12.4H15M9 15.8H10.6M13.4 15.8H15"/></svg></span><span class="brand-title">简单ERP</span></div>
+    <a href="#">工作台</a>
+    <div class="nav-label">开单</div>
+    <a class="sub" href="#">销售单</a><a class="sub" href="#">退货单</a><a class="sub" href="#">拿货单</a><a class="sub" href="#">退拿货单</a>
+    <div class="nav-label">业务</div>
+    <a href="#">单据管理</a><a href="#">账款管理</a><a href="#">数据分析</a>
+    <div class="nav-label">基础资料</div>
+    <a href="#">商品管理</a><a class="active" href="#">客户管理</a><a href="#">资料文档</a>
+    <div class="nav-label">其他</div>
+    <a href="#">回收站</a><a href="#">系统设置</a>
+  </aside>
+  <div class="content">
+    <div class="topbar">
+      <div class="search"><input placeholder="搜索单号 / 客户 / 商品 / 资料…"><button class="btn primary" style="height:36px">搜索</button></div>
+      <div class="clock" id="clock">2026-11-08 16:40:00</div>
+      <div class="status"><i></i>本地数据已连接</div>
+    </div>
+    <div class="page-body">
+      <div class="page-head"><h1>客户管理</h1><button class="btn primary" data-toast="新增客户（示例）">＋ 新增客户</button></div>
+
+      <div class="toolbar">
+        <div class="filter-row">
+          <div class="field" style="flex:1;min-width:240px"><label>查找客户</label><input placeholder="输入客户名或拼音首字母"></div>
+          <button class="btn primary" data-toast="已查找（示例）">查询</button>
+          <div class="rel">
+            <button class="btn ghost" id="advToggle">高级筛选 <span class="adv-badge" id="advCount" style="display:none">0</span><svg class="chev" id="advChev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg></button>
+          </div>
+          <div class="menu-wrap" style="margin-left:auto">
+            <button class="btn ghost" data-menu="ioMenu">导入 / 导出 <svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg></button>
+            <div class="menu" id="ioMenu">
+              <button data-toast="下载 Excel 模板（示例）">下载 Excel 模板</button>
+              <button data-toast="批量导入（示例）">批量导入</button>
+              <div class="sep"></div>
+              <button data-toast="导出客户 Excel（示例）">导出客户 Excel</button>
+            </div>
+          </div>
+        </div>
+        <div class="adv-panel" id="advPanel"><div class="adv-inner"><div class="adv-box">
+          <div class="adv-group"><span class="adv-label">排序</span>
+            <button class="chip" data-kind="排序" data-val="按欠款">按欠款</button>
+            <button class="chip" data-kind="排序" data-val="按拼音">按拼音</button>
+            <span class="adv-actions"><button class="btn text" id="resetChips">重置</button></span>
+          </div>
+        </div></div></div>
+        <div class="active-tags" id="activeTags"></div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-scroll">
+          <table>
+            <thead><tr>
+              <th>客户</th><th style="width:160px">电话</th><th>地址</th><th style="width:140px;text-align:right">当前欠款</th><th style="width:120px;text-align:right">操作</th>
+            </tr></thead>
+            <tbody>
+              <tr><td>Andy Fire Supply</td><td>—</td><td>—</td><td class="num neg">−¥25,853.85</td><td><div class="row-actions"><button class="btn text">详情</button><div class="menu-wrap"><button class="btn icon" data-menu="c1" aria-label="更多">⋯</button><div class="menu" id="c1"><button data-toast="查看流水（示例）">查看流水</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td></tr>
+              <tr><td>万象购物中心</td><td>—</td><td>—</td><td class="num">¥325.42</td><td><div class="row-actions"><button class="btn text">详情</button><div class="menu-wrap"><button class="btn icon" data-menu="c2" aria-label="更多">⋯</button><div class="menu" id="c2"><button data-toast="查看流水（示例）">查看流水</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td></tr>
+              <tr><td>万达影城</td><td>—</td><td>—</td><td class="num neg">−¥6,208.53</td><td><div class="row-actions"><button class="btn text">详情</button><div class="menu-wrap"><button class="btn icon" data-menu="c3" aria-label="更多">⋯</button><div class="menu" id="c3"><button data-toast="查看流水（示例）">查看流水</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td></tr>
+              <tr><td>东星纺织厂</td><td>—</td><td>—</td><td class="num">¥10.98</td><td><div class="row-actions"><button class="btn text">详情</button><div class="menu-wrap"><button class="btn icon" data-menu="c4" aria-label="更多">⋯</button><div class="menu" id="c4"><button data-toast="查看流水（示例）">查看流水</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td></tr>
+              <tr><td>中通快递分拨中心</td><td>—</td><td>—</td><td class="num">¥211.37</td><td><div class="row-actions"><button class="btn text">详情</button><div class="menu-wrap"><button class="btn icon" data-menu="c5" aria-label="更多">⋯</button><div class="menu" id="c5"><button data-toast="查看流水（示例）">查看流水</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td></tr>
+              <tr><td>仁和医院</td><td>—</td><td>—</td><td class="num">¥267.89</td><td><div class="row-actions"><button class="btn text">详情</button><div class="menu-wrap"><button class="btn icon" data-menu="c6" aria-label="更多">⋯</button><div class="menu" id="c6"><button data-toast="查看流水（示例）">查看流水</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td></tr>
+              <tr><td>大刘建材经营部</td><td>—</td><td>—</td><td class="num">¥423.92</td><td><div class="row-actions"><button class="btn text">详情</button><div class="menu-wrap"><button class="btn icon" data-menu="c7" aria-label="更多">⋯</button><div class="menu" id="c7"><button data-toast="查看流水（示例）">查看流水</button><div class="sep"></div><button class="danger" data-toast="移入回收站（示例）">移入回收站</button></div></div></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script src="_shell.js"></script>
+</body></html>

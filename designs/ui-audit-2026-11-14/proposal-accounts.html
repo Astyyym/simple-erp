@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-ui-theme="light" data-bs-theme="light"><head><meta charset="utf-8">
+<title>账款管理 · 改后方案</title>
+<style>
+    :root{
+      --erp-primary:#2563eb;--erp-primary-hover:#1d4ed8;--erp-primary-soft:#eff6ff;
+      --erp-btn-primary:#2563eb;--erp-btn-primary-hover:#1d4ed8;--erp-btn-success:#17803d;--erp-btn-success-hover:#047857;--erp-btn-danger:#c73535;--erp-btn-danger-hover:#b91c1c;--erp-btn-warning:#f59e0b;--erp-btn-warning-hover:#d97706;--erp-btn-warning-ink:#172033;--erp-outline-primary:#1d4ed8;--erp-outline-success:#17803d;--erp-outline-danger:#c73535;--erp-outline-info:#0e7490;--erp-content-border:rgba(255,255,255,.88);
+      --erp-ink:#172033;--erp-muted:#667085;--erp-border:#dfe3ea;--erp-border-strong:#c8ced8;
+      --erp-bg:#f3f5f8;--erp-surface:#fff;--erp-surface-soft:#f8fafc;
+      --erp-sidebar:#012121;--erp-sidebar-hover:#0a3535;--erp-success:#17803d;--erp-danger:#c73535;
+      /* 待补全提示（页头 chip / 字段 ⚠）：浅色用琥珀，深色单独给一组，避免暗底上糊成一片。 */
+      --erp-warn:#b45309;--erp-warn-bg:#fffbeb;--erp-warn-border:#fcd34d;
+      --erp-heat-0:#f1f5f9;--erp-heat-1:#dcfce7;--erp-heat-2:#86efac;--erp-heat-3:#15803d;--erp-heat-4:#166534;
+      --erp-heat-ink-0:#172033;--erp-heat-ink-1:#172033;--erp-heat-ink-2:#172033;--erp-heat-ink-3:#fff;--erp-heat-ink-4:#fff;
+      --erp-radius:10px;--erp-shadow:0 1px 2px rgba(16,24,40,.04),0 8px 24px rgba(16,24,40,.05);
+      --erp-scale:1;
+      /* stronger glassmorphism tokens (still enterprise, blur capped ~16px) */
+      --erp-glass-blur:16px;
+      --erp-glass-bg:rgba(255,255,255,.58);
+      --erp-glass-bg-strong:rgba(255,255,255,.78);
+      --erp-glass-border:rgba(255,255,255,.55);
+      --erp-glass-shadow:0 1px 2px rgba(16,24,40,.05),0 14px 36px rgba(16,24,40,.10);
+      /* solid brand sidebar color (user-specified) */
+      --erp-sidebar-glass:#012121;
+      --erp-sidebar-border:rgba(255,255,255,.12);
+      --erp-content-wash:linear-gradient(165deg,#d9e6f7 0%,#eef2f8 38%,#e4ebf5 100%);
+      --erp-content-mesh:radial-gradient(980px 480px at 10% -10%,rgba(37,99,235,.16),transparent 58%),radial-gradient(760px 400px at 92% 6%,rgba(14,116,144,.10),transparent 52%),radial-gradient(640px 320px at 55% 110%,rgba(99,102,241,.08),transparent 55%);
+    }
+    html[data-ui-scale="125"]{--erp-scale:1.25}
+    html[data-ui-scale="150"]{--erp-scale:1.5}
+    html[data-ui-font-weight="medium"]{--erp-font-stroke-width:.15px}
+    html[data-ui-font-weight="strong"]{--erp-font-stroke-width:.30px}
+    /* 界面说明文字总开关（设置页「显示」→ 界面说明文字）：关掉后隐藏带 data-ui-hint 的
+       提示/说明段。危险操作警告、状态与数据单元格不带该属性，始终可见。 */
+    html[data-ui-hints="off"] [data-ui-hint]{display:none!important}
+    html[data-ui-theme="dark"]{
+      --erp-primary:#3b82f6;--erp-primary-hover:#60a5fa;--erp-primary-soft:#1e293b;
+      --erp-btn-primary:#1d4ed8;--erp-btn-primary-hover:#2563eb;--erp-btn-success:#047857;--erp-btn-success-hover:#065f46;--erp-btn-danger:#b91c1c;--erp-btn-danger-hover:#dc2626;--erp-btn-warning:#f59e0b;--erp-btn-warning-hover:#d97706;--erp-btn-warning-ink:#172033;--erp-outline-primary:#93c5fd;--erp-outline-success:#6ee7b7;--erp-outline-danger:#fca5a5;--erp-outline-info:#67e8f9;--erp-content-border:#2b3648;
+      --erp-ink:#e8eef9;--erp-muted:#9aa8c0;--erp-border:#2b3648;--erp-border-strong:#3d4b63;
+      --erp-bg:#0f141d;--erp-surface:#171e2b;--erp-surface-soft:#1c2535;
+      --erp-sidebar:#012121;--erp-sidebar-hover:#0a3535;--erp-success:#34d399;--erp-danger:#f87171;
+      --erp-warn:#fbbf24;--erp-warn-bg:#3a2f14;--erp-warn-border:#6b5217;
+      --erp-heat-0:#253145;--erp-heat-1:#14532d;--erp-heat-2:#166534;--erp-heat-3:#15803d;--erp-heat-4:#22c55e;
+      --erp-heat-ink-0:#e8eef9;--erp-heat-ink-1:#fff;--erp-heat-ink-2:#fff;--erp-heat-ink-3:#fff;--erp-heat-ink-4:#052e16;
+      --erp-shadow:0 1px 2px rgba(0,0,0,.35),0 8px 24px rgba(0,0,0,.25);
+      --erp-glass-blur:16px;
+      --erp-glass-bg:rgba(23,30,43,.48);
+      --erp-glass-bg-strong:rgba(23,30,43,.70);
+      --erp-glass-border:rgba(148,163,184,.22);
+      --erp-glass-shadow:0 1px 2px rgba(0,0,0,.40),0 16px 36px rgba(0,0,0,.34);
+      --erp-sidebar-glass:#012121;
+      --erp-sidebar-border:rgba(255,255,255,.12);
+      --erp-content-wash:linear-gradient(165deg,#0a0f18 0%,#101826 46%,#0d1522 100%);
+      --erp-content-mesh:radial-gradient(980px 480px at 10% -10%,rgba(59,130,246,.20),transparent 58%),radial-gradient(760px 400px at 92% 6%,rgba(34,211,238,.08),transparent 52%),radial-gradient(640px 320px at 55% 110%,rgba(129,140,248,.10),transparent 55%);
+    }
+    @media (prefers-color-scheme: dark){
+      html[data-ui-theme="system"]{
+        --erp-primary:#3b82f6;--erp-primary-hover:#60a5fa;--erp-primary-soft:#1e293b;
+        --erp-btn-primary:#1d4ed8;--erp-btn-primary-hover:#2563eb;--erp-btn-success:#047857;--erp-btn-success-hover:#065f46;--erp-btn-danger:#b91c1c;--erp-btn-danger-hover:#dc2626;--erp-btn-warning:#f59e0b;--erp-btn-warning-hover:#d97706;--erp-btn-warning-ink:#172033;--erp-outline-primary:#93c5fd;--erp-outline-success:#6ee7b7;--erp-outline-danger:#fca5a5;--erp-outline-info:#67e8f9;--erp-content-border:#2b3648;
+        --erp-ink:#e8eef9;--erp-muted:#9aa8c0;--erp-border:#2b3648;--erp-border-strong:#3d4b63;
+        --erp-bg:#0f141d;--erp-surface:#171e2b;--erp-surface-soft:#1c2535;
+        --erp-sidebar:#012121;--erp-sidebar-hover:#0a3535;--erp-success:#34d399;--erp-danger:#f87171;
+        --erp-warn:#fbbf24;--erp-warn-bg:#3a2f14;--erp-warn-border:#6b5217;
+        --erp-heat-0:#253145;--erp-heat-1:#14532d;--erp-heat-2:#166534;--erp-heat-3:#15803d;--erp-heat-4:#22c55e;
+        --erp-heat-ink-0:#e8eef9;--erp-heat-ink-1:#fff;--erp-heat-ink-2:#fff;--erp-heat-ink-3:#fff;--erp-heat-ink-4:#052e16;
+        --erp-shadow:0 1px 2px rgba(0,0,0,.35),0 8px 24px rgba(0,0,0,.25);
+        --erp-glass-blur:16px;
+        --erp-glass-bg:rgba(23,30,43,.48);
+        --erp-glass-bg-strong:rgba(23,30,43,.70);
+        --erp-glass-border:rgba(148,163,184,.22);
+        --erp-glass-shadow:0 1px 2px rgba(0,0,0,.40),0 16px 36px rgba(0,0,0,.34);
+        --erp-sidebar-glass:#012121;
+        --erp-sidebar-border:rgba(255,255,255,.12);
+        --erp-content-wash:linear-gradient(165deg,#0a0f18 0%,#101826 46%,#0d1522 100%);
+        --erp-content-mesh:radial-gradient(980px 480px at 10% -10%,rgba(59,130,246,.20),transparent 58%),radial-gradient(760px 400px at 92% 6%,rgba(34,211,238,.08),transparent 52%),radial-gradient(640px 320px at 55% 110%,rgba(129,140,248,.10),transparent 55%);
+      }
+    }
+    html[data-ui-theme="light"]{
+      --erp-sidebar:#f1f3f6;--erp-sidebar-hover:#e7ebf1;--erp-sidebar-ink:#475467;--erp-sidebar-muted:#5b6675;--erp-sidebar-active:#e4ecfb;--erp-sidebar-active-ink:#1e4fae;
+      --erp-sidebar-scroll-thumb:rgba(71,84,103,.28);--erp-sidebar-scroll-thumb-hover:rgba(71,84,103,.44);
+      --erp-sidebar-glass:#f1f3f6;--erp-sidebar-border:rgba(23,32,51,.10);
+    }
+    html[data-ui-theme="dark"]{
+      --erp-sidebar:#0f141d;--erp-sidebar-hover:#1c2535;--erp-sidebar-ink:#cfd6e3;--erp-sidebar-muted:#9aa8c0;--erp-sidebar-active:#1e293b;--erp-sidebar-active-ink:#e8eef9;
+      --erp-sidebar-scroll-thumb:rgba(207,214,227,.28);--erp-sidebar-scroll-thumb-hover:rgba(207,214,227,.44);
+      --erp-sidebar-glass:#0f141d;--erp-sidebar-border:rgba(255,255,255,.12);
+    }
+    @media (prefers-color-scheme: dark){
+      html[data-ui-theme="system"]{
+        --erp-sidebar:#0f141d;--erp-sidebar-hover:#1c2535;--erp-sidebar-ink:#cfd6e3;--erp-sidebar-muted:#9aa8c0;--erp-sidebar-active:#1e293b;--erp-sidebar-active-ink:#e8eef9;
+        --erp-sidebar-scroll-thumb:rgba(207,214,227,.28);--erp-sidebar-scroll-thumb-hover:rgba(207,214,227,.44);
+        --erp-sidebar-glass:#0f141d;--erp-sidebar-border:rgba(255,255,255,.12);
+      }
+    }
+    @media (prefers-color-scheme: light){
+      html[data-ui-theme="system"]{
+        --erp-sidebar:#f1f3f6;--erp-sidebar-hover:#e7ebf1;--erp-sidebar-ink:#475467;--erp-sidebar-muted:#5b6675;--erp-sidebar-active:#e4ecfb;--erp-sidebar-active-ink:#1e4fae;
+        --erp-sidebar-scroll-thumb:rgba(71,84,103,.28);--erp-sidebar-scroll-thumb-hover:rgba(71,84,103,.44);
+        --erp-sidebar-glass:#f1f3f6;--erp-sidebar-border:rgba(23,32,51,.10);
+      }
+    }
+    *{box-sizing:border-box;-webkit-text-stroke-width:var(--erp-font-stroke-width,0px);-webkit-text-stroke-color:currentColor}
+    html,body{height:100%;margin:0}
+    body{
+      background:var(--erp-content-wash),var(--erp-bg);
+      color:var(--erp-ink);
+      font-family:"Microsoft YaHei UI","Segoe UI",system-ui,-apple-system,sans-serif;
+      font-size:15px;line-height:1.5;overflow:hidden
+    }
+    .app-shell{display:flex;height:100vh;width:100%;overflow:hidden;position:relative}
+    .app-shell:before{
+      content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+      background:var(--erp-content-mesh);
+    }
+    .sidebar{
+      position:relative;flex:0 0 calc(224px * var(--erp-scale));width:calc(224px * var(--erp-scale));height:100%;
+      background:var(--erp-sidebar-glass);color:var(--erp-sidebar-ink);display:flex;flex-direction:column;z-index:100;
+      padding:0 12px 18px;overflow-x:hidden;overflow-y:auto;
+      border-right:1px solid var(--erp-sidebar-border);
+      /* Flat sidebar surface: no glass wash or raised shadow. */
+      -webkit-backdrop-filter:none;
+      backdrop-filter:none;
+      box-shadow:none;
+      scrollbar-width:thin;
+      scrollbar-color:var(--erp-sidebar-scroll-thumb) transparent;
+    }
+    .sidebar::-webkit-scrollbar{width:8px}
+    .sidebar::-webkit-scrollbar-track{background:transparent}
+    .sidebar::-webkit-scrollbar-thumb{min-height:34px;background:var(--erp-sidebar-scroll-thumb);border:2px solid transparent;border-radius:999px;background-clip:padding-box}
+    .sidebar:hover::-webkit-scrollbar-thumb{background:var(--erp-sidebar-scroll-thumb-hover);border-width:1px}
+    .brand{min-height:calc(72px * var(--erp-scale));display:flex;align-items:center;gap:11px;padding:10px;border-bottom:1px solid var(--erp-sidebar-border);margin-bottom:12px}
+    .brand-mark{width:34px;height:34px;border-radius:6px;background:var(--erp-primary);color:#fff;display:grid;place-items:center;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18);flex:0 0 auto}
+    .brand-mark svg{width:20px;height:20px;display:block}
+    .brand-title{font-size:calc(15px * var(--erp-scale));font-weight:650;letter-spacing:.02em;line-height:1.25}
+    .nav-group{flex:0 0 auto}
+    .nav-divider{height:1px;flex:none;background:var(--erp-sidebar-border);margin:12px 4px}
+    /* 基础条目：一级普通入口（开单 / 单据管理 / 账款管理 / 数据分析 / 商品 / 客户 / 资料） */
+    .sidebar a{position:relative;color:var(--erp-sidebar-ink);display:flex;align-items:center;gap:10px;min-height:40px;padding:8px 12px;margin:1px 0;text-decoration:none;border-radius:8px;font-weight:500;font-size:calc(14px * var(--erp-scale));letter-spacing:.01em;transition:background .15s,color .15s}
+    .sidebar a .nav-ico{width:18px;height:18px;flex:0 0 auto;opacity:.78;transition:opacity .15s}
+    .sidebar a:hover{background:var(--erp-sidebar-hover);color:var(--erp-sidebar-ink)}
+    .sidebar a.active{background:var(--erp-sidebar-active);color:var(--erp-sidebar-active-ink);font-weight:600}
+    .sidebar a:hover .nav-ico{opacity:1}
+    .sidebar a.active .nav-ico{opacity:1}
+    /* 一级重点入口（工作台 / 回收站 / 系统设置）：字号更大、加粗、行高更高 */
+    .sidebar a.nav-section{font-weight:700;font-size:calc(15px * var(--erp-scale));letter-spacing:.02em;min-height:44px}
+    .sidebar a.nav-section .nav-ico{width:19px;height:19px;opacity:.85}
+    /* 二级入口（销售 / 退货 / 拿货 / 退拿货）：进退格缩进 + 小字号 + 常规字重 + 弱化色 */
+    .sidebar a.sidebar-sub{min-height:32px;margin-left:16px;padding:6px 12px 6px 14px;font-size:calc(12.5px * var(--erp-scale));font-weight:400;letter-spacing:.01em;color:var(--erp-sidebar-muted);background:transparent;gap:8px}
+    .sidebar a.sidebar-sub .nav-ico{width:14px;height:14px;opacity:.62}
+    .sidebar a.sidebar-sub:hover{color:var(--erp-sidebar-ink);background:var(--erp-sidebar-hover)}
+    .sidebar a.sidebar-sub:hover .nav-ico{opacity:.85}
+    .sidebar a.sidebar-sub.active{color:var(--erp-sidebar-active-ink);background:var(--erp-sidebar-active);font-weight:500}
+    .sidebar a.sidebar-sub.active .nav-ico{opacity:1}
+    .app-version{margin-top:auto;padding:12px;color:var(--erp-sidebar-muted);font-size:12px;border-top:1px solid var(--erp-sidebar-border)}
+    /*
+      Topbar stays outside the scrollport:
+      - keeps glassmorphism
+      - page body scrolls in a sibling pane, so content never peeks through the topbar
+    */
+    .content{
+      position:relative;z-index:1;flex:1 1 auto;min-width:0;height:calc(100% - 28px);margin:14px;
+      display:flex;flex-direction:column;overflow:hidden;padding:0;
+      border:1px solid var(--erp-content-border);border-radius:14px;background:var(--erp-surface);box-shadow:var(--erp-glass-shadow);
+    }
+    .page-topbar{
+      display:flex;align-items:center;justify-content:space-between;
+      flex:0 0 auto;margin:0;padding:0 30px;min-height:58px;
+      position:relative;z-index:50;
+      background:var(--erp-glass-bg);
+      border-bottom:1px solid var(--erp-glass-border);
+      -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.3);
+      backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.3);
+      box-shadow:0 8px 24px rgba(16,24,40,.06);
+    }
+    .page-body{
+      flex:1 1 auto;min-height:0;overflow:auto;
+      /* 常驻滚动条槽：列表页行数一跨过视口高度，竖向滚动条出现/消失会让
+         .page-body 的可用宽度瞬间差 15px，右对齐的「档案筛选」chip 与表格
+         跟着横移 —— 用户 2026-10-14 报的就是「点待补全后 UI 位置有差别」。
+         预留槽位后两种筛选态宽度完全一致（1280 视口实测 chip 坐标逐像素相同）。 */
+      scrollbar-gutter:stable;
+      padding:26px 30px 48px;
+    }
+    .page-topbar .company{font-size:calc(13px * var(--erp-scale));color:var(--erp-muted)}
+    /* Batch 0：顶栏钉住可见的实时钟；tabular-nums 防秒跳抖动，由 JS 每秒刷新（不服务端渲染）。 */
+    .page-topbar .topbar-clock{flex:1 1 auto;text-align:center;font-size:calc(13px * var(--erp-scale));color:var(--erp-muted);font-variant-numeric:tabular-nums;letter-spacing:.02em;white-space:nowrap}
+    .page-topbar .status-wrap{display:flex;align-items:center;gap:12px}
+    .page-topbar .status{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--erp-success)}
+    .page-topbar .status:before{content:"";width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.18)}
+    /* E8：状态点由 /health 实际结果驱动；失败时变红并给出提示文案。 */
+    .page-topbar .status.status-down{color:var(--erp-danger)}
+    .page-topbar .status.status-down:before{background:var(--erp-danger);box-shadow:0 0 0 3px color-mix(in srgb,var(--erp-danger) 22%,transparent)}
+    /* 1-C 全局搜索：顶栏常驻悬浮搜索框（不占侧栏、不跳页也能搜）。 */
+    .page-topbar .topbar-search{display:flex;align-items:center;gap:6px;flex:0 1 360px;min-width:150px;margin:0 16px}
+    .page-topbar .topbar-search .form-control{height:32px;font-size:13px;border-radius:6px}
+    .page-topbar .topbar-search .btn{min-height:32px;padding:3px 12px;font-size:13px;white-space:nowrap}
+    .logout-form{margin:0}
+    .logout-form .btn{min-height:30px;font-size:12px;padding:3px 10px}
+    h1,h2,h3,h4{color:var(--erp-ink);font-weight:650;letter-spacing:-.02em}h1{font-size:calc(28px * var(--erp-scale))}h2{font-size:calc(23px * var(--erp-scale));margin-bottom:20px}h3{font-size:calc(18px * var(--erp-scale));margin-top:26px}h4{font-size:16px}
+    .text-muted{color:var(--erp-muted)!important}.lead{color:var(--erp-muted);font-size:16px}
+    /* .btn 必须自身居中：Bootstrap 的 inline-block 在 flex/grid 父容器里会被 blockify 成 block，
+       min-height 富余空间全堆到内容下方，文字整体上浮（实测最大 -3px）。inline-flex + align-items
+       让标签在任何父容器下都垂直/水平居中。 */
+    .btn{display:inline-flex;align-items:center;justify-content:center;min-height:38px;border-radius:6px;font-size:14px;font-weight:600;padding:7px 14px;box-shadow:none!important}.btn-sm{min-height:31px;font-size:13px;padding:4px 10px}.btn-lg{min-height:44px;font-size:15px;padding:9px 18px}
+    /* 禁用的「编辑」按钮：明确读作「不可点」，而不是淡一点的蓝按钮。
+       保留在列表里（不隐藏）是为了让用户看到「这里本来能改」，原因写在 title 里。 */
+    .btn:disabled,.btn.disabled{background:var(--erp-surface-soft);border-color:var(--erp-border-strong);color:var(--erp-muted);opacity:1;cursor:not-allowed}
+    .btn:disabled:hover,.btn.disabled:hover{background:var(--erp-surface-soft);color:var(--erp-muted)}
+    .page-header{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;margin-bottom:20px}
+    .page-header>h1,.page-header>h2,.page-header>div:not(.page-actions){flex:1 1 240px;min-width:0;margin-bottom:0}
+    .page-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px;margin-left:auto;flex:0 1 auto;min-width:0}
+    .page-actions .btn{min-width:96px;min-height:40px;white-space:nowrap;flex-shrink:0}
+    .page-actions .page-return{order:99;margin-left:auto;width:112px}
+    .order-detail-header{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center}
+    .order-detail-header h2{overflow-wrap:anywhere}
+    .order-detail-header .page-actions{flex-wrap:nowrap}
+    .btn-primary{background:var(--erp-btn-primary);border-color:var(--erp-btn-primary)}.btn-primary:hover,.btn-primary:focus{background:var(--erp-btn-primary-hover);border-color:var(--erp-btn-primary-hover)}
+    .btn-secondary{background:#475467;border-color:#475467}.btn-success{background:var(--erp-btn-success);border-color:var(--erp-btn-success)}.btn-danger{background:var(--erp-btn-danger);border-color:var(--erp-btn-danger)}
+    .btn-info{background:#eaf2ff;border-color:#c9dcff;color:#1d4ed8}.btn-info:hover{background:#dbeafe;border-color:#aac7ff;color:#1e40af}.btn-warning{background:var(--erp-btn-warning);border-color:var(--erp-btn-warning);color:var(--erp-btn-warning-ink)}.btn-warning:hover,.btn-warning:focus{background:var(--erp-btn-warning-hover);border-color:var(--erp-btn-warning-hover);color:var(--erp-btn-warning-ink)}
+    html[data-ui-theme="dark"] .btn-info{background:var(--erp-primary-soft);border-color:var(--erp-border-strong);color:var(--erp-outline-primary)}html[data-ui-theme="dark"] .btn-info:hover{background:#243147;color:var(--erp-primary-hover)}
+    @media (prefers-color-scheme: dark){html[data-ui-theme="system"] .btn-info{background:var(--erp-primary-soft);border-color:var(--erp-border-strong);color:var(--erp-outline-primary)}html[data-ui-theme="system"] .btn-info:hover{background:#243147;color:var(--erp-primary-hover)}}
+    .btn-outline-secondary{color:var(--erp-muted);border-color:var(--erp-border-strong);background:var(--erp-glass-bg-strong)}.btn-outline-secondary:hover{background:var(--erp-surface-soft);color:var(--erp-ink);border-color:var(--erp-border-strong)}
+    /* 批次 1：outline 系在深色/跟随系统下曾沿用 Bootstrap 的浅色模式 hex（对比度 3.69–3.71）。
+       改用固定字面量使三套主题都可控（浅色>=4.79 / 深色>=8.40）。 */
+    .btn-outline-primary{color:var(--erp-outline-primary);border-color:var(--erp-outline-primary)}.btn-outline-primary:hover,.btn-outline-primary:focus{background:var(--erp-primary-soft);color:var(--erp-outline-primary);border-color:var(--erp-outline-primary)}
+    .btn-outline-success{color:var(--erp-outline-success);border-color:var(--erp-outline-success)}.btn-outline-success:hover,.btn-outline-success:focus{background:var(--erp-primary-soft);color:var(--erp-outline-success);border-color:var(--erp-outline-success)}
+    .btn-outline-danger{color:var(--erp-outline-danger);border-color:var(--erp-outline-danger)}.btn-outline-danger:hover,.btn-outline-danger:focus{background:var(--erp-surface-soft);color:var(--erp-outline-danger);border-color:var(--erp-outline-danger)}
+    .btn-outline-info{color:var(--erp-outline-info);border-color:var(--erp-outline-info)}.btn-outline-info:hover,.btn-outline-info:focus{background:var(--erp-surface-soft);color:var(--erp-outline-info);border-color:var(--erp-outline-info)}
+    /* 行内中性动作（查看/详情）：描边保留，但文字提回正文色 ——
+       outline-secondary 的 muted 灰在表格里会被读成「禁用」（2026-11-09 单据列表描边化实测）。 */
+    .stable-table .action-wrap .btn-outline-secondary{color:var(--erp-ink)}
+    /* 行内操作失败的就地提示：不跳页、不用 alert，保留页面上下文。 */
+    .row-action-error{
+      display:flex;align-items:flex-start;gap:12px;margin:0 0 12px;padding:11px 14px;
+      border:1px solid color-mix(in srgb,var(--erp-danger) 34%,var(--erp-border));
+      border-radius:6px;background:color-mix(in srgb,var(--erp-danger) 7%,var(--erp-surface));
+      font-size:13px;line-height:1.6;
+    }
+    .row-action-error-text{flex:1 1 auto;min-width:0;color:var(--erp-ink);overflow-wrap:anywhere}
+    .row-action-error-close{
+      flex:0 0 auto;padding:2px 10px;border:1px solid var(--erp-border-strong);border-radius:6px;
+      background:var(--erp-surface);color:var(--erp-muted);font-size:12px;cursor:pointer;
+    }
+    .row-action-error-close:hover{color:var(--erp-ink);background:var(--erp-surface-soft)}
+    /* inputs stay solid for readability on glass panels */
+    .form-control,.form-select{min-height:40px;border:1px solid var(--erp-border-strong);border-radius:6px;background:var(--erp-surface);color:var(--erp-ink);font-size:14px;padding:8px 11px;box-shadow:none!important}
+    .form-control:focus,.form-select:focus{background-color:var(--erp-surface);color:var(--erp-ink);border-color:var(--erp-primary);box-shadow:0 0 0 3px rgba(37,99,235,.12)!important}.form-control-lg,.form-select-lg{min-height:46px;font-size:15px}.form-label{font-size:13px;font-weight:600;color:var(--erp-muted);margin-bottom:6px}
+    form.row{
+      background:var(--erp-glass-bg);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);padding:14px;margin-left:0;margin-right:0;
+      box-shadow:var(--erp-glass-shadow);
+      -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);
+      backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);
+    }
+    .table{--bs-table-bg:transparent;margin-bottom:0;color:var(--erp-ink);border-color:var(--erp-border)}
+    .table-responsive,.table-shell{
+      background:var(--erp-glass-bg);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);overflow:hidden;
+      box-shadow:var(--erp-glass-shadow);
+      -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.2);
+      backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.2);
+    }
+    table.table:not(.order-table){
+      background:var(--erp-glass-bg);border:1px solid var(--erp-glass-border);box-shadow:var(--erp-glass-shadow);
+      -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.2);
+      backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.2);
+    }
+    /*
+      Batch G｜单层容器原则：每块表格区域视觉上只保留「一层」玻璃，消除
+      「表格自身玻璃 + 容器玻璃」的多层叠加（暗色下尤其浑浊）。
+      - 裸表格（无包裹容器：单据列表、客户列表、单据详情）：表格自身即唯一一层，保持上面的规则。
+      - 容器 > 表格（.table-responsive/.table-shell 直接包裹、外层无卡片）：表格本体去玻璃，容器保留唯一一层玻璃。
+      - 玻璃卡片 > 容器 > 表格：表格去玻璃；中间容器降为透明 + 1px 素边框，玻璃只留最外层卡片。
+      去玻璃一律用上下文选择器，不全局移除 table.table，避免误伤裸表格页。
+    */
+    .table-responsive>table.table:not(.order-table),
+    .table-shell>table.table:not(.order-table),
+    .card table.table:not(.order-table),
+    .today-history table.table:not(.order-table),
+    .source-preview table.table:not(.order-table),
+    .order-details-card table.table:not(.order-table),
+    .analytics-panel table.table,
+    .recon-panel table.table,
+    .recycle-card table.table{
+      background:transparent;border:0;box-shadow:none;
+      -webkit-backdrop-filter:none;backdrop-filter:none;
+    }
+    /* 玻璃卡片内的中间容器：透明 + 1px 素边框（不重复玻璃、不重复边框）。 */
+    .today-history .table-responsive,
+    .source-preview .table-responsive,
+    .order-details-card .table-responsive,
+    .analytics-panel .table-responsive,
+    .analytics-panel .table-shell,
+    .recon-panel .table-responsive,
+    .recycle-card .table-responsive{
+      background:transparent;border:1px solid var(--erp-border);box-shadow:none;
+      -webkit-backdrop-filter:none;backdrop-filter:none;
+    }
+    /* 两层容器嵌套（source-preview 的 .table-responsive 已在卡片内）：只保留一层素边框。 */
+    .source-preview .table-responsive .table-responsive,
+    .order-details-card .table-responsive .table-responsive{border:0}
+    /* 玻璃卡片内的玻璃子卡（.source-preview 嵌在 .order-meta 内）：扁平化为
+       透明 + 1px 素边框，玻璃只留最外层 .order-meta，避免 2 层叠加。 */
+    .order-meta .source-preview{
+      background:transparent;border:1px solid var(--erp-border);box-shadow:none;
+      -webkit-backdrop-filter:none;backdrop-filter:none;
+    }
+    .table>:not(caption)>*>*{padding:12px 14px;border-bottom-color:var(--erp-border)}
+    .table th{height:44px;background:var(--erp-glass-bg-strong);color:var(--erp-muted);font-size:calc(12px * var(--erp-scale));font-weight:650;letter-spacing:.03em;vertical-align:middle;white-space:nowrap}
+    .table td{font-size:calc(14px * var(--erp-scale));vertical-align:middle;background:transparent}
+    /* 2026-10-24 用户要求：列表不要用深浅颜色交替显示。
+       原来 `.table-striped` 给奇数行铺 rgba(127,127,127,.04)，一行白一行灰，
+       扫行时眼睛一直在跳。现在斑马纹全局关闭，行与行的边界只靠
+       `.table>:not(caption)>*>*` 的 1px 发丝线；模板里的 `table-striped` 类保留
+       （语义不变），只是不再产生底色。退货单的整行淡红底是**类型标识**、不是斑马纹，
+       仍按 `.table-danger.return-order-row` 保留。 */
+    .table-striped>tbody>tr:nth-of-type(odd)>*{--bs-table-accent-bg:transparent}
+    .table tbody tr:hover>*{background:rgba(37,99,235,.05)}
+    .stable-table{table-layout:fixed;width:100%}.stable-table th,.stable-table td{height:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.stable-table .action-cell{width:380px;min-width:380px}.stable-table .action-wrap{display:flex;gap:6px;align-items:center;justify-content:flex-start;white-space:nowrap}.stable-table .action-wrap .btn{min-width:60px}.stable-table .deleting{opacity:.45;pointer-events:none}
+    /*
+      勾选框单元格（2026-10-16 批次 2 实测确诊）：单元格里只有一个裸 inline-block 复选框
+      （16px）时，Chrome 把它算成 55–56px 的溢出内容，而 `.stable-table` 带
+      `overflow:hidden` + `text-overflow:ellipsis` → **浏览器会在一个空白格子里凭空画出一个省略号**。
+      实测：单据管理 1 表头 + 21 数据行共 22 处，每行第一个格都多出三个白点。
+      修法用 `display:block;margin:0 auto` 而非 `text-overflow:clip`：溢出归零的同时
+      几何零位移（实测 dx/dy 与改前完全一致），且不依赖 `:has()`（老 WebView2 不一定支持）。
+      （商品管理页原先各自打了半套补丁：写死宽度 + 压 ::before/::after，现统一到这里。）
+    */
+    .stable-table .selection-cell,.stable-table th:has(>input[type="checkbox"]),.stable-table td:has(>input[type="checkbox"]){text-overflow:clip}
+    .stable-table .selection-cell>input[type="checkbox"],.stable-table th>input[type="checkbox"],.stable-table td>input[type="checkbox"]{display:block;margin:0 auto}
+    .card{
+      border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);box-shadow:var(--erp-glass-shadow);
+      background:var(--erp-glass-bg);
+      -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);
+      backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);
+    }
+    .card-body{padding:18px}
+    /*
+      共享筛选卡：单据管理与数据分析使用同一套排版（三段式）。
+      ① 查询三要素：时间（模式 + 日期输入合成一个组合控件）· 客户 · 商品，常驻最高频。
+      ② 条件多选：订单类型 / 单据状态，降权；不勾选 = 全部，因此不再提供「全选」按钮。
+      ③ 已选条件 chip 行（可单独移除）+ 动作条（主操作在左、导出/重置贴右）。
+    */
+    .filter-card{padding:18px;margin:0 0 18px;border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);background:var(--erp-glass-bg);box-shadow:var(--erp-glass-shadow);-webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25)}
+    .filter-card>*{min-width:0}
+    .filter-card .form-control,.filter-card .form-select{min-width:0}
+    /* 嵌套日期行不要用 Bootstrap 负外边距，避免筛选卡内溢出 */
+    .filter-card .row{margin-left:0;margin-right:0}
+    /* ① 查询三要素 */
+    .filter-tier-query{display:flex;flex-wrap:wrap;gap:16px 20px;align-items:flex-start}
+    .filter-tier-query>*{min-width:0}
+    .filter-field-composite{flex:1.2 1 320px;min-width:0}
+    .filter-field-plain{flex:1 1 220px}
+    .filter-field-composite .dates{margin-top:10px}
+    /* 批次 2：字段内「标签 + 控件」同行 —— 原先标签独占一行，一条查询要素占三行、
+       六个查询要素把卡片顶到 133px。改为同行后同一条要素只占一行。 */
+    .filter-inline{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;min-width:0}
+    .filter-inline>.form-label{margin:0;white-space:nowrap}
+    /* 比 `.filter-field-composite .dates` 高一档特异度，压掉它的 margin-top。 */
+    .filter-field-composite .filter-inline>.dates{margin:0;flex:1 1 260px;min-width:0}
+    .filter-inline>.suggest-wrap,.filter-inline>.form-select,.filter-inline>.form-control{flex:1 1 180px;min-width:0}
+    .filter-mode-options{display:flex;flex-wrap:wrap;gap:8px}
+    .filter-mode-options .btn{white-space:nowrap;min-height:34px;padding:4px 12px;font-size:13px}
+    .filter-field-date .date-range{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    .filter-field-date[data-mode="year"] .form-control{max-width:220px}
+    .filter-field-date[hidden]{display:none}
+    /* ② 条件多选：订单类型 / 单据状态 —— 两页共用「左右两栏」骨架，
+       每类条件占一栏，栏间加竖分隔线（原先各占满宽一行、各只有 4 个按钮，白占 99px）。 */
+    .filter-tier-conditions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 24px;margin-top:16px;padding-top:16px;border-top:1px dashed var(--erp-border)}
+    .filter-field-type+.filter-field-type{border-left:1px solid var(--erp-border);padding-left:24px}
+    .filter-type-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+    .filter-type-row .form-label{margin:0}
+    .filter-type-options,.filter-type-bulk{display:flex;flex-wrap:wrap;gap:8px}
+    .filter-type-options .btn,.filter-type-bulk .btn{white-space:nowrap;min-height:34px;padding:4px 12px;font-size:13px}
+    /* 「清空」要和前面的类型 chip 读成同一尺寸的圆角矩形：盒子本来就等高（实测都是 34px），
+       看着更小是次要按钮的浅灰字 + 浅灰边造成的。这里把文字提回正文色、给一个与 chip
+       相当的宽度、边框加深一档，视觉重量对齐（用户 2026-11-09 指出「大小不一致」）。 */
+    .filter-type-bulk .btn{min-width:64px;color:var(--erp-ink);border-color:color-mix(in srgb,var(--erp-ink) 24%,var(--erp-border))}
+    .filter-type-hint{margin-top:2px;color:var(--erp-muted);font-size:12px}
+    /* ③ 已选条件 chip */
+    .filter-chips{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:16px;padding-top:14px;border-top:1px solid var(--erp-border)}
+    .filter-chips .filter-chips-cap{color:var(--erp-muted);font-size:12.5px}
+    .filter-chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;border:1px solid color-mix(in srgb,var(--erp-primary) 30%,var(--erp-border));background:var(--erp-primary-soft);color:var(--erp-primary);font-size:12.5px;text-decoration:none}
+    .filter-chip:hover{background:color-mix(in srgb,var(--erp-primary) 16%,var(--erp-surface));text-decoration:none;color:var(--erp-primary)}
+    .filter-chip .filter-chip-x{font-weight:700;opacity:.75}
+    /* 动作条：全部常显、不折叠（用户 2026-10-16：分类分区，不折叠）。
+       2026-11-10 用户要求取消组间竖线并取消右推：查询 · 重置 · 删除选中 · 导出汇总表 依次靠左排开。 */
+    .filter-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:16px;padding-top:16px;border-top:1px solid var(--erp-border)}
+    .filter-actions-primary,.filter-actions-extra,.filter-actions-records{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+    /* 2026-11-10 用户要求：动作条不再分组分隔 ——「删除选中」紧跟「重置」靠左，
+       「导出汇总表」紧挨着「删除选中」，中间不要竖线，也不要被推到右端。 */
+    .filter-actions-records{padding-left:0}
+    .filter-actions-extra{padding-left:0}
+    .filter-hint{color:var(--erp-muted);font-size:12px;margin-top:10px}
+    /*
+      ④ 高级筛选（2026-11-09 用户要求，单据管理与数据分析共用）：
+         a) 触发件是**按钮**（边框 + 底色 + 折角箭头），常驻查询行末尾、右对齐 —— 用户指定位置；
+         b) 面板是**查询行之外的块**，独占整宽。绝不能把面板塞进 `.filter-tier-query` 那个 flex
+            行里：上一版把 <details> 当 flex 子项，展开后被挤到行尾、客户/商品输入并进时间行、
+            整行高度与对齐全乱（用户截图实测「点开就变形」）。所以触发件与面板必须拆开：
+            按钮留在行内，面板落在行外，由 JS 开关（无 JS 时面板常显，功能不丢）。
+         c) 折叠时按钮上带角标显示已生效条件条数，避免筛选藏在折叠里看不见。
+         d) 面板内上下内边距对称 —— 用户 2026-11-09 指出内容偏上、没在面板里垂直居中。
+    */
+    .filter-advanced-toggle{
+      display:inline-flex;align-items:center;gap:8px;min-height:40px;margin-left:auto;padding:6px 12px;
+      border:1px solid var(--erp-border-strong);border-radius:6px;background:var(--erp-glass-bg-strong);
+      color:var(--erp-ink);font-size:13px;font-weight:600;line-height:1.4;white-space:nowrap;
+      cursor:pointer;user-select:none;transition:border-color .15s,background .15s,color .15s;
+    }
+    .filter-advanced-toggle:hover{border-color:var(--erp-primary);background:var(--erp-primary-soft);color:var(--erp-primary)}
+    .filter-advanced-toggle:focus-visible{outline:2px solid var(--erp-primary);outline-offset:2px}
+    .filter-advanced-toggle::after{
+      content:"";width:6px;height:6px;margin-left:2px;border-right:1.6px solid currentColor;border-bottom:1.6px solid currentColor;
+      transform:rotate(45deg) translate(-1px,-1px);transition:transform .15s;
+    }
+    .filter-advanced-toggle[aria-expanded="true"]::after{transform:rotate(225deg) translate(-1px,-1px)}
+    .filter-advanced-badge{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--erp-primary);color:#fff;font-size:11px;font-weight:700;line-height:1}
+    /* 上下内边距对称：内容（40px 输入框）在面板里垂直居中，不再被下边距挤得偏上。
+       底色是「淡蓝」而不是纯灰白：5% 主色混进 surface，两页（单据管理 / 数据分析）共用同一块。 */
+    .filter-advanced-panel{margin-top:12px;padding:12px 14px;border:1px solid var(--erp-border);border-radius:8px;background:color-mix(in srgb,var(--erp-primary) 5%,var(--erp-surface))}
+    .filter-advanced-panel[hidden]{display:none!important}
+    /* 面板内条件栏不再自带虚线分隔与上边距（面板本身已是一块）。
+       面板里改单列：两列时每列约 490px，「标签 + 四个类型 chip + 清空」放不下，
+       「清空」被挤到第二行、左右两组高度还不一致（实测截图很毛糙）。单列后每组正好一行。 */
+    .filter-advanced-panel .filter-tier-conditions{grid-template-columns:minmax(0,1fr);margin-top:0;padding-top:0;border-top:0}
+    /* 面板内多段条件之间用虚线分隔（单据管理：类型 / 状态；数据分析：客户+商品 / 订单类型）。 */
+    .filter-advanced-panel .filter-row-counterparty+.filter-tier-conditions,
+    .filter-advanced-panel .filter-field-type+.filter-field-type{margin-top:10px;padding-top:10px;border-left:0;padding-left:0;border-top:1px dashed var(--erp-border)}
+    /* 条件多选行仍沿用 .filter-field-type 类名（两页模板按此行分组） */
+    .filter-field-type{min-width:0}
+    @media(max-width:1180px){
+      /*
+        窄档（实测 1100px）：条件栏两列时每列仅约 450px，四个类型按钮占满一列、
+        「清空」被挤到第二行 → 筛选卡反弹到 390px（比改前的 357 还高）。
+        改回「每组独占一行」后每组按钮同排放得下，卡片回落。
+        阈值取 1180px：1440 档两列（216px）、1280 档两列（300px）都正常，
+        只有 ≤1100 需要落回单列，故留 1180 作为缓冲。
+      */
+      .filter-tier-conditions{grid-template-columns:minmax(0,1fr)}
+      .filter-field-type+.filter-field-type{border-left:0;padding-left:0}
+      .filter-field-composite,.filter-field-plain{flex:1 1 100%}
+    }
+    /*
+      基础资料列表页（商品管理 / 客户管理）顶部工具区：两页共用同一套类，只写一次。
+      两页结构必须一致（2026-10-14 第二轮，用户要求「两页同步修改」）：
+        ① .list-import-card：下载模板 / 导出 / 批量导入 / 新增（新增紧跟「批量导入」右侧，同为展开面板）
+        ② .list-tools > .list-search：查找（输入框 flex 撑开 + 两个固定宽按钮，同一行）
+        ③ .list-batch-bar：批量动作条，删除选中在左、档案筛选（全部 / 待补全 / 按拼音排序）靠右
+        ④ .list-legend：筛选口径图例，常驻一行且文案不随筛选变 —— 点「待补全」时
+           chip 与表格位置必须零位移（此前说明文字挂在 chip 行内，会把整组往左顶走）
+      全部使用 flex + min-width:0，窄窗口按行换行，不靠等分 col 把控件压到裁字。
+    */
+    .list-tools,.list-import-card{
+      padding:16px;margin:0 0 18px;border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);
+      background:var(--erp-glass-bg);box-shadow:var(--erp-glass-shadow);
+      -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);
+      backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);
+    }
+    .list-tools>*{min-width:0}
+    .list-tools>*+*{margin-top:14px}
+    .list-search{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0}
+    .list-search .form-control{flex:1 1 260px;min-width:0}
+    .list-search .btn{flex:0 0 auto;min-width:104px}
+    /* Phase 3 S6：列表页搜索框也改自有 popover 联想（原生 datalist 在 WebView2 不渲染）。
+       .suggest-wrap 撑满查找行的剩余宽度，浮层样式与开单页同源。 */
+    .list-search .suggest-wrap{position:relative;flex:1 1 260px;min-width:0}
+    .list-search .suggest-wrap .form-control{width:100%}
+    .suggest-list{position:absolute;z-index:20;left:0;right:0;top:100%;background:var(--erp-surface);border:1px solid var(--erp-border-strong);max-height:220px;overflow-y:auto;border-radius:0 0 7px 7px;box-shadow:0 12px 28px rgba(16,24,40,.14)}
+    .suggest-item{display:block;width:100%;padding:9px 11px;cursor:pointer;border:0;border-bottom:1px solid var(--erp-border);background:transparent;color:var(--erp-ink);text-align:left;font:inherit}
+    .suggest-item:hover,.suggest-item[aria-selected="true"]{background:var(--erp-primary-soft)}
+    .suggest-item:focus-visible{outline:2px solid var(--erp-primary);outline-offset:-2px}
+    .suggest-list[popover]{position:fixed;inset:auto;margin:0;padding:0;box-sizing:border-box;color:var(--erp-ink);height:auto;min-width:min(240px,calc(100vw - 24px));max-width:calc(100vw - 24px)}
+    .list-legend{margin:0 0 12px;color:var(--erp-muted);font-size:12.5px;line-height:1.6}
+    /*
+      批量动作条（表格上方）：删除选中在左，视图选项（档案筛选 / 排序）靠右。
+      视图选项与 .list-legend 同源样式，但位置不同 —— 三个按钮放在「删除选中」右侧那块原本空着的区域。
+    */
+    .list-batch-bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 12px}
+    .list-batch-bar .btn{min-height:34px}
+    .list-view-options{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto}
+    .list-view-options .list-view-cap{color:var(--erp-muted);font-size:12.5px;font-weight:600}
+    .list-view-sep{width:1px;height:20px;background:var(--erp-border)}
+    /* 排序方向箭头（2026-10-24）：与手机端 `OrderChip` 同一形态 —— 方角小按钮、只放 ↑/↓。
+       用箭头而不是「正序/倒序」四个字：它跟在两颗排序 chip 后面，中文太占宽。
+       箭头方向就是当前结果的实际顺序：↑ = 从小到大 / A→Z，↓ = 反过来。
+       没选排序依据时置灰（`.disabled`）并靠 title 说明原因，不隐藏 ——
+       隐藏会让用户以为「这页不能改方向」。 */
+    .list-sort-dir{min-width:38px;padding-left:0;padding-right:0;font-size:15px;font-weight:700;line-height:1}
+    /* 客户列表「欠款」列（2026-10-24，取代原来的「期初」）。
+       正数 = 客户欠我 → 绿色（应收是好事）；负数 = 我欠客户/多付 → 红色。
+       与手机端 CustomersScreen 的配色规则一致，别反着用。 */
+    .customer-balance{font-variant-numeric:tabular-nums;font-weight:650}
+    .customer-balance.is-owed{color:var(--erp-success)}
+    .customer-balance.is-overpaid{color:var(--erp-danger)}
+    @media(max-width:760px){ .list-view-options{margin-left:0} }
+    .list-create{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:14px 0 0;padding-top:14px;border-top:1px solid var(--erp-border)}
+    /* 字段用等宽网格均分；给字段一个舒适下限，宁可整齐换行也不把 6 个框压到 116px 挤成一排 */
+    .list-create-fields{flex:1 1 420px;min-width:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 12px}
+    .list-create .form-control{min-width:0}
+    .list-create .btn{flex:0 0 auto;min-width:104px}
+    /*
+      可收起面板（新增 / 批量导入）共用：单条新增与批量导入都是低频动作，
+      常驻展开会白占高度。用原生 <details>/<summary>，不引 JS 也能键盘操作。
+    */
+    .list-create-panel,.list-import-panel{display:block}
+    /* 关键：收起时必须显式隐藏面板内容。面板里的 form 自带 display:flex（作者样式），
+       会盖掉浏览器 UA 对「闭合 details 内非 summary 子元素」的默认隐藏，导致收起后仍可见。 */
+    .list-create-panel:not([open])>*:not(summary),
+    .list-import-panel:not([open])>*:not(summary){display:none}
+    .list-create-toggle,.list-import-toggle{
+      display:inline-flex;align-items:center;gap:8px;list-style:none;user-select:none;cursor:pointer;
+      min-height:34px;padding:4px 14px;border:1px solid var(--erp-border-strong);border-radius:6px;
+      background:var(--erp-glass-bg-strong);color:var(--erp-ink);font-size:14px;font-weight:600;
+    }
+    .list-create-toggle::-webkit-details-marker,.list-import-toggle::-webkit-details-marker{display:none}
+    .list-create-toggle::before,.list-import-toggle::before{
+      content:"";width:0;height:0;border-left:5px solid currentColor;
+      border-top:4px solid transparent;border-bottom:4px solid transparent;transition:transform .15s ease;
+    }
+    .list-create-panel[open]>.list-create-toggle::before,
+    .list-import-panel[open]>.list-import-toggle::before{transform:rotate(90deg)}
+    .list-create-toggle:hover,.list-import-toggle:hover{background:var(--erp-surface-soft)}
+    .list-create-panel[open]>.list-create-toggle{margin-bottom:14px}
+    /* 面板内表单不再重复分隔线：切换标题已经把两块分开。 */
+    .list-create-panel .list-create{margin:0;padding-top:0;border-top:0}
+    /* 新增面板也在 .list-import-row 里（「批量导入」右侧），展开时同样占满整行。 */
+    .list-create-panel[open]{flex:1 1 100%}
+    /* 批量导入展开时占满整行，文件框/下拉/按钮和说明才排得开 */
+    .list-import-panel[open]{flex:1 1 100%}
+    .list-import-panel .list-import-form{margin-top:0}
+    .list-import-panel .list-import-hint{margin-top:10px}
+    .list-import-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px}
+    .list-import-links{display:flex;flex-wrap:wrap;gap:8px}
+    .list-import-form{display:flex;flex-wrap:wrap;align-items:center;gap:8px;flex:1 1 420px;min-width:0;margin:0}
+    .list-import-form input[type="file"]{flex:1 1 200px;min-width:0}
+    .list-import-form .form-select{flex:0 0 150px}
+    .list-import-form .btn{flex:0 0 auto}
+    .list-import-hint{margin:10px 0 0;color:var(--erp-muted);font-size:12.5px;line-height:1.6}
+    /*
+      档案编辑页（商品 / 客户）共用骨架 —— 2026-10-14「主次与分组」重构。
+      三条规则：
+        ① 主栏 + 320px 侧栏：页面高度取两栏较高者，只读信息不再把主流程往下顶。
+        ② 字段流仍是一列 —— 多列表单会让人 Z 字扫视、漏填字段；组内只让「短且语义成对」
+           的字段同行，长文本字段（名称/地址）独占整行。
+        ③ 低频重块用原生 <details> 收起，摘要行写清状态与去处。
+      窄容器回落 2 列用**容器查询按主栏实际宽度**判定，不按视口 —— 视口宽但主栏窄时
+      4 列会把输入框压到 130px。圆角/玻璃/间距沿用现有 token，不引新颜色。
+    */
+    .detail-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;align-items:start}
+    .detail-col{display:grid;gap:18px;min-width:0;container-type:inline-size}
+    .detail-stack{display:grid;gap:18px;min-width:0}
+    @media(max-width:1100px){.detail-grid{grid-template-columns:minmax(0,1fr)}}
+    .card-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:14px}
+    .card-cap{font-size:12px;color:var(--erp-muted)}
+    .field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 16px}
+    .field-grid .field-full{grid-column:1 / -1}
+    @container (min-width:880px){ .field-grid{grid-template-columns:repeat(4,minmax(0,1fr))} }
+    .field-hint{margin-top:6px;font-size:12px;color:var(--erp-muted);line-height:1.55}
+    .card-foot{display:flex;align-items:center;gap:12px;margin-top:18px;padding-top:16px;border-top:1px solid var(--erp-border)}
+    .card-foot .btn-primary{margin-left:auto;min-width:112px}
+    .img-row{display:flex;flex-wrap:wrap;align-items:center;gap:14px}
+    .img-row .form-control{flex:1 1 220px;min-width:0}
+    /* 商品图片搬进 320px 侧栏后改为竖排：缩略图占满栏宽，文件框与按钮各占一行。 */
+    .img-stack{display:grid;gap:10px}
+    .img-stack .img-thumb{width:100%;height:160px}
+    .img-stack .btn{width:100%}
+    .img-thumb{border:1px dashed var(--erp-border-strong);border-radius:6px;display:grid;place-items:center;background:var(--erp-surface-soft);color:var(--erp-muted);font-size:12px;flex:0 0 auto;overflow:hidden}
+    .img-thumb img{max-width:100%;max-height:100%;object-fit:contain}
+    /*
+      「待补全」的两种提示，替代原来的 57px 整条横幅：
+      · .completion-chip —— 页头一枚 chip，说明缺什么、补完会自动退出筛选；
+      · .field-flag     —— 落到**具体字段**上的 ⚠，用户不用回读横幅就知道改哪一格。
+      判定口径不变（services/master_data_quality.py）。⚠ 带文字，不靠颜色作单一信号。
+    */
+    .completion-chip{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;padding:3px 10px;border-radius:999px;
+      border:1px solid var(--erp-warn-border);background:var(--erp-warn-bg);color:var(--erp-warn);
+      font-size:calc(12.5px * var(--erp-scale));font-weight:600;white-space:nowrap}
+    .field-flag{display:inline-flex;align-items:center;margin-left:6px;padding:1px 7px;border-radius:999px;
+      border:1px solid var(--erp-warn-border);background:var(--erp-warn-bg);color:var(--erp-warn);
+      font-size:11.5px;font-weight:700;white-space:nowrap}
+    .field-warn>.form-control{border-color:var(--erp-warn-border)}
+    /* 只读派生数据：宽栏（主栏 ~947px）按 auto-fit 铺成一行，5 项正好 5 列；
+       窄栏自动回落 3 / 2 列。标签小字在上、值在下，值用等宽数字防跳动。 */
+    .readonly-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px 16px;margin:0}
+    .readonly-grid dt{font-size:12.5px;font-weight:400;color:var(--erp-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .readonly-grid dd{margin:4px 0 0;font-size:calc(15px * var(--erp-scale));font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    /* 低频重块的折叠：原生 details/summary，不引 JS，键盘可用。 */
+    details.fold{border-top:1px solid var(--erp-border);margin-top:14px;padding-top:12px}
+    details.fold>summary{list-style:none;display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;min-height:34px;font-size:calc(14px * var(--erp-scale));font-weight:600}
+    details.fold>summary::-webkit-details-marker{display:none}
+    details.fold>summary::before{content:"";width:0;height:0;border-left:5px solid currentColor;border-top:4px solid transparent;border-bottom:4px solid transparent;transition:transform .15s ease}
+    details.fold[open]>summary::before{transform:rotate(90deg)}
+    details.fold>summary .fold-state{margin-left:auto;font-size:12.5px;font-weight:400;color:var(--erp-muted)}
+    details.fold .fold-body{margin-top:12px}
+    /* shared order-entry surfaces: sales / return / purchase / purchase-return */
+    .order-heading{display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;align-items:flex-end;margin-bottom:20px}
+    .order-heading h2{margin:0 0 4px}.order-heading p{margin:0;color:var(--erp-muted);font-size:13px}
+    .order-meta,.order-details-card{
+      background:var(--erp-glass-bg);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);padding:16px;
+      box-shadow:var(--erp-glass-shadow);
+      -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);
+      backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);
+    }
+    .order-details-card{margin:18px 0}
+    .section-title{font-size:14px;font-weight:650;color:var(--erp-ink);margin:0 0 12px}
+    .order-workspace{display:block;min-width:0}
+    /* 侧栏宽度全局统一为 224px（默认值）：此前 4 个开单页被单独收窄到 200px，
+       导致点开单入口与点其他入口时侧栏宽度不一致。已移除该覆盖。 */
+    /* shared product picker（商品名称即身份，v14 起没有型号列）。
+       注意：flex 必须放在内层 div 上。若直接放在 <td> 上，td 会从 table-cell
+       变成 flex 容器，高度塌成内容高（实测 38px vs 行高 51px）并贴顶对齐，
+       vertical-align:middle 随之失效。 */
+    .product-picker{padding:4px}
+    .product-picker .picker-row{display:flex;flex-direction:row;align-items:center;gap:6px;min-width:380px}
+    .product-picker .picker-name{flex:1 1 auto;min-width:0}
+    /* P3（2026-10-13）：拿货/退拿货的商品列也改成手输 + 联想，与销售/退货同一形态。 */
+    .product-picker .picker-name-input{flex:1 1 auto;min-width:0}
+    .product-picker .picker-row .suggest-wrap{flex:1 1 auto;min-width:0}
+    .product-picker .picker-missing{font-size:12px;color:#c0392b;padding:2px 0 0}
+
+    /* 行复制 / 粘贴（2026-10-17）：常显 icon 按钮，贴在产品名称输入框右缘，
+       不新增表格列、不加宽操作列。宽屏只显示图标，窄屏收到 300px 内不挤坏输入框。 */
+    .product-picker .row-copy-tools{display:flex;gap:2px;flex:0 0 auto;align-items:center}
+    /* 2026-10-18 用户决策：按钮组从输入框右缘移到单元格最左侧，
+       与人直接开始打字的输入框之间加一道竖线分隔，避免「名字框左边是什么」的错觉。 */
+    .product-picker .row-copy-sep{flex:0 0 auto;align-self:center;width:2px;height:18px;border-radius:1px;background:currentColor;opacity:.32;color:var(--erp-muted);margin:0 3px}
+    .product-picker .row-tool-btn{
+      display:inline-flex;align-items:center;justify-content:center;
+      width:30px;height:30px;padding:0;
+      border:1px solid var(--erp-border-strong,#cbd5e1);border-radius:6px;
+      background:transparent;color:var(--erp-muted);
+      cursor:pointer;transition:background .12s,color .12s,border-color .12s;
+    }
+    .product-picker .row-tool-btn:hover{background:var(--erp-primary-soft);color:var(--erp-primary);border-color:var(--erp-primary)}
+    .product-picker .row-tool-btn:focus-visible{outline:2px solid var(--erp-primary);outline-offset:1px}
+    .product-picker .row-tool-btn.is-copied{background:var(--erp-primary);border-color:var(--erp-primary);color:#fff}
+    .product-picker .row-copy-toast{
+      font-size:12px;color:var(--erp-primary);padding:2px 0 0;display:block;
+    }
+
+    .product-picker select{min-height:34px;font-size:13px}
+    /* 原单关联：置顶一行 + 同层级的原单预览（不浮在明细卡之上） */
+    .order-source-row{display:flex;flex-direction:column;gap:6px;padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--erp-border)}
+    .order-source-row .form-label{margin-bottom:0}
+    /* F3（2026-10-14）：关联输入框与「清除关联」按钮同一行；输入框吃掉剩余宽度。 */
+    .source-picker-row{display:flex;gap:8px;align-items:center}
+    .source-picker-row .suggest-wrap{flex:1 1 auto;min-width:0}
+    .source-picker-row .btn{flex:0 0 auto;white-space:nowrap}
+    .source-preview{background:var(--erp-glass-bg);border:1px solid var(--erp-glass-border);border-radius:var(--erp-radius);padding:16px;margin:0 0 18px;box-shadow:var(--erp-glass-shadow);
+      -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25)}
+    .source-preview.d-none{display:none}
+    .source-preview-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:10px}
+    .source-preview-head .section-title{margin-bottom:0}
+    .source-preview-meta{color:var(--erp-muted);font-size:12px}
+    .source-preview-table{margin:12px 0 0;min-width:640px}
+    .source-preview-table th,.source-preview-table td{white-space:nowrap}
+    .source-preview-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:12px}
+    .source-preview-actions .form-text{margin:0}
+    @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
+      .order-meta,.order-details-card{background:var(--erp-surface)}
+    }
+    /* shared panel surfaces used by dashboard / settings */
+    .workspace-panel,.settings-card,.quick-card:not(.primary){
+      background:var(--erp-glass-bg)!important;border-color:var(--erp-glass-border)!important;box-shadow:var(--erp-glass-shadow)!important;
+      -webkit-backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);
+      backdrop-filter:blur(var(--erp-glass-blur)) saturate(1.25);
+    }
+    .alert{border-radius:6px;border-width:1px}
+    /*
+      单据列表的「类型标签 / 金额」配色（2026-10-24 用户要求「以手机端为准」）。
+
+      安卓端以 `TypeBadge` / `orderTypeColor` 为准：销售蓝、退货红、拿货橙、
+      退拿货灰；类型标签用淡底，金额与标签文字同色。
+
+      现在两处色只在这里定义一份，模板只输出 `--sale/--return/--purchase/--purchase_return`：
+      颜色一律走主题 token（`color-mix` 出淡底），深色/跟随系统自动跟着变，不再各写一套 hex。
+      行的底色统一为白（不再有斑马纹与退货整行淡红），方向靠标签与金额的颜色区分。
+    */
+    .order-type-tag{display:inline-flex;align-items:center;min-height:22px;padding:2px 8px;border:1px solid transparent;border-radius:6px;font-size:calc(12px * var(--erp-scale));font-weight:650;white-space:nowrap}
+    .order-type-tag--sale{color:var(--erp-primary);background:var(--erp-primary-soft)}
+    .order-type-tag--return{color:var(--erp-danger);background:color-mix(in srgb,var(--erp-danger) 12%,transparent)}
+    .order-type-tag--purchase{color:var(--erp-warn);background:var(--erp-warn-bg);border-color:var(--erp-warn-border)}
+    .order-type-tag--purchase_return{color:var(--erp-muted);background:var(--erp-surface-soft)}
+    .order-amount{font-weight:680;font-variant-numeric:tabular-nums;white-space:nowrap}
+    .order-amount--sale{color:var(--erp-primary)}
+    .order-amount--return{color:var(--erp-danger)}
+    .order-amount--purchase{color:var(--erp-warn)}
+    .order-amount--purchase_return{color:var(--erp-muted)}
+    /*
+      2026-10-24 用户要求：「列表不要用深浅颜色交替显示」。
+      此前退货单整行铺淡红底（`.table-danger.return-order-row`）+ 斑马纹，
+      一张表里三种底色交替出现，扫行时像一层层深浅条纹。
+      现在**行底一律是卡片的白色**，方向只由「类型标签 + 金额颜色」表达
+      （与手机端单据列表同一形态）。`return-order-row` 类保留为语义钩子
+      （排查/前端脚本按它取行），但不再画任何底色。
+    */
+    /* native controls (date/select/scrollbar) follow the dark theme */
+    html[data-ui-theme="dark"]{color-scheme:dark}
+    @media (prefers-color-scheme: dark){html[data-ui-theme="system"]{color-scheme:dark}}
+    /* bootstrap .table-light header must not stay light in dark theme */
+    html[data-ui-theme="dark"] .table-light>:not(caption)>*>*{background:var(--erp-glass-bg-strong);color:var(--erp-muted)}
+    @media (prefers-color-scheme: dark){html[data-ui-theme="system"] .table-light>:not(caption)>*>*{background:var(--erp-glass-bg-strong);color:var(--erp-muted)}}
+    input[type=checkbox]{width:16px;height:16px;accent-color:var(--erp-primary)}
+    code{color:var(--erp-ink)}
+    @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
+      .sidebar{background:var(--erp-sidebar)}
+      .page-topbar,.card,.table-responsive,.table-shell,form.row,table.table:not(.order-table),
+      .workspace-panel,.settings-card,.quick-card:not(.primary){
+        background:var(--erp-surface)!important;
+      }
+      /* Batch G 同步：无 blur 环境下，容器内表格仍保持透明，避免与容器重复实色填充。 */
+      .table-responsive>table.table:not(.order-table),
+      .table-shell>table.table:not(.order-table),
+      .card table.table:not(.order-table),
+      .today-history table.table:not(.order-table),
+      .source-preview table.table:not(.order-table),
+      .order-details-card table.table:not(.order-table),
+      .analytics-panel table.table,
+      .recon-panel table.table,
+      .recycle-card table.table{
+        background:transparent!important;
+      }
+    }
+    @media(max-width:900px){
+      .sidebar{flex-basis:calc(190px * var(--erp-scale));width:calc(190px * var(--erp-scale))}
+      .page-topbar{padding:0 20px}
+      .page-body{padding:20px 20px 32px}
+      .stable-table .action-cell{width:300px;min-width:300px}
+      /* 窄屏仍保持商品选择器可用；靠 .order-table-scroll 横向滚动，不把下拉压到不可用 */
+      .product-picker .picker-row{min-width:300px}
+    }
+    /* ===== 通用上传弹窗（2026-11-08）：全站文件上传统一走「居中弹窗 + 灰色蒙版」 ===== */
+    .erp-modal{position:fixed;inset:0;z-index:3000;display:none;align-items:center;justify-content:center;padding:20px}
+    .erp-modal.is-open{display:flex}
+    .erp-modal[hidden]{display:none!important}
+    .erp-modal-backdrop{position:absolute;inset:0;background:rgba(15,20,30,.5);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+    .erp-modal-dialog{position:relative;width:min(460px,100%);max-height:calc(100vh - 40px);overflow:auto;background:var(--erp-surface);color:var(--erp-ink);border:1px solid var(--erp-border);border-radius:12px;box-shadow:0 24px 60px rgba(15,23,42,.35)}
+    .erp-modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 18px;border-bottom:1px solid var(--erp-border)}
+    .erp-modal-head h3{margin:0;font-size:17px}
+    .erp-modal-close{display:grid;place-items:center;width:32px;height:32px;border:0;border-radius:8px;background:transparent;color:var(--erp-muted);font-size:22px;line-height:1;cursor:pointer}
+    .erp-modal-close:hover{background:var(--erp-surface-soft);color:var(--erp-ink)}
+    .erp-modal-body{padding:16px 18px;display:flex;flex-direction:column;gap:14px}
+    .erp-modal-sub{margin:0;color:var(--erp-muted);font-size:12.5px;line-height:1.6}
+    .erp-modal-hint{margin:0;color:var(--erp-muted);font-size:12px;line-height:1.6;background:var(--erp-surface-soft);border:1px solid var(--erp-border);border-radius:8px;padding:9px 11px}
+    .erp-modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:13px 18px;border-top:1px solid var(--erp-border)}
+    body.erp-modal-open{overflow:hidden}
+    .erp-modal-body .list-import-form{flex-direction:column;align-items:stretch;margin:0;gap:12px;flex-basis:auto}
+    .erp-modal-body .list-import-form input[type="file"],.erp-modal-body .list-import-form .form-select{flex:0 0 auto;width:100%}
+  
+
+  .account-subtitle,.ledger-hint,.entry-note { color:var(--erp-muted);font-size:12px; }
+  .account-filter { display:grid;grid-template-columns:minmax(210px,1.3fr) minmax(135px,.8fr) minmax(135px,.8fr) auto auto;align-items:end;gap:10px;margin-bottom:14px; }
+  /* 客户字段（2026-10-17）：输入框 + 候选浮层，浮层相对输入框定位（与列表页/开单页同源做法）。 */
+  .customer-field .suggest-wrap { position:relative; }
+  .account-filter label,.entry-card label { display:block;margin-bottom:5px;color:var(--erp-muted);font-size:12px;font-weight:650; }
+  .account-summary-grid,.entry-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:14px 0 20px; }
+  .account-summary-card,.entry-card { padding:16px; }
+  .summary-label { display:flex;justify-content:space-between;gap:10px;color:var(--erp-muted);font-size:12px;font-weight:650; }
+  .summary-value { margin-top:7px;font-size:30px;font-weight:700;font-variant-numeric:tabular-nums; }
+  .summary-value.positive { color:var(--erp-success); }.summary-value.negative,.amount.negative { color:var(--erp-danger); }
+  .summary-help,.ledger-hint,.entry-note { margin-top:6px;color:var(--erp-muted);font-size:11px; }
+  .breakdown { display:flex;flex-wrap:wrap;gap:5px 13px;margin-top:9px;padding-top:8px;border-top:1px solid var(--erp-border);color:var(--erp-muted);font-size:11px; }
+  .ledger-heading { display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 9px; }.ledger-heading h3 { margin:0;font-size:17px; }
+  /* 去乱（2026-11-08）：流水工具栏收拢，类型筛选收进「高级筛选」折叠面板。 */
+  .ledger-toolbar { display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap; }
+  .ledger-adv { margin:0 0 10px;padding:12px 14px;border:1px solid var(--erp-border);border-radius:8px;background:var(--erp-surface-soft); }
+  .ledger-adv[hidden] { display:none; }
+  .ledger-adv .ledger-type-filter { margin-left:0; }
+  .adv-count { display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--erp-primary);color:#fff;font-size:11px;font-weight:700;margin-left:4px; }
+  .link-action { color:var(--erp-primary);font-weight:600;text-decoration:none; }.link-action:hover { text-decoration:underline; }
+  .ledger-type-filter { display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto; }
+  .ledger-type-filter .filter-label { color:var(--erp-muted);font-size:12px;font-weight:650; }
+  .type-chip { display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border:1px solid var(--erp-border-strong);border-radius:4px;font-size:12px;color:var(--erp-ink);background:var(--erp-glass-bg-strong);cursor:pointer;white-space:nowrap; }
+  .type-chip:hover { border-color:var(--erp-primary); }
+  .type-chip input[type=checkbox] { width:14px;height:14px;margin:0;accent-color:var(--erp-primary); }
+  .ledger-table { min-width:900px; }.ledger-table td { font-size:12px; }.ledger-date,.reference { white-space:nowrap;color:var(--erp-muted); }.reference { font-family:Consolas,"Courier New",monospace;font-size:11px; }
+  .description-main { font-weight:600; }.description-sub { margin-top:2px;color:var(--erp-muted);font-size:10px; }
+  .amount { font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums; }.amount.positive { color:var(--erp-success); }.amount.zero { color:var(--erp-muted); }
+  .badge-ledger { display:inline-flex;align-items:center;min-height:22px;padding:2px 7px;border:1px solid var(--erp-border);border-radius:4px;font-size:10px;font-weight:650;white-space:nowrap; }
+  .type-sale { color:#1d4ed8;background:rgba(37,99,235,.08); }.type-return { color:var(--erp-danger);background:rgba(199,53,53,.08); }.type-payment { color:var(--erp-success);background:rgba(23,128,61,.08); }.type-adjustment { color:#9a6700;background:rgba(245,158,11,.1); }
+  .type-purchase { color:#0e7490;background:rgba(14,116,144,.1); }.type-purchase_return { color:#7c3aed;background:rgba(124,58,237,.1); }
+  html[data-ui-theme="dark"] .type-sale{color:#93c5fd;background:rgba(59,130,246,.16)}html[data-ui-theme="dark"] .type-return{color:#fca5a5;background:rgba(248,113,113,.14)}html[data-ui-theme="dark"] .type-payment{color:#6ee7b7;background:rgba(52,211,153,.14)}html[data-ui-theme="dark"] .type-adjustment{color:#fcd34d;background:rgba(245,158,11,.16)}html[data-ui-theme="dark"] .type-purchase{color:#67e8f9;background:rgba(34,211,238,.14)}html[data-ui-theme="dark"] .type-purchase_return{color:#c4b5fd;background:rgba(167,139,250,.16)}
+  @media (prefers-color-scheme: dark){html[data-ui-theme="system"] .type-sale{color:#93c5fd;background:rgba(59,130,246,.16)}html[data-ui-theme="system"] .type-return{color:#fca5a5;background:rgba(248,113,113,.14)}html[data-ui-theme="system"] .type-payment{color:#6ee7b7;background:rgba(52,211,153,.14)}html[data-ui-theme="system"] .type-adjustment{color:#fcd34d;background:rgba(245,158,11,.16)}html[data-ui-theme="system"] .type-purchase{color:#67e8f9;background:rgba(34,211,238,.14)}html[data-ui-theme="system"] .type-purchase_return{color:#c4b5fd;background:rgba(167,139,250,.16)}}
+  .status-active { color:var(--erp-success); }.status-void { color:var(--erp-muted); }.row-void td { color:var(--erp-muted);background:rgba(127,127,127,.045); }.empty-ledger { padding:24px;text-align:center;color:var(--erp-muted); }
+  /* 流水行就地展开商品明细（2026-10-14 用户要求）：
+     展开内容插在**被点的那一行下面**，所以那一行的位置和内容原地不动；
+     动画只做高度过渡（grid-template-rows 0fr→1fr），不整页刷新、不回顶、不闪烁。 */
+  .ledger-detail > td { padding:0;border-top:0;background:var(--erp-glass-bg-strong); }
+  .ledger-detail-inner { display:grid;grid-template-rows:0fr;transition:grid-template-rows .24s ease, opacity .24s ease;opacity:0; }
+  .ledger-detail.is-open .ledger-detail-inner { grid-template-rows:1fr;opacity:1; }
+  .ledger-detail-body { overflow:hidden;min-height:0;padding:0 14px; }
+  .ledger-detail.is-open .ledger-detail-body { padding:10px 14px 12px; }
+  .ledger-detail-table { margin:0;min-width:520px; }
+  .ledger-detail-table th,.ledger-detail-table td { font-size:12px;padding:5px 8px; }
+  .ledger-detail-table td.numeric-cell { text-align:right;font-variant-numeric:tabular-nums; }
+  .ledger-detail-caption { color:var(--erp-muted);font-size:11px;margin-bottom:6px; }
+  .ledger-detail-error { color:var(--erp-danger);font-size:12px; }
+  @media (prefers-reduced-motion: reduce) { .ledger-detail-inner { transition:none; } }
+  .entry-grid { margin-top:18px; }.entry-card h4 { margin:0 0 10px;font-size:14px; }.entry-form { display:grid;grid-template-columns:minmax(120px,.7fr) minmax(150px,1fr) auto;align-items:end;gap:9px; }.entry-form .form-control { min-height:37px; }.entry-note { margin-bottom:0; }
+  .void-dialog { width:min(420px,calc(100vw - 28px));padding:0;color:var(--erp-ink);background:var(--erp-surface);border:1px solid var(--erp-border);border-radius:9px;box-shadow:0 24px 64px rgba(0,0,0,.25); }.void-dialog::backdrop { background:rgba(15,23,42,.42);backdrop-filter:blur(2px); }.void-body { padding:20px; }.void-body h3 { margin:0 0 5px;font-size:17px; }.void-body p { color:var(--erp-muted);font-size:12px; }.dialog-actions { display:flex;justify-content:flex-end;gap:8px;margin-top:14px; }
+  @media(max-width:1050px) { .account-filter { grid-template-columns:repeat(4,minmax(115px,1fr)); }.customer-field { grid-column:span 2; } }
+  @media(max-width:760px) { .account-filter { grid-template-columns:repeat(2,minmax(0,1fr)); }.customer-field { grid-column:1/-1; }.account-summary-grid,.entry-grid { grid-template-columns:1fr;gap:10px; }.account-filter .btn { width:100%; }.summary-value { font-size:27px; } }
+  @media(max-width:420px) { .account-filter { grid-template-columns:1fr; }.customer-field { grid-column:auto; }.entry-form { grid-template-columns:1fr 1fr; }.entry-form .field:first-child { grid-column:1/-1; }.entry-form .btn { grid-column:2;justify-self:end; } }
+</style>
+<style>
+  :root{
+    --ink:#172033;--muted:#667085;--border:#dfe3ea;--border-strong:#c8ced8;
+    --bg:#f3f5f8;--surface:#fff;--surface-soft:#f8fafc;
+    --primary:#2563eb;--primary-soft:#eff6ff;--success:#17803d;--danger:#c73535;
+    --radius:10px;--shadow:0 1px 2px rgba(16,24,40,.04),0 8px 24px rgba(16,24,40,.05);
+  }
+  *{box-sizing:border-box}
+  .proto-note{font-size:12.5px;color:var(--muted);margin:0 0 12px;line-height:1.65;
+    padding:8px 12px;background:#fffbeb;border:1px solid #fcd34d;border-radius:7px}
+  .proto-note b{color:#b45309}
+  .proto-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:16px 18px;margin-bottom:12px}
+  .proto-card.flat{padding:0;overflow:hidden}
+  h1.pt{font-size:21px;margin:0 0 12px}
+  .pbtn{border:1px solid var(--border-strong);background:#fff;border-radius:7px;padding:0 14px;
+    font-size:13px;color:var(--ink);cursor:pointer;font-family:inherit}
+  .pbtn.primary{background:var(--primary);border-color:var(--primary);color:#fff;font-weight:600}
+  .pbtn.danger{color:var(--danger);border-color:#fecaca}
+  .pbtn.ghost{border-color:transparent;background:transparent;color:var(--muted)}
+  .pinp{border:1px solid var(--border-strong);border-radius:7px;padding:7px 11px;font-size:13.5px;
+    width:100%;background:#fff;color:var(--ink);font-family:inherit}
+  .plbl{font-size:12px;color:var(--muted);margin-bottom:5px;display:block;font-weight:600}
+
+  .pfilter{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:13px 16px;margin-bottom:12px}
+  .pfilter .row{display:grid;gap:10px;align-items:end}
+  .pfilter .acts{display:flex;gap:8px;align-items:center;margin-top:11px;
+    padding-top:11px;border-top:1px solid #eef1f6}
+  .pfilter .acts .spacer{flex:1}
+
+  .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px}
+  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    padding:16px 18px;box-shadow:var(--shadow)}
+  .kpi .lbl{font-size:12.5px;color:var(--muted);margin-bottom:3px}
+  .kpi .val{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+  .kpi .sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .kpi.d .val{color:var(--danger)}
+  .kpi.p .val{color:var(--success)}
+  .ptable{width:100%;border-collapse:collapse;font-size:13.5px}
+  .ptable thead th{background:var(--surface-soft);color:var(--muted);font-weight:600;font-size:12.5px;
+    text-align:left;padding:8px 12px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);white-space:nowrap}
+  .ptable thead th.num{text-align:right}
+  .ptable tbody td{padding:8px 12px;border-bottom:1px solid #eef1f6}
+  .ptable tbody tr:hover td{background:#f7faff}
+  .ptable td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .ptable .pre{color:var(--success)}
+  .ptable .zero{color:#c9cfda}
+  .ptable td.op a{color:var(--primary);text-decoration:none;font-size:12.5px;white-space:nowrap}
+  .st{display:inline-block;padding:1px 7px;border-radius:5px;font-size:12px;border:1px solid transparent}
+  .st-debt{background:#fef2f2;color:#b91c1c;border-color:#fecaca}
+  .st-pre{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
+  .st-none{background:#f8fafc;color:#94a3b8;border-color:#e2e8f0}
+  .ptable tfoot th,.ptable tfoot td{padding:8px 12px;background:#f7f9fc;border-top:2px solid var(--border-strong)}
+  .ptable tfoot th{text-align:left;font-weight:700}
+</style>
+<style>
+  /* 圆角 4 档：卡片 10 / 控件 7 / 小标签 5 / 微元素 4 */
+  /* 内距 2 档：卡片与内嵌块 16px 18px / 表格单元 8px 12px */
+  .proto-card:not(.flat),.fcard,.pfilter,.asec-block{border-radius:10px;padding:16px 18px}
+  .kpi,.kpi2,.rank-card,.hmonth,.heat-side{padding:16px 18px;border-radius:10px}
+  .q,.selbar,.asec{border-radius:10px}
+  .pbtn,.pinp,.sel,.seg,.pbtn.adv{border-radius:7px}
+  .badge2,.more,.picker-name-input,.chip{border-radius:5px}
+  h2,.sh h2,.ch h2{font-size:15px;margin:0}
+  h3,.sb-head h3,h4,.rank-card h4,.heat-side h4{font-size:13.5px}
+  .kpi .val{font-size:22px}
+  .kpi.hero .val,.kpi.main .val{font-size:26px}
+  .pbtn{display:inline-flex;align-items:center;justify-content:center;
+    height:31px;line-height:29px;padding:0 14px;font-size:13px;vertical-align:middle}
+  .pbtn.primary,.pbtn.danger,.pbtn.ghost{padding:0 14px}
+  .pbtn .kbd{height:16px;line-height:14px;display:inline-flex;align-items:center}
+  .pbtn.icon{width:26px;height:26px;line-height:24px;padding:0;display:inline-grid;place-items:center;
+    font-size:13px;font-weight:400;color:var(--muted);border-radius:5px}
+  .pbtn.icon:hover{color:var(--danger);border-color:#fecaca;background:#fef2f2}
+  .more{width:26px;height:26px}
+  .pinp,.sel{height:33px;padding:7px 11px;font-size:13.5px}
+  .ptable thead th{padding:8px 12px}
+  .ptable tbody td{padding:8px 12px}
+  .ptable tfoot td,.ptable tfoot th{padding:8px 12px}
+  .ptable td.cb{padding-right:0}
+</style>
+</head>
+<body>
+<div class="app-shell">
+<nav class="sidebar">
+    <div class="brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M14 2H8C5.79086 2 4 3.79086 4 6V18C4 20.2091 5.79086 22 8 22H16C18.2091 22 20 20.2091 20 18V8L14 2ZM14 2V5C14 6.65685 15.3431 8 17 8H20M8 12H10M14 12H16M8 16H10M14 16H16"></path></svg></div><div><div class="brand-title">简单ERP</div></div></div>
+    <section class="nav-group" aria-label="工作台">
+    <a class="nav-section" href="/"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>工作台</a>
+    <a class="" href="/orders/new"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>开单</a>
+    <a class="sidebar-sub" href="/orders/new"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>销售单</a>
+    <a class="sidebar-sub" href="/orders/return/new"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>退货单</a>
+    <a class="sidebar-sub" href="/purchases/new"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>拿货单</a>
+    <a class="sidebar-sub" href="/purchases/return/new"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>退拿货单</a>
+    <a class="" href="/orders/"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>单据管理</a>
+    <a class="active" href="/accounts/"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>账款管理</a>
+    <a class="" href="/analytics/"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>数据分析</a>
+    </section>
+    <div class="nav-divider" aria-hidden="true"></div>
+    <section class="nav-group" aria-label="基础资料">
+    <a class="" href="/products/"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>商品管理</a>
+    <a class="" href="/customers/"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>客户管理</a>
+    <a class="" href="/docs/"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>资料文档</a>
+    </section>
+    <div class="nav-divider" aria-hidden="true"></div>
+    <section class="nav-group" aria-label="回收站">
+    <a class="nav-section" href="/recycle/"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>回收站</a>
+    </section>
+    <div class="nav-divider" aria-hidden="true"></div>
+    <section class="nav-group" aria-label="系统设置">
+    <a class="nav-section" href="/settings/"><svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>系统设置</a>
+    </section>
+    <div class="app-version">浏览器本地访问 · v4.9.1</div>
+  </nav>
+<main class="content">
+<div class="page-topbar">
+      <div class="company">简单ERP</div>
+      <form class="topbar-search" method="get" action="/search/" role="search">
+        <input class="form-control form-control-sm" type="search" name="q" value="" placeholder="搜索单号 / 客户 / 商品 / 资料…" aria-label="全局搜索" autocomplete="off">
+        <button class="btn btn-sm btn-outline-primary" type="submit">搜索</button>
+      </form>
+      <div class="topbar-clock" id="topbarClock" aria-hidden="true">2026-11-14 11:38:30</div>
+      <div class="status-wrap">
+        <div class="status" id="localStatus">本地数据已连接</div>
+      </div>
+    </div>
+<div class="page-body">
+<div class="proto-note"><b>原型说明</b>：左侧导航与顶栏是从真实运行页面抓取的原样外壳，未做改动。本页只演示内容区的改动。</div>
+
+<h1 class="pt">账款管理</h1>
+
+<div class="pfilter">
+  <div class="row" style="grid-template-columns:minmax(210px,1.3fr) minmax(135px,.8fr) minmax(135px,.8fr)">
+    <div>
+      <label class="plbl">客户</label>
+      <input class="pinp" placeholder="输入客户名或拼音首字母">
+    </div>
+    <div><label class="plbl">开始日期</label><input class="pinp" type="date"></div>
+    <div><label class="plbl">结束日期</label><input class="pinp" type="date"></div>
+  </div>
+  <div class="acts">
+    <button class="pbtn primary">查询流水</button>
+    <button class="pbtn">清除筛选</button>
+    <span class="spacer"></span>
+    <span style="font-size:12px;color:var(--muted)">客户/日期筛选作用于下方「往来流水」，不影响余额表</span>
+  </div>
+</div>
+
+<div class="kpis">
+  <div class="kpi d"><div class="lbl">应收合计（16 户欠款）</div><div class="val">184,920.96</div><div class="sub">客户尚未结清</div></div>
+  <div class="kpi p"><div class="lbl">预存合计</div><div class="val">16,796.79</div><div class="sub">客户多付、可抵扣</div></div>
+  <div class="kpi"><div class="lbl">净额</div><div class="val">-168,124.17</div><div class="sub">预存 − 应收</div></div>
+</div>
+
+<div class="proto-card flat">
+  <div style="padding:14px 18px 0"><h2 style="font-size:15px;margin:0">客户当前余额</h2>
+  <div style="font-size:12.5px;color:var(--muted);margin:2px 0 10px">共 28 户 · 默认按欠款金额降序 · 全历史，不受上方日期筛选影响</div></div>
+  <div style="max-height:400px;overflow:auto">
+  <table class="ptable">
+    <thead><tr>
+      <th style="width:44%">客户</th>
+      <th class="num" style="width:22%">金额</th>
+      <th style="width:16%">状态</th>
+      <th style="width:18%"></th>
+    </tr></thead>
+    <tbody><tr>
+      <td>陈老板商行</td>
+      <td class="num"><b>33,942.24</b></td>
+      <td><span class="st st-debt">欠款</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>鑫源纸张厂</td>
+      <td class="num"><b>32,636.20</b></td>
+      <td><span class="st st-debt">欠款</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>Andy Fire Supply</td>
+      <td class="num"><b>25,853.85</b></td>
+      <td><span class="st st-debt">欠款</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>蓝天幼儿园</td>
+      <td class="num"><b>17,429.10</b></td>
+      <td><span class="st st-debt">欠款</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>张强</td>
+      <td class="num"><b>16,358.78</b></td>
+      <td><span class="st st-debt">欠款</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>市政绿化管理处</td>
+      <td class="num"><b>15,518.88</b></td>
+      <td><span class="st st-debt">欠款</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>锦华酒店</td>
+      <td class="num"><b>12,003.73</b></td>
+      <td><span class="st st-debt">欠款</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>星辰宾馆</td>
+      <td class="num"><b>7,411.02</b></td>
+      <td><span class="st st-debt">欠款</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>万达影城</td>
+      <td class="num"><b>6,208.53</b></td>
+      <td><span class="st st-debt">欠款</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>实验中学</td>
+      <td class="num"><b>5,967.61</b></td>
+      <td><span class="st st-debt">欠款</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>老李五金店</td>
+      <td class="num"><b>3,330.97</b></td>
+      <td><span class="st st-debt">欠款</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>西山养老院</td>
+      <td class="num"><b>3,041.59</b></td>
+      <td><span class="st st-debt">欠款</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>王秀芬</td>
+      <td class="num"><b>2,528.14</b></td>
+      <td><span class="st st-debt">欠款</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>悦动KTV</td>
+      <td class="num"><b>1,573.26</b></td>
+      <td><span class="st st-debt">欠款</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>汇通能源加油站</td>
+      <td class="num"><b>648.26</b></td>
+      <td><span class="st st-debt">欠款</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>宏图建设集团第三项目部</td>
+      <td class="num"><b>468.80</b></td>
+      <td><span class="st st-debt">欠款</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>东星纺织厂</td>
+      <td class="num"><span class="pre">10.98</span></td>
+      <td><span class="st st-pre">预存</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>速8酒店火车站店</td>
+      <td class="num"><span class="pre">210.95</span></td>
+      <td><span class="st st-pre">预存</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>中通快递分拨中心</td>
+      <td class="num"><span class="pre">211.37</span></td>
+      <td><span class="st st-pre">预存</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>仁和医院</td>
+      <td class="num"><span class="pre">267.89</span></td>
+      <td><span class="st st-pre">预存</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>万象购物中心</td>
+      <td class="num"><span class="pre">325.42</span></td>
+      <td><span class="st st-pre">预存</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>安宁物业管理有限公司</td>
+      <td class="num"><span class="pre">387.89</span></td>
+      <td><span class="st st-pre">预存</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>大刘建材经营部</td>
+      <td class="num"><span class="pre">423.92</span></td>
+      <td><span class="st st-pre">预存</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>沸腾鱼乡饭店</td>
+      <td class="num"><span class="pre">464.61</span></td>
+      <td><span class="st st-pre">预存</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>苏果超市东关店</td>
+      <td class="num"><span class="pre">1,164.92</span></td>
+      <td><span class="st st-pre">预存</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>宏伟消防工程店</td>
+      <td class="num"><span class="pre">2,510.90</span></td>
+      <td><span class="st st-pre">预存</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>晨光文具批发</td>
+      <td class="num"><span class="pre">4,588.14</span></td>
+      <td><span class="st st-pre">预存</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr><tr>
+      <td>德邦物流园区</td>
+      <td class="num"><span class="pre">6,229.80</span></td>
+      <td><span class="st st-pre">预存</span></td>
+      <td class="op"><a>查看流水 →</a></td>
+    </tr></tbody>
+    <tfoot><tr>
+      <th>合计（28 户）</th>
+      <td class="num"><b>应收 184,920.96</b> ／ <b class="pre">预存 16,796.79</b></td>
+      <td></td><td></td>
+    </tr></tfoot>
+  </table>
+  </div>
+</div>
+
+</div>
+</main>
+</div>
+</body></html>

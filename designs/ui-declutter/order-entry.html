@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>新建销售单 · 去乱原型</title>
+<link rel="stylesheet" href="_shell.css">
+<style>
+.entry-table{width:100%;border-collapse:collapse;min-width:820px}
+.entry-table th{background:#0f2b46;color:#fff;font-size:12.5px;font-weight:600;text-align:left;padding:10px 12px}
+.entry-table td{padding:8px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+.entry-table td input{height:34px;border:1px solid var(--border);border-radius:7px;padding:0 9px;font:inherit;font-size:13px;width:100%;background:#fff}
+.entry-table td input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.13)}
+.entry-table .total-row td{border-bottom:0;font-weight:700}
+.pk-cell{display:flex;align-items:center;gap:6px}
+.mini{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--muted);cursor:pointer;transition:background .14s,color .14s,border-color .14s;flex:0 0 auto}
+.mini:hover{background:var(--primary-soft);border-color:rgba(37,99,235,.4);color:var(--primary)}
+.mini svg{width:14px;height:14px}
+.entry-tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.entry-note{margin:0 0 12px;color:var(--muted);font-size:12px;display:flex;align-items:center;gap:6px}
+textarea.notes{width:100%;min-height:64px;border:1px solid var(--border);border-radius:8px;padding:9px 11px;font:inherit;font-size:13px;resize:vertical;background:#fff}
+.empty-history{padding:16px;color:var(--muted);font-size:13px}
+</style></head><body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3.6H9C7.3 3.6 5.9 5 5.9 6.7V17.3C5.9 19 7.3 20.4 9 20.4H15C16.7 20.4 18.1 19 18.1 17.3V7.7L14 3.6ZM14 3.6V6C14 7.3 15.1 8.4 16.4 8.4H18.1M9 12.4H10.6M13.4 12.4H15M9 15.8H10.6M13.4 15.8H15"/></svg></span><span class="brand-title">简单ERP</span></div>
+    <a href="#">工作台</a>
+    <div class="nav-label">开单</div>
+    <a class="sub active" href="#">销售单</a><a class="sub" href="#">退货单</a><a class="sub" href="#">拿货单</a><a class="sub" href="#">退拿货单</a>
+    <div class="nav-label">业务</div>
+    <a href="#">单据管理</a><a href="#">账款管理</a><a href="#">数据分析</a>
+    <div class="nav-label">基础资料</div>
+    <a href="#">商品管理</a><a href="#">客户管理</a><a href="#">资料文档</a>
+    <div class="nav-label">其他</div>
+    <a href="#">回收站</a><a href="#">系统设置</a>
+  </aside>
+  <div class="content">
+    <div class="topbar">
+      <div class="search"><input placeholder="搜索单号 / 客户 / 商品 / 资料…"><button class="btn primary" style="height:36px">搜索</button></div>
+      <div class="clock" id="clock">2026-11-08 16:40:00</div>
+      <div class="status"><i></i>本地数据已连接</div>
+    </div>
+    <div class="page-body">
+      <div class="page-head"><h1>新建销售单</h1><button class="btn ghost" data-toast="返回单据管理（示例）">返回单据管理</button></div>
+
+      <div class="form-card">
+        <div class="form-row">
+          <div class="field"><label>客户名称</label><input placeholder="输入一个字即可匹配客户" autocomplete="off"></div>
+          <div class="field"><label>销售日期</label><input type="date" value="2026-11-08"></div>
+          <div class="field"><label>单号</label><input value="MD202611080001" readonly></div>
+          <div class="field"><label>状态</label><select><option>正式保存</option></select></div>
+        </div>
+      </div>
+
+      <div class="form-card">
+        <div class="section-head"><h3>订单信息</h3></div>
+        <div class="table-scroll" style="max-height:none">
+          <table class="entry-table">
+            <thead><tr><th style="width:52px">序号</th><th>产品名称</th><th style="width:92px">单位</th><th style="width:82px">数量</th><th style="width:110px">单价(元)</th><th style="width:110px;text-align:right">金额</th><th style="width:84px">操作</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>1</td>
+                <td><div class="pk-cell">
+                  <button class="mini" title="复制这一行" aria-label="复制"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg></button>
+                  <button class="mini" title="粘贴到这一行" aria-label="粘贴"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="8" y="4" width="8" height="4" rx="1"/><path d="M9 4H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3"/></svg></button>
+                  <input placeholder="输入或选择商品名" style="flex:1">
+                </div></td>
+                <td><input placeholder="单位"></td>
+                <td><input value="1" style="text-align:right"></td>
+                <td><input value="0.00" style="text-align:right"></td>
+                <td class="num" style="text-align:right">0.00</td>
+                <td><button class="btn text" data-toast="已清空该行（示例）">清空</button></td>
+              </tr>
+              <tr class="total-row"><td colspan="5" style="text-align:right">合计</td><td class="num" style="text-align:right">0.00</td><td></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="entry-tools">
+          <button class="btn ghost sm" data-toast="已新增一行（示例）">＋ 新增一行</button>
+          <button class="btn ghost sm" data-toast="已删除一行（示例）">删除一行</button>
+          <button class="btn ghost sm" data-toast="已清空（示例）">一键清空</button>
+          <button class="btn ghost sm" data-toast="已复制上一单（示例）">复制上一单</button>
+        </div>
+        <div style="margin-top:14px"><textarea class="notes" placeholder="备注"></textarea></div>
+        <div class="form-actions" style="margin-top:14px">
+          <button class="btn ghost" data-toast="已保存（示例）">保存</button>
+          <button class="btn primary" data-toast="已保存并打印订单（示例）">保存并打印订单</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>当天历史开单</h3>
+        <div class="empty-history">今天还没有正式保存或已打印的单据</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script src="_shell.js"></script>
+</body></html>

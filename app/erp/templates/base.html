@@ -258,6 +258,51 @@
     /* 行内中性动作（查看/详情）：描边保留，但文字提回正文色 ——
        outline-secondary 的 muted 灰在表格里会被读成「禁用」（2026-11-09 单据列表描边化实测）。 */
     .stable-table .action-wrap .btn-outline-secondary{color:var(--erp-ink)}
+    /*
+      行操作用「密集纯文字」而不是描边按钮（2026-11-14 用户决策，项目记忆 memory/project-context.md）。
+      原因有两条：
+        ① 描边会强化视觉权重，把注意力从单号/往来对象这些正文内容上抢走；
+        ② 描边按钮受 min-width:60px 硬撑，4 个动作需 258px，而操作列可用内容宽只有 246px，
+           本来就溢 12px，靠 overflow:hidden 裁在按钮右边缘才没露出来（实测）。
+      静止态无背景无描边（边框用 transparent 占位，避免 hover 时抖动），hover 才出淡底。
+      语义靠文字色区分：普通动作主色、删除用危险色。
+    */
+    .stable-table .action-wrap .ract{
+      display:inline-flex;align-items:center;height:26px;padding:0 9px;
+      border-radius:5px;border:1px solid transparent;
+      font-size:12.5px;line-height:1;text-decoration:none;white-space:nowrap;
+      color:var(--erp-primary);background:transparent;
+      transition:background .12s,color .12s,border-color .12s;
+    }
+    .stable-table .action-wrap .ract:hover,
+    .stable-table .action-wrap .ract:focus-visible{
+      background:var(--erp-primary-soft);border-color:var(--erp-outline-primary);
+      color:var(--erp-primary-hover);text-decoration:none;
+    }
+    .stable-table .action-wrap .ract.ok{color:var(--erp-outline-success)}
+    .stable-table .action-wrap .ract.ok:hover,
+    .stable-table .action-wrap .ract.ok:focus-visible{
+      background:var(--erp-primary-soft);border-color:var(--erp-outline-success);
+      color:var(--erp-outline-success);
+    }
+    .stable-table .action-wrap .ract.del{color:var(--erp-outline-danger)}
+    .stable-table .action-wrap .ract.del:hover,
+    .stable-table .action-wrap .ract.del:focus-visible{
+      background:var(--erp-surface-soft);border-color:var(--erp-outline-danger);
+      color:var(--erp-outline-danger);
+    }
+    .stable-table .action-wrap .ract[aria-disabled="true"]{
+      color:var(--erp-muted);pointer-events:none;opacity:.6;
+    }
+    /* 删除按钮外层 form 不占额外宽度 */
+    .stable-table .action-wrap form{display:inline-flex;margin:0}
+    /*
+      操作列单元格收紧左右内距：默认 td 是 12px 14px，196px 列宽下左右吃掉 28px，
+      可用内容宽只剩 168px，而 4 个文字按钮 + 间距需要 186px，删除按钮会被裁掉 4px（实测）。
+      这里把操作列单独收到 6px（12 - 6 = 186px 刚好容纳），并把 6px 加回列宽之外的留白由
+      .action-wrap 的 gap 提供，不再依赖单元格内距。
+    */
+    .stable-table td.action-cell,.stable-table th.action-cell{padding-left:6px;padding-right:6px}
     /* 行内操作失败的就地提示：不跳页、不用 alert，保留页面上下文。 */
     .row-action-error{
       display:flex;align-items:flex-start;gap:12px;margin:0 0 12px;padding:11px 14px;
@@ -343,7 +388,7 @@
        仍按 `.table-danger.return-order-row` 保留。 */
     .table-striped>tbody>tr:nth-of-type(odd)>*{--bs-table-accent-bg:transparent}
     .table tbody tr:hover>*{background:rgba(37,99,235,.05)}
-    .stable-table{table-layout:fixed;width:100%}.stable-table th,.stable-table td{height:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.stable-table .action-cell{width:380px;min-width:380px}.stable-table .action-wrap{display:flex;gap:6px;align-items:center;justify-content:flex-start;white-space:nowrap}.stable-table .action-wrap .btn{min-width:60px}.stable-table .deleting{opacity:.45;pointer-events:none}
+    .stable-table{table-layout:fixed;width:100%}.stable-table th,.stable-table td{height:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.stable-table .action-cell{width:200px;min-width:200px}.stable-table .action-wrap{display:flex;gap:2px;align-items:center;justify-content:flex-start;white-space:nowrap}.stable-table .action-wrap .btn{min-width:0}.stable-table .deleting{opacity:.45;pointer-events:none}
     /*
       勾选框单元格（2026-10-16 批次 2 实测确诊）：单元格里只有一个裸 inline-block 复选框
       （16px）时，Chrome 把它算成 55–56px 的溢出内容，而 `.stable-table` 带
@@ -753,7 +798,7 @@
       .sidebar{flex-basis:calc(190px * var(--erp-scale));width:calc(190px * var(--erp-scale))}
       .page-topbar{padding:0 20px}
       .page-body{padding:20px 20px 32px}
-      .stable-table .action-cell{width:300px;min-width:300px}
+      .stable-table .action-cell{width:200px;min-width:200px}
       /* 窄屏仍保持商品选择器可用；靠 .order-table-scroll 横向滚动，不把下拉压到不可用 */
       .product-picker .picker-row{min-width:300px}
     }
