@@ -23,7 +23,7 @@
 <td width="50%"><img src="docs/images/shot-entry.jpg" alt="开单"><br><sub><b>开单</b> · 四类单据同一套录入流程，单价随客户走</sub></td>
 </tr>
 <tr>
-<td><img src="docs/images/shot-orders.jpg" alt="单据管理"><br><sub><b>单据管理</b> · 类型/状态/日期筛选，标签与金额同色</sub></td>
+<td><img src="docs/images/shot-orders.jpg" alt="单据管理"><br><sub><b>单据管理</b> · 类型/状态/日期筛选；行操作四个动作全平铺</sub></td>
 <td><img src="docs/images/shot-accounts.jpg" alt="账款管理"><br><sub><b>账款管理</b> · 客户余额与往来流水</sub></td>
 </tr>
 <tr>
@@ -37,6 +37,9 @@
 </table>
 
 > 截图为绿色版自带的 200 条出厂演示数据，与门店真实账本物理隔离。
+>
+> 列表行操作自 v4.9.2 起改为**密集纯文字按钮**：查看 / 编辑 / 打印 / 删除 四个动作全部平铺可见，
+> 不做 ⋯ 折叠；静止态无描边，悬停才出淡底，避免按钮框抢走正文注意力。
 
 ---
 
@@ -296,7 +299,7 @@ docs/                     需求、开发、打包说明、界面截图
 
 ## 版本
 
-当前源码版本以根目录 [`VERSION`](VERSION) 为准：**v4.9.1**；安卓原生端版本见 [`native/VERSION`](native/VERSION)：**1.4.12**。
+当前源码版本以根目录 [`VERSION`](VERSION) 为准：**v4.9.2**；安卓原生端版本见 [`native/VERSION`](native/VERSION)：**1.4.12**。
 
 逐版本的交付内容、验收证据与已知边界见 [CHANGELOG](CHANGELOG.md)；已发布版本见 [Releases](https://github.com/Astyyym/simple-erp/releases)。
 
