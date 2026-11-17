@@ -55,6 +55,21 @@
   `test_recycle_bins_are_stacked_cards_not_full_width_tables`（含「并排两栏不许回来」的反例断言）。
 - README 截图按铁律重拍（`node tools/shots.mjs`，用隔离演示数据；逐张核过尺寸与颜色数，无空白页）。
 
+### 产物与校验（GitHub Release v4.9.3，2026-11-17）
+
+已发布到 [Releases v4.9.3](https://github.com/Astyyym/simple-erp/releases/tag/v4.9.3)（Latest，tag `v4.9.3` / 提交 `1b9f114`）。下列 SHA256 与 GitHub 侧资产 `digest` 逐一核对一致：
+
+| 资产 | 大小 | SHA256 |
+|---|---|---|
+| `dist\simple-erp-setup-v4.9.3.exe` | 46590858 B | `7980F9BA33C837850700B968F3A19C996A56E991692186B6416AF3C53CFC1A3F` |
+| `dist\simple-erp-windows-v4.9.3.zip` | 63956468 B | `89F538346DBF6B214C383F0B85D9A8E11445F358039FD2526965780379D6203A` |
+| 绿色版 `dist\local-v4.9.3\简单ERP`（含 demo_data 200 单） | — | — |
+
+- 安卓端本轮未重打，仍为 `1.4.12`，未附带到本 Release。
+- 安装包与 ZIP **不含 `demo_data`**（已核 zip：691 项、无 `demo_data`、`_internal/VERSION`=`v4.9.3`、包内 `docs/list.html` 含 `--paper-size:148px` 新样式）；绿色版写入 200 笔演示数据，seed 校验 `warnings` / `problems` 均为空。
+- **实跑核验**：正式版 EXE（`build\clean-v4.9.3`）以隔离数据根 + 端口 5312 启动，上传 6 种格式后 CDP 量得：版本 `v4.9.3`、时钟中线偏移 0px、文档纸 148×148 且 `square=true`、操作按钮 1 行、整格 209px、回收站两卡 y 坐标 476/653 上下排列。
+- **未核验**：真实打印机实打（需真机）。
+
 ## v4.9.2 - 列表行操作改密集文字按钮：4 个动作全平铺、操作列收窄（2026-11-14）
 
 > 桌面端 `VERSION` `v4.9.1` → **`v4.9.2`**；安卓端未改动（仍 `1.4.12`）。
