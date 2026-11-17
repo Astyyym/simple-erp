@@ -191,8 +191,14 @@
       display:flex;flex-direction:column;overflow:hidden;padding:0;
       border:1px solid var(--erp-content-border);border-radius:14px;background:var(--erp-surface);box-shadow:var(--erp-glass-shadow);
     }
+    /*
+      顶栏三段网格（2026-11-17）：左「公司名 + 搜索框」／中「实时钟」／右「状态点」。
+      为什么不用 flex + justify-content:space-between：那样时钟居中的是「剩余空间」的中点，
+      左边内容比右边宽，时钟就被整体推右（1024 宽实测偏右约 100px，用户报「时间没有居中」）。
+      改成 `1fr auto 1fr` 后，中间列天然落在顶栏中线上，左右两列宽度差不再影响它。
+    */
     .page-topbar{
-      display:flex;align-items:center;justify-content:space-between;
+      display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;column-gap:16px;
       flex:0 0 auto;margin:0;padding:0 30px;min-height:58px;
       position:relative;z-index:50;
       background:var(--erp-glass-bg);
@@ -210,19 +216,44 @@
       scrollbar-gutter:stable;
       padding:26px 30px 48px;
     }
-    .page-topbar .company{font-size:calc(13px * var(--erp-scale));color:var(--erp-muted)}
-    /* Batch 0：顶栏钉住可见的实时钟；tabular-nums 防秒跳抖动，由 JS 每秒刷新（不服务端渲染）。 */
-    .page-topbar .topbar-clock{flex:1 1 auto;text-align:center;font-size:calc(13px * var(--erp-scale));color:var(--erp-muted);font-variant-numeric:tabular-nums;letter-spacing:.02em;white-space:nowrap}
-    .page-topbar .status-wrap{display:flex;align-items:center;gap:12px}
+    /* 左列：公司名 + 搜索框成一组，靠左对齐（右列只有状态点，靠右）。 */
+    .page-topbar .topbar-lead{display:flex;align-items:center;min-width:0;gap:0}
+    .page-topbar .company{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:calc(13px * var(--erp-scale));color:var(--erp-muted)}
+    /* Batch 0：顶栏钉住可见的实时钟；tabular-nums 防秒跳抖动，由 JS 每秒刷新（不服务端渲染）。
+       居中由顶栏网格的中间列负责（见 .page-topbar 注释），这里只做文字样式。 */
+    .page-topbar .topbar-clock{text-align:center;font-size:calc(13px * var(--erp-scale));color:var(--erp-muted);font-variant-numeric:tabular-nums;letter-spacing:.02em;white-space:nowrap}
+    .page-topbar .status-wrap{display:flex;align-items:center;justify-content:flex-end;gap:12px;min-width:0;white-space:nowrap}
     .page-topbar .status{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--erp-success)}
     .page-topbar .status:before{content:"";width:7px;height:7px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.18)}
     /* E8：状态点由 /health 实际结果驱动；失败时变红并给出提示文案。 */
     .page-topbar .status.status-down{color:var(--erp-danger)}
     .page-topbar .status.status-down:before{background:var(--erp-danger);box-shadow:0 0 0 3px color-mix(in srgb,var(--erp-danger) 22%,transparent)}
-    /* 1-C 全局搜索：顶栏常驻悬浮搜索框（不占侧栏、不跳页也能搜）。 */
-    .page-topbar .topbar-search{display:flex;align-items:center;gap:6px;flex:0 1 360px;min-width:150px;margin:0 16px}
-    .page-topbar .topbar-search .form-control{height:32px;font-size:13px;border-radius:6px}
-    .page-topbar .topbar-search .btn{min-height:32px;padding:3px 12px;font-size:13px;white-space:nowrap}
+    /* 1-C 全局搜索：顶栏常驻悬浮搜索框（不占侧栏、不跳页也能搜）。
+       它住在左列里，宽度有上限、可收缩 —— 窗口变窄时先收搜索框，绝不挤到中线时钟上。 */
+    .page-topbar .topbar-search{display:flex;align-items:center;gap:6px;flex:0 1 360px;min-width:0;margin:0 0 0 16px}
+    .page-topbar .topbar-search .form-control{height:32px;font-size:13px;border-radius:6px;min-width:0}
+    .page-topbar .topbar-search .btn{min-height:32px;padding:3px 12px;font-size:13px;white-space:nowrap;flex:0 0 auto}
+    /*
+      窄窗（用户 2026-11-17）：窗口变窄时缩小搜索框宽度，且不再显示「测试用例」这种公司名。
+      收缩分三档，每一档都是量出来的：
+        ≤1180 → 隐藏公司名 + 搜索框 240px（用户截图窗口 1024 宽就落在这一档）
+        ≤900  → 搜索框 180px
+        ≤760  → 搜索框 132px（再窄就只剩输入框与「搜索」两字）
+      公司名在 ≤1180 就收掉，不是 ≤900：门店常用窗口约 1024 宽，那时公司名只剩
+      40 多像素宽、被省略号吃掉一半，留着只会挤掉搜索框该有的宽度。
+    */
+    @media(max-width:1180px){
+      .page-topbar .company{display:none}
+      .page-topbar .topbar-search{flex:0 1 240px;margin:0}
+    }
+    @media(max-width:900px){
+      .page-topbar .topbar-search{flex:0 1 180px}
+    }
+    @media(max-width:760px){
+      .page-topbar{column-gap:10px;padding:0 12px}
+      .page-topbar .topbar-search{flex:0 1 132px}
+      .page-topbar .topbar-clock{font-size:12px}
+    }
     .logout-form{margin:0}
     .logout-form .btn{min-height:30px;font-size:12px;padding:3px 10px}
     h1,h2,h3,h4{color:var(--erp-ink);font-weight:650;letter-spacing:-.02em}h1{font-size:calc(28px * var(--erp-scale))}h2{font-size:calc(23px * var(--erp-scale));margin-bottom:20px}h3{font-size:calc(18px * var(--erp-scale));margin-top:26px}h4{font-size:16px}
@@ -932,13 +963,15 @@
   </nav>
   <main class="content">
     <div class="page-topbar">
-      <div class="company">{{ shop_name }}</div>
-      <form class="topbar-search" method="get" action="{{ url_for('search.search_results') }}" role="search">
-        <input class="form-control form-control-sm" type="search" name="q"
-               value="{{ request.args.get('q', '') if request.endpoint == 'search.search_results' else '' }}"
-               placeholder="搜索单号 / 客户 / 商品 / 资料…" aria-label="全局搜索" autocomplete="off">
-        <button class="btn btn-sm btn-outline-primary" type="submit">搜索</button>
-      </form>
+      <div class="topbar-lead">
+        <div class="company">{{ shop_name }}</div>
+        <form class="topbar-search" method="get" action="{{ url_for('search.search_results') }}" role="search">
+          <input class="form-control form-control-sm" type="search" name="q"
+                 value="{{ request.args.get('q', '') if request.endpoint == 'search.search_results' else '' }}"
+                 placeholder="搜索单号 / 客户 / 商品 / 资料…" aria-label="全局搜索" autocomplete="off">
+          <button class="btn btn-sm btn-outline-primary" type="submit">搜索</button>
+        </form>
+      </div>
       <div class="topbar-clock" id="topbarClock" aria-hidden="true"></div>
       <div class="status-wrap">
         <div class="status" id="localStatus">本地数据已连接</div>

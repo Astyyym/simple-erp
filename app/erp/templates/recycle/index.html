@@ -13,12 +13,13 @@
     本页只重排「呈现」，不动任何端点 / 勾选项名 / 版本号契约（见 tests/test_ui_layout_reflow.py
     与 tests/frontend/recycle_bulk.test.mjs）。
 
-    布局：单据是主体 → 独占整行；商品 / 客户是附属 → 两栏并排。
+    布局：单据是主体 → 独占整行；商品 / 客户是附属 → 上下各占一整行。
     旧版把商品客户塞在右侧窄栏，把「单据」那张表的列压到截断，是本末倒置。
+    2026-11-17 用户要求「商品、客户不要并排了，上下排版」：两栏并排时它们各自只剩
+    约半行宽，名称/电话/删除时间挤在一起；改成纵向堆叠后每张表都拿到整行宽度。
   */
   .recycle-layout{display:grid;gap:16px;align-items:start}
-  .recycle-side{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start;min-width:0}
-  @media(max-width:1100px){.recycle-side{grid-template-columns:minmax(0,1fr)}}
+  .recycle-side{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start;min-width:0}
   .recycle-card{
     display:flex;flex-direction:column;min-width:0;
     padding:16px 16px 14px;

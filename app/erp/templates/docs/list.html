@@ -16,6 +16,107 @@
   .docs-advanced>summary::-webkit-details-marker{display:none}
   .docs-advanced>summary::before{content:"▾";font-size:12px;transition:transform .15s}
   .docs-advanced:not([open])>summary::before{transform:rotate(-90deg)}
+
+  /*
+    书架式列表（2026-11-17 用户要求）。
+    为什么换：旧版是「预览缩略图 + 标题 + 分类 + 大小 + 时间 + 5 个按钮」的表格行，
+    缩略图只有图片格式有、其它格式是一句「—」，表格因此又宽又空。
+    改成书架后每份文件是一张「纸」：纸上直接写文件名，格式用纸的颜色区分
+    （docx 浅蓝 / pdf 浅红 / 表格浅绿 / 演示浅橙 / 图片浅紫 / 文本浅灰），
+    不再渲染文件内容缩略图 —— 一眼就能按颜色找到那一类文件。
+    颜色只在「纸」上，不在标题文字上，深色主题单独给一组低明度底，避免糊在一起。
+  */
+  .docs-shelf-wrap{
+    --paper-pdf-bg:#fdeaea;--paper-pdf-edge:#f3c4c4;--paper-pdf-ink:#b4232a;
+    --paper-word-bg:#e7effd;--paper-word-edge:#c6dbff;--paper-word-ink:#1d4ed8;
+    --paper-sheet-bg:#e3f5ea;--paper-sheet-edge:#bfe7cf;--paper-sheet-ink:#157347;
+    --paper-slide-bg:#fdf0e1;--paper-slide-edge:#f6dcb8;--paper-slide-ink:#b45309;
+    --paper-image-bg:#efe8fd;--paper-image-edge:#dcccfb;--paper-image-ink:#6d28d9;
+    --paper-text-bg:#eef1f5;--paper-text-edge:#dbe1ea;--paper-text-ink:#475467;
+  }
+  html[data-ui-theme="dark"] .docs-shelf-wrap{
+    --paper-pdf-bg:#351d1f;--paper-pdf-edge:#5c2b2e;--paper-pdf-ink:#fca5a5;
+    --paper-word-bg:#1c2b45;--paper-word-edge:#2c4066;--paper-word-ink:#93c5fd;
+    --paper-sheet-bg:#142e24;--paper-sheet-edge:#245140;--paper-sheet-ink:#6ee7b7;
+    --paper-slide-bg:#33270f;--paper-slide-edge:#5a421a;--paper-slide-ink:#fbbf24;
+    --paper-image-bg:#271f3d;--paper-image-edge:#443463;--paper-image-ink:#c4b5fd;
+    --paper-text-bg:#222b3a;--paper-text-edge:#334053;--paper-text-ink:#cbd5e1;
+  }
+  @media (prefers-color-scheme: dark){
+    html[data-ui-theme="system"] .docs-shelf-wrap{
+      --paper-pdf-bg:#351d1f;--paper-pdf-edge:#5c2b2e;--paper-pdf-ink:#fca5a5;
+      --paper-word-bg:#1c2b45;--paper-word-edge:#2c4066;--paper-word-ink:#93c5fd;
+      --paper-sheet-bg:#142e24;--paper-sheet-edge:#245140;--paper-sheet-ink:#6ee7b7;
+      --paper-slide-bg:#33270f;--paper-slide-edge:#5a421a;--paper-slide-ink:#fbbf24;
+      --paper-image-bg:#271f3d;--paper-image-edge:#443463;--paper-image-ink:#c4b5fd;
+      --paper-text-bg:#222b3a;--paper-text-edge:#334053;--paper-text-ink:#cbd5e1;
+    }
+  }
+  /* 每格 172px 起、纸固定 148px 见方：纸小一圈，但「纸 + 元信息 + 操作」整格的横向地盘
+     反而更宽（列更多），点哪一格都容易点中。1440 下 6 列、1024 下 3 列。 */
+  .docs-shelf{
+    --paper-size:148px;
+    list-style:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(172px,1fr));gap:14px;margin:0 0 18px;padding:0;
+  }
+  .docs-shelf-item{min-width:0;display:flex;flex-direction:column;align-items:center;gap:7px}
+  /*
+    方案 C（2026-11-17 用户选定）：方形封面、纸上的文字整体居中。
+    上一版是 3:4 竖幅 —— 1440 视口下每张 209×279px，一屏只放得下 5 个，纸中间大片空白；
+    用户说「卡片太大了，但单个文件可以占的空间大一点，卡片本身不要这么大」。
+    所以：纸改成 1:1（1440 下宽仍约 200px，高度从 279 砍到 200），
+    格式标签 / 文件名 / 大小三行在纸里竖直居中成一簇，不再「标签贴顶、大小贴底」。
+    颜色仍沿用每种格式一套纸色，深浅主题各有低明度底。
+  */
+  .docs-paper{
+    position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+    width:var(--paper-size,148px);height:var(--paper-size,148px);padding:10px 8px;overflow:hidden;text-align:center;
+    border:1px solid var(--paper-edge,#dbe1ea);border-radius:8px;
+    background:var(--paper-bg,#eef1f5);color:var(--paper-ink,#475467);
+    text-decoration:none;transition:transform .12s ease,box-shadow .12s ease,border-color .12s ease;
+  }
+  .docs-paper:hover{transform:translateY(-2px);box-shadow:0 10px 22px rgba(16,24,40,.16);color:var(--paper-ink,#475467);border-color:var(--paper-ink,#475467)}
+  .docs-paper:focus-visible{outline:2px solid var(--erp-primary);outline-offset:2px}
+  .docs-paper[data-paper="pdf"]{--paper-bg:var(--paper-pdf-bg);--paper-edge:var(--paper-pdf-edge);--paper-ink:var(--paper-pdf-ink)}
+  .docs-paper[data-paper="word"]{--paper-bg:var(--paper-word-bg);--paper-edge:var(--paper-word-edge);--paper-ink:var(--paper-word-ink)}
+  .docs-paper[data-paper="sheet"]{--paper-bg:var(--paper-sheet-bg);--paper-edge:var(--paper-sheet-edge);--paper-ink:var(--paper-sheet-ink)}
+  .docs-paper[data-paper="slide"]{--paper-bg:var(--paper-slide-bg);--paper-edge:var(--paper-slide-edge);--paper-ink:var(--paper-slide-ink)}
+  .docs-paper[data-paper="image"]{--paper-bg:var(--paper-image-bg);--paper-edge:var(--paper-image-edge);--paper-ink:var(--paper-image-ink)}
+  .docs-paper[data-paper="text"]{--paper-bg:var(--paper-text-bg);--paper-edge:var(--paper-text-edge);--paper-ink:var(--paper-text-ink)}
+  /* 格式标签：居中在文件名上方，用该格式的墨色，不再压一层半透明白底。 */
+  .docs-paper-kind{
+    padding:0;font-size:10.5px;font-weight:750;letter-spacing:.08em;line-height:1.3;
+    color:var(--paper-ink,#475467);opacity:.82;
+  }
+  /* 文件名是纸上的主体，居中最多两行，超出省略；完整名字在 title 里。 */
+  .docs-paper-title{
+    font-size:13.5px;font-weight:650;line-height:1.42;color:var(--erp-ink);
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;
+    max-width:100%;
+  }
+  .docs-paper-sub{font-size:11.5px;line-height:1.3;color:var(--paper-ink,#475467);opacity:.72;font-variant-numeric:tabular-nums}
+  /* 元信息与操作：纸下方居中排列，与纸同一中轴（方案 C 要求「文字居中」）。 */
+  .docs-shelf-meta{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:6px;font-size:11.5px;color:var(--erp-muted)}
+  .docs-shelf-chip{padding:1px 7px;border-radius:99px;background:var(--erp-surface-soft);border:1px solid var(--erp-border);color:var(--erp-muted);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  /*
+    操作区（2026-11-17 二改）：5 个 btn 在 211px 宽里换成 2 行、每格高 320px，纸只占 70% ——
+    用户说的「卡片本身不要这么大」有一半是这块撑出来的。改成与回收站同源的密集文字按钮：
+    没有边框和底色，一行 5 个放得下（实测 5×36 + 4×2 = 188px < 211px），整格高度回落到 287px。
+  */
+  /* 一行放满 5 个的宽度账（1440 下单元格 173.5px）：
+     5×33.5 + 4×1 = 171.5px ≤ 173.5px。再宽就会被挤成两行、整格多出 28px，
+     所以 gap 取 1px、按钮左右内距取 4px —— 这两个数字是绑在一起的，不要单独调大。 */
+  .docs-shelf-actions{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:1px;min-width:0}
+  .docs-shelf-actions form{margin:0;display:flex;min-width:0}
+  .docs-shelf-actions .btn{
+    min-height:26px;padding:2px 4px;font-size:12px;font-weight:600;white-space:nowrap;
+    background:transparent;border:0;color:var(--erp-muted);box-shadow:none;
+  }
+  .docs-shelf-actions .btn:hover,.docs-shelf-actions .btn:focus-visible{background:var(--erp-surface-soft);color:var(--erp-ink)}
+  .docs-shelf-actions .btn-outline-primary{color:var(--erp-outline-primary)}
+  .docs-shelf-actions .btn-outline-primary:hover,.docs-shelf-actions .btn-outline-primary:focus-visible{background:var(--erp-primary-soft);color:var(--erp-outline-primary)}
+  .docs-shelf-actions .btn-outline-danger{color:var(--erp-outline-danger)}
+  .docs-shelf-actions .btn-outline-danger:hover,.docs-shelf-actions .btn-outline-danger:focus-visible{background:color-mix(in srgb,var(--erp-danger) 12%,transparent);color:var(--erp-outline-danger)}
+  @media(max-width:640px){.docs-shelf{grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px}.docs-paper{padding:9px 7px;gap:4px}.docs-paper-title{font-size:12.5px}}
 </style>
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% for category, message in messages %}
@@ -64,54 +165,34 @@
 </ul>
 
 {% if documents %}
-<div class="table-responsive">
-  <table class="table align-middle">
-    <thead><tr>
-      <th scope="col" style="width:84px">预览</th>
-      <th scope="col">标题</th>
-      <th scope="col">分类</th>
-      <th scope="col">大小</th>
-      <th scope="col">上传时间</th>
-      <th scope="col">操作</th>
-    </tr></thead>
-    <tbody>
-      {% for d in documents %}
-      <tr>
-        <td>
-          {% if d.preview_url %}
-          <a href="{{ d.file_url }}" target="_blank" rel="noopener"><img src="{{ d.preview_url }}" alt="预览" style="width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--erp-border,#ddd)"></a>
-          {% elif d.is_pdf %}
-          <a class="btn btn-sm btn-outline-secondary" href="{{ d.file_url }}" target="_blank" rel="noopener">PDF 预览</a>
-          {% else %}
-          <span class="text-muted small">—</span>
-          {% endif %}
-        </td>
-        <td>
-          <div class="fw-semibold">{{ d.title }}</div>
-          <div class="text-muted small">{{ d.original_name }}</div>
-          {% if d.note %}<div class="text-muted small">{{ d.note }}</div>{% endif %}
-        </td>
-        <td>{{ d.category_name or '未分类' }}</td>
-        <td>{{ d.size_display }}</td>
-        <td>{{ d.created_at }}</td>
-        <td>
-          <div class="d-flex flex-wrap gap-1">
-            <form method="post" action="{{ d.open_url }}"><input type="hidden" name="next" value="{{ current_back_url }}"><button class="btn btn-sm btn-outline-primary" type="submit">打开</button></form>
-            <form method="post" action="{{ d.print_url }}"><input type="hidden" name="next" value="{{ current_back_url }}"><button class="btn btn-sm btn-outline-secondary" type="submit">打印</button></form>
-            <a class="btn btn-sm btn-outline-secondary" href="{{ d.file_url }}">下载</a>
-            <a class="btn btn-sm btn-outline-secondary" href="{{ d.edit_url }}">编辑</a>
-            <form method="post" action="{{ d.delete_url }}" onsubmit="return confirm('确认删除《{{ d.title }}》？文件会被物理删除，无法找回。');">
-              <input type="hidden" name="next" value="{{ current_back_url }}">
-              <input type="hidden" name="confirm_text" value="删除">
-              <button class="btn btn-sm btn-outline-danger" type="submit">删除</button>
-            </form>
-          </div>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+{# 书架：一份文件 = 一张纸。纸上写文件名，配色区分格式；不再渲染内容缩略图。 #}
+<ul class="docs-shelf-wrap docs-shelf">
+  {% for d in documents %}
+  <li class="docs-shelf-item">
+    <a class="docs-paper" data-paper="{{ d.paper_kind }}" href="{{ d.file_url }}" target="_blank" rel="noopener"
+       title="{{ d.title }} · {{ d.original_name }}（点击查看原文件）">
+      <span class="docs-paper-kind">{{ d.ext_label }}</span>
+      <span class="docs-paper-title">{{ d.title }}</span>
+      <span class="docs-paper-sub">{{ d.size_display }}</span>
+    </a>
+    <div class="docs-shelf-meta">
+      <span class="docs-shelf-chip" title="{{ d.category_name or '未分类' }}">{{ d.category_name or '未分类' }}</span>
+      <span title="上传时间 {{ d.created_at }}">{{ (d.created_at or '')[:10] }}</span>
+    </div>
+    <div class="docs-shelf-actions">
+      <form method="post" action="{{ d.open_url }}"><input type="hidden" name="next" value="{{ current_back_url }}"><button class="btn btn-sm btn-outline-primary" type="submit">打开</button></form>
+      <form method="post" action="{{ d.print_url }}"><input type="hidden" name="next" value="{{ current_back_url }}"><button class="btn btn-sm btn-outline-secondary" type="submit">打印</button></form>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ d.file_url }}">下载</a>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ d.edit_url }}">编辑</a>
+      <form method="post" action="{{ d.delete_url }}" onsubmit="return confirm('确认删除《{{ d.title }}》？文件会被物理删除，无法找回。');">
+        <input type="hidden" name="next" value="{{ current_back_url }}">
+        <input type="hidden" name="confirm_text" value="删除">
+        <button class="btn btn-sm btn-outline-danger" type="submit">删除</button>
+      </form>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
 
 {% if total_pages > 1 %}
 <nav class="d-flex gap-2 align-items-center" aria-label="分页">

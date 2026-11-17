@@ -41,17 +41,20 @@ def _seed_recycle_bin():
     return customer_id, draft_id, product_id
 
 
-def test_recycle_bins_are_two_column_cards_not_full_width_tables():
-    """回收站：单据卡独占整行（主体），商品、客户两张卡两栏并排（附属），窄屏回落单列。
+def test_recycle_bins_are_stacked_cards_not_full_width_tables():
+    """回收站：单据卡独占整行（主体），商品、客户两张卡上下各占一整行（附属）。
 
     2026-10-16 重做：旧版把商品/客户塞在右窄栏，把「单据」那张主表的列压到省略号截断
     （单号/金额/删除时间全看不见）。改成单据独占整行后列宽才够用。
+    2026-11-17 用户要求「商品、客户不要并排了，上下排版」：两张卡从两栏并排改为纵向堆叠，
+    每张表都拿整行宽度，不再靠媒体查询在窄屏才落回单列。
     """
     page = _html("/recycle/")
     assert 'class="recycle-layout"' in page
     assert ".recycle-layout{display:grid;gap:16px;align-items:start}" in page
-    assert ".recycle-side{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))" in page
-    assert "@media(max-width:1100px){.recycle-side{grid-template-columns:minmax(0,1fr)}}" in page
+    assert ".recycle-side{display:grid;grid-template-columns:minmax(0,1fr);gap:16px" in page
+    # 反例：并排两栏的写法不能再出现（那正是用户这次要拆掉的）。
+    assert ".recycle-side{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))" not in page
     # 三张卡片：单据（整行）+ 商品、客户（并排）。
     assert page.count('class="recycle-card"') == 3
     # 计数徽章三处；空计数会额外带 is-zero（褪成中性色，不拿「有内容」的蓝徽章提示空）。
@@ -351,3 +354,33 @@ def test_advanced_filter_button_and_outlined_row_actions():
     # 反例二：描边按钮也不许回到行操作（它会重新引入视觉权重与 60px 硬撑）。
     for cls in ("btn-outline-secondary", "btn-outline-primary", "btn-outline-info", "btn-outline-danger"):
         assert f'class="btn btn-sm {cls}"' not in body, cls
+
+
+def test_topbar_is_a_three_column_grid_so_the_clock_sits_on_the_midline():
+    """顶栏时钟必须落在顶栏中线上，且窄窗先收搜索框、再收掉公司名。
+
+    2026-11-17 用户反馈两点：①「时间没有居中显示」②「窗口变窄时缩小搜索框宽度，
+    且不再显示『测试用例』这样的公司名称」。
+
+    病根①：顶栏原是 flex + space-between，时钟用 `flex:1 1 auto` + `text-align:center`，
+    居中的是「剩余空间」的中点 —— 左边有公司名 + 搜索框、右边只有状态点，时钟被整体推右。
+    修法：顶栏改 `1fr auto 1fr` 三段网格，中间列天然在中线上（实测 1024/1280/1440 偏移均为 0px）。
+    """
+    page = _html("/recycle/")
+    # 三段网格是居中机制的本身，不能退回 flex + space-between。
+    assert ".page-topbar{" in page
+    topbar = page[page.index(".page-topbar{"):page.index(".page-body{")]
+    assert "display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)" in topbar
+    assert "justify-content:space-between" not in topbar
+    # 时钟不再靠 flex 平分剩余空间来"假装"居中。
+    clock_rule = page[page.index(".page-topbar .topbar-clock{"):]
+    clock_rule = clock_rule[:clock_rule.index("}")]
+    assert "flex:1 1 auto" not in clock_rule
+    # 左列容器存在：公司名 + 搜索框成一组。
+    assert 'class="topbar-lead"' in page
+    # 窄窗两档：≤1180 收公司名并把搜索框压到 240px；≤900 再压到 180px。
+    assert "@media(max-width:1180px){\n      .page-topbar .company{display:none}" in page
+    assert ".page-topbar .topbar-search{flex:0 1 240px;margin:0}" in page
+    assert "@media(max-width:900px){\n      .page-topbar .topbar-search{flex:0 1 180px}" in page
+    # 宽屏搜索框仍有 360px 上限。
+    assert ".page-topbar .topbar-search{display:flex;align-items:center;gap:6px;flex:0 1 360px" in page

@@ -15,6 +15,24 @@ docs_bp = Blueprint("docs", __name__, url_prefix="/docs")
 
 PAGE_SIZE = 50
 
+# 书架样式归类（2026-11-17）：列表改成书架卡片后，每张卡片的「纸」按格式取一套颜色，
+# 不再展示文件内容缩略图。归类只影响呈现，不参与校验；未知格式落到 text。
+PAPER_KINDS = {
+    "pdf": "pdf",
+    "doc": "word", "docx": "word",
+    "xls": "sheet", "xlsx": "sheet",
+    "ppt": "slide", "pptx": "slide",
+    "txt": "text", "csv": "text", "rtf": "text",
+}
+
+
+def _paper_kind(ext: str) -> str:
+    ext = (ext or "").lower()
+    if doc_service.is_image(ext):
+        return "image"
+    return PAPER_KINDS.get(ext, "text")
+
+
 
 def _human_size(num_bytes: int) -> str:
     size = float(num_bytes or 0)
@@ -87,6 +105,9 @@ def list_docs():
         item["size_display"] = _human_size(item["size_bytes"])
         item["is_image"] = doc_service.is_image(item["ext"])
         item["is_pdf"] = (item["ext"] or "").lower() == "pdf"
+        # 书架卡片用：格式归类（配色）+ 大写扩展名（书脊上那行小字）。
+        item["paper_kind"] = _paper_kind(item["ext"])
+        item["ext_label"] = (item["ext"] or "").upper() or "文件"
         item["file_url"] = url_for("docs.doc_file", doc_id=item["id"])
         item["preview_url"] = url_for("docs.doc_preview", doc_id=item["id"]) if item["is_image"] else ""
         item["edit_url"] = url_for("docs.edit_doc", doc_id=item["id"])
