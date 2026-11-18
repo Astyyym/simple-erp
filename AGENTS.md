@@ -16,7 +16,13 @@
 - Windows 源码开发：首次准备运行 `setup.bat`（创建 `.venv` 并装依赖），随后用 `.venv\Scripts\python.exe app\app.py` 起服务
 - Windows 桌面版（免安装）：`dist\local-vX.Y.Z\简单ERP\简单ERP.exe`
 - Windows 安装包（推荐给门店）：`打包Windows安装包.bat` → `dist\simple-erp-setup-vX.Y.Z.exe`，per-user 装到 `%LOCALAPPDATA%\Programs\简单ERP`
-- 测试：`.venv\Scripts\python.exe -m pytest tests\ -q`；打包 venv 可用 `.venv-win\Scripts\python.exe -m pytest tests\ -q`
+- 测试（默认并行，约 2 分钟）：`PYTHONUTF8=1 PYTHONIOENCODING=utf-8 .venv\Scripts\python.exe -X utf8 -m pytest tests\ -q -n 8`；打包 venv 同理换 `.venv-win\Scripts\python.exe`
+  - **UTF-8 环境变量是硬要求，不能省。** 项目路径含中文，pytest-xdist 的 execnet worker 启动时会在 `gateway_bootstrap` 里抛 `UnicodeEncodeError: 'utf-8' codec can't encode character '\udc80'`，表现为 `INTERNALERROR> EOFError: expected 1 bytes, got 0`，整场测试直接崩掉而不是变慢。
+  - 实测基准（v4.9.4，1216 用例，14 核 20 线程）：串行 `-q` 647s，并行 `-n 8` 131.86s，**4.9 倍**，两边都是 `1215 passed, 1 skipped`。别再默认「这套测试就是要跑十分钟」。
+  - 只跑单文件或调 bug 时去掉 `-n 8`（进程启动开销会盖过收益）；定位慢用例用 `--durations=20`。
+- **打包前自动过测试闸门**：`打包Windows安装包.bat` 的 `[0/5]` 步会先跑一遍全量并行测试，不通过直接中止、不打任何产物。代码没动、只想重打一次包时用 `打包Windows安装包.bat --skip-tests` 显式跳过。
+- **改 `.bat` 时注意注释编码**：`chcp 65001`（UTF-8）的脚本里，`rem` 行含中文全角标点（`（）；，` 等）会被 cmd 拆开当成命令执行，报 `'，缺了才装。' is not recognized as an internal or external command`，而后面的行照跑，**不会中断但不干净**。实测复现过：同样内容换成纯英文注释就正常。`打包Windows桌面版.bat`、`dev_start.bat`、`setup.bat` 属此类，注释一律写英文；`打包Windows安装包.bat` 是 `chcp 936`（GBK），中文注释安全，不受影响。
+- **依赖不再每次重装**：`dev_start.bat`、`setup.bat`、`打包Windows安装包.bat` 统一走 `tools\ensure_deps.py`，它把 `requirements.txt` 的 sha256 记在 venv 里，内容没变就跳过安装（原来每次启动都要联网查索引、白等十几秒）。改了 `requirements.txt` 会自动重装，不用手动处理。
 - 健康检查：`http://127.0.0.1:5000/health`（公开端点，返回 `auth: disabled`）
 - WSL：只通过 Windows 盘映射访问同一仓库做可选交叉测试；不建立第二套长期源码。
 

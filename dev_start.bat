@@ -1,13 +1,17 @@
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0"
-rem 同 setup.bat：只看 .venv\Scripts\python.exe，避免 Linux/WSL 的 .venv 让这里误判。
+rem [env] judge by .venv\Scripts\python.exe only, same as setup.bat.
 if not exist .venv\Scripts\python.exe (
   if exist .venv rmdir /s /q .venv
   py -V:Astral/CPython3.11.15 -m venv .venv
   if errorlevel 1 py -3 -m venv .venv
 )
-call .venv\Scripts\activate.bat
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-python app\app.py
+rem [deps] install only when requirements.txt changed; see tools\ensure_deps.py.
+.venv\Scripts\python.exe tools\ensure_deps.py
+if errorlevel 1 (
+  echo 依赖安装失败。
+  pause
+  exit /b 1
+)
+.venv\Scripts\python.exe app\app.py

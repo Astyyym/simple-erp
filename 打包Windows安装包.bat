@@ -44,13 +44,50 @@ if not exist .venv-win\Scripts\python.exe (
   )
 )
 
-echo 正在安装/更新依赖包...
-.venv-win\Scripts\python.exe -m pip install --upgrade pip
-.venv-win\Scripts\pip.exe install -r requirements.txt pyinstaller pywebview
+echo 正在检查依赖包...
+rem 基础依赖走 tools\ensure_deps.py（requirements.txt 内容不变就跳过）；
+rem 打包专用包（pyinstaller / pywebview）单独判定，缺了才装。
+.venv-win\Scripts\python.exe tools\ensure_deps.py
 if errorlevel 1 (
   echo 依赖安装失败。
   pause
   exit /b 1
+)
+.venv-win\Scripts\python.exe -c "import PyInstaller, webview" 2>nul
+if errorlevel 1 (
+  echo 正在安装打包专用依赖 ...
+  .venv-win\Scripts\pip.exe install pyinstaller pywebview
+  if errorlevel 1 (
+    echo 打包依赖安装失败。
+    pause
+    exit /b 1
+  )
+)
+
+rem ============================================================
+rem  [0/5] 测试闸门：打包前必须全量测试通过。
+rem
+rem  两个坑都在这里踩过，别删：
+rem   · 必须带 PYTHONUTF8 / PYTHONIOENCODING 和 -X utf8：项目路径含中文，
+rem     pytest-xdist 的 execnet worker 启动会抛 UnicodeEncodeError（udc80 代理对），
+rem     外层只会显示 INTERNALERROR> EOFError: expected 1 bytes, got 0，整场直接崩。
+rem   · 并行 -n 8 约 2 分钟，串行要 10 分钟以上；机器核数少可调小。
+rem
+rem  想跳过（只重打一次包、代码没动过）：打包Windows安装包.bat --skip-tests
+rem ============================================================
+if /i "%~1"=="--skip-tests" (
+  echo [0/5] 已跳过测试闸门（--skip-tests）。
+) else (
+  echo [0/5] 正在跑全量测试（约 2 分钟，失败即中止打包）...
+  set PYTHONUTF8=1
+  set PYTHONIOENCODING=utf-8
+  .venv-win\Scripts\python.exe -X utf8 -m pytest tests\ -q -n 8
+  if errorlevel 1 (
+    echo.
+    echo 测试未通过，已中止打包。先修测试，或用 --skip-tests 显式跳过。
+    pause
+    exit /b 1
+  )
 )
 
 set ISCC=%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe

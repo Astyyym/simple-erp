@@ -36,7 +36,10 @@ metadata:
 2. 明确本次目标、允许修改文件、非目标和验收方式；需求变化时先更新需求基线与短计划。
 3. 写计划或候选功能条目时，对每条过「三问」（数据真的存在？用户真的需要？现有机制已解决？），依据见 [`references/plan-item-admission-three-questions.md`](references/plan-item-admission-three-questions.md)；判否的条目删除后必须留痕与理由，存疑的降为「待确认」并在开工前问用户。
 4. UI/用户流程变化先遵循项目开发全流程技能的原型与验收要求；不因文档任务强行增加代码或原型。
-5. 用隔离的临时 SQLite 数据库运行相关测试；优先使用 Windows 项目环境：`.venv\\Scripts\\python.exe -m pytest tests\\ -q`。
+5. 用隔离的临时 SQLite 数据库运行相关测试；优先使用 Windows 项目环境，**默认并行跑**：
+   `PYTHONUTF8=1 PYTHONIOENCODING=utf-8 .venv\\Scripts\\python.exe -X utf8 -m pytest tests\\ -q -n 8`（约 2 分钟；串行要 10 分钟以上）。
+   - **UTF-8 环境变量不能省**：路径含中文，execnet worker 启动会抛 `UnicodeEncodeError ... '\udc80'`，外层表现为 `INTERNALERROR> EOFError: expected 1 bytes, got 0`，是崩溃不是慢。
+   - 单文件调试去掉 `-n 8`；定位慢用例加 `--durations=20`。实测基准与细节见根目录 `AGENTS.md`「怎么跑」。
 6. 需要时做 Windows 页面/桌面 EXE/打印机等对应层级的真实验收；测试通过不代替用户路径验证。
 7. 分别报告 `passed`、`failed`、`blocked`、`unverified`；代码修改、测试、用户验收、打包、Git 推送和 Release 各自记录，不能互相推断。
 8. 桌面壳（pywebview + WebView2）的 UI 缺陷**可以自验**，不要默认归为「不可自验」：用真实 WebView2 窗口 + JS 探针跑 DOM 状态，再截「应用自身窗口」的屏拿渲染像素，两路证据缺一不可。方法见 [`references/pywebview-webview2-ui-self-verification.md`](references/pywebview-webview2-ui-self-verification.md)。
