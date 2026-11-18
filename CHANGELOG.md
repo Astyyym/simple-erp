@@ -49,10 +49,10 @@
 ### 验收（本地，2026-11-18）
 
 - 前端 `node --test tests/frontend/*.test.mjs`：**113 passed / 0 failed**。
-- 本次改动涉及的定向测试 **72 passed / 0 failed**（`test_order_list_filter_layout` / `test_ui_layout_reflow` /
-  `test_sidebar_ownership` / `test_workbench_dashboard` / `test_analytics_v4_behavior` / `test_document_library`）。
-- **全量 pytest 本轮未跑完**（跑到约 23% 时被 10 分钟上限掐断，重跑后被打包流程打断）；
-  因此本轮**不宣称「全量通过」**，下次发版前需补跑一次全量回归。
+- 全量 pytest **1216 passed / 0 failed / 0 skipped**（621.99s，2026-11-18 补跑）。
+  注：首轮全量曾卡在 `test_desktop_startup.py::test_main_reports_real_database_failure_before_opening_webview`，
+  原因是本机 5000 端口已被用户自己开着的绿色版实例占用，`main()` 走「已在运行 → 开窗口」分支而挂死；
+  用 `ERP_PORT=5333` 指到空闲端口后即可正常跑完。**跑全量回归前先确认 5000 端口是否被占用。**
 - 真实服务 CDP 量几何（隔离数据根 `.alma/shots/demo_data` + 隔离端口 5199，未触碰正式库），
   1600/1440/1414/1413/1280/1180/1100/1024 八档：
 

@@ -243,8 +243,9 @@ setup.bat
 
 健康检查：`http://127.0.0.1:5000/health`。
 
-- 当前质量基线（2026-11-07）：全量 `pytest` **1191 passed / 17 skipped / 0 failed**；前端 `node --test tests/frontend/*.test.mjs` **113 passed**。
+- 当前质量基线（2026-11-18）：全量 `pytest` **1216 passed / 0 skipped / 0 failed**（`.venv-win`，10 分 21 秒）；前端 `node --test tests/frontend/*.test.mjs` **113 passed**。
 - 打包环境 `.venv-win` 与源码环境分开；隔离实例用 `ERP_PORT` 指定端口、`ERP_DATA_ROOT` 指定数据根，**测试不得污染正式 `data/erp.db`**。
+- **跑全量测试前先确认 `5000` 端口没被自己的程序占用**：`test_desktop_startup.py` 会直接调 `desktop_app.main()`，端口被占用时它走「程序已在运行 → 开窗口」分支，在无交互会话里会挂死。有占用就换端口跑：`ERP_PORT=5333 .venv-win\Scripts\python.exe -m pytest tests\ -q`。
 - 桌面版为 PyInstaller one-folder 程序，业务数据目录与程序文件分开。
 - **可选 WSL 交叉测试**：在仓库的 `/mnt/d/` 映射目录内进行，确认 `.venv` 已准备；源码预览端口用 `5001`，服务数据根必须设临时目录。Windows 仍是桌面流程与打包环境。详见 [开发说明](docs/开发说明.md)。
 

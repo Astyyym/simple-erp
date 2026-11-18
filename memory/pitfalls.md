@@ -977,3 +977,21 @@ New-NetFirewallRule -DisplayName "简单ERP 手机访问 5001" -Direction Inboun
 2. 任何「按当前时间动态算缓存键」的设计，都要单独想**跨月 / 跨年边界**：只缓存「本月」必然在 1 号丢失上月。
 3. **桌面端与 APK 必须一起升级**：`/m/api/snapshot` 在桌面端，只换 APK 拿不到备份列表。
 4. 回归锁：`tests/test_mobile_snapshot.py::test_snapshot_backup_covers_previous_month_order`（上月 1 号的单必须进备份）。
+
+## 跑全量 pytest 前：先确认 5000 端口没被占用（2026-11-18 实测）
+
+**症状**：全量 pytest 跑到约 23% 就不动了，日志停在 `tests/test_desktop_startup.py` 附近，
+进程还活着（内存 330MB+），一卡十几分钟；单独跑该文件用 `-v` 能看到卡在第 2 项
+`test_main_reports_real_database_failure_before_opening_webview`。
+
+**根因**：这个测试构造坏库后直接调 `desktop_app.main()`，指望它**先抛 RuntimeError**（"启动失败"）。
+但 `main()` 第一件事是 `_port_is_open(port)`：若 5000 端口已被占用（比如用户自己开着绿色版），
+它就认为「程序已在运行」，跳过 `_create_app()` 直接去开 webview 窗口 —— 在无交互会话里挂死。
+**测试本身没错，是环境里有个真实实例占着端口。**
+
+**规矩**：
+1. 跑全量前先 `netstat -ano | grep ":5000 "`，有监听就问清是不是用户开着的正式实例（别杀）。
+2. 有占用时用 `ERP_PORT=5333` 指到空闲端口再跑：`ERP_PORT=5333 .venv-win/Scripts/python.exe -m pytest tests/ -q`。
+   `resolve_port()` 优先读 `ERP_PORT`，测试因此走「端口空闲 → 正常构造 app → 抛启动失败」的正确路径。
+3. 全量耗时约 **10 分 21 秒 / 1216 项**，比直觉长；不要用 120s 默认超时跑它，
+   写到日志文件再查（`> .alma/pytest-v4.x.x-full.log`），比反复轮询 stdout 稳。
