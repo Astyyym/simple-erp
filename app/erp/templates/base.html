@@ -216,9 +216,10 @@
       scrollbar-gutter:stable;
       padding:26px 30px 48px;
     }
-    /* 左列：公司名 + 搜索框成一组，靠左对齐（右列只有状态点，靠右）。 */
+    /* 左列：全局搜索框，靠左对齐（右列只有状态点，靠右）。
+       2026-11-18 用户要求：顶栏不再显示公司名，直接删掉（不是窄窗才隐藏），
+       搜索框因此不再有左侧缩进，任何宽度都贴左列起点。 */
     .page-topbar .topbar-lead{display:flex;align-items:center;min-width:0;gap:0}
-    .page-topbar .company{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:calc(13px * var(--erp-scale));color:var(--erp-muted)}
     /* Batch 0：顶栏钉住可见的实时钟；tabular-nums 防秒跳抖动，由 JS 每秒刷新（不服务端渲染）。
        居中由顶栏网格的中间列负责（见 .page-topbar 注释），这里只做文字样式。 */
     .page-topbar .topbar-clock{text-align:center;font-size:calc(13px * var(--erp-scale));color:var(--erp-muted);font-variant-numeric:tabular-nums;letter-spacing:.02em;white-space:nowrap}
@@ -230,21 +231,20 @@
     .page-topbar .status.status-down:before{background:var(--erp-danger);box-shadow:0 0 0 3px color-mix(in srgb,var(--erp-danger) 22%,transparent)}
     /* 1-C 全局搜索：顶栏常驻悬浮搜索框（不占侧栏、不跳页也能搜）。
        它住在左列里，宽度有上限、可收缩 —— 窗口变窄时先收搜索框，绝不挤到中线时钟上。 */
-    .page-topbar .topbar-search{display:flex;align-items:center;gap:6px;flex:0 1 360px;min-width:0;margin:0 0 0 16px}
+    .page-topbar .topbar-search{display:flex;align-items:center;gap:6px;flex:0 1 360px;min-width:0;margin:0}
     .page-topbar .topbar-search .form-control{height:32px;font-size:13px;border-radius:6px;min-width:0}
     .page-topbar .topbar-search .btn{min-height:32px;padding:3px 12px;font-size:13px;white-space:nowrap;flex:0 0 auto}
     /*
-      窄窗（用户 2026-11-17）：窗口变窄时缩小搜索框宽度，且不再显示「测试用例」这种公司名。
+      窄窗（用户 2026-11-17 / 11-18）：窗口变窄时缩小搜索框宽度。
       收缩分三档，每一档都是量出来的：
-        ≤1180 → 隐藏公司名 + 搜索框 240px（用户截图窗口 1024 宽就落在这一档）
+        ≤1180 → 搜索框 240px（用户截图窗口 1024 宽就落在这一档）
         ≤900  → 搜索框 180px
         ≤760  → 搜索框 132px（再窄就只剩输入框与「搜索」两字）
-      公司名在 ≤1180 就收掉，不是 ≤900：门店常用窗口约 1024 宽，那时公司名只剩
-      40 多像素宽、被省略号吃掉一半，留着只会挤掉搜索框该有的宽度。
+      公司名已于 2026-11-18 整条删掉（用户要求：不需要再显示），
+      所以这里只剩搜索框收缩，不再有「窄窗隐藏公司名」这一档。
     */
     @media(max-width:1180px){
-      .page-topbar .company{display:none}
-      .page-topbar .topbar-search{flex:0 1 240px;margin:0}
+      .page-topbar .topbar-search{flex:0 1 240px}
     }
     @media(max-width:900px){
       .page-topbar .topbar-search{flex:0 1 180px}
@@ -449,22 +449,54 @@
     .filter-card .form-control,.filter-card .form-select{min-width:0}
     /* 嵌套日期行不要用 Bootstrap 负外边距，避免筛选卡内溢出 */
     .filter-card .row{margin-left:0;margin-right:0}
-    /* ① 查询三要素 */
-    .filter-tier-query{display:flex;flex-wrap:wrap;gap:16px 20px;align-items:flex-start}
+    /*
+      ① 查询三要素（2026-11-18 用户第 N 次反馈「不同窗口宽度下筛选区域还是没做好适配」）。
+
+      病根不是某一条宽度没调，而是**布局机制本身不可预测**：原来是 flex + flex-wrap，
+      三个元素各自带 flex-basis，谁被压缩、谁被挤到下一行，完全取决于剩余宽度落在哪一档。
+      实测（1440/1280/1180/1024/960 五档逐像素量）：
+        · 1280：客户名称被压到 241px，「客户名称」标签与输入框断成两行（字段高 68 而非 40），
+          而「高级筛选」因 margin-left:auto 争不到空间，被甩到**第三行**独自右对齐；
+        · 1180/1024：时间块整行 + 客户名称整行 + 「高级筛选」再独占一行，卡片 261px；
+        · 起止日期跟着容器宽度乱变（1440 每格 143px，1180 每格 224px），同一控件在窄窗反而更宽。
+      所以这里改成 **grid + 写死行号**：每个元素落在哪一行、哪一列由我们指定，宽度只决定
+      「哪一档生效」，不再决定「谁被挤走」。三档阈值按实测内容宽度反推（视口 = 内容宽 + 423px）：
+        ≥1400（内容 ≥977）→ 一行三列：时间 | 客户 | 高级筛选
+        ≤1399 → 两行：时间独占首行整宽；第二行「客户 + 高级筛选」，客户撑满、按钮贴右
+        ≤720 → 单列：时间 / 客户 / 按钮，按钮靠右
+      为什么中档不让时间块与按钮同行：时间块内容宽 596px，1024 视口只有 601px 可用，
+      按钮并排会把它压到 487px，起止日期随即折回第二行。让时间块独占一行才稳定。
+    */
+    .filter-tier-query{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px 20px;align-items:start}
     .filter-tier-query>*{min-width:0}
-    .filter-field-composite{flex:1.2 1 320px;min-width:0}
-    .filter-field-plain{flex:1 1 220px}
+    /* 显式给行号：DOM 顺序是 时间 → 客户 → 按钮，靠 auto-placement 时按钮会被推到第三行
+       （客户占 1/-1 时第二行整体被它拿走）。写明 grid-row 后每档的位置都不再受 DOM 顺序影响。 */
+    .filter-field-composite{grid-column:1;grid-row:1;min-width:0}
+    /* min-width:260px 是「客户名称」这个字段的可用下限（标签 52 + 输入 180 + 间距）；
+       低于它就只剩断成两行这一条路，所以由网格列宽兜住，而不是等被压缩后再补救。
+       网格轨道是 minmax(0,1fr)，这条 min-width 才是真正的护栏。 */
+    .filter-field-plain{grid-column:2;grid-row:1;min-width:260px}
+    .filter-tier-query>.filter-advanced-toggle{grid-column:3;grid-row:1;align-self:center}
     .filter-field-composite .dates{margin-top:10px}
     /* 批次 2：字段内「标签 + 控件」同行 —— 原先标签独占一行，一条查询要素占三行、
        六个查询要素把卡片顶到 133px。改为同行后同一条要素只占一行。 */
     .filter-inline{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;min-width:0}
     .filter-inline>.form-label{margin:0;white-space:nowrap}
-    /* 比 `.filter-field-composite .dates` 高一档特异度，压掉它的 margin-top。 */
-    .filter-field-composite .filter-inline>.dates{margin:0;flex:1 1 260px;min-width:0}
+    /* 客户字段内「标签 + 输入」恒为一行（2026-11-18）：输入框自己收窄，
+       不允许标签被顶到上一行、输入框掉到下一行 —— 那会让字段高 68px、与左侧时间块错位。 */
+    .filter-field-plain .filter-inline{flex-wrap:nowrap}
+    /* 比 `.filter-field-composite .dates` 高一档特异度，压掉它的 margin-top。
+       2026-11-18：日期区不再 flex-grow —— 原来它随容器拉伸，同一对日期框在 1440 下每格
+       143px、在 1180 下反而涨到 224px（窄窗更宽，读数更跳）。改为按内容固定宽度，
+       任何窗口下起止日期都是同一尺寸，时间块的总宽也随之稳定。 */
+    .filter-field-composite .filter-inline>.dates{margin:0;flex:0 1 auto;min-width:0}
     .filter-inline>.suggest-wrap,.filter-inline>.form-select,.filter-inline>.form-control{flex:1 1 180px;min-width:0}
     .filter-mode-options{display:flex;flex-wrap:wrap;gap:8px}
     .filter-mode-options .btn{white-space:nowrap;min-height:34px;padding:4px 12px;font-size:13px}
-    .filter-field-date .date-range{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    /* 日期格固定 143px —— 沿用 1440 宽下已验收的尺寸（原生日期控件「2026/11/18」+ 日历图标）。
+       上限写死而不是 1fr：1fr 会让同一对日期框随容器拉伸（1440 档 143px、1180 档涨到 224px），
+       窄窗反而更宽。上限之内靠 minmax(0,…) 继续缩，600px 视口不会溢出。 */
+    .filter-field-date .date-range{display:grid;grid-template-columns:repeat(2,minmax(0,143px));gap:10px}
     .filter-field-date[data-mode="year"] .form-control{max-width:220px}
     .filter-field-date[hidden]{display:none}
     /* ② 条件多选：订单类型 / 单据状态 —— 两页共用「左右两栏」骨架，
@@ -542,7 +574,45 @@
       */
       .filter-tier-conditions{grid-template-columns:minmax(0,1fr)}
       .filter-field-type+.filter-field-type{border-left:0;padding-left:0}
-      .filter-field-composite,.filter-field-plain{flex:1 1 100%}
+    }
+    /*
+      查询行分档（2026-11-18）。阈值全部由实测内容宽度反推，不是拍的：
+        内容宽 = 视口 − 424px（侧栏 280 + content 外边距 28 + page-body 内边距 60 +
+                 卡片内边距 36 + 边框/滚动条槽；1440→1016、1414→990 两点拟合）。
+        · 时间块 596px（标签 + 模式按钮 224 + 起止日期 296 + 间距）
+        · 客户字段最小 260px（标签 52 + 间距 12 + 输入 180 + 余量）
+        · 「高级筛选」按钮 94px
+        三列并排需 596+20+260+20+94 = 990 → 视口 1414 起。1413 时客户只剩 259px，
+        低于 260 下限会横向溢出（实测），所以 1413 必须落到中档。
+      两档：
+        ≥1414      一行：时间 | 客户 | 高级筛选
+        ≤1413      两行：时间独占首行；客户 + 高级筛选并排第二行
+                   ← 用户 2026-11-18 定的最窄窗口 1024、桌面壳 min_size 1100 都落在这一档
+        再窄（≤720，只会是浏览器/手机横向）由下面单独一档纵向堆叠。
+      每档都显式写 grid-row/grid-column：只写列号时，客户字段一跨列，自动排布就把按钮
+      顶到第三行（实测 1392 下按钮 y=281、客户 y=227）。
+    */
+    @media(max-width:1413px){
+      /*
+        中档：时间块独占首行 —— 给它整宽，起止日期才不会在块内折行
+        （若把按钮放首行右侧，时间块被压到 487px，日期折回第二行，等于没修）。
+        第二行「客户 + 高级筛选」：客户撑满剩余宽度，按钮垂直居中贴右。
+      */
+      .filter-tier-query{grid-template-columns:minmax(0,1fr) auto}
+      .filter-field-composite{grid-column:1/-1;grid-row:1}
+      .filter-field-plain{grid-column:1;grid-row:2}
+      .filter-tier-query>.filter-advanced-toggle{grid-column:2;grid-row:2;align-self:center}
+    }
+    @media(max-width:720px){
+      /*
+        极窄档（2026-11-18 用户定：**1024 是最窄窗口，不能再窄**；这一档只兜浏览器/手机横向，
+        桌面壳够不到 —— desktop_app.py 的 min_size=(1100,700) 已经把窗口夹在 1100 以上）。
+        内容宽 < 296px 时「客户最小 260 + 间距 20 + 按钮 94」也放不下，只能纵向堆叠。
+      */
+      .filter-tier-query{grid-template-columns:minmax(0,1fr)}
+      .filter-field-composite{grid-column:1;grid-row:1}
+      .filter-field-plain{grid-column:1;grid-row:2}
+      .filter-tier-query>.filter-advanced-toggle{grid-column:1;grid-row:3;justify-self:end;align-self:center}
     }
     /*
       基础资料列表页（商品管理 / 客户管理）顶部工具区：两页共用同一套类，只写一次。
@@ -964,7 +1034,6 @@
   <main class="content">
     <div class="page-topbar">
       <div class="topbar-lead">
-        <div class="company">{{ shop_name }}</div>
         <form class="topbar-search" method="get" action="{{ url_for('search.search_results') }}" role="search">
           <input class="form-control form-control-sm" type="search" name="q"
                  value="{{ request.args.get('q', '') if request.endpoint == 'search.search_results' else '' }}"

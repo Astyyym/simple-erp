@@ -234,8 +234,11 @@ def test_both_filter_cards_share_one_full_row_field_grid():
     orders = _html("/orders/")
     assert 'class="filter-card"' in orders
     # 三段式：查询三要素（时间组合控件 + 客户）→ 条件多选 → 动作条。
-    assert ".filter-tier-query{display:flex;flex-wrap:wrap" in orders
-    assert ".filter-field-composite{flex:1.2 1 320px" in orders
+    # 2026-11-18：查询行由 flex + flex-wrap 改为 grid + 写死行号 —— flex 版在
+    # 1280/1360 下把「客户名称」压成标签一行、输入一行，并把「高级筛选」甩到第三行。
+    assert ".filter-tier-query{display:grid;grid-template-columns:auto minmax(0,1fr) auto" in orders
+    assert ".filter-field-composite{grid-column:1;grid-row:1" in orders
+    assert ".filter-tier-query{display:flex;flex-wrap:wrap" not in orders
     assert ".filter-tier-conditions{display:grid" in orders
     # 订单类型整行：标签 + 四类 + 清空同行左对齐（不勾选=全部，无全选）。
     assert ".filter-type-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}" in orders
@@ -376,11 +379,14 @@ def test_topbar_is_a_three_column_grid_so_the_clock_sits_on_the_midline():
     clock_rule = page[page.index(".page-topbar .topbar-clock{"):]
     clock_rule = clock_rule[:clock_rule.index("}")]
     assert "flex:1 1 auto" not in clock_rule
-    # 左列容器存在：公司名 + 搜索框成一组。
+    # 左列容器存在：现在只装全局搜索框（公司名已于 2026-11-18 整条删除）。
     assert 'class="topbar-lead"' in page
-    # 窄窗两档：≤1180 收公司名并把搜索框压到 240px；≤900 再压到 180px。
-    assert "@media(max-width:1180px){\n      .page-topbar .company{display:none}" in page
-    assert ".page-topbar .topbar-search{flex:0 1 240px;margin:0}" in page
+    # 公司名：用户 2026-11-18 要求「直接删掉，不需要再显示了，不需要窄窗口条件下隐藏」。
+    # 所以顶栏里既没有 .company 节点，也没有「窄窗才隐藏」的媒体查询残留。
+    assert 'class="company"' not in page
+    assert ".page-topbar .company{" not in page
+    # 窄窗两档只剩搜索框收缩：≤1180 压到 240px；≤900 再压到 180px。
+    assert "@media(max-width:1180px){\n      .page-topbar .topbar-search{flex:0 1 240px}" in page
     assert "@media(max-width:900px){\n      .page-topbar .topbar-search{flex:0 1 180px}" in page
     # 宽屏搜索框仍有 360px 上限。
     assert ".page-topbar .topbar-search{display:flex;align-items:center;gap:6px;flex:0 1 360px" in page

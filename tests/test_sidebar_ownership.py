@@ -57,9 +57,11 @@ def test_sidebar_highlights_exactly_one_owner(path, expected):
     init_db()
     labels = _active_labels(_nav_html(create_app().test_client(), path))
     assert expected in labels, f"{path} 未高亮 {expected}，实际 {labels}"
-    # 开单页允许父项「开单」与子项同时点亮；其余页必须只有一项。
-    allowed = {"开单", "销售单", "退货单"} if path in ("/orders/new", "/orders/return/new") else {expected}
-    assert set(labels) <= allowed, f"{path} 出现多余高亮：{labels}"
+    # 四类开单页都点亮「父项 开单 + 对应子项」（2026-11-18 用户反馈：点拿货单/退拿货单时
+    # 「开单」没跟着选中，而销售/退货会 —— 父项是四页共同的容器，四类必须一致）。
+    entry_pages = ("/orders/new", "/orders/return/new", "/purchases/new", "/purchases/return/new")
+    allowed = {"开单", expected} if path in entry_pages else {expected}
+    assert set(labels) == allowed, f"{path} 高亮集合应为 {allowed}，实际 {labels}"
 
 
 def test_reconciliation_is_owned_by_accounts():

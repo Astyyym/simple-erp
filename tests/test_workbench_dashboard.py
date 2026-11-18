@@ -136,7 +136,10 @@ def test_workbench_hides_fixed_sidebar_at_compact_viewport():
 
     assert response.status_code == 200
     assert "@media(max-width:760px){.sidebar{display:none}" in html
-    assert ".page-topbar .company{min-width:0;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" in html
+    # 顶栏公司名已于 2026-11-18 按用户要求整条删除（不需要「窄窗才隐藏」），
+    # 这里守住「删干净」：不再有任何 .company 规则或节点残留在窄档里。
+    assert ".page-topbar .company{" not in html
+    assert 'class="company"' not in html
     assert 'href="/orders/new"' in html
     assert 'href="/orders/return/new"' in html
 

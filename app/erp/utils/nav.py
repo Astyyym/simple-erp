@@ -97,8 +97,9 @@ def nav_state(endpoint: str | None = None) -> dict[str, bool]:
     state = {key: False for key in _NAV_KEYS}
     if owner in state:
         state[owner] = True
-    # 「开单」是父条目：销售/退货开单页同时点亮父与对应子项（沿用既有观感；
-    # 拿货/退拿货历史上只点子项，不点父，保持原样）。
-    if owner in {"sale_entry", "return_entry"}:
+    # 「开单」是父条目：四类开单页（销售/退货/拿货/退拿货）都同时点亮父与对应子项。
+    # 2026-11-18 用户反馈：点「拿货单」「退拿货单」时「开单」没跟着选中，
+    # 而销售/退货会 —— 父项是这四页共同的容器，四类应当一致，不该有历史特例。
+    if owner in {"sale_entry", "return_entry", "purchase_entry", "purchase_return_entry"}:
         state["order_entry"] = True
     return state

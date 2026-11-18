@@ -297,9 +297,11 @@ def test_analytics_filter_card_uses_aligned_grid_and_split_order_type_block():
     assert 'class="filter-card"' in html
     assert 'class="row analytics-filters"' not in html
     # 共享样式在 base.html：查询三要素（时间组合控件）+ 条件多选 + 动作条。
-    assert ".filter-tier-query{display:flex;flex-wrap:wrap" in base
+    # 2026-11-18：查询行改 grid + 写死行号（见 base.html ① 查询三要素 注释）。
+    # 分析页在 analytics-v4.css 里覆写回 flex，本文件下方另有断言锁定这一点。
+    assert ".filter-tier-query{display:grid;grid-template-columns:auto minmax(0,1fr) auto" in base
     assert ".filter-card>*{min-width:0}" in base
-    assert ".filter-field-composite{flex:1.2 1 320px" in base
+    assert ".filter-field-composite{grid-column:1;grid-row:1" in base
     assert ".filter-actions{display:flex" in base
     # 嵌套日期行不再使用 Bootstrap 负外边距
     assert ".filter-card .row{margin-left:0;margin-right:0}" in base
