@@ -26,6 +26,7 @@ from flask import (
     Blueprint,
     current_app,
     g,
+    jsonify,
     make_response,
     redirect,
     render_template,
@@ -33,6 +34,7 @@ from flask import (
     url_for,
 )
 
+from erp.routes.mobile_api import API_SCHEMA
 from erp.services import mobile_pairing, readonly_queries
 from erp.utils.filter_chips import ORDER_TYPE_LABELS
 from erp.utils.mobile_format import (
@@ -425,8 +427,27 @@ def _not_found_page(message: str, *, back_url: str):
     )
 
 
+def _api_error(message: str, status: int):
+    """`/m/api/*` 的错误也必须走 JSON 信封（状态码照旧是 404/500）。
+
+    为什么：原生端 `ApiClient.extractError` 只认 `{"ok": false, "error": ...}`。
+    404/500 原来走 HTML 模板，安卓端解析不到 `error` 字段，只能回落到
+    「请求失败（HTTP 404）」，`StartupRoute` 还会把它归到 `SERVER_ERROR` ——
+    用户看到「服务器出错」，实际只是接口路径变了或服务端读数据时出了一次错。
+    `needs_pairing` 固定 false：404/500 都不是「需要配对」，别让客户端把用户
+    踢回配对页。
+    """
+    response = jsonify(
+        {"schema": API_SCHEMA, "ok": False, "error": message, "needs_pairing": False}
+    )
+    response.status_code = status
+    return response
+
+
 @mobile_bp.app_errorhandler(404)
 def handle_404(error):  # pragma: no cover - 只影响手机端体验，不影响只读契约
+    if request.path.startswith("/m/api/"):
+        return _api_error("接口不存在，请升级手机 App（版本与服务端不一致）。", 404)
     return (
         render_template(
             "mobile/not_found.html",
@@ -440,6 +461,8 @@ def handle_404(error):  # pragma: no cover - 只影响手机端体验，不影�
 
 @mobile_bp.app_errorhandler(500)
 def handle_500(error):  # pragma: no cover
+    if request.path.startswith("/m/api/"):
+        return _api_error("手机端读数据时出错了，请稍后重试。", 500)
     return (
         render_template(
             "mobile/not_found.html",
@@ -449,3 +472,21 @@ def handle_500(error):  # pragma: no cover
         ),
         500,
     )
+
+
+@mobile_bp.app_errorhandler(405)
+def handle_405(error):
+    """方法不允许：`/m/api/*` 也走 JSON 信封。
+
+    为什么单独加：`mobile_api.py` 的 `before_request` 里有一段「只读守卫」，但它
+    **拦不到真正的 405** —— Flask 在 `before_request` 之前就做完路由匹配，
+    `POST /m/api/today` 直接由 Werkzeug 抛 `MethodNotAllowed`，那段代码永远不执行。
+    实测（2026-11-24）：`POST /m/api/today` 回的是英文 HTML `405 Method Not Allowed`，
+    安卓端 `extractError` 解析不到 `error` 字段。
+
+    非 API 路径原样交回给 Flask 默认处理（返回 error 对象，由 Flask 生成默认响应）——
+    页面上的 405 保持原样，不为了 API 顺手改掉 HTML 那套。
+    """
+    if request.path.startswith("/m/api/"):
+        return _api_error("手机端是只读接口，不支持这个操作。", 405)
+    return error

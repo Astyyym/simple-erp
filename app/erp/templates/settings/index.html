@@ -548,6 +548,11 @@
       </dd>
       <dt>最后一次完整同步</dt><dd>{{ mobile.last_sync_label }}</dd>
       <dt>上次错误</dt><dd>{{ mobile.status.error or '无' }}</dd>
+      {# 上次「打开手机访问」失败的原因（跨重启保留）：开关是用户意图，起不来也保持打开，
+         所以必须在这里把「为什么没监听起来」说清楚，否则页面只剩「已打开但未监听」。 #}
+      {% if mobile.status.last_start_error %}
+      <dt>上次启动失败</dt><dd>{{ mobile.status.last_start_error }}</dd>
+      {% endif %}
       <dt>已配对设备</dt><dd id="mobileDeviceCount">{{ mobile.devices|length }} 台</dd>
     </dl>
     <p data-ui-hint class="text-muted small">

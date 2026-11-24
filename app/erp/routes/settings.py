@@ -535,8 +535,9 @@ def backup_restore():
 # ---------------------------------------------------------------------------
 # 三条不可动口径：
 #   1) 主应用 5000 永远只绑 127.0.0.1；手机端走**独立 app**（erp/mobile_app.py）。
-#   2) 端口固定 5001：被占就明确报错并把开关回弹到关，**不自动漂移**
-#      ——端口是配对 base_url 的一部分，漂移的失败是静默的。
+#   2) 端口固定 5001：被占就明确报错，**不自动漂移**（端口是配对 base_url 的一部分，
+#      漂移的失败是静默的）。⚠️ 但不把开关回弹到关 —— 开关是用户意图，
+#      失败原因另存 `mobile_last_start_error`，冷启动再试一次（见 mobile_server 模块头）。
 #   3) 手机端没有任何写端：解绑只能在这里做。
 
 
@@ -602,19 +603,28 @@ def mobile_toggle():
     try:
         if enable:
             ok, error = start_mobile_listener()
+            # 开关代表**用户意图**，起不来也保持打开。旧实现把 `mobile_access_enabled`
+            # 写回 False（「别让配置说开着而实际没监听」），代价是：用户点开开关后
+            # 页面上什么都没变、下次冷启动（desktop_app / app.py 都只看这个开关）
+            # 完全不再尝试 —— 端口被占这种**临时**故障被当成了用户的决定，
+            # 静默改写意图。失败原因由 `start_mobile_listener` 写进
+            # `mobile_last_start_error`，诊断区显示、冷启动重试都靠它。
+            save_config({"mobile_access_enabled": True})
             if not ok:
-                # 起不来就把开关回弹到关，别让配置说「开着」而实际没监听。
-                save_config({"mobile_access_enabled": False})
-                session["mobile_notice"] = ("danger", error)
+                session["mobile_notice"] = (
+                    "danger",
+                    f"{error} 开关已保持打开，下次启动程序会再试一次。",
+                )
             else:
-                save_config({"mobile_access_enabled": True})
                 session["mobile_notice"] = (
                     "success",
                     "手机访问已打开。用手机相机或 Chrome 扫下面的二维码，再点「生成配对码」。",
                 )
         else:
             stop_mobile_listener()
-            save_config({"mobile_access_enabled": False})
+            # 关掉时顺手清掉「上次启动失败」：那条原因解释的是「开着但没监听起来」，
+            # 开关已经关了还挂着它，只会让店主以为还有故障。
+            save_config({"mobile_access_enabled": False, "mobile_last_start_error": ""})
             session["mobile_notice"] = (
                 "success",
                 "手机访问已关闭（已配对的设备不会自动撤销，需要时可在下面单独撤销）。",
@@ -808,7 +818,12 @@ def close_prompt_state() -> dict:
         "has_devices": bool(devices),
         "device_count": len(devices),
         "listening": listening,
-        "listening_error": "" if listening else str(status.get("error") or ""),
+        # 没在监听时给出原因：先看本进程的即时错误，再退回「上次启动失败」——
+        # 冷启动重试失败的那一次，即时错误写在 `_state` 里；但如果监听是在别的
+        # 进程/上一轮起的，只有持久化的那条还在。
+        "listening_error": (
+            "" if listening else str(status.get("error") or status.get("last_start_error") or "")
+        ),
         "last_sync_label": timestamp_label(latest),
         "last_sync_seconds": _seconds_since(latest),
         "devices": payload,

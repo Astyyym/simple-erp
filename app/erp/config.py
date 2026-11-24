@@ -1,10 +1,14 @@
 import json
+import logging
 import os
 import shutil
 import sys
+import threading
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
 
@@ -76,6 +80,12 @@ CONFIG_DEFAULTS: dict[str, Any] = {
     # 手机只读端（第二监听 5001）开关。默认关闭；打开后主应用仍只绑 127.0.0.1，
     # 手机走的是独立的只读蓝图，见 docs/需求/2026-10-17_安卓只读端架构决策.md。
     "mobile_access_enabled": False,
+    # 「上次启动手机监听失败的原因」（如端口被占）。2026-11-24 起：开关只表达用户意图，
+    # 起不来**不**再把开关写回 False（那会把临时故障当成用户决定，下次冷启动完全不再
+    # 尝试），失败原因落到这个键上，设置页诊断区显示、冷启动重试后仍在。
+    # 它与 `mobile_access_enabled` 一样要出现在出厂模板里
+    # （tests/test_config_fallback.py::test_factory_template_matches_every_code_default）。
+    "mobile_last_start_error": "",
     "print_order_phone": "",
     "print_order_address": "",
     "print_main_business": "软密封闸阀，蝶阀，铜芯硬密封（国，韩标）过滤器，止回阀等消防闸门",
@@ -139,6 +149,13 @@ def _local_app_data_root() -> Path:
 
 
 def _read_data_root(location: Path) -> Path | None:
+    """读「数据放在哪」的记忆文件；没有或读不懂都返回 None（由调用方回落默认根）。
+
+    ⚠️ 解析失败**必须留痕**，不能像以前那样 `except: pass`：这个文件一旦读不出来，
+    `resolve_data_root()` 会静默回落到 `default_data_root()`，于是 `erp.db` 和
+    `data/mobile_devices.json` **一起换人** —— 用户先看到「一张单都没有」，
+    再发现手机全部掉配对，而界面上没有任何报错可循（这正是一次真实事故的形态）。
+    """
     if not location.exists():
         return None
     try:
@@ -146,8 +163,11 @@ def _read_data_root(location: Path) -> Path | None:
         root = payload.get("data_root")
         if root:
             return Path(str(root)).expanduser().resolve()
-    except (OSError, json.JSONDecodeError, TypeError, ValueError):
-        pass
+        logger.warning("数据位置文件里没有 data_root，将回落到默认数据目录：%s", location)
+    except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        logger.warning(
+            "数据位置文件读取/解析失败（%s），将回落到默认数据目录：%s", exc, location
+        )
     return None
 
 
@@ -178,6 +198,16 @@ def resolve_data_root() -> Path:
 
 
 def save_data_root(path: Path | str) -> Path:
+    """记住数据根。**原子写**（临时文件 + `os.replace`），不能直接覆盖。
+
+    为什么必须原子：这个文件只有几十字节，但它半截的后果是「数据根漂移」——
+    `_read_data_root` 读不出来 → 回落 `default_data_root()` → `erp.db` 与
+    `data/mobile_devices.json` 一起换成另一份（用户先看到「一张单都没有」，
+    再看到「所有手机要重新配对」）。直接 `write_text` 在断电/杀进程时就会留下半截。
+
+    临时名带 pid + 线程 id：`save_data_root` 会被设置页的换目录流程和测试并发调用，
+    固定临时名会互相截断。
+    """
     root = Path(path).expanduser().resolve()
     loc = location_file()
     loc.parent.mkdir(parents=True, exist_ok=True)
@@ -186,7 +216,21 @@ def save_data_root(path: Path | str) -> Path:
         "set_at": datetime.now().isoformat(timespec="seconds"),
         "version": 1,
     }
-    loc.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    text = json.dumps(payload, ensure_ascii=False, indent=2)
+    temp = loc.with_name(f"{loc.name}.{os.getpid()}-{threading.get_ident()}.tmp")
+    try:
+        with open(temp, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, loc)
+    finally:
+        # 失败时别把临时文件留在用户的数据目录里（下次启动看到它会很困惑）。
+        if temp.exists():
+            try:
+                temp.unlink()
+            except OSError:
+                pass
     return root
 
 

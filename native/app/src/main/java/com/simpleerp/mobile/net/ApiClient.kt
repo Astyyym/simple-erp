@@ -1,6 +1,7 @@
 package com.simpleerp.mobile.net
 
 import android.content.Context
+import android.util.Log
 import android.webkit.CookieManager
 import com.simpleerp.mobile.data.API_SCHEMA
 import kotlinx.coroutines.Dispatchers
@@ -169,11 +170,140 @@ sealed class ApiResult {
     data object NoServerConfigured : ApiResult()
 }
 
+/** 原生端唯一的日志 tag（`adb logcat -s SimpleERP`）。 */
+private const val LOG_TAG = "SimpleERP"
+
+/**
+ * cookie 持久化这条链路上**唯一**的日志出口。
+ *
+ * 为什么只有这里有日志（2026-11 审计 A7）：cookie 落盘是「静默丢失即可毁掉
+ * 一次配对」的地方，读不出来时用户只看到「又要重新配对」，其它地方靠界面
+ * 已经把结论说清楚了，不需要再刷日志。
+ *
+ * 为什么裹一层 `runCatching`：JVM 单元测试（`CookiePersistenceTest`）里没有
+ * Android 运行时，`Log.w` 会直接抛 `RuntimeException: not mocked` ——
+ * 一行日志不能把键格式的回归测试带崩。日志本身失败不影响任何业务结果。
+ */
+internal fun cookieWarn(message: String) {
+    runCatching { Log.w(LOG_TAG, message) }
+}
+
+/**
+ * cookie 落盘的键与编解码（纯函数，可被 JVM 单测覆盖）。
+ *
+ * **一条 cookie 一个键**：`host:port|cookieName`。
+ *
+ * ⚠️ 这一层踩过真实事故（2026-11-24 用户报「清掉手机后台再打开 App 又要重新配对」）。
+ * 原来一台主机只写**一个**键 `host:port`，而配对成功时服务端一次下发两个 cookie
+ * （`erp_mobile` 认证 token + `erp_device_uid` 设备身份）。`putString` 同桌覆盖，
+ * 后写的 uid 把 token 顶掉了。而进程活着时内存里两个都在 —— 所以当场用得好好的，
+ * **只有进程被清掉再打开才暴露**：冷启动只读回 uid、没有 token，`/m/api/meta` 401，
+ * 启动路由判定 NOT_PAIRED → 弹出配对页。表现正是「其它都对，就是清后台后要重配」。
+ */
+internal object CookiePersistence {
+
+    /** 主机键与 cookie 名的分隔符。cookie 名（RFC 6265 token）里不可能出现它。 */
+    const val SEPARATOR = '|'
+
+    /** 落盘的「主机键」：`host:port`，不含协议。 */
+    fun hostKey(url: HttpUrl): String = url.host + ":" + url.port
+
+    /**
+     * 从**地址串**取主机键（`http://192.168.10.5:5001` → `192.168.10.5:5001`）。
+     *
+     * 换地址时要按「旧主机」清 cookie / 缓存（A6/A4），而那时手上只有
+     * 一个已经存下来的字符串，不是一个 `HttpUrl`。解析不出来返回 null
+     * （脏地址不该把清理流程弄崩，调用方按「没有旧主机」处理）。
+     */
+    fun hostKeyOf(baseUrl: String): String? =
+        baseUrl.trim().toHttpUrlOrNull()?.let { hostKey(it) }
+
+    /** 单条 cookie 的落盘键。 */
+    fun entryKey(hostKey: String, cookieName: String): String = "$hostKey$SEPARATOR$cookieName"
+
+    /**
+     * 一条落盘记录 → `(主机键, cookie)`；认不出来返回 null（脏数据不该把配对态读崩）。
+     *
+     * 键有两种形态：新格式 `host:port|name`，和老版本只有 `host:port` 的。
+     * `Cookie.parse` 需要一个完整 URL，而局域网只有 http，补 `http://` 即可。
+     */
+    fun decodeEntry(entryKey: String, rawValue: String): Pair<String, Cookie>? {
+        val cut = entryKey.lastIndexOf(SEPARATOR)
+        val hostKey = if (cut > 0) entryKey.substring(0, cut) else entryKey
+        val url = ("http://" + hostKey).toHttpUrlOrNull()
+        if (url == null) {
+            // 静默跳过是 2026-11 审计挖出来的问题：配对态读不出来时，
+            // 用户只看到「又要重新配对」，日志里 0 行线索，没人能查。
+            // 键本身可能带 cookie 值以外的信息，但主机名不是秘密，直接打出来。
+            cookieWarn("cookie 落盘键认不出主机，已跳过：$entryKey")
+            return null
+        }
+        val cookie = Cookie.parse(url, rawValue)
+        if (cookie == null) {
+            cookieWarn("cookie 内容解析失败，已跳过：$entryKey")
+            return null
+        }
+        return hostKey to cookie
+    }
+
+    /**
+     * 落盘记录里**已经过期**的那些键（磁盘上要删掉的）。
+     *
+     * 为什么必须删盘：`loadForRequest` 只从内存删过期 cookie，磁盘那份从来不删，
+     * 于是一次进程重启（清后台、系统回收）又把它全读回内存 —— 服务端早已作废的
+     * token 会一直躺在那里，看起来「配过对」，实际每次请求都 401（A5）。
+     */
+    fun expiredEntryKeys(
+        entries: Map<String, String>,
+        now: Long = System.currentTimeMillis(),
+    ): List<String> = entries.entries.mapNotNull { (rawKey, rawValue) ->
+        val (_, cookie) = decodeEntry(rawKey, rawValue) ?: return@mapNotNull null
+        if (cookie.expiresAt < now) rawKey else null
+    }
+
+    /** 内存里的 cookie 列表滤掉过期的（与 [expiredEntryKeys] 同一口径）。 */
+    fun pruneExpired(cookies: List<Cookie>, now: Long = System.currentTimeMillis()): List<Cookie> =
+        cookies.filter { it.expiresAt >= now }
+
+    /**
+     * 「某台主机」在落盘里的所有键：新格式 `host:port|name` + 老格式 `host:port`。
+     *
+     * 换地址时按主机清（A6），不能一刀 `clear()`：那是「断开连接」的语义 ——
+     * 把另一家店/另一台电脑的配对态也一起抹了。
+     *
+     * 前缀比较用 `hostKey + SEPARATOR`，不能用 `startsWith(hostKey)`：
+     * `192.168.10.5:5001` 是 `192.168.10.5:50011` 的前缀，后者是另一台电脑。
+     */
+    fun entryKeysForHost(keys: Collection<String>, hostKey: String): List<String> =
+        keys.filter { it == hostKey || it.startsWith("$hostKey$SEPARATOR") }
+
+    /**
+     * 全部落盘记录 → `主机键 → cookie 列表`。
+     *
+     * 老格式先处理、新格式后处理：同一台主机同时存在两种键时新格式胜出，
+     * 不会读回两条同名 cookie（升级过渡期只有这一种交错情况）。
+     */
+    fun decodeAll(entries: Map<String, String>): Map<String, List<Cookie>> {
+        val out = mutableMapOf<String, MutableList<Cookie>>()
+        entries.entries
+            .sortedBy { it.key.indexOf(SEPARATOR) >= 0 }  // false(老格式) 在前
+            .forEach { (rawKey, rawValue) ->
+                val (hostKey, cookie) = decodeEntry(rawKey, rawValue) ?: return@forEach
+                val list = out.getOrPut(hostKey) { mutableListOf() }
+                list.removeAll { it.name == cookie.name }
+                list.add(cookie)
+            }
+        return out
+    }
+}
+
 /**
  * cookie 持久化：内存 CookieJar + SharedPreferences 落盘。
  *
  * 为什么要手写：OkHttp 自带的是内存 CookieJar，进程一死就丢；而服务端的会话
  * 就是 cookie 本身（没有 refresh token），丢了就得重新配对。
+ *
+ * 键格式与那次「清后台就要重新配对」的事故见 [CookiePersistence]。
  */
 class PersistentCookieStore(context: Context) : CookieJar {
 
@@ -181,42 +311,108 @@ class PersistentCookieStore(context: Context) : CookieJar {
     private val cache = mutableMapOf<String, MutableList<Cookie>>()
 
     init {
-        prefs.all.forEach { (key, value) ->
-            if (value !is String) return@forEach
-            // 落盘的键是 `host:port`（不含协议），而 `Cookie.parse` 要求一个完整 URL。
-            // 局域网只有 http，这里补 `http://` 即可；补不出来就跳过这条脏数据，
-            // 不让一条坏 cookie 把整个配对态读崩。
-            val url = ("http://" + key).toHttpUrlOrNull() ?: return@forEach
-            val cookie = Cookie.parse(url, value) ?: return@forEach
-            cache.getOrPut(key) { mutableListOf() }.add(cookie)
+        // 载入委托给纯函数 [CookiePersistence.decodeAll]，键格式的坑见那边的说明。
+        val stored = prefs.all
+            .mapNotNull { (key, value) -> (value as? String)?.let { key to it } }
+            .toMap()
+        // 冷启动先把磁盘上过期的删掉，再把剩下的读进内存（A5）。
+        //
+        // 原来这里无条件全装回内存：`loadForRequest` 只在**内存**里删过期项，
+        // 磁盘那份永远留着，于是每次进程重启都把服务端早已作废的 token 捞回来 ——
+        // 表现是「明明配对过、却每次请求都 401」，而且怎么清内存都没用。
+        // 这里顺手把过期键从磁盘删掉，内存里也只放没过期的，两条链路口径一致。
+        val now = System.currentTimeMillis()
+        val staleKeys = CookiePersistence.expiredEntryKeys(stored, now)
+        if (staleKeys.isNotEmpty()) {
+            val editor = prefs.edit()
+            staleKeys.forEach { editor.remove(it) }
+            // 这里用 `apply()` 而不是 `commit()`：`init` 是在 ViewModel 构造时跑的
+            // （主线程），同步落盘会卡启动。而且**语义上也安全** —— 万一这次异步写没落地，
+            // 下次冷启动还是会把同样的键判成过期再删一遍，内存里也始终过滤着它们。
+            editor.apply()
+            cookieWarn("冷启动清掉 ${staleKeys.size} 条过期 cookie：$staleKeys")
+        }
+        CookiePersistence.decodeAll(stored - staleKeys.toSet()).forEach { (hostKey, cookies) ->
+            val alive = CookiePersistence.pruneExpired(cookies, now)
+            if (alive.isNotEmpty()) cache[hostKey] = alive.toMutableList()
         }
     }
 
     @Synchronized
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-        val key = url.host + ":" + url.port
+        val key = CookiePersistence.hostKey(url)
         val list = cache.getOrPut(key) { mutableListOf() }
+        val editor = prefs.edit()
+        // 老版本「一台主机一条」的键：升级后第一次保存就清掉，不然它会被一直读回来。
+        editor.remove(key)
+        val now = System.currentTimeMillis()
         cookies.forEach { cookie ->
             list.removeAll { it.name == cookie.name }
-            list.add(cookie)
-            prefs.edit().putString(key, cookie.toString()).apply()
+            val entryKey = CookiePersistence.entryKey(key, cookie.name)
+            if (cookie.expiresAt < now) {
+                // 服务端删掉了这个 cookie（过期即删）：落盘那份也要删，
+                // 否则冷启动又把它读回来，还会被当成有效的身份。
+                editor.remove(entryKey)
+            } else {
+                list.add(cookie)
+                editor.putString(entryKey, cookie.toString())
+            }
         }
+        // `commit()` 而不是 `apply()`（A8）：配对响应一到就落盘，而用户点完「配对」
+        // 很可能立刻划掉后台 —— `apply()` 是异步写，进程被清掉时那一次写可能还没落盘，
+        // 下次冷启动就没有 token，又得重新配对（正是 2026-11-24 那类事故的加固）。
+        // 调用点在 OkHttp 的工作线程上（`saveFromResponse`），不会卡主线程。
+        if (!editor.commit()) cookieWarn("cookie 落盘失败（commit 返回 false）：$key")
     }
 
     @Synchronized
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
-        val key = url.host + ":" + url.port
+        val key = CookiePersistence.hostKey(url)
         val now = System.currentTimeMillis()
         val list = cache[key] ?: return emptyList()
-        list.removeAll { it.expiresAt < now }
+        // 内存里删过期项的同时，磁盘那份也要删（A5）：只删内存的话，
+        // 下一次冷启动会把这条已经作废的 cookie 重新装回来，看起来像「配过对」，
+        // 实际每次请求都 401。
+        val expired = list.filter { it.expiresAt < now }
+        if (expired.isNotEmpty()) {
+            list.removeAll(expired)
+            val editor = prefs.edit()
+            expired.forEach { editor.remove(CookiePersistence.entryKey(key, it.name)) }
+            if (!editor.commit()) cookieWarn("过期 cookie 清理落盘失败：$key")
+        }
         return list.toList()
     }
 
+    /**
+     * 清 cookie。[hostKey] 为空 = 全清（「断开连接」用），传了就只清那台主机（A6）。
+     *
+     * 为什么要按主机清：粒度必须和落盘一致（一条 cookie 一个 `host:port|name` 键）。
+     * 「换地址」是「不再连这台电脑」，把另一家店的配对态一起抹掉没有任何道理 ——
+     * 用户换回原地址时还得重新配对一次。
+     *
+     * 按主机清时**不动** `CookieManager`：它的 API 只有「全清」，没有「清某个主机」，
+     * 而且这个 App 里没有任何 WebView（请求全走 OkHttp），那里的 cookie 本来就是空的。
+     * 全清分支仍然清一遍，是因为「断开连接」要保证本机不留任何残留凭据。
+     */
     @Synchronized
-    fun clear() {
-        cache.clear()
-        prefs.edit().clear().apply()
-        CookieManager.getInstance().removeAllCookies(null)
-        CookieManager.getInstance().flush()
+    fun clear(hostKey: String? = null) {
+        val stored = prefs.all
+            .mapNotNull { (key, value) -> (value as? String)?.let { key to it } }
+            .toMap()
+        if (hostKey == null) {
+            cache.clear()
+            prefs.edit().clear().apply()
+            CookieManager.getInstance().removeAllCookies(null)
+            CookieManager.getInstance().flush()
+            return
+        }
+        cache.remove(hostKey)
+        // 两种键格式都要删：老格式 `host:port` 与新格式 `host:port|name`。
+        val keys = CookiePersistence.entryKeysForHost(stored.keys, hostKey)
+        if (keys.isEmpty()) return
+        val editor = prefs.edit()
+        keys.forEach { editor.remove(it) }
+        // 换地址是紧接着要重新配对的动作，同步落盘才不会「清完又被下一次冷启动读回来」。
+        if (!editor.commit()) cookieWarn("按主机清 cookie 落盘失败：$hostKey")
     }
 }

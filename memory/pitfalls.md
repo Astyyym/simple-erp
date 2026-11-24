@@ -38,6 +38,7 @@
 - sticky 元素的包含块是父级盒，中间加一层容器就会让它失效
 - refreshInPlace 只替换「当前文档里已有」的同 id 区块
 - flex 容器收不窄：要让一组控件换行并变窄，用 grid 不用 flex
+- 手机端 cookie 落盘「一台主机一个键」= 清后台就要重新配对（2026-11-24）
 - 给 Inno 传 `/DIR=` 参数时，反斜杠必须在 Python 里写原始字符串
 - 原生端视觉层级：卡片必须有投影（2026-10-22）
 - 离线缓存：先给缓存，再走网络（2026-10-22）
@@ -995,3 +996,50 @@ New-NetFirewallRule -DisplayName "简单ERP 手机访问 5001" -Direction Inboun
    `resolve_port()` 优先读 `ERP_PORT`，测试因此走「端口空闲 → 正常构造 app → 抛启动失败」的正确路径。
 3. 全量耗时约 **10 分 21 秒 / 1216 项**，比直觉长；不要用 120s 默认超时跑它，
    写到日志文件再查（`> .alma/pytest-v4.x.x-full.log`），比反复轮询 stdout 稳。
+
+## 手机端 cookie 落盘「一台主机一个键」= 清后台就要重新配对（2026-11-24 用户报）
+
+**症状**：同 WiFi、已配对、App 里能正常看数据；**清掉手机后台再打开又要输 6 位配对码**，
+重新配对后当场一切正常，下次清后台又是这样。
+
+**根因**：`PersistentCookieStore.saveFromResponse` 把一台主机的所有 cookie 都写进
+**同一个** SharedPreferences 键 `host:port`（`putString` 同桌覆盖）。而配对成功时服务端
+一次下发两个 cookie：`erp_mobile`（认证 token）+ `erp_device_uid`（设备身份，v4.6.9 起下发），
+后写的 uid 把 token 顶掉。进程活着时内存里两个都在所以能用，**冷启动只读回 uid** →
+`/m/api/meta` 401 → `StartupRouting` 判 `NOT_PAIRED` → 配对页。
+
+**规矩**：
+1. 落盘一条 cookie 一个键（`host:port|cookieName`），别按「一台主机一条」存 —— 只要能同时
+   存在两条 cookie 就不安全，而服务端随时可能加第二条。
+2. 「内存里好好的、只有进程重启后才坏」这一类 bug，先怀疑**持久化层**而不是业务判定。
+3. 回归锁：`native/app/src/test/java/com/simpleerp/mobile/net/CookiePersistenceTest.kt`
+   （`both_cookies_from_one_response_survive_reload`）。跑法：
+   `JAVA_HOME=D:/app/Android/jdk21 native/gradlew.bat :app:testDebugUnitTest --tests "com.simpleerp.mobile.net.CookiePersistenceTest"`，
+   报告在 `%LOCALAPPDATA%\simple-erp-build\app\test-results\testDebugUnitTest\`（buildDir 被挪到 ASCII 路径）。
+4. 升级到 1.4.14 后**还要再配对一次**（磁盘上从来没存下过 token），之后就不用再配。
+
+## 手机访问服务：共享状态文件必须「一把锁包住读改写」（2026-11-24 审计 + v4.9.5 修）
+
+`data/mobile_devices.json` 有六个写者（生成码 / 配对提交 / 记最近访问 / 记同步时间 / 撤销单台 /
+撤销全部），全是 `load_store → 就地改 → save_store`，而桌面主监听（threads=8）与手机第二监听
+（threads=4）**同进程**。原来 0 处锁 + 临时文件名固定 `.json.tmp`，后果是「设备记录凭空消失 /
+撤销被回滚 / 同时配对只剩一台 / 快照生成完才 500」。
+
+**规矩**：
+1. 共享状态文件的锁要包住**读**。只锁写等于没锁 —— 读到的快照离开锁的那一刻就已经在写过期数据了。
+2. 临时文件名必须唯一（pid + thread id）。固定名在多写者下必然互踩。
+3. **Windows 上 `os.replace` 撞到别人的读句柄会抛 `PermissionError`**（实测 3000 次写里 3268 次），
+   瞬时失败要退避重试；`fsync` 不能省，否则断电后可能留下 0 字节文件（比半截 JSON 更糟）。
+4. 解析失败**不能**静默返回空表：任一写者拿到空表都会把它写回，坏文件当场被固化、事后无从取证。
+   留档 + 告警 + `.bak` 恢复三件一起做。
+5. 回归锁：`tests/test_mobile_pairing.py::test_concurrent_pair_and_sync_loses_nothing`
+   （2 线程 × 100 次；临时把锁换成 `nullcontext()` 必红，这是验证锁真的在起作用的唯一办法）。
+
+## 安卓端：布尔标志「只写不读」= 死状态（2026-11-24 A1）
+
+`AppRoot` 的 `setupForChange` 只被赋值、从没被任何分支读取，于是「改地址」把地址和 cookie
+都清了却没有输入框，各页 `NeedsSetup` 渲染成 Loading → 无限转圈。**顶层页面判定必须抽成纯函数
+并单测组合矩阵**（现在 `ui/RootRouting.kt` + `RootRoutingTest` 6 例），因为这类 bug 只能靠
+「哪个标志说了算」逐格钉住，真机点很难覆盖全组合。
+
+推论：任何「先清凭据、再靠后续流程恢复 UI」的写法都要先问「清完之后用户用什么填新地址」。

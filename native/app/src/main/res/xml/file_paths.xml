@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    FileProvider 暴露范围（2026-11-21，同伴数据包导出用）。
+
+    只开放 `cacheDir/peer-packs/` 这一个子目录：导出的快照文件就放这里。
+    不要改成 `<cache-path name="cache" path="." />` —— 那会把整个 cacheDir
+    （包括其他模块随时可能写进来的东西）交给系统分享面板去读。
+-->
+<paths>
+    <cache-path name="peer_packs" path="peer-packs/" />
+</paths>

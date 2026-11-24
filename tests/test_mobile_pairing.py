@@ -265,3 +265,146 @@ def test_mark_synced_records_time_and_shows_in_list():
 def test_mark_synced_without_device_is_safe():
     assert mobile_pairing.mark_synced(None) == ""
     assert mobile_pairing.mark_synced({}) == ""
+
+
+# ---------------------------------------------------------------------------
+# 并发回归：两个监听同进程，6 个写者必须串行（S1）
+# ---------------------------------------------------------------------------
+
+def test_concurrent_pair_and_sync_loses_nothing(monkeypatch):
+    """两个线程各做 100 次「配对 + mark_synced」：设备数必须正好等于成功配对数。
+
+    为什么必须有这条：`mobile_devices.json` 的 6 个写者原来是清一色的
+    「load_store() → 就地改 → save_store()」，没有锁。两个监听在**同一进程**里
+    并发（主服务 threads=8 + 第二监听 threads=4），症状是设备记录凭空消失、
+    撤销被并发写回、`os.replace` 撞 `PermissionError`（mark_synced 抛异常 →
+    快照请求 500）。把 `mobile_pairing._STORE_LOCK` 临时换成 `nullcontext()`
+    跑一遍这条会红 —— 这就是它的价值，不能因为「现在有锁了」删掉。
+
+    配对码是**单次性**的（只存一个 hash，用掉即作废），所以「生成 + 提交」必须
+    放在同一把测试闸门里，否则失败来自业务语义而不是我们要验证的锁。
+    `mark_synced` 故意留在闸门外：它照样与另一个线程的配对写并发。
+    """
+    import threading
+    import time
+
+    # 一分钟三次的限速在这里只会让用例变慢，与并发无关，直接放开。
+    monkeypatch.setattr(mobile_pairing, "CODE_GENERATIONS_PER_MINUTE", 10**9)
+
+    thread_count, per_thread = 2, 100
+    gate = threading.Lock()  # 只保护「配对码生成 + 提交」，不保护 mark_synced
+    barrier = threading.Barrier(thread_count)
+    paired: list[str] = []
+    errors: list[BaseException] = []
+    collect_lock = threading.Lock()
+
+    def worker(index: int) -> None:
+        try:
+            barrier.wait(timeout=30)
+            for round_index in range(per_thread):
+                with gate:
+                    code, error = mobile_pairing.generate_pair_code()
+                    if error:
+                        raise AssertionError(f"生成配对码失败：{error}")
+                    cookie, error = mobile_pairing.verify_pair_code(
+                        code, label=f"并发手机{index}-{round_index}", ip="192.168.10.9"
+                    )
+                if error:
+                    raise AssertionError(f"配对失败：{error}")
+                device = mobile_pairing.device_from_cookie(cookie)
+                if device is None:
+                    raise AssertionError("刚配对成功的设备立刻查不到（写丢失）")
+                mobile_pairing.mark_synced(device)
+                with collect_lock:
+                    paired.append(cookie)
+        except BaseException as exc:  # noqa: BLE001 — 任何异常都要带回主线程断言
+            with collect_lock:
+                errors.append(exc)
+
+    threads = [
+        threading.Thread(target=worker, args=(index,), name=f"pair-{index}", daemon=True)
+        for index in range(thread_count)
+    ]
+    started = time.monotonic()
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=90)
+    elapsed = time.monotonic() - started
+
+    assert not any(thread.is_alive() for thread in threads), "并发用例超时"
+    assert errors == [], errors
+    assert len(paired) == thread_count * per_thread
+    # 少了 = 丢更新（配对记录被并发的 mark_synced 覆盖）；多了 = 同一台被重复追加。
+    assert mobile_pairing.device_count() == len(paired)
+    # 需求：这条用例必须在 2 分钟内跑完（含 fsync + .bak 的文件写入）。
+    assert elapsed < 120, f"太慢：{elapsed:.1f}s"
+
+
+# ---------------------------------------------------------------------------
+# 坏文件不静默（S2）
+# ---------------------------------------------------------------------------
+
+def test_missing_store_is_still_an_empty_store(caplog):
+    """「文件不存在」是正常语义（首次运行 / 换数据根）：不告警、不造文件。"""
+    import logging
+
+    path = mobile_pairing.store_path()
+    path.unlink(missing_ok=True)
+    with caplog.at_level(logging.WARNING):
+        store = mobile_pairing.load_store()
+    assert store["devices"] == []
+    assert caplog.records == []
+    assert not path.exists()
+
+
+def test_corrupt_store_is_archived_logged_and_recovered_from_backup(caplog):
+    """半截 JSON 不能被静默当成空表：留档 `.corrupt-*`、告警、并从 `.bak` 恢复。
+
+    真事故的链条是：某个写者拿到空表 → 把空表写回 → 坏文件被固化 →
+    用户看到「所有手机同时掉配对」，而事后连取证的东西都没有。
+    """
+    import logging
+
+    cookie = _pair(label="要保住的手机", uid="keepuid00001")
+    path = mobile_pairing.store_path()
+    assert mobile_pairing.device_count() == 1
+    # save_store 前会留一份上一版副本，所以此时 .bak 是存在的
+    backup = path.with_name(path.name + mobile_pairing._BACKUP_SUFFIX)
+    assert backup.exists()
+    # 再存一次，让 .bak 里是「有这台手机」的那一版
+    mobile_pairing.save_store(mobile_pairing.load_store())
+    assert backup.exists()
+
+    path.write_text('{"version": 2, "devices": [', encoding="utf-8")  # 半截 JSON
+    with caplog.at_level(logging.WARNING):
+        store = mobile_pairing.load_store()
+
+    assert [device["label"] for device in store["devices"]] == ["要保住的手机"]
+    assert mobile_pairing.device_from_cookie(cookie) is not None
+    # 坏文件留档（不覆盖、带时间戳），且日志里说清了路径
+    corrupt = list(path.parent.glob(path.name + ".corrupt-*"))
+    assert len(corrupt) == 1
+    # 留档的是**原来那份坏内容**，不是被截断/清空后的东西
+    assert corrupt[0].read_text(encoding="utf-8") == '{"version": 2, "devices": ['
+    assert any("设备登记文件" in record.getMessage() for record in caplog.records)
+    # 恢复结果必须写回磁盘：只在内存里恢复，下一个请求又会读到空表
+    assert mobile_pairing.device_count() == 1
+
+
+def test_corrupt_store_without_backup_does_not_vanish_silently(caplog):
+    """连 .bak 都没有时：仍然留档 + 告警，然后才按空表处理（用户能取证）。"""
+    import logging
+
+    path = mobile_pairing.store_path()
+    backup = path.with_name(path.name + mobile_pairing._BACKUP_SUFFIX)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("not json at all", encoding="utf-8")
+    backup.unlink(missing_ok=True)
+
+    with caplog.at_level(logging.WARNING):
+        store = mobile_pairing.load_store()
+
+    assert store["devices"] == []
+    assert list(path.parent.glob(path.name + ".corrupt-*"))
+    assert any(record.levelno == logging.WARNING for record in caplog.records)

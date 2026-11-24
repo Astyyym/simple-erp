@@ -103,6 +103,73 @@ def test_pair_status_is_reachable_without_cookie(app):
 
 
 # ---------------------------------------------------------------------------
+# 约束 4：`/m/api/*` 的错误一律是 JSON 信封（HTML 安卓端解析不了）
+# ---------------------------------------------------------------------------
+
+def test_api_404_is_json_not_html(app):
+    """API 路径的 404 必须是 JSON 信封，状态码仍是 404。
+
+    真缺陷：404/500 原来走 `mobile/not_found.html`，而安卓端 `ApiClient.extractError`
+    只认 `{"ok": false, "error": ...}` —— 解析不到就回落到「请求失败（HTTP 404）」，
+    `StartupRoute` 还会把它归到 `SERVER_ERROR`。用户看到「服务器出错」，
+    实际只是接口路径变了或服务端读数据时抖了一下。
+    """
+    client = app.test_client()
+    response = client.get("/m/api/不存在的接口")
+    assert response.status_code == 404
+    assert response.headers["Content-Type"].startswith("application/json")
+    body = response.get_json()
+    assert body["schema"] == 1
+    assert body["ok"] is False
+    assert body["error"]
+    # 404 不是「需要配对」：别让客户端把用户踢回配对页
+    assert body["needs_pairing"] is False
+
+
+def test_api_500_is_json_while_html_pages_keep_the_template(app):
+    """500 同样走 JSON；非 API 路径维持现有 HTML 模板（不能被顺手一起改掉）。"""
+    app.config["PROPAGATE_EXCEPTIONS"] = False
+
+    @app.route("/m/api/__boom")
+    def _boom():  # pragma: no cover - 故意抛异常
+        raise RuntimeError("boom")
+
+    client = app.test_client()
+    response = client.get("/m/api/__boom")
+    assert response.status_code == 500
+    assert response.headers["Content-Type"].startswith("application/json")
+    body = response.get_json()
+    assert body["ok"] is False and body["error"] and body["needs_pairing"] is False
+
+    # 页面路径保持 HTML（HTML 用户不该看到一段 JSON）
+    html_404 = client.get("/m/__nope")
+    assert html_404.status_code == 404
+    assert "text/html" in html_404.headers["Content-Type"]
+    assert "你访问的页面不存在" in html_404.get_data(as_text=True)
+
+
+def test_api_405_is_json_not_html(app):
+    """`/m/api/*` 的方法不允许（405）也必须是 JSON 信封。
+
+    真缺陷（2026-11-24 实测抓到）：`mobile_api.py` 的只读守卫写在 `before_request` 里，
+    但 Flask 在 `before_request` **之前**就完成路由匹配 —— `POST /m/api/today` 由 Werkzeug
+    直接抛 `MethodNotAllowed`，那段守卫永远不执行，回的是英文 HTML
+    `405 Method Not Allowed`，安卓端解析不到 `error` 字段。
+
+    这条与 404/500 是同一类「客户端只认 JSON 信封」的契约，别只修两个漏第三个。
+    """
+    client = app.test_client()
+    response = client.post("/m/api/today", json={})
+    assert response.status_code == 405
+    assert response.headers["Content-Type"].startswith("application/json")
+    body = response.get_json()
+    assert body["schema"] == 1
+    assert body["ok"] is False
+    assert body["needs_pairing"] is False
+    assert "只读接口" in body["error"]
+
+
+# ---------------------------------------------------------------------------
 # 数据契约：金额文本由服务端给，且与 cents 对得上
 # ---------------------------------------------------------------------------
 

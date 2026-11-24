@@ -115,24 +115,63 @@ def test_port_conflict_reports_instead_of_drifting():
         blocker.close()
 
 
-def test_toggle_route_saves_flag_and_reports_failure():
+def test_toggle_route_keeps_user_intent_when_port_is_taken(monkeypatch):
+    """端口被占：**开关保持打开**（用户意图），失败原因另存并在诊断区露出来。
+
+    旧口径（以及旧版这条测试）是「起不来就把 `mobile_access_enabled` 写回 False」，
+    理由是「别让配置说开着而实际没监听」。代价很硬：用户点开开关后页面什么都没变，
+    而冷启动（`desktop_app.py` / `app/app.py`）只看这个开关 —— 于是**再也不尝试**。
+    端口没退干净这种临时故障被当成了用户的决定，问题永远不暴露。
+    """
     from erp import create_app
     from erp.config import load_config
+    from erp.routes import settings as settings_routes
 
     init_db()
-    app = create_app()
-    client = app.test_client()
+    port = _free_port()
+    blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    real_start = mobile_server.start_mobile_listener
+    # 路由里调的是 `start_mobile_listener()`（默认 5001）：换成受控端口，
+    # 否则这条用例会依赖「本机 5001 此刻空闲」这种不可控前提。
+    target = {"port": port}
+    monkeypatch.setattr(
+        settings_routes, "start_mobile_listener", lambda *args, **kwargs: real_start(port=target["port"])
+    )
+    try:
+        blocker.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        blocker.bind(("0.0.0.0", port))
+        blocker.listen(1)
 
-    # 打开：真起监听（用默认 5001；若本机被占，这个分支会走失败并回弹开关）
-    response = client.post("/settings/mobile/toggle", data={"enabled": "1"}, follow_redirects=True)
-    assert response.status_code == 200
-    if mobile_server.is_listening():
-        assert load_config()["mobile_access_enabled"] is True
-        # 再关掉
-        response = client.post("/settings/mobile/toggle", data={"enabled": "0"}, follow_redirects=True)
+        client = create_app().test_client()
+        response = client.post(
+            "/settings/mobile/toggle", data={"enabled": "1"}, follow_redirects=True
+        )
+        body = response.get_data(as_text=True)
         assert response.status_code == 200
         assert not mobile_server.is_listening()
+        # 1) 用户意图必须保留（这是本条测试的核心断言）
+        assert load_config()["mobile_access_enabled"] is True
+        # 2) 原因必须落盘（跨重启可见），并在诊断区露出来
+        assert f"端口 {port} 被占用" in load_config()["mobile_last_start_error"]
+        assert "开关已保持打开" in body
+        assert "上次启动失败" in body
+    finally:
+        blocker.close()
+
+    # 端口放开后（换成另一个空闲端口，避开 TIME_WAIT），再点一次就能起来；原因要清掉
+    target["port"] = _free_port()
+    response = client.post("/settings/mobile/toggle", data={"enabled": "1"}, follow_redirects=True)
+    assert response.status_code == 200
+    assert mobile_server.is_listening()
+    assert load_config()["mobile_access_enabled"] is True
+    assert load_config()["mobile_last_start_error"] == ""
+
+    # 关掉：意图变 False，历史失败原因也一并清空（它只解释「开着却没监听」）
+    response = client.post("/settings/mobile/toggle", data={"enabled": "0"}, follow_redirects=True)
+    assert response.status_code == 200
+    assert not mobile_server.is_listening()
     assert load_config()["mobile_access_enabled"] is False
+    assert load_config()["mobile_last_start_error"] == ""
 
 
 def test_revoke_route_removes_device():
@@ -183,12 +222,52 @@ def test_pick_lan_address_ignores_tun_and_link_local():
     assert mobile_server._is_lan_ip("198.18.0.1") is False
 
 
+def test_pick_lan_address_prefers_an_interface_that_actually_answers(monkeypatch):
+    """活性确认优先于「像不像家用网段」：连不上的地址必须让位。
+
+    本机装了 VirtualBox Host-Only（典型 `192.168.56.1`）或 VMware 网卡时，虚拟网卡
+    和 Wi-Fi 同属 `192.168.` 档，只按地址段排序就是随手挑一个 —— 二维码给出一个
+    手机永远连不上的地址，而电脑端一切显示正常（真实踩过）。
+    """
+    pick = mobile_server._pick_lan_address
+
+    alive = {"192.168.56.1"}
+    monkeypatch.setattr(
+        mobile_server, "_address_alive", lambda address, port=None: address in alive
+    )
+    # 排在前面但连不上的 192.168.1.20 必须让位给真的在服务的 192.168.56.1
+    assert pick(["192.168.1.20", "192.168.56.1"]) == "192.168.56.1"
+    # 活着的 10.x 也优先于死掉的 192.168.x（手机连得上才算数）
+    alive.clear()
+    alive.add("10.0.0.5")
+    assert pick(["192.168.1.20", "10.0.0.5"]) == "10.0.0.5"
+
+    # 全都探测不通（监听还没起 / 防火墙拦了本地连接）：退回地址段排序，与改动前一致
+    monkeypatch.setattr(mobile_server, "_address_alive", lambda address, port=None: False)
+    assert pick(["10.0.0.5", "192.168.1.20"]) == "192.168.1.20"
+    # 一个合法的都没有时仍然只能是 127.0.0.1（= 不显示二维码），排除规则不许被绕过
+    assert pick(["198.18.0.1", "169.254.36.183", "127.0.0.1"]) == "127.0.0.1"
+
+
+def test_address_alive_checks_local_listener_and_rejects_foreign_address():
+    """活性自测的两个方向：本机正在监听的端口连得上；不属于本机的地址 bind 就失败。"""
+    init_db()
+    port = _free_port()
+    ok, error = mobile_server.start_mobile_listener(port=port)
+    assert ok, error
+    assert mobile_server._address_alive("127.0.0.1", port) is True
+    # TEST-NET-1（192.0.2.0/24，文档保留段）不会是本机地址：bind 直接失败，不需要真发包
+    assert mobile_server._address_alive("192.0.2.1", port) is False
+
+
 def test_status_lan_address_never_reports_a_proxy_range():
     init_db()
     snapshot = mobile_server.status()
     assert not snapshot["lan_ip"].startswith(("198.18.", "198.19."))
     # 警告文案与地址判定必须一致（一个说能连、一个说不能，等于没修）
     assert (snapshot["lan_warning"] == "") is snapshot["lan_usable"]
+    # 诊断面板要能读到「上次启动失败」这个字段（不存在时是空串，不是 KeyError）
+    assert snapshot["last_start_error"] == mobile_server.last_start_error()
 
 
 def test_pair_code_is_rendered_inline_and_actually_works():

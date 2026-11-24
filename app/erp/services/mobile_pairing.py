@@ -26,12 +26,19 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
+import os
 import re
 import secrets
+import shutil
+import threading
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from erp.config import project_path
+
+logger = logging.getLogger(__name__)
 
 COOKIE_NAME = "erp_mobile"
 # 浏览器端「这台设备是谁」的 cookie（**不是**认证凭据，只是 uid 的载体）。
@@ -50,6 +57,34 @@ STORE_VERSION = 2
 
 # uid 只接受 URL 安全字符，长度 6–64。原生端发 16 hex，浏览器端发 32 hex。
 _UID_RE = re.compile(r"^[0-9A-Za-z_-]{6,64}$")
+
+
+# ---------------------------------------------------------------------------
+# 设备登记文件的并发门
+# ---------------------------------------------------------------------------
+# 为什么必须有它：两个监听跑在**同一个进程**里（`desktop_app.py` 主服务 threads=8、
+# `mobile_server.py` 第二监听 threads=4），而下面 6 个写者都是
+# 「load_store() → 就地改 → save_store()」：生成码、校验码、记访问、记同步、
+# 撤销单台、撤销全部。没有锁时踩过的三种真事故：
+#   ① 丢更新 —— 两台手机同时配对，最后文件里只剩一台（记录凭空消失），
+#      或者两台手机撤销后又被并发的 mark_synced 写回来；
+#   ② `os.replace` 在 Windows 上撞 `PermissionError`（目标正被另一个线程的读句柄
+#      打开）→ `mark_synced` 抛异常 → 快照请求 500，手机端表现为「同步失败」；
+#   ③ 固定临时名 `.json.tmp` 被两个写者共用，一个还没 replace 就被另一个截断，
+#      写进去的内容不是你那一份。
+#
+# ⚠️ **读也进锁**（只锁写等于没锁）：`load_store()` 拿到的快照一旦离开锁，
+# 拿它的那个写者其实已经在写一份过期数据了 —— 事务边界必须是「读到写」整段。
+# 用 `RLock` 是因为写者会在事务里再调 `load_store` / `save_store`，同线程必须能重入。
+_STORE_LOCK = threading.RLock()
+
+# `os.replace` 的瞬时失败退避（秒）。Windows 上「目标被别的句柄打开」是常态，
+# 退避 20/50/100ms 三次基本能过去；再长就会按住 HTTP 线程，而这个调用点在
+# `/m/api/snapshot` 的同步路径上（手机在等）。
+_SAVE_RETRIES = (0.02, 0.05, 0.1)
+
+# 上一份成功写入的副本。`load_store` 遇到坏文件时用它恢复（见 `_recover_from_corrupt`）。
+_BACKUP_SUFFIX = ".bak"
 
 
 def store_path() -> Path:
@@ -84,13 +119,63 @@ def _empty_store() -> dict:
 
 
 def load_store() -> dict:
-    path = store_path()
-    if not path.exists():
-        return _empty_store()
+    """读设备登记（自己拿 `_STORE_LOCK`，写者才可能在锁内组成完整事务）。
+
+    「文件不存在 = 空 store」是**正常语义**：首次运行、刚换数据根、测试的临时根
+    都会走到这里，不能告警也不能顺手造一个空文件。
+
+    真正的故障（读失败 / 解析失败）**不能静默返回空表**：任一写者拿到空表后都会
+    `save_store` 把它写回，坏文件当场被固化，事后没有任何证据能解释「用户为什么
+    所有手机同时掉配对」。所以坏文件一律留档 + 告警 + 优先从 `.bak` 恢复。
+    """
+    with _STORE_LOCK:
+        path = store_path()
+        if not path.exists():
+            return _empty_store()
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            payload = _recover_from_corrupt(path, exc)
+        return _normalize_store(payload)
+
+
+def _recover_from_corrupt(path: Path, exc: Exception) -> dict:
+    """坏文件的处理：留档 → 告警 → 尽量从 `.bak` 恢复；都失败才给空表。
+
+    留档名带时间戳、**不覆盖**旧档：同一天坏两次时，要能拿到最早那一次的现场
+    （那才是正常内容，后一次可能已经是空表被写坏的结果）。
+    """
+    logger.warning("设备登记文件读取/解析失败，按损坏处理：%s（%s）", path, exc)
+    corrupt = path.with_name(f"{path.name}.corrupt-{_now().strftime('%Y%m%d-%H%M%S')}")
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return _empty_store()
+        path.replace(corrupt)
+        logger.warning("损坏文件已留档：%s", corrupt)
+    except OSError:
+        # 留档失败不能挡路（文件可能被别的句柄锁着）：照旧往下走，让写者用新文件覆盖。
+        logger.warning("损坏文件留档失败，继续按备份/空表处理：%s", path, exc_info=True)
+
+    backup = path.with_name(path.name + _BACKUP_SUFFIX)
+    if backup.exists():
+        try:
+            recovered = json.loads(backup.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            recovered = None
+        if isinstance(recovered, dict):
+            logger.warning("已从 %s 恢复设备登记（上一次成功保存的副本）。", backup)
+            # 立刻写回：只在内存里「恢复」是不够的 —— 下一次 `load_store` 看到文件
+            # 不存在又会是空表（损坏文件已被改名），读到哪一份全看请求顺序。
+            # 写回失败不再往上抛：这已经是「坏文件 + 写不进去」的双重故障，
+            # 把异常扔给 HTTP 请求只会让设置页 500，反而看不到这条诊断线索。
+            try:
+                save_store(recovered)
+            except OSError:
+                logger.warning("恢复出的设备登记写回失败（继续用内存里的内容）：%s", path, exc_info=True)
+            return recovered
+    return _empty_store()
+
+
+def _normalize_store(payload) -> dict:
+    """把磁盘内容收敛成当前版本的形状（缺字段补默认、非法字段重置、按 uid 去重）。"""
     store = _empty_store()
     if isinstance(payload, dict):
         store.update({key: payload.get(key, store[key]) for key in store})
@@ -160,12 +245,67 @@ def new_device_uid() -> str:
 
 
 def save_store(store: dict) -> None:
-    """原子写：先写临时文件再 `replace`，避免半截 JSON 让配对门整个失效。"""
-    path = store_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix(".json.tmp")
-    temp.write_text(json.dumps(store, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temp.replace(path)
+    """原子写：唯一临时文件 + `fsync` + `replace`，并留一份 `.bak`。
+
+    调用方通常在 `_STORE_LOCK` 事务里；本函数自己也拿锁（RLock 可重入），
+    这样测试或脚本直接调它也安全。
+
+    三个细节都是踩出来的：
+    - **临时名带 pid + 线程 id**：固定 `.json.tmp` 时两个线程共用同一个临时文件，
+      一个还在写、另一个已经 replace，结果是 `FileNotFoundError` 或者文件内容串台。
+    - **`flush` + `os.fsync`**：不 fsync 就 replace，断电后可能出现「正式文件是 0 字节」
+      —— 那比半截 JSON 更糟（连留档都读不出东西）。
+    - **退避重试**：Windows 上 `os.replace` 会在目标被其它句柄打开时抛
+      `PermissionError`（杀软、备份进程、别的线程的读句柄都会），这个失败是瞬时的。
+    """
+    with _STORE_LOCK:
+        path = store_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        text = json.dumps(store, ensure_ascii=False, indent=2) + "\n"
+        temp = path.with_name(f"{path.name}.{os.getpid()}-{threading.get_ident()}.tmp")
+        last_error: OSError | None = None
+        for attempt, delay in enumerate((0.0, *_SAVE_RETRIES)):
+            if delay:
+                time.sleep(delay)
+            try:
+                _write_text_durably(temp, text)
+                _refresh_backup(path)
+                temp.replace(path)
+                return
+            except (PermissionError, FileNotFoundError) as exc:
+                last_error = exc
+                logger.warning("设备登记保存失败（第 %d 次，稍后重试）：%s", attempt + 1, exc)
+        try:
+            temp.unlink()
+        except OSError:
+            pass
+        # 循环至少执行一次，走到这里必然有 last_error（不用 assert：`-O` 会把断言抹掉，
+        # 那就变成 `raise None` 的 TypeError，比原始故障更难查）。
+        if last_error is None:  # pragma: no cover - 只有并发改代码才会到
+            raise OSError(f"设备登记保存失败（未知原因）：{path}")
+        raise last_error
+
+
+def _write_text_durably(temp: Path, text: str) -> None:
+    """写临时文件并落盘（`fsync`），否则 `replace` 之后断电可能留下空文件。"""
+    with open(temp, "w", encoding="utf-8") as handle:
+        handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _refresh_backup(path: Path) -> None:
+    """把当前（即将被覆盖的）文件复制成 `.bak`，供坏文件恢复用。
+
+    失败一律忽略：备份是「有更好」的保险，绝不能因为它挡住正式写入
+    （目标文件被别的句柄打开时，Windows 连复制都会拒绝）。
+    """
+    if not path.exists():
+        return
+    try:
+        shutil.copyfile(path, path.with_name(path.name + _BACKUP_SUFFIX))
+    except OSError:
+        logger.warning("设备登记备份失败（已忽略）：%s", path, exc_info=True)
 
 
 def _sha256(text: str) -> str:
@@ -235,28 +375,33 @@ def current_plaintext_code() -> tuple[str, int]:
 
 
 def generate_pair_code() -> tuple[str, str]:
-    """生成一次 6 位配对码，返回 `(code, error)`；被限速或锁定时 code 为空串。"""
-    store = load_store()
-    if _lock_remaining(store) > 0:
-        minutes = max(1, (_lock_remaining(store) + 59) // 60)
-        return "", f"配对码已锁定，约 {minutes} 分钟后可再试。"
-    now = _now()
-    window_start = now - timedelta(seconds=60)
-    recent = [item for item in store["code_generations"] if (_parse(item) or window_start) >= window_start]
-    if len(recent) >= CODE_GENERATIONS_PER_MINUTE:
-        return "", "一分钟内最多生成 3 次配对码，请稍等再试。"
-    code = "".join(secrets.choice("0123456789") for _ in range(PAIR_CODE_LENGTH))
-    expires_at = now + timedelta(seconds=PAIR_CODE_TTL_SECONDS)
-    store["code_generations"] = recent + [_iso(now)]
-    store["code"] = {
-        "hash": _sha256(code),
-        "created_at": _iso(now),
-        "expires_at": _iso(expires_at),
-    }
-    save_store(store)
-    # 明文只进内存缓存，供设置页反复显示/倒计时（见 current_plaintext_code 的说明）。
-    _remember_plaintext(code, expires_at, store["code"]["created_at"])
-    return code, ""
+    """生成一次 6 位配对码，返回 `(code, error)`；被限速或锁定时 code 为空串。
+
+    整个「读 → 限速判定 → 写」必须在 `_STORE_LOCK` 内：否则两个并发的生成请求
+    会各自读到「还没生成过」，一起通过限速判定 —— 一分钟三次的上限直接失效。
+    """
+    with _STORE_LOCK:
+        store = load_store()
+        if _lock_remaining(store) > 0:
+            minutes = max(1, (_lock_remaining(store) + 59) // 60)
+            return "", f"配对码已锁定，约 {minutes} 分钟后可再试。"
+        now = _now()
+        window_start = now - timedelta(seconds=60)
+        recent = [item for item in store["code_generations"] if (_parse(item) or window_start) >= window_start]
+        if len(recent) >= CODE_GENERATIONS_PER_MINUTE:
+            return "", "一分钟内最多生成 3 次配对码，请稍等再试。"
+        code = "".join(secrets.choice("0123456789") for _ in range(PAIR_CODE_LENGTH))
+        expires_at = now + timedelta(seconds=PAIR_CODE_TTL_SECONDS)
+        store["code_generations"] = recent + [_iso(now)]
+        store["code"] = {
+            "hash": _sha256(code),
+            "created_at": _iso(now),
+            "expires_at": _iso(expires_at),
+        }
+        save_store(store)
+        # 明文只进内存缓存，供设置页反复显示/倒计时（见 current_plaintext_code 的说明）。
+        _remember_plaintext(code, expires_at, store["code"]["created_at"])
+        return code, ""
 
 
 def pending_code_info() -> dict:
@@ -331,52 +476,57 @@ def verify_pair_code(
     `uid` 非空且已有同 uid 的设备时**原地更新**（换 token、更新 label/时间），
     不新增记录 —— 这是「同一台手机重复配对长出两条」的修法。旧记录 `id` 保持不变，
     所以桌面端「撤销这台」的表单值仍然有效。
+
+    整个「校验 → 记失败次数 / 追加设备 → 保存」是**一个事务**（`_STORE_LOCK`）：
+    两台手机同时提交各自的码时，没有锁会让后一个写者用自己那份过期快照覆盖前一台
+    刚追加的设备记录 —— 表现就是「只配对成功一台，另一台要重配」。
     """
     cleaned = "".join(ch for ch in str(code or "") if ch.isdigit())
-    store = load_store()
-    remaining = _lock_remaining(store)
-    if remaining > 0:
-        minutes = max(1, (remaining + 59) // 60)
-        return "", f"配对码已锁定，约 {minutes} 分钟后可再试。"
-    if len(cleaned) != PAIR_CODE_LENGTH:
-        return "", "请输入电脑上显示的 6 位数字。"
+    with _STORE_LOCK:
+        store = load_store()
+        remaining = _lock_remaining(store)
+        if remaining > 0:
+            minutes = max(1, (remaining + 59) // 60)
+            return "", f"配对码已锁定，约 {minutes} 分钟后可再试。"
+        if len(cleaned) != PAIR_CODE_LENGTH:
+            return "", "请输入电脑上显示的 6 位数字。"
 
-    stored = store.get("code") or {}
-    expires = _parse(stored.get("expires_at", ""))
-    if not stored.get("hash") or expires is None or expires <= _now():
-        # 过期不记失败次数：用户只是慢了一点，不该被扣一次机会。
-        return "", "配对码已过期，请在电脑的设置页重新生成。"
+        stored = store.get("code") or {}
+        expires = _parse(stored.get("expires_at", ""))
+        if not stored.get("hash") or expires is None or expires <= _now():
+            # 过期不记失败次数：用户只是慢了一点，不该被扣一次机会。
+            return "", "配对码已过期，请在电脑的设置页重新生成。"
 
-    if not hmac.compare_digest(_sha256(cleaned), str(stored.get("hash"))):
-        message = _register_failure(store)
-        save_store(store)
-        return "", message
+        if not hmac.compare_digest(_sha256(cleaned), str(stored.get("hash"))):
+            message = _register_failure(store)
+            save_store(store)
+            return "", message
 
-    clean_uid = normalize_device_uid(uid)
-    existing_index = next(
-        (
-            index
-            for index, item in enumerate(store["devices"])
-            if clean_uid and item.get("uid") == clean_uid
-        ),
-        None,
-    )
-    if existing_index is not None:
-        device, token = _renew_device(
-            store["devices"][existing_index], label, ip, platform, clean_uid
+        clean_uid = normalize_device_uid(uid)
+        existing_index = next(
+            (
+                index
+                for index, item in enumerate(store["devices"])
+                if clean_uid and item.get("uid") == clean_uid
+            ),
+            None,
         )
-        # ⚠️ 必须写回列表：`_renew_device` 返回的是副本，只改副本等于**没换 token**
-        # （旧 cookie 继续有效，而界面上看着像重配成功）。
-        store["devices"][existing_index] = device
-    else:
-        device, token = _new_device(label, ip, platform, clean_uid)
-        store["devices"].append(device)
-    store["code"] = None
-    store["failures"] = {"count": 0, "locked_until": ""}
-    save_store(store)
-    # 码已被用掉：内存里的明文也必须立刻作废，否则设置页还会显示一个永远无效的码。
-    _remember_plaintext("", None)
-    return f"{device['id']}:{token}", ""
+        if existing_index is not None:
+            device, token = _renew_device(
+                store["devices"][existing_index], label, ip, platform, clean_uid
+            )
+            # ⚠️ 必须写回列表：`_renew_device` 返回的是副本，只改副本等于**没换 token**
+            # （旧 cookie 继续有效，而界面上看着像重配成功）。
+            store["devices"][existing_index] = device
+        else:
+            device, token = _new_device(label, ip, platform, clean_uid)
+            store["devices"].append(device)
+        store["code"] = None
+        store["failures"] = {"count": 0, "locked_until": ""}
+        save_store(store)
+        # 码已被用掉：内存里的明文也必须立刻作废，否则设置页还会显示一个永远无效的码。
+        _remember_plaintext("", None)
+        return f"{device['id']}:{token}", ""
 
 
 def _renew_device(existing: dict, label: str, ip: str, platform: str, uid: str) -> tuple[dict, str]:
@@ -432,19 +582,20 @@ def remember_success(device: dict | None, ip: str = "") -> None:
     if not device_id:
         return
     now = _now()
-    previous = _last_seen_cache.get(device_id)
-    if previous is not None and (now - previous).total_seconds() < _LAST_SEEN_FLUSH_SECONDS:
-        return
-    _last_seen_cache[device_id] = now
-    store = load_store()
-    for item in store["devices"]:
-        if item.get("id") == device_id:
-            item["last_seen_at"] = _iso(now)
-            if ip:
-                item["last_ip"] = ip[:64]
-            break
-    store["last_success_at"] = _iso(now)
-    save_store(store)
+    with _STORE_LOCK:
+        previous = _last_seen_cache.get(device_id)
+        if previous is not None and (now - previous).total_seconds() < _LAST_SEEN_FLUSH_SECONDS:
+            return
+        _last_seen_cache[device_id] = now
+        store = load_store()
+        for item in store["devices"]:
+            if item.get("id") == device_id:
+                item["last_seen_at"] = _iso(now)
+                if ip:
+                    item["last_ip"] = ip[:64]
+                break
+        store["last_success_at"] = _iso(now)
+        save_store(store)
 
 
 # 快照（全量同步）是「关电脑前让手机拉一遍」的动作，频率远低于普通查询，
@@ -458,15 +609,16 @@ def mark_synced(device: dict | None) -> str:
     if not device_id:
         return ""
     moment = _iso(_now())
-    store = load_store()
-    for item in store["devices"]:
-        if item.get("id") == device_id:
-            item["last_sync_at"] = moment
-            break
-    store["last_success_at"] = moment
-    save_store(store)
-    _last_seen_cache[device_id] = _now()
-    return moment
+    with _STORE_LOCK:
+        store = load_store()
+        for item in store["devices"]:
+            if item.get("id") == device_id:
+                item["last_sync_at"] = moment
+                break
+        store["last_success_at"] = moment
+        save_store(store)
+        _last_seen_cache[device_id] = _now()
+        return moment
 
 
 def list_devices() -> list[dict]:
@@ -495,22 +647,33 @@ def list_devices() -> list[dict]:
 
 
 def revoke_device(device_id: str) -> bool:
-    store = load_store()
-    before = len(store["devices"])
-    store["devices"] = [item for item in store["devices"] if item.get("id") != device_id]
-    if len(store["devices"]) == before:
-        return False
-    save_store(store)
-    return True
+    with _STORE_LOCK:
+        store = load_store()
+        before = len(store["devices"])
+        store["devices"] = [item for item in store["devices"] if item.get("id") != device_id]
+        if len(store["devices"]) == before:
+            return False
+        save_store(store)
+        return True
 
 
 def revoke_all_devices() -> int:
-    """换端口/关开关前必须先撤销所有设备（端口是 base_url 的一部分）。"""
-    store = load_store()
-    count = len(store["devices"])
-    store["devices"] = []
-    save_store(store)
-    return count
+    """撤销全部设备（设置页「全部撤销」按钮背后就这一个调用）。
+
+    ⚠️ 旧版 docstring 写的是「换端口/关开关前必须先撤销所有设备」，**这句是错的**，
+    已删：代码里从来没有这样的调用，产品也没有「改端口」的 UI（端口固定 5001，
+    见 `mobile_server` 模块头）。两个监听共用同一份 `mobile_devices.json`，
+    换数据根、重开开关都**不需要**撤销设备。照着那句注释去「补上撤销」，
+    结果是用户每次打开开关都被静默全部踢下线、手机全要重配。
+
+    撤销只有两个真实入口：这里与 `revoke_device`，都必须由用户在设置页显式点击。
+    """
+    with _STORE_LOCK:
+        store = load_store()
+        count = len(store["devices"])
+        store["devices"] = []
+        save_store(store)
+        return count
 
 
 def device_count() -> int:

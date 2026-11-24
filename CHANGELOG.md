@@ -2,6 +2,324 @@
 
 > 各版本条目按当时发布口径保留。v0.8.0 永久免登录已经取代早期版本中记录的本机登录门；历史凭据不在更新记录中保存。
 
+## v4.9.5 - 手机访问服务收口：并发、坏文件、地址与开关（2026-11-24）
+
+> 桌面端 `v4.9.4` → **`v4.9.5`**；同一批安卓端 `1.4.14` → **`1.4.15`**；
+> `erp.db` schema 仍 `v16`，`API_SCHEMA` 仍为 `1`。
+
+### 起因
+
+安卓端那个「清后台重开要重配」修完之后做了一次只读审计，又挖出**服务端这一侧**六条
+会独立造成「所有手机同时掉配对 / 撤销不生效 / 快照 500」的路径。这一版全部修掉。
+
+### S1 配对门是「无锁读改写」，且所有写者共用同一个临时文件名
+
+`mobile_pairing.py` 的六个写者（生成码、配对提交、记录最近访问、记同步时间、撤销单台、
+撤销全部）全是 `load_store → 就地改 → save_store`，而桌面主监听（threads=8）与手机
+第二监听（threads=4）**同进程**，全文件 0 处锁。后果：
+
+| 时序 | 用户看到 |
+|---|---|
+| 手机正在拉快照（末尾 `mark_synced` 写盘），另一线程同时配对成功 | 后写的那份覆盖前者，新设备的 token 记录消失 → 它下一次请求 401 |
+| 手机拉快照写盘的同时，桌面点「撤销这台」 | 撤销被旧副本回滚，页面说已撤销、手机还能用 |
+| 两台手机同时提交同一个码 | 两台都提示成功，几秒后有一台掉线 |
+
+另外 `save_store` 用固定名 `mobile_devices.json.tmp`：Windows 上两个写者踩同一个临时文件，
+实测 3000×2 次里出现 3268 次 `PermissionError`、26 次 `FileNotFoundError`；而
+`os.replace` 撞上别人的读句柄同样抛 `PermissionError` —— `mark_synced` 在
+`/m/api/snapshot` 的响应路径上，于是**整份快照生成完才 500**。
+
+修法：模块级 `RLock` 包住**读也包进去**（只锁写等于没锁）的完整事务；临时名带
+pid + 线程 id；`flush` + `os.fsync` 再 `replace`；`PermissionError` / `FileNotFoundError`
+退避重试 3 次。顺带修掉 `revoke_all_devices` 的陈旧 docstring（它写着「换端口/关开关前
+必须先撤销所有设备」，而代码里没有这样的调用、产品也没有改端口的 UI —— 照着补会造出
+「用户什么都没干、手机全被撤销」的事故）。
+
+### S2 设备登记文件坏了就静默当空表 → 所有手机同时掉配对，且无任何证据
+
+`load_store()` 原来 `except (OSError, JSONDecodeError): return _empty_store()`，而任一写者
+拿到空表后都会 `save_store` 写回 —— 坏文件当场被固化，事后查不到原因。
+
+修法：坏文件 `logging.warning` + 改名留档 `mobile_devices.json.corrupt-<时间戳>`
+（不覆盖旧档，同一天坏两次能拿到最早那次的现场）；每次成功保存前留一份 `.bak`，
+坏文件优先从 `.bak` 恢复并**写回磁盘**（只在内存恢复等于没恢复）。
+「文件不存在 = 空表」这个正常语义保持不变。
+
+### S3 `data_location.json` 非原子写 → 数据根漂移
+
+`save_data_root` 原来直接 `write_text`。这个文件只有几十字节，但它半截的后果是数据根
+回落到默认目录：`erp.db` 与 `mobile_devices.json` 一起换成另一份（用户先看到「一张单都
+没有」，再看到「所有手机要重配」）。改为临时文件 + `fsync` + `os.replace`；
+`_read_data_root` 读失败不再静默，记 warning。
+
+### S4 局域网 IP 只看地址段，不看网卡活不活
+
+`_lan_rank` 的排序键是「像不像家用网段」（优先 `192.168.`）。机器上有 VirtualBox
+Host-Only（`192.168.56.1`）或 VMware 网卡时，设置页与二维码可能给出一个手机根本连不上的
+地址，而电脑端一切显示正常。修法：候选地址加一道活性确认（`bind` 本机地址 + 监听在跑时
+`connect_ex` 到当前端口），再按地址段排序；**全都不活时退回原排序**，不把「探测失效」
+误判成「没有局域网地址」。原有排除规则（TUN `198.18/198.19`、`169.254.`、`127.`、`0.`、
+取不到则不给二维码）一字未动。
+
+### S5 端口被占 → 开关被静默改写成「关」
+
+`/settings/mobile/toggle` 起不来就 `mobile_access_enabled = False`。代价：用户点开开关后
+页面什么都没变，**下次冷启动完全不再尝试**（两个启动入口都只看这个开关），一次临时的
+端口占用被当成了用户的决定。
+
+修法：开关只表达**用户意图**，失败也保持 True，原因写进新配置键
+`mobile_last_start_error`（出厂模板 `packaging/default_config.json` 同步新增，冷启动重试
+失败后仍能在设置页诊断区看到）；关闭开关时清空该原因。
+⚠️ 行为变了，对应测试从「回弹并写回 False」改为「保持用户意图 + 暴露失败原因」。
+
+### S6 `/m/api/*` 的错误返回 HTML，客户端解析不到
+
+`mobile_bp.app_errorhandler` 把第二监听的 404/500 全渲染成 `mobile/not_found.html`。
+安卓端 `extractError` 只能回落到「请求失败（HTTP 404）」，定位不到是版本漂移还是地址错。
+修法：`request.path.startswith("/m/api/")` 时返回 JSON 信封（`schema/ok/error/needs_pairing`），
+其它路径维持原模板；加测试断言 API 404 的 `Content-Type` 是 JSON，且页面路径**没有**被
+一起改成 JSON。
+
+**405 是同一个洞的第三个口子**（收尾复测时抓到）：`mobile_api.py` 里那段「只读守卫」写在
+`before_request`，但 Flask 在 `before_request` **之前**就完成路由匹配 —— `POST /m/api/today`
+由 Werkzeug 直接抛 `MethodNotAllowed`，守卫永远不执行，回的是英文 HTML
+`405 Method Not Allowed`。补 `app_errorhandler(405)` 后 API 路径走 JSON（「手机端是只读接口，
+不支持这个操作。」），页面路径原样交回 Flask 默认响应。
+教训：**「客户端只认 JSON 信封」这类契约要把 404/405/500 一起数**，只修两个就是漏第三个。
+
+### 验证（真跑）
+
+- **全量回归**：`pytest tests/ -q -n 8` → **1226 passed, 1 skipped in 98.01s**（0 failed；
+  基线 1216 项 → 1227 项，新增 11 个用例）
+- S1 的并发回归是**双向证据**：2 线程 × 100 次「配对 + mark_synced」，
+  有锁 → `device_count()==200` 全绿；把锁临时换成 `nullcontext()` → 必红
+  （`AssertionError('配对码已过期…')`，读改写原子性被破坏）
+- 针对性：手机相关 101 passed / config+settings 27 passed
+
+### 已知边界
+
+- `.bak` 也坏时（极端双重故障）仍会回到空表：坏文件已留档可取证，但**在册手机全部要重配**。
+  选择「留证据 + 继续服务」而不是「拒绝写直到人工介入」，因为后者会让整个手机端 500。
+- 锁内包含 `fsync` + `.bak` 复制（约 85ms/次），最坏情况是 4 个快照请求排队。
+- 真机仍未验证（见遗留清单 ERP-MOBILE-06/07）。
+
+## 安卓 1.4.15 - 客户端残留收口：改地址、离线出口、换店（2026-11-24）
+
+> 安卓端 `1.4.14` → **`1.4.15`**（versionCode `19` → `20`）；与桌面 `v4.9.5` 同批；
+> `API_SCHEMA` 仍 `1`。只改原生客户端。
+
+### 一、「改地址」点了等于没点，还会静默清掉凭据（P0）
+
+`setupForChange` 在 `AppRoot.kt` 里只被赋值、**从未被读取**；三个「改地址」入口都直接
+`vm.saveBaseUrl("")`，而它会清 cookie 与 `pairedConfirmed`，紧接着 `bootstrap()` 又因为
+「地址空 + 有快照」把 `needsSetup` 按回 false —— 界面既没有输入框也不是主界面，各页把
+`NeedsSetup` 渲染成 Loading → **无限转圈**；配对页上点「换个地址」同样中招，而「断开连接」
+藏在设置页，得先进主界面才够得到。
+
+修法：顶层分支抽成纯函数 `RootRouting.screen(...)`（`needsSetup || setupForChange` 为第二
+优先级，`setupForChange` 不会被任何后续分支吞掉）；三个入口只置标志、**不动**地址/cookie/
+缓存；配置页给「取消，回到主界面」（仅「主动改地址且手上还有可用地址」时出现）；
+`saveBaseUrl` 改为**只有新地址 ≠ 原地址才清理**。
+
+### 二、401 一律全屏配对页，而配对页没有离线出口（P0）
+
+旧 IP 被别的设备占用、对方回个 401，本地几百条缓存就从 UI 上不可达。修法：配对页补
+「先看离线缓存」次级入口（灰字，与「连不上电脑」页一致，只在本地有数据时出现），
+并按 `offlineBrowse` 把后续 401 也按离线处理 —— 否则下一个请求立刻把配对页翻回来，
+用户点了等于没点。
+
+### 三、导入同伴数据包后 401 把人顶到配对页（P0，1.4.13 功能自打脸）
+
+导入成功后调 `refreshAll()`，B 从没配对过 → 四个请求全 401 → 全屏配对页，刚导入的数据
+看不到。修法：导入后改为只刷**已打开过**的页面（不刷的话已上屏的页会继续显示 B 自己的
+旧版本，正是 1.4.13 要避免的新旧混显）；`StartupRouting.requiresPairingOnUnauthorized()`
+在「同伴导入态」或「用户主动选了看缓存」时不翻转配对页，`maybeAutoSync` 在同伴态下直接
+早退；本机自己同步成功一次后标记自动清除，行为恢复。
+
+### 四、换到另一台电脑不清旧店数据（P1）
+
+缓存键不含 host，`saveBaseUrl` 只清 cookie 与 `pairedConfirmed` —— 断网时会把上一家店的
+客户欠款、商品价当成新店的数据显示，报价就报错价。修法：新地址 ≠ 原地址且原地址非空时，
+按旧主机清 cookie、清 `ResponseCache` + `SnapshotStore` + 同步区间 + 同伴标记，并把界面上的
+时间标签与各页状态归零。**「断开连接」保持不清缓存**（明确需求）。
+
+### 五、cookie 卫生与小项
+
+- 过期 cookie 原来只从内存删、磁盘那份永远留着，冷启动又读回来（看起来「配过对」，实际每次 401）。现在过滤过期时同步删盘，冷启动也不载入。
+- `clear()` 原来一律清空所有主机；改为 `clear(hostKey)` 只清那台（前缀比较用 `hostKey|`
+  防止 `:5001` 误伤 `:50011`），「断开连接」仍走全清。
+- cookie 落盘 `apply()` → `commit()`：配对成功后用户可能立刻划掉后台，必须同步落盘。
+- cookie 持久化的失败分支补 `Log.w`（全仓唯一的日志出口），真出问题时至少有线索。
+- 一次瞬时 401 不再把 `pairedConfirmed` 持久化抹成 false（否则电脑真关机时会被降级到
+  「连不上电脑」页，而进主界面看缓存是明确需求）。
+- `bootstrap()` 加世代计数：慢的那次不再覆盖新地址/新状态。
+- `deviceUid()` 加 `Mutex`（并发配对会生成两个 uid，电脑端就多一条设备记录）；配对按钮
+  加 busy 态防连点。
+- 导入同伴包时先清空同步区间再写（否则包字段为空时会保留旧店的区间，断网筛选按旧区间
+  过滤）；缓存解不开时继续查快照，不拿「数据格式不对」盖掉本来能看的旧数据。
+
+### 验证
+
+- JVM 单测 **84 passed / 0 failed**（基线 61 → 84，新增 23 个用例，其中
+  `RootRoutingTest` 6、`UnauthorizedRoutingTest` 5、`CookieHostKeyTest` 4、
+  `CookieExpiryTest` 5、`DeviceUidStoreTest` 3）
+- 新增用例专钉这次的四类判断：顶层路由矩阵、401 是否该顶配对页、按主机清 cookie 的键运算、
+  过期判定、uid 只生成一次的并发
+
+### 已知边界（重要）
+
+以下**没有设备端覆盖**，只有代码审查 + JVM 单测：`PersistentCookieStore` 的内存/落盘实现、
+`switchToNewComputer`、`bootstrap` 世代校验、`maybeAutoSync` 早退、Compose 页面渲染
+（`AppRoot`/`SetupScreen`/`PairScreen`）。真机验收项见遗留清单 ERP-MOBILE-06/07。
+
+## 安卓 1.4.14 - 清掉后台再打开就要重新配对（2026-11-24）
+
+> 安卓端 `1.4.13` → **`1.4.14`**（versionCode `18` → `19`）；**桌面端未改动**（仍 `v4.9.4`），
+> `erp.db` schema 仍 `v16`，`API_SCHEMA` 仍为 `1`。只改原生客户端的 cookie 落盘。
+
+### 现象
+
+手机和电脑在同一个 WiFi、已经配对成功、App 里能正常看数据；**清掉手机端后台再打开，
+又要求输 6 位配对码**。以前（旧 APK）清后台再打开是直接进主界面的。
+
+### 根因（已取证，不是猜）
+
+`PersistentCookieStore`（`native/app/src/main/java/com/simpleerp/mobile/net/ApiClient.kt`）
+把一台主机的**所有** cookie 写在**同一个** SharedPreferences 键 `host:port` 上：
+
+```kotlin
+prefs.edit().putString(key, cookie.toString()).apply()   // key 恒为 host:port
+```
+
+而配对成功时服务端一次下发**两个** cookie（探针实测：`SET-COOKIE 条数 = 2`）：
+
+```
+erp_mobile=5030c987e5e77052:...      ← 认证凭据
+erp_device_uid=probeuid0001          ← 设备身份（2026-10-25 v4.6.9 起）
+```
+
+（第二条受 `mobile_api.py` 的 `if uid:` 约束：原生 App 配对时必定上报 `device_uid`，
+所以 App 路径下稳定是两条；不带 uid 的浏览器表单路径只有一条。）
+
+`putString` 同桌覆盖 → 后写的 `erp_device_uid` 把 `erp_mobile` 顶掉了。于是：
+
+| 状态 | 内存 cookie | 磁盘 cookie | 结果 |
+|---|---|---|---|
+| 当前进程 | 两个都在 | — | 正常用 |
+| 清后台 → 冷启动 | — | 只剩 uid | `/m/api/meta` 401 → `NOT_PAIRED` → 配对页 |
+
+这也解释了为什么只有「清后台再打开」才复现、而当场怎么用都正常。
+旧 APK 之所以没这问题：服务端从 v4.6.9（APK 1.4.10）才在 JSON 配对接口里下发 uid cookie。
+
+### 修法
+
+一条 cookie 一个键 `host:port|cookieName`，编解码抽成纯函数 `CookiePersistence`
+（可被 JVM 单测覆盖）：
+
+- 载入时兼容老格式（只有 `host:port` 的单条记录），新格式胜出，不会读回两条同名 cookie；
+- 服务端把 cookie 删掉（`expires` 在过去）时，落盘那条同步删除，不再被冷启动读回来；
+- 老的单条键在升级后第一次保存时清掉。
+
+### 验证
+
+- 单测 `native/app/src/test/java/com/simpleerp/mobile/net/CookiePersistenceTest.kt`：
+  5 个用例全过（`tests=5 failures=0`），核心用例钉住「两个 cookie 落盘后必须两个都读回来」。
+- 服务端两个 Set-Cookie 的事实用 Flask 测试客户端实测（临时探针，已删）。
+
+### 升级提示
+
+从 **v4.6.9（APK 1.4.10）起**每次配对都会把 token 顶掉，这些机器升级到 1.4.14 后
+**还要再配对一次**，之后清后台再打开就不用再配了。
+
+（若某台机在 1.4.9 及更早版本配对后再没重配，磁盘上那条正是 `erp_mobile`，
+升级后不需要重配 —— 老格式键仍能被 `CookiePersistence.decodeAll` 读回来。）
+
+## 安卓 1.4.13 - 同伴数据包导出/导入（2026-11-21）
+
+> 安卓端 `1.4.12` → **`1.4.13`**（versionCode `17` → `18`）；**桌面端未改动**（仍 `v4.9.4`），
+> `erp.db` schema 未动（仍 v16），`API_SCHEMA` 仍为 `1`。
+> 只改原生客户端，不碰 Python 业务端点、单号与打印。
+
+### 需求
+
+用户提出：「客户B的手机端根据客户A的手机端进行更新。B 今天没去上班，A 去了，
+A 的手机端数据是最新的，在同一 WiFi 下 B 根据 A 更新。」口径确认为**同一套账、B 只看**。
+
+### 判断（为什么不做成手机之间联网同步）
+
+手机端是**纯只读**：`app/erp/routes/mobile_api.py` 里除 `/pair` 是 POST，其余全是 GET，
+连库用 `mode=ro`。所以 **A 手机里没有「B 缺的数据」，只有店里电脑某一刻的镜像** ——
+不存在数据合并问题，只需要把那份镜像搬到 B 上。联网互传要多一整套服务端、后台存活与
+信任机制，对一个低频场景不划算。
+
+被否的方案：A 手机起 HTTP 服务让 B 拉；家里 B 直连店里 PC（违反 `AGENTS.md`
+「不得把服务暴露到局域网/公网」）；双向同步 / 操作日志（等于推翻只读架构）。
+
+### 实现
+
+- **导出**：把整份快照打成 `PeerPack` JSON（`filesDir` 那份快照 + 同步区间 + 店名），
+  经 `FileProvider` 交给系统分享面板（微信 / 蓝牙 / 文件管理器都行）。
+  文件名用**数据截止时间**，不是生成时间 —— 用户在微信里挑文件靠它分辨新旧。
+- **导入**：系统文件选择器（SAF）选文件 → 校验 `kind` / `packVersion` / `apiSchema`
+  → 整份替换快照 → **清空 `ResponseCache`** → 覆盖同步区间与备份键。
+- **不自动同步**：B 通常连不上电脑，自动跑 `syncNow` 只会立刻闪一条红字盖掉「导入成功」。
+
+### 三个必须一起处理的坑
+
+| 坑 | 不处理会怎样 |
+|---|---|
+| 精确键缓存优先级高于快照（`AppViewModel.load` 先查 `ResponseCache`） | 导入后 B 打开过的页面仍亮自己的旧版本，离线时刻新旧混显 |
+| `syncMonths/syncFrom/syncTo/backupKey` 与 `entries` 是一套 | 只换快照不换区间，断网本地筛选会按旧区间把导入的数据筛掉 |
+| 新手机没地址时停在 `SetupScreen`，够不到设置页的导入按钮 | B 永远导入不了 —— 已在 `SetupScreen` 加「没有电脑？导入同伴的数据包」入口 |
+
+### 连上电脑之后怎么更新（用户 2026-11-21 追问，已核源码）
+
+不需要新增切换逻辑，现有机制天然覆盖：
+
+1. `AppViewModel.load()` 先把缓存亮出来（A 的导入数据，`fromCache=true`）；
+2. 网络请求成功 → `ApiClient.loadWithCache` 走 `cache.put()` 覆盖精确键，变在线数据；
+3. 点「立即同步」→ `runSync` 的 `snapshot.save()` 整份替换，导入数据被彻底顶掉；
+   同时清掉同伴标记，界面文案从「数据来自同伴」回到「离线数据 / 在线」。
+
+### 显示口径
+
+- 新增 `peer_imported_at` / `peer_source_shop`：设置页显示
+  「当前数据来自同伴（店名），截至 X」；**本机自己同步成功一次后自动清除**。
+- 快照时间纳入 `cacheNewest` 计算：原来只取 `ResponseCache` 的时间戳，
+  只同步过快照、没逐页打开过时会误显示「还没有缓存」。
+
+### 安全边界（用户已明确接受）
+
+数据包是**明文 JSON**，含客户欠款金额，会落在微信/文件管理器里。用户 2026-11-21
+明确表示接受。`FileProvider` 只暴露 `cacheDir/peer-packs/` 一个子目录，
+且导出时只对那一个 URI 授读权限。
+
+### 验收
+
+- 安卓 JVM 单测 **56 passed**（新增 `PeerPackTest` 9 条：格式往返、四种拒绝、文件名）。
+- `clean` 后重建：`compileDebugKotlin` / `testDebugUnitTest` / `assembleRelease` 全部通过，无警告。
+- `aapt2` 拆 APK 核对：`FileProvider` 在、authority = `com.simpleerp.mobile.fileprovider`、
+  `res/xml/file_paths.xml` 只开放 `cache-path peer_packs → peer-packs/`。
+- **2026-11-21 单机模拟器端到端已验**（`sdk_gphone64_x86_64`，隔离演示库 `ERP_DATA_ROOT` 指向副本）：
+  1. 首次配置页出现「没有电脑？导入同伴的数据包」入口；
+  2. 导出 → 系统分享面板拉起，文件名 `简单ERP同伴数据_20261121_1042.json`（带的是**数据截止时间**）；
+  3. 清空 App 数据后从 Downloads 选包导入 → 「已导入 255 项，数据截至 11月21日 10:43」；
+  4. 断开电脑端重启 App → 进主界面，离线横幅显示「显示的是 11月21日 10:43 的数据」，客户/单据数据完整；
+  5. 设置页显示「当前数据来自同伴（简单ERP（演示）），截至 11月21日 10:43」；
+  6. 重新配对并点「立即同步」→ 来源标记整段消失，时间变成当前，验证覆盖链路正确。
+- **2026-11-21 双机模拟器全链路已验**（同一 AVD 用 `-read-only` 多开两台，5554=A / 5556=B）：
+  A 配对后自动同步 255 项 → 导出（542,797 字节）→ 文件搬到 B 的 `Download/` →
+  B 全新安装、从首次配置页导入 → 255 项、截止时间正是 A 的 11:00 →
+  停掉电脑端重启 B → 独立进主界面、客户欠款列表与 A 逐行一致 →
+  B 设置页显示「同伴数据截至 11:00（这台手机还没自己同步过）」，而 A 机同步过、无同伴标记。
+  > 搬运用 `adb push` 模拟微信那一跳：App 侧拿到的都是 SAF 的 `content://` URI，与来源无关。
+- **验证中抓到并修掉一个真 bug**：设置页「离线缓存」卡只按 `ResponseCache` 算时间戳，
+  而导入时 `ResponseCache` 是被清空的 → 明明有 255 项缓存却显示「还没有缓存」。
+  已改为 `maxOf(cache.newestTimestamp(), snapshot.syncedAt())`（`selectTab` 与 `bootstrap` 两处）。
+- **仍未验**：只剩「微信这个具体通道」——微信把文件下载到哪个目录、该目录能否被系统文件
+  选择器看到。这属微信自身行为，不是本仓库代码；见 `docs/当前遗留问题与效果待验收清单.md`
+  的 ERP-MOBILE-05（状态：部分关闭）。
+
 ## v4.9.4 - 筛选区改网格分档、顶栏删掉公司名、四类开单父项统一点亮（2026-11-18）
 
 > 桌面端 `VERSION` `v4.9.3` → **`v4.9.4`**；安卓端未改动（仍 `1.4.12`）。

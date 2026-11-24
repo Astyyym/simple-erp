@@ -48,6 +48,7 @@ import com.simpleerp.mobile.ui.components.ErpCard
 import com.simpleerp.mobile.ui.components.PrimaryButton
 import com.simpleerp.mobile.ui.theme.Dimens
 import com.simpleerp.mobile.ui.theme.LocalErpColors
+import com.simpleerp.mobile.ui.util.formatCacheTime
 
 /**
  * 首次配置：填电脑地址（可选扫码）。
@@ -63,6 +64,23 @@ import com.simpleerp.mobile.ui.theme.LocalErpColors
 fun SetupScreen(
     onSubmit: (String) -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * 「没有电脑可连，先导入同伴的数据包」（2026-11-21）。
+     *
+     * 为什么这个入口必须放在**这一页**而不是只放设置页：一台从没配置过地址的
+     * 新手机，`bootstrap` 会停在 SetupScreen —— 它根本进不了主界面，也就够不到
+     * 设置页里的导入按钮。不给这个入口，B 就永远导入不了。
+     */
+    onImportPack: () -> Unit = {},
+    /**
+     * 「取消」出口（2026-11 审计 A1）。**可空**：首次配置时无处可回，不给。
+     *
+     * 为什么必须有它：「改地址」现在只是打开这一页、什么都不清（原来会清掉地址、
+     * cookie 与配对态，然后把人卡在一个没有输入框也没有主界面的死状态）。
+     * 既然进来时没动过任何东西，就得有一条**原样退出去**的路 ——
+     * 否则用户在设置页点了「改地址」、又不想改了，只能杀进程。
+     */
+    onCancel: (() -> Unit)? = null,
 ) {
     val colors = LocalErpColors.current
     var address by remember { mutableStateOf("") }
@@ -164,7 +182,49 @@ fun SetupScreen(
             onClick = { onSubmit(address.trim()) },
         )
 
-        Spacer(Modifier.height(28.dp))
+        // 取消出口（A1）：只在「改地址」时出现（见 `onCancel` 的说明）。
+        // 灰字、放在主按钮下面 —— 与「连不上电脑」页那次级入口同一套视觉规则：
+        // 主路径是「连上这台电脑」，退出去只是少数时候的需要。
+        // 同样用 `pointerInput` 而不是 `clickable`：`clickable` 会把输入框的
+        // Enter/Done 事件也吃掉（本文件「换个地址」踩过这个坑）。
+        if (onCancel != null) {
+            Spacer(Modifier.height(6.dp))
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text(
+                    "取消，回到主界面",
+                    color = colors.muted,
+                    fontSize = 13.sp,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(Dimens.radiusSm))
+                        .pointerInput(Unit) {
+                            detectTapGestures(onTap = { onCancel() })
+                        }
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                )
+            }
+        }
+
+        // 同伴数据包入口（2026-11-21）。次级样式、放主按钮下面 ——
+        // 「连电脑」才是常态路径，导入只是没电脑时的兜底。
+        // 不用 `clickable`：它会把键盘 Enter/Done 事件也吃掉（`PairScreen`
+        // 「换个地址」踩过同样的坑），pointerInput 只接触摸。
+        Spacer(Modifier.height(16.dp))
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Text(
+                "没有电脑？导入同伴的数据包",
+                color = colors.primary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(Dimens.radiusSm))
+                    .pointerInput(Unit) {
+                        detectTapGestures(onTap = { onImportPack() })
+                    }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
         ErpCard {
             Text("连不上怎么办", color = colors.ink, fontSize = 13.5.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.height(10.dp))
@@ -197,6 +257,22 @@ fun PairScreen(
     modifier: Modifier = Modifier,
     error: String? = null,
     onChangeAddress: (() -> Unit)? = null,
+    /**
+     * 配对请求进行中（A11）：按钮禁用 + 文案改成「配对中…」。
+     *
+     * 为什么需要：按钮只看「满了 6 位」就能点，而局域网请求最坏要 1.5 秒才回来 ——
+     * 这段时间里连点两下会发出两个 `/m/api/pair`，服务端 3 次/分的限流被自己吃掉，
+     * 而且第二个大概率回「配对码已使用」，界面上就变成「配对成功了却挂着一条错误」。
+     */
+    busy: Boolean = false,
+    /**
+     * 本地缓存的时间戳（0 = 没有数据）：与「连不上电脑」页那颗「先看离线缓存」
+     * 用同一个入参（A2）。没有数据时不显示这个入口 —— 点进去只有空列表，
+     * 比没有入口更让人以为手机坏了。
+     */
+    cacheAt: Long = 0L,
+    /** 「先看离线缓存」（A2）。为 null 表示调用方不给这个出口。 */
+    onShowCache: (() -> Unit)? = null,
 ) {
     val colors = LocalErpColors.current
     var code by remember { mutableStateOf("") }
@@ -215,7 +291,11 @@ fun PairScreen(
     val latestCode by rememberUpdatedState(code)
     val submit: () -> Unit = {
         val value = latestCode
-        if (value.length == 6) {
+        // 提交中直接忽略（A11）：键盘 Enter/Done 与按钮走的是同一个 submit，
+        // 两处都要挡住才会真的挡住连点。
+        if (busy) {
+            Unit
+        } else if (value.length == 6) {
             focus.clearFocus()
             localError = null
             staleErrorCleared = true
@@ -352,10 +432,45 @@ fun PairScreen(
 
         Spacer(Modifier.height(20.dp))
         PrimaryButton(
-            text = "配对",
-            enabled = code.length == 6,
+            text = if (busy) "配对中…" else "配对",
+            enabled = code.length == 6 && !busy,
             onClick = submit,
         )
+
+        // 「先看离线缓存」（A2，2026-11 audit）。
+        //
+        // 为什么配对页也要有它：「连不上电脑」页上这颗入口是 2026-10-31 事故之后
+        // 明确定下来的能力 —— 关电脑前同步过，之后断网也能看。而「电脑在、但手机
+        // 没被允许」这个状态下，人往往同样急着看数据（换了手机、设备被撤销、
+        // 配对码一时拿不到），却被锁在一个只能输码的页面里，本地那几百条数据
+        // 明明就在手机上。视觉与那颗完全一致：灰字、放在主按钮下面，
+        // 不带任何强调 —— 正常路径仍然是配对。
+        //
+        // 没有缓存时不显示：点进去只有空列表，比没有入口更像「手机坏了」。
+        if (onShowCache != null && cacheAt > 0L) {
+            Spacer(Modifier.height(6.dp))
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text(
+                    "先看离线缓存",
+                    color = colors.muted,
+                    fontSize = 13.sp,
+                    // 同本页「换个地址」：pointerInput 只接触摸，不参与键盘事件，
+                    // 否则输入框的 Enter/Done 冒泡上来会把它当成点击。
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(Dimens.radiusSm))
+                        .pointerInput(Unit) {
+                            detectTapGestures(onTap = { onShowCache() })
+                        }
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "看的是 ${formatCacheTime(cacheAt)} 的数据，页面上会标「离线」。",
+                color = colors.muted,
+                fontSize = 11.5.sp,
+            )
+        }
 
         Spacer(Modifier.height(24.dp))
         ErpCard {

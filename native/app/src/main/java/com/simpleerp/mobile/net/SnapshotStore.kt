@@ -82,6 +82,14 @@ class SnapshotStore(private val context: Context) {
 
     suspend fun entryCount(): Int = load()?.entries?.size ?: 0
 
+    /**
+     * 整份 entries（2026-11-21，同伴数据包导出用）。
+     *
+     * 导出方需要"原样搬走"，所以这里不做任何过滤或重组 —— 键是服务端算好的
+     * 规范化 path，任何客户端侧的改写都会让导入方查不到。
+     */
+    suspend fun entries(): Map<String, String> = load()?.entries ?: emptyMap()
+
     suspend fun clear() = withContext(Dispatchers.IO) {
         runCatching { fileFor().delete() }
     }

@@ -103,50 +103,97 @@ suspend fun <T> ApiClient.loadWithCache(
     decode: (String) -> T?,
     /** 全量快照：第二层回落。旧调用方不传也能工作（就是原来的行为）。 */
     snapshot: SnapshotStore? = null,
+    /**
+     * 「此刻这台手机本来就该按离线用」（同伴导入的数据 / 用户主动选了看缓存）。
+     *
+     * 为真时 401 与「连不上」走同一条回落链（A3）：B 的手机上有一份完整快照，
+     * 但它从没和这台电脑配对过，每个请求都 401 —— 如果照常返回 `NeedsPairing`，
+     * 刚导入的数据会被一个全屏配对页顶掉，人什么都看不到。
+     */
+    offlineAllowed: Boolean = false,
 ): LoadOutcome<T> {
+    /**
+     * 回落链：精确键 → 全量快照 → 「连不上」。
+     *
+     * 解不开的缓存**就当没有**（继续往下找），绝不反过来污染：
+     * 一份坏数据（schema 变了、写了一半）不该把快照里那份能看的旧数据挡掉，
+     * 也不该把「连不上」说成「数据格式不对」。
+     */
+    suspend fun fallback(): LoadOutcome<T> {
+        val cached = cache.get(cacheKey)
+        // decode 的返回类型是 T?，再包一层 Loaded 会被推断成 Loaded<T?>；
+        // 显式判空后再构造，让编译器收窄到 T。
+        if (cached != null) {
+            val value = decode(cached.body)
+            if (value != null) {
+                return LoadOutcome.Ok(
+                    Loaded(value, fromCache = true, fetchedAt = cached.fetchedAt)
+                )
+            }
+        }
+        // 第二层：全量快照。键必须用服务端那套规范化规则，否则查不到。
+        val snap = snapshot?.get(SnapshotStore.canonicalKey(path, query))
+        if (snap != null) {
+            val value = decode(snap.body)
+            if (value != null) {
+                return LoadOutcome.Ok(
+                    Loaded(value, fromCache = true, fetchedAt = snap.fetchedAt)
+                )
+            }
+        }
+        return LoadOutcome.Error(
+            "连不上电脑。请确认电脑开着、手机和电脑连同一个 WiFi。",
+            LoadOutcome.Error.Kind.OFFLINE,
+        )
+    }
+
     return when (val result = get(path, query)) {
         is ApiResult.Success -> {
             val value = decode(result.body)
             if (value == null) {
-                LoadOutcome.Error("服务器返回的数据格式不对（可能版本不匹配）。")
+                // 服务端回的东西解不开：kind 标出来，调用方才能决定「是不是该保住
+                // 屏幕上已经能看的那份旧数据」（见 `AppViewModel.load`，A12）。
+                LoadOutcome.Error(
+                    "服务器返回的数据格式不对（可能版本不匹配）。",
+                    LoadOutcome.Error.Kind.BAD_PAYLOAD,
+                )
             } else {
                 cache.put(cacheKey, result.body)
                 LoadOutcome.Ok(Loaded(value, fromCache = false, fetchedAt = System.currentTimeMillis()))
             }
         }
-        is ApiResult.Unreachable -> {
-            val cached = cache.get(cacheKey)
-            // decode 的返回类型是 T?，再包一层 Loaded 会被推断成 Loaded<T?>；
-            // 显式判空后再构造，让编译器收窄到 T。
-            if (cached != null) {
-                val value = decode(cached.body)
-                if (value != null) {
-                    return LoadOutcome.Ok(
-                        Loaded(value, fromCache = true, fetchedAt = cached.fetchedAt)
-                    )
-                }
-            }
-            // 第二层：全量快照。键必须用服务端那套规范化规则，否则查不到。
-            val snap = snapshot?.get(SnapshotStore.canonicalKey(path, query))
-            if (snap != null) {
-                val value = decode(snap.body)
-                if (value != null) {
-                    return LoadOutcome.Ok(
-                        Loaded(value, fromCache = true, fetchedAt = snap.fetchedAt)
-                    )
-                }
-            }
-            LoadOutcome.Error("连不上电脑。请确认电脑开着、手机和电脑连同一个 WiFi。")
-        }
-        is ApiResult.Failure -> LoadOutcome.Error(result.message)
-        is ApiResult.Unauthorized -> LoadOutcome.NeedsPairing
+        is ApiResult.Unreachable -> fallback()
+        // 401 = 服务端说「这台手机没被允许」。正常情况去配对页；
+        // 「按离线用」时按连不上处理（A3），否则导入的数据会被配对页顶掉。
+        is ApiResult.Unauthorized -> if (offlineAllowed) fallback() else LoadOutcome.NeedsPairing
+        is ApiResult.Failure -> LoadOutcome.Error(result.message, LoadOutcome.Error.Kind.SERVER)
         is ApiResult.NoServerConfigured -> LoadOutcome.NeedsSetup
     }
 }
 
 sealed class LoadOutcome<out T> {
     data class Ok<T>(val data: Loaded<T>) : LoadOutcome<T>()
-    data class Error(val message: String) : LoadOutcome<Nothing>()
+
+    /**
+     * 失败，带一个 [Kind]：`AppViewModel` 要根据它区分「必须显示的错」与
+     * 「可以拿旧数据顶上的错」。只靠 message 文本判断太脆（改一个字就静默失效）。
+     */
+    data class Error(
+        val message: String,
+        val kind: Kind = Kind.SERVER,
+    ) : LoadOutcome<Nothing>() {
+        enum class Kind {
+            /** 服务端明确报错（4xx/5xx）：必须显示，不能拿旧数据盖住。 */
+            SERVER,
+
+            /** 服务端回了内容但解不开（版本不匹配 / 被中间页劫持）。 */
+            BAD_PAYLOAD,
+
+            /** 连不上（含「按离线处理」的 401）：可以回落旧数据。 */
+            OFFLINE,
+        }
+    }
+
     data object NeedsPairing : LoadOutcome<Nothing>()
     data object NeedsSetup : LoadOutcome<Nothing>()
 }

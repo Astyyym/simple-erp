@@ -8,19 +8,33 @@
 - 改用第二个监听后：主应用物理上不可能被局域网访问；`tests/test_config_fallback.py`
   的 `host == "127.0.0.1"` 断言不用改；开关可热切换；回滚就是关开关。
 
-端口规则（§2.3）：5001 被占时**开关自动回弹到关 + 明确报错**，绝不自动退到 5002 ——
+端口规则（§2.3）：5001 被占时**只报错，绝不自动退到 5002** ——
 端口是配对 base_url 的一部分，自动漂移会让已配对手机静默失联。
+
+⚠️ 2026-11 修正：被占时**开关不再回弹到关**。旧行为是「起不来就把
+`mobile_access_enabled` 写回 False」，于是用户点开开关后什么都没发生、
+下次冷启动也完全不尝试，意图被静默改写。现在开关保持用户意图（True），
+失败原因另存 `mobile_last_start_error`（持久化在 config 里），冷启动会再试一次。
 """
 from __future__ import annotations
 
+import logging
 import socket
 import threading
+
+from erp.config import load_config, save_config
+
+logger = logging.getLogger(__name__)
 
 LISTEN_PORT = 5001
 LISTEN_HOST = "0.0.0.0"
 
 _state: dict = {"server": None, "thread": None, "error": "", "port": LISTEN_PORT}
 _lock = threading.Lock()
+
+# 地址活性自测的超时（秒）。设置页每次渲染都会算地址，所以必须短：
+# 本机回环/本地地址的连接/拒绝都是立刻返回的，0.2s 只兜底「网卡半死」的极端情况。
+_LIVENESS_TIMEOUT = 0.2
 
 
 # 代理/虚拟网卡会抢默认路由：本机实测 `198.18.0.1`（Meta / TUN）会被
@@ -59,16 +73,79 @@ def _lan_rank(address: str) -> tuple[int, str]:
     return (2, address)
 
 
+def _address_alive(address: str, port: int | None = None) -> bool:
+    """这条地址**此刻**在本机是不是真的「存在且在服务」，供 `_pick_lan_address` 排序。
+
+    为什么需要它：`_lan_rank` 只看地址段（192.168 > 10. > 172.16–31）。本机装了
+    VirtualBox Host-Only（典型 `192.168.56.1`）或 VMware 网卡时，它和家用 Wi-Fi
+    的 `192.168.1.x` 属于**同一档**，最后是按字符串顺序随手挑一个 —— 设置页二维码
+    可能给出一个手机根本连不上的地址，而电脑端一切显示正常（真实踩过）。
+
+    两级确认，都是便宜的本地调用：
+    ① `bind((addr, 0))`：地址必须真的落在本机某块已启用的网卡上（拔掉的 Wi-Fi、
+       历史残留地址会失败）；
+    ② `connect_ex((addr, 当前监听端口))`：第二监听此刻正绑在 `0.0.0.0:5001`，
+       从这条地址能连上才说明「这块网卡上的端口确实在服务」。
+
+    ⚠️ 它证明的是「本机可达」，**不是**「手机可达」：防火墙规则本机看不见，
+    所以诊断文案里那句「不代表手机能连」必须留着，别因为有了这个自测就删。
+    """
+    text = str(address or "").strip()
+    if not text:
+        return False
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.settimeout(_LIVENESS_TIMEOUT)
+            probe.bind((text, 0))
+    except OSError:
+        return False
+    if _state.get("server") is None:
+        # 监听没起来时 connect 探测**没有信息量**：所有候选都连不上，只会白等超时
+        # （实测每次 200ms，而设置页渲染会调好几次 `status()`）。bind 成功已经
+        # 证明「这块网卡在本机、且已启用」，够用于排序了。
+        return True
+    listen_port = int(port or _state.get("port") or LISTEN_PORT)
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.settimeout(_LIVENESS_TIMEOUT)
+            return probe.connect_ex((text, listen_port)) == 0
+    except OSError:
+        return False
+
+
 def _pick_lan_address(candidates) -> str:
-    """从候选地址里挑最像「手机能连」的那个；一个都没有就返回 127.0.0.1。"""
-    usable = []
+    """从候选地址里挑最像「手机能连」的那个；一个都没有就返回 127.0.0.1。
+
+    排序键依次是：
+      ① 活性（`_address_alive`：网卡在、端口能连）；
+      ② `_lan_rank` 的地址段档位（192.168 > 10. > 172.16–31）；
+      ③ 候选来源顺序（默认路由探测出来的排在 `gethostbyname_ex` 之前，
+         见 `_lan_candidates`）—— 真正的 Wi-Fi 通常就是默认路由那块网卡，
+         而 VirtualBox / VMware 的虚拟网卡再「像」192.168 也不会出现在默认路由上。
+    ②③ 一起才解决「虚拟网卡与 Wi-Fi 同为 192.168.x、都被判活」的情形；单靠活性
+    分辨不出来（监听绑在 0.0.0.0 时，虚拟网卡那条地址同样连得上）。
+
+    ⚠️ 全都不活时**不能**判成「没有局域网地址」：探测本身会失效（监听还没起来、
+    防火墙拦了本地连接），那时退回改动前的地址段排序，行为与原来一致。
+    """
+    usable: list[str] = []
     for candidate in candidates:
         text = str(candidate or "").strip()
         if _is_lan_ip(text) and text not in usable:
             usable.append(text)
     if not usable:
         return "127.0.0.1"
-    return sorted(usable, key=_lan_rank)[0]
+    alive = {address for address in usable if _address_alive(address)}
+    pool = [address for address in usable if address in alive] or usable
+
+    def _sort_key(address: str) -> tuple[int, int, int]:
+        return (
+            0 if address in alive else 1,
+            _lan_rank(address)[0],
+            usable.index(address),
+        )
+
+    return sorted(pool, key=_sort_key)[0]
 
 
 def _lan_candidates() -> list[str]:
@@ -131,8 +208,47 @@ def listener_port() -> int:
     return int(_state.get("port") or LISTEN_PORT)
 
 
+def last_start_error() -> str:
+    """上次启动监听失败的原因（持久化在 config 里，**重启后仍然能看到**）。
+
+    与 `listener_error()` 的区别：那个是本进程内监听线程的即时状态，进程退出即消失；
+    这个是「用户上次打开开关时为什么没起来」。冷启动会按开关再试一次，仍失败时
+    店主重新打开设置页必须还能读到原因 —— 否则他只会看到「已打开，监听未起来」，
+    没有任何可执行信息。
+    """
+    try:
+        return str(load_config().get("mobile_last_start_error") or "")
+    except Exception:  # noqa: BLE001 — 配置读不出来不能连带拖坏诊断面板
+        logger.warning("读取手机访问启动失败原因失败", exc_info=True)
+        return ""
+
+
+def _record_start_failure(message: str) -> str:
+    """启动失败：本进程状态 + 配置各记一份，返回给调用方（原样当 error 用）。"""
+    _state["error"] = message
+    try:
+        save_config({"mobile_last_start_error": message})
+    except Exception:  # noqa: BLE001 — 记不下原因也绝不能因此起不来
+        logger.warning("记录手机访问启动失败原因到配置失败（已忽略）：%s", message, exc_info=True)
+    return message
+
+
+def _clear_start_failure() -> None:
+    """启动成功：清掉上一次的失败原因（只在真的写到过时才写盘）。"""
+    try:
+        if str(load_config().get("mobile_last_start_error") or ""):
+            save_config({"mobile_last_start_error": ""})
+    except Exception:  # noqa: BLE001 — 清理失败不影响监听本身
+        logger.warning("清除手机访问启动失败原因失败（已忽略）", exc_info=True)
+
+
 def start_mobile_listener(port: int = LISTEN_PORT) -> tuple[bool, str]:
-    """启动第二监听。返回 `(ok, error_message)`；失败时 error 是给店主看的中文原因。"""
+    """启动第二监听。返回 `(ok, error_message)`；失败时 error 是给店主看的中文原因。
+
+    失败**只报告、不改开关**：`mobile_access_enabled` 是用户意图，由调用方保留，
+    冷启动（`desktop_app.py` / `app/app.py`）据此再试一次。原因持久化在
+    `mobile_last_start_error`，设置页诊断区与关闭提醒都能读到。
+    """
     global _state
     with _lock:
         if _state.get("server") is not None:
@@ -140,8 +256,7 @@ def start_mobile_listener(port: int = LISTEN_PORT) -> tuple[bool, str]:
         try:
             from waitress import create_server
         except ImportError as exc:  # pragma: no cover
-            _state["error"] = f"缺少 waitress 依赖：{exc}"
-            return False, _state["error"]
+            return False, _record_start_failure(f"缺少 waitress 依赖：{exc}")
 
         # 先自己探一次端口：Windows 上 `SO_REUSEADDR` 允许**重复绑定**已在监听的端口
         # （与 POSIX 不同），等 waitress 报错是等不到的——它会「绑定成功」然后行为诡异。
@@ -151,8 +266,7 @@ def start_mobile_listener(port: int = LISTEN_PORT) -> tuple[bool, str]:
                 f"端口 {port} 被占用，可能是上次没退干净。"
                 "请重启程序后重试；仍失败就说明有别的程序在用这个端口。"
             )
-            _state["error"] = message
-            return False, message
+            return False, _record_start_failure(message)
 
         from erp.mobile_app import create_mobile_app
 
@@ -160,18 +274,19 @@ def start_mobile_listener(port: int = LISTEN_PORT) -> tuple[bool, str]:
         try:
             server = create_server(app, host=LISTEN_HOST, port=int(port), threads=4)
         except OSError as exc:
+            # 端口固定 5001，不自动漂移（端口是配对 base_url 的一部分，漂移是静默失败）。
             message = (
                 f"端口 {port} 被占用，可能是上次没退干净（{exc}）。"
-                "请重启程序后重试；仍失败就换个端口并重新配对手机。"
+                "请重启程序后重试；仍失败就说明有别的程序在用这个端口。"
             )
-            _state["error"] = message
-            return False, message
+            return False, _record_start_failure(message)
 
         thread = threading.Thread(
             target=_serve, args=(server,), name="erp-mobile-listener", daemon=True
         )
         _state.update({"server": server, "thread": thread, "error": "", "port": int(port)})
         thread.start()
+        _clear_start_failure()
         return True, ""
 
 
@@ -213,5 +328,9 @@ def status() -> dict:
         "lan_usable": usable,
         "lan_warning": "" if usable else lan_ip_warning(),
         "url": mobile_url(ip=address),
+        # 本进程内的即时错误（监听线程死掉等）。
         "error": listener_error(),
+        # 上次启动失败的原因（跨重启保留）。与 `error` 分开是必要的：
+        # 冷启动重试成功时 `error` 为空，但「上次为什么没起来」仍然该给店主看到。
+        "last_start_error": last_start_error(),
     }

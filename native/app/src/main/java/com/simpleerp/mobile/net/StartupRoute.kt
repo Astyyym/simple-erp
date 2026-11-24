@@ -55,11 +55,41 @@ enum class StartupRoute {
  */
 object StartupRouting {
 
-    fun route(probe: MetaProbe, pairedConfirmed: Boolean): StartupRoute = when (probe) {
+    /**
+     * [offlineAllowed] = 「此刻这台手机本来就该按离线用」（见 [requiresPairingOnUnauthorized]）。
+     *
+     * 为什么必须传进来：同伴数据包导入后，手机上有一份完整快照，
+     * 而 B 从没和这台电脑配对过 —— 服务端对它的每个请求都回 401，探测结论是 NOT_PAIRED。
+     * 照原表走就会把刚导入的数据锁在配对页后面（1.4.13 的功能自打脸，A3）。
+     * 数据在手机上这件事与服务端认不认这台设备无关，所以这一格要按离线放行。
+     */
+    fun route(
+        probe: MetaProbe,
+        pairedConfirmed: Boolean,
+        offlineAllowed: Boolean = false,
+    ): StartupRoute = when (probe) {
         MetaProbe.PAIRED -> StartupRoute.MAIN
-        MetaProbe.NOT_PAIRED -> StartupRoute.PAIR
+        MetaProbe.NOT_PAIRED -> if (offlineAllowed) StartupRoute.MAIN else StartupRoute.PAIR
         MetaProbe.UNREACHABLE,
         MetaProbe.SERVER_ERROR,
         -> if (pairedConfirmed) StartupRoute.MAIN else StartupRoute.CONNECTION_LOST
     }
+
+    /**
+     * 401 此刻该不该把人顶到配对页（A3 / A2）。
+     *
+     * 两个「不该」的来源：
+     * - [peerImportedAt] > 0：当前快照是同伴导入的（`ServerConfig.peerImportedAt`）。
+     *   B 连不上电脑是常态，401 只会把刚导入的数据抢走。本机自己同步成功一次后
+     *   这个标记就被清掉（`runSync` 里 `clearPeerImported`），行为自动恢复。
+     * - [userChoseOfflineCache]：用户在配对页按了「先看离线缓存」，
+     *   明确表达了「我知道没配对，我要看旧数据」。
+     *
+     * 两者都按「连不上电脑」处理：回落到缓存/快照，回不到就显示离线错误 ——
+     * 与 `LoadOutcome.Error("连不上电脑…")` 同一套语义，页面上的文案不会骗人。
+     */
+    fun requiresPairingOnUnauthorized(
+        peerImportedAt: Long,
+        userChoseOfflineCache: Boolean = false,
+    ): Boolean = peerImportedAt <= 0L && !userChoseOfflineCache
 }

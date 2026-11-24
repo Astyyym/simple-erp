@@ -6,6 +6,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 private val Context.dataStore by preferencesDataStore(name = "simple_erp_native")
 
@@ -34,6 +36,12 @@ class ServerConfig(private val context: Context) {
         val SYNC_TO = stringPreferencesKey("sync_to")
         /** 服务端给的「离线备份列表」缓存键；客户端不自己拼，照抄即可。 */
         val BACKUP_KEY = stringPreferencesKey("backup_key")
+
+        // ---- 同伴数据包（2026-11-21）----
+        /** 当前快照是「从同伴手机导入」的：存导入时刻（epoch 毫秒），0/空 = 不是。 */
+        val PEER_IMPORTED_AT = stringPreferencesKey("peer_imported_at")
+        /** 同伴数据包的店名，导入后设置页要能说出「这份数据来自哪家店」。 */
+        val PEER_SOURCE_SHOP = stringPreferencesKey("peer_source_shop")
     }
 
     /** 返回形如 `http://192.168.10.5:5001` 的根地址；未配置时为空串。 */
@@ -84,13 +92,18 @@ class ServerConfig(private val context: Context) {
      * 3. 只是标签，不是凭据：服务端只拿它做合并展示，认证永远只有 cookie token。
      *    所以它不需要保密，也不需要随 App 重装保留（重装了就是新手机，合理）。
      */
-    suspend fun deviceUid(): String {
-        val existing = context.dataStore.data.map { it[Keys.DEVICE_UID] ?: "" }.first()
-        if (existing.isNotEmpty()) return existing
-        val generated = java.util.UUID.randomUUID().toString().replace("-", "").take(16)
-        context.dataStore.edit { it[Keys.DEVICE_UID] = generated }
-        return generated
-    }
+    suspend fun deviceUid(): String = deviceUidStore.ensure(
+        existing = { context.dataStore.data.map { it[Keys.DEVICE_UID] ?: "" }.first() },
+        store = { value -> context.dataStore.edit { it[Keys.DEVICE_UID] = value } },
+    )
+
+    /**
+     * 「只生成一次」的守卫，见 [DeviceUidStore]。
+     *
+     * 必须是**实例字段**：`ServerConfig` 在 `AppViewModel` 里只有一个实例，
+     * 所有 `deviceUid()` 调用者共享这把锁。每次新建一个锁等于没锁。
+     */
+    private val deviceUidStore = DeviceUidStore()
 
     /** 上一次「完整同步」成功的时间（epoch 毫秒）；0 = 从未同步过。 */
     suspend fun lastSyncAt(): Long =
@@ -132,6 +145,55 @@ class ServerConfig(private val context: Context) {
     }
 
     /**
+     * 只清同步区间与备份键（不动地址、不动配对态）。
+     *
+     * 为什么需要它（2026-11 审计 A12）：[saveSyncSpan] 对空值是**跳过不写**，
+     * 于是导入一个区间字段为空的同伴数据包时，三个键会原样留着**上一家店/上一次同步**
+     * 的值 —— 断网本地筛选按旧区间过滤，导入的那些单据反而筛不出来。
+     * 导入前先清空，包里有值再写，没有就保持空（＝「不知道覆盖范围」，筛选不截断）。
+     */
+    suspend fun clearSyncSpan() {
+        context.dataStore.edit {
+            it.remove(Keys.SYNC_FROM)
+            it.remove(Keys.SYNC_TO)
+            it.remove(Keys.BACKUP_KEY)
+        }
+    }
+
+    // ---- 同伴数据包（2026-11-21）----
+
+    /**
+     * 当前快照是不是从同伴手机导入的：返回导入时刻（epoch 毫秒），0 = 不是。
+     *
+     * 为什么要它：`fetchedAt` 只说「这份数据截至什么时候」，说不了「它是怎么来的」。
+     * 导入的数据如果直接混进"离线缓存"，B 会以为是自己同步的，界面文案也骗人。
+     * 这个标记只在两种时机被清掉：**本机自己同步成功一次**，或断开连接。
+     */
+    suspend fun peerImportedAt(): Long =
+        context.dataStore.data
+            .map { (it[Keys.PEER_IMPORTED_AT] ?: "").toLongOrNull() ?: 0L }
+            .first()
+
+    /** 同伴数据包里的店名（设置页显示「来自 xx 店」）。 */
+    suspend fun peerSourceShop(): String =
+        context.dataStore.data.map { it[Keys.PEER_SOURCE_SHOP] ?: "" }.first()
+
+    suspend fun savePeerImported(atMillis: Long, shopName: String) {
+        context.dataStore.edit {
+            it[Keys.PEER_IMPORTED_AT] = atMillis.toString()
+            if (shopName.isNotBlank()) it[Keys.PEER_SOURCE_SHOP] = shopName
+        }
+    }
+
+    /** 本机同步成功后调用：数据已经是自己拿的了，不再是"同伴的"。 */
+    suspend fun clearPeerImported() {
+        context.dataStore.edit {
+            it.remove(Keys.PEER_IMPORTED_AT)
+            it.remove(Keys.PEER_SOURCE_SHOP)
+        }
+    }
+
+    /**
      * 记住上次连上的**公司名称**。
      *
      * 设置页顶部要显示「连到的这台电脑叫什么」，这个值只能来自服务端 meta。
@@ -159,6 +221,10 @@ class ServerConfig(private val context: Context) {
             it.remove(Keys.SYNC_FROM)
             it.remove(Keys.SYNC_TO)
             it.remove(Keys.BACKUP_KEY)
+            // 同伴来源跟着一起清：断开之后这份数据已经说不出出处，继续标"来自同伴"
+            // 只是给界面留一句无从核实的话。快照文件本身不在这里清（见 SnapshotStore）。
+            it.remove(Keys.PEER_IMPORTED_AT)
+            it.remove(Keys.PEER_SOURCE_SHOP)
             // ⚠️ `SYNC_MONTHS`（回溯几个月）是用户的偏好，不随换电脑清掉。
             // 「确认过配对」也属于「连的是这台电脑」：断开后再连回来必须重新确认。
             it.remove(Keys.PAIRED_CONFIRMED)
@@ -176,5 +242,55 @@ class ServerConfig(private val context: Context) {
          * 这里保留同名入口，调用方不用改。
          */
         fun normalize(raw: String): String = ServerAddress.normalize(raw)
+    }
+}
+
+/**
+ * `device_uid` 的「只生成一次」守卫（2026-11 审计 A11）。
+ *
+ * 事故形状：原实现是「读 → 生成 → 写」三步。两个协程同时进来（配对按钮连点、
+ * 或 `submitPairCode` 与附带的 bootstrap 撞车），两边都读到空，各自生成不同的 uid
+ * 再各自写一遍 —— 电脑端「已配对设备」里就长出**两条**同一台手机的记录，
+ * 而 uid 机制存在的意义正是消灭这种重复。
+ *
+ * 为什么单独抽成一个不依赖 Context 的类：`ServerConfig` 要 DataStore 才能构造，
+ * JVM 单测里起不来；把「读-判-写」放进这里的三个回调，`DeviceUidStoreTest`
+ * 就能用并发协程真跑一遍，证明只生成一次。
+ *
+ * 读和写在**同一把锁内**完成：如果锁只包住「写」，两个协程仍然会各自生成一个值，
+ * 只是写变成串行 —— 那是一个更难查的版本（后者覆盖前者，两次调用拿到不同的 uid）。
+ */
+internal class DeviceUidStore {
+
+    private val mutex = Mutex()
+
+    /**
+     * 已有就返回已有的，没有就生成一个并落盘；并发调用只会生成一次、拿到同一个值。
+     *
+     * [existing]/[store] 都是挂起回调，因为它们背后是 DataStore 的异步读写 ——
+     * 这也是竞态的根源：原来的 `if (existing.isNotEmpty()) return existing` 与
+     * `edit { }` 之间可以插进另一个协程。
+     */
+    suspend fun ensure(
+        existing: suspend () -> String,
+        store: suspend (String) -> Unit,
+        generate: () -> String = { generateDeviceUid() },
+    ): String = mutex.withLock {
+        val current = existing()
+        if (current.isNotEmpty()) return@withLock current
+        val created = generate()
+        store(created)
+        created
+    }
+
+    companion object {
+        /**
+         * 新 uid：16 位十六进制（去掉 UUID 的短横线）。
+         *
+         * 只做标签，不做凭据（见 `ServerConfig.deviceUid` 的约束 3），
+         * 所以不需要加密强度的可读性，长度够短、肉眼可核对更有用。
+         */
+        fun generateDeviceUid(): String =
+            java.util.UUID.randomUUID().toString().replace("-", "").take(16)
     }
 }

@@ -1,6 +1,7 @@
 package com.simpleerp.mobile.ui
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.simpleerp.mobile.data.Customer
@@ -21,10 +22,13 @@ import com.simpleerp.mobile.data.TodayOverview
 import com.simpleerp.mobile.data.TodayResponse
 import com.simpleerp.mobile.net.ApiClient
 import com.simpleerp.mobile.net.ApiResult
+import com.simpleerp.mobile.net.CookiePersistence
 import com.simpleerp.mobile.net.Loaded
 import com.simpleerp.mobile.net.LoadOutcome
 import com.simpleerp.mobile.net.MetaProbe
 import com.simpleerp.mobile.net.PersistentCookieStore
+import com.simpleerp.mobile.BuildConfig
+import com.simpleerp.mobile.net.PeerPack
 import com.simpleerp.mobile.net.ResponseCache
 import com.simpleerp.mobile.net.ServerConfig
 import com.simpleerp.mobile.net.SnapshotStore
@@ -33,13 +37,17 @@ import com.simpleerp.mobile.net.StartupRouting
 import com.simpleerp.mobile.net.loadWithCache
 import com.simpleerp.mobile.ui.theme.ThemeMode
 import com.simpleerp.mobile.ui.util.OfflineOrderFilter
+import com.simpleerp.mobile.ui.util.formatCacheTime
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.serializer
+import java.io.File
 
 /**
  * 底部导航的目的地。
@@ -139,6 +147,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** 「连不上电脑」页上那句原因（地址 / HTTP 状态码），给人看的，不参与判断。 */
     private val _connectionDetail = MutableStateFlow("")
     val connectionDetail: StateFlow<String> = _connectionDetail.asStateFlow()
+
+    /**
+     * 用户明知没配对、仍选择了「先看离线缓存」（A2）。
+     *
+     * 为什么必须有这个标记：配对页上那颗次级入口如果只是「关掉配对页」，
+     * 接下来每个请求都 401，`load()` 立刻把 `_needsPairing` 翻回 true ——
+     * 用户点了按钮、又回到配对页，等于没点。
+     *
+     * 两个清掉它的时机，都是用户明确表示「我要重新连」：
+     * 「重新检测」（[recheck]）、提交新地址（[saveBaseUrl]）、断开连接（[disconnect]）。
+     * 不进 StateFlow：没有任何界面直接渲染它，只影响 401 的处置方式。
+     */
+    private var offlineBrowse = false
 
     // ---- 页面 ----
     private val _today = MutableStateFlow<UiState<TodayOverview>>(UiState.Loading)
@@ -316,6 +337,41 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _syncMonths = MutableStateFlow(ServerConfig.DEFAULT_SYNC_MONTHS)
     val syncMonths: StateFlow<Int> = _syncMonths.asStateFlow()
 
+    // ---- 同伴数据包（2026-11-21）----
+
+    /** 当前快照是不是从同伴手机导入的：导入时刻（epoch 毫秒），0 = 不是。 */
+    private val _peerImportedAt = MutableStateFlow(0L)
+    val peerImportedAt: StateFlow<Long> = _peerImportedAt.asStateFlow()
+
+    /** 同伴数据包里记录的店名。 */
+    private val _peerSourceShop = MutableStateFlow("")
+    val peerSourceShop: StateFlow<String> = _peerSourceShop.asStateFlow()
+
+    /** 导入/导出正在进行中（按钮防连点 + 显示"处理中"）。 */
+    private val _peerBusy = MutableStateFlow(false)
+    val peerBusy: StateFlow<Boolean> = _peerBusy.asStateFlow()
+
+    /** 一次性的结果提示（成功/失败都说清楚）。UI 消费后调用 [consumePeerMessage]。 */
+    private val _peerMessage = MutableStateFlow<String?>(null)
+    val peerMessage: StateFlow<String?> = _peerMessage.asStateFlow()
+
+    /** 已生成、待交给系统分享面板的文件。UI 消费后调用 [consumeShareFile]。 */
+    private val _shareFile = MutableStateFlow<File?>(null)
+    val shareFile: StateFlow<File?> = _shareFile.asStateFlow()
+
+    fun consumePeerMessage() {
+        _peerMessage.value = null
+    }
+
+    /** UI 层遇到无法继续的情况（如分享面板起不来）时，用它把原因说给用户听。 */
+    fun reportPeerError(message: String) {
+        _peerMessage.value = message
+    }
+
+    fun consumeShareFile() {
+        _shareFile.value = null
+    }
+
     /** 搜索输入防抖：柜台前打字快，每键一请求会把局域网打满。 */
     private var searchJob: Job? = null
 
@@ -330,7 +386,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { bootstrap() }
     }
 
+    /**
+     * 「谁是最新的一次启动探测」（A10）。
+     *
+     * 四个入口都会起 `bootstrap()`（init / recheck / saveBaseUrl / 配对成功），而它中间
+     * 要等一次最长 1.5 秒的 `meta` 探测。用户在这段时间里改了地址、或连点了「重新检测」，
+     * 旧的那次探测随后返回，会把**新地址/新状态**覆盖成旧结论 ——
+     * 表现是「地址明明改了，界面还停在上一个地址的页面」。
+     *
+     * 为什么用代号计数而不是取消 Job：`bootstrap()` 是 suspend，且在 `saveBaseUrl`
+     * 与 `submitPairCode` 里被 await（它们的收尾逻辑在它之后）。取消那个 Job 会把
+     * 调用方的协程一起取消（同一个 viewModelScope 父作用域），配对成功的收尾就没了。
+     * 代号计数不动协程树，只让过期的那次在下一个挂起点静默退场。
+     */
+    private var bootstrapGeneration = 0
+
+    /** 代号是否还有效（见 [bootstrapGeneration]）。 */
+    private fun isCurrentBootstrap(generation: Int): Boolean = generation == bootstrapGeneration
+
     suspend fun bootstrap() {
+        val generation = ++bootstrapGeneration
         // 地址一律以 DataStore 为准。
         //
         // 踩过的坑：曾经写成「内存值优先、空了才读 DataStore」。真机上配对成功后
@@ -338,22 +413,52 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // 于是 bootstrap 读到空串，界面被打回「连接电脑」—— 而设备其实已经配对成功。
         // DataStore 是唯一可靠的来源，内存值只用于「刚写入、还没落盘」的极短窗口。
         val stored = serverConfig.baseUrl()
+        // 读出地址这个挂起点里，可能有更新的一次 bootstrap 已经跑完并写入了新地址。
+        // 这里必须先确认自己还是最新的一次，否则会用「旧地址」覆盖掉新的（A10）。
+        if (!isCurrentBootstrap(generation)) return
         val url = stored.ifEmpty { _baseUrl.value }
         _baseUrl.value = url
         api.updateBaseUrl(url)
         if (url.isEmpty()) {
+            // 2026-11-21：没有电脑地址，但本地已有快照（可能刚从同伴手机导入）时，
+            // 不该把人锁在「连接电脑」页 —— 数据就在手机里，看得到比填地址更急。
+            val cachedAt = snapshot.syncedAt()
+            if (cachedAt > 0L) {
+                // 这里已经过了一次挂起点：可能有人在这期间又启动了新的 bootstrap（A10）。
+                if (!isCurrentBootstrap(generation)) return
+                _needsSetup.value = false
+                _needsPairing.value = false
+                _connectionLost.value = false
+                _cacheNewest.value = maxOf(_cacheNewest.value, cachedAt)
+                _lastSyncAt.value = serverConfig.lastSyncAt()
+                _syncMonths.value = serverConfig.syncMonths()
+                _peerImportedAt.value = serverConfig.peerImportedAt()
+                _peerSourceShop.value = serverConfig.peerSourceShop()
+                _bootstrapped.value = true
+                refreshAll()
+                return
+            }
+            if (!isCurrentBootstrap(generation)) return
             _needsSetup.value = true
             _bootstrapped.value = true
             return
         }
-        _needsSetup.value = false
         // 设置页标题用的公司名：先亮本地副本（断网也能显示上次连的是哪家店），
         // 联网探到 meta 后再用服务端的值覆盖并落盘。
-        _shopName.value = serverConfig.shopName()
+        val storedShopName = serverConfig.shopName()
         // 本地是否**确认过**配对：决定「连不上」时是进主界面看缓存，还是停在连不上页。
         val pairedConfirmed = serverConfig.pairedConfirmed()
+        // 同伴导入的时刻要在探测之前读：探测结论是 401 时，路由要不要按「离线」放行
+        // 就靠它（A3）。本机自己同步成功一次后这个标记会被清掉，行为自动恢复。
+        val peerImportedAt = serverConfig.peerImportedAt()
+        // 上面三个读取也都是挂起点：先确认自己还是最新的一次，再开始写状态（A10）。
+        if (!isCurrentBootstrap(generation)) return
+        _needsSetup.value = false
+        _shopName.value = storedShopName
         var probe = MetaProbe.UNREACHABLE
         var detail = ""
+        // 探测到的 meta 先放局部变量，等确认「这次是最新的一次」之后才写状态（A10）。
+        var probedMeta: MetaResponse? = null
         // 先探一次 meta：地址对不对、服务活不活、要不要配对，一次问清。
         when (val result = api.get("/m/api/meta")) {
             is ApiResult.Success -> {
@@ -363,12 +468,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     probe = MetaProbe.SERVER_ERROR
                     detail = "这个地址回的内容看不懂，确认是不是这台电脑的地址。"
                 } else {
-                    _meta.value = decoded
+                    probedMeta = decoded
                     probe = if (decoded.paired) MetaProbe.PAIRED else MetaProbe.NOT_PAIRED
-                    if (decoded.shopName.isNotBlank()) {
-                        _shopName.value = decoded.shopName
-                        serverConfig.saveShopName(decoded.shopName)
-                    }
                 }
             }
             is ApiResult.Unauthorized -> probe = MetaProbe.NOT_PAIRED
@@ -381,19 +482,43 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 detail = "电脑回了 HTTP ${result.code}。"
             }
             ApiResult.NoServerConfigured -> {
+                if (!isCurrentBootstrap(generation)) return
                 _needsSetup.value = true
                 _bootstrapped.value = true
                 return
             }
         }
+        // 探测是这里唯一的长挂起点（最长 1.5 秒）。之后全是状态写入，
+        // 先确认自己还是最新的一次，否则旧结论会盖掉新地址/新状态（A10）。
+        if (!isCurrentBootstrap(generation)) return
+        probedMeta?.let { decoded ->
+            _meta.value = decoded
+            if (decoded.shopName.isNotBlank()) {
+                _shopName.value = decoded.shopName
+                serverConfig.saveShopName(decoded.shopName)
+            }
+        }
+
         // 配对态落盘：**只有服务端确认过才算**（见 ServerConfig.pairedConfirmed 的说明）。
         when (probe) {
             MetaProbe.PAIRED -> serverConfig.savePairedConfirmed(true)
-            MetaProbe.NOT_PAIRED -> serverConfig.savePairedConfirmed(false)
+            // NOT_PAIRED **不再**把本地的「确认过配对」抹成 false（A9）。
+            //
+            // 原来这里写 false：一次瞬时 401（服务端重启、会话表被清、代理插了一手）
+            // 就把持久化标志抹掉，之后电脑真的关机时用户会被送去「连不上电脑」页，
+            // 而不是照旧看缓存 —— 而「关电脑前同步一次、之后断网也能看」是明确需求。
+            //
+            // 取舍说清楚：如果设备**真的**被电脑端撤销了，本机仍会按「配过对」进主界面
+            // 看缓存（每次请求都是 401，页面显示离线数据或错误）。这是可接受的 ——
+            // 离线看得到旧数据，比把人挡在一个只说「连不上」的页面上更符合柜台场景；
+            // 需要真正清掉这个标志的只有两个动作：用户点「断开连接」、换到另一台电脑（A4）。
             else -> Unit
         }
 
-        when (StartupRouting.route(probe, pairedConfirmed)) {
+        // 同伴导入的数据在手机上放着，与服务端认不认这台设备无关（A3）：
+        // 这时 401 不该被顶成全屏配对页，否则刚导入的东西一眼都看不到。
+        val offlineAllowed = _peerImportedAt.value > 0L || peerImportedAt > 0L || offlineBrowse
+        when (StartupRouting.route(probe, pairedConfirmed, offlineAllowed)) {
             StartupRoute.MAIN -> {
                 _needsPairing.value = false
                 _connectionLost.value = false
@@ -411,9 +536,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         _bootstrapped.value = true
-        _cacheNewest.value = cache.newestTimestamp() ?: 0L
+        // 快照时间也要算进来：只同步过快照、还没逐页打开过时，`ResponseCache` 是空的，
+        // 只取它的时间戳会显示成「还没有缓存」—— 明明数据就在。
+        _cacheNewest.value = maxOf(cache.newestTimestamp() ?: 0L, snapshot.syncedAt())
         _lastSyncAt.value = serverConfig.lastSyncAt()
         _syncMonths.value = serverConfig.syncMonths()
+        _peerImportedAt.value = serverConfig.peerImportedAt()
+        _peerSourceShop.value = serverConfig.peerSourceShop()
         if (!_needsPairing.value && !_needsSetup.value && !_connectionLost.value) {
             refreshAll()
             // 打开 App 时顺手同步一次：这样「早上开店打开手机」看到的就不是
@@ -431,9 +560,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * 「没连上」这件事说清楚，**不是**把离线看数据这条路堵死。
      */
     fun showOfflineCache() {
+        // 配对页上也有这颗次级入口（A2）。从那里进来时 `_needsPairing` 还是 true，
+        // 不一起关掉的话页面根本不会离开配对页；而只关掉又会被下一个 401 翻回来，
+        // 所以还要记下「用户主动选了离线看」（见 offlineBrowse）。
+        offlineBrowse = true
         _connectionLost.value = false
+        _needsPairing.value = false
         refreshAll()
     }
+
+    /**
+     * 401 此刻该不该把人顶到配对页 —— 纯逻辑在
+     * [StartupRouting.requiresPairingOnUnauthorized]，这里只负责喂数据。
+     */
+    private fun requiresPairingOnUnauthorized(): Boolean =
+        StartupRouting.requiresPairingOnUnauthorized(
+            peerImportedAt = _peerImportedAt.value,
+            userChoseOfflineCache = offlineBrowse,
+        )
 
     // -----------------------------------------------------------------------
     // 全量同步（2026-10-24：关电脑前让手机拉一遍）
@@ -451,6 +595,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun maybeAutoSync() {
         viewModelScope.launch {
+            // 同伴导入状态不自动同步（A3）。
+            //
+            // 为什么：`lastSyncAt` 记的是**同伴那份数据的截止时间**，通常很旧，
+            // 于是这条节流必然放行 → 立刻跑一次整份同步 → B 从没配对过 → 全 401。
+            // 用户视角是「刚导入完就闪一条红字/被顶去配对页」，把「导入成功」这件事盖掉。
+            // 这个标记在本机自己同步成功一次后就被清掉，之后自动同步照旧。
+            if (serverConfig.peerImportedAt() > 0L) return@launch
             val last = serverConfig.lastSyncAt()
             _lastSyncAt.value = last
             if (last > 0 && System.currentTimeMillis() - last < autoSyncIntervalMs) return@launch
@@ -544,6 +695,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     serverConfig.saveLastSyncAt(at)
                     // 记下本次覆盖的区间与备份列表键，断网本地筛选要用。
                     serverConfig.saveSyncSpan(decoded.syncFrom, decoded.syncTo, decoded.backupKey)
+                    // 2026-11-21：这次是自己从电脑拉的，数据不再是"同伴的"。
+                    // 不清的话，界面会一直标着「数据来自同伴」，而它其实已经是本机同步的了。
+                    serverConfig.clearPeerImported()
+                    _peerImportedAt.value = 0L
+                    _peerSourceShop.value = ""
                     _lastSyncAt.value = at
                     _syncState.value = SyncState.Done(decoded.entryCount, at)
                     // 同步完刷新当前可见的数据：否则屏幕上还是同步前那一份，
@@ -559,8 +715,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 is ApiResult.Failure -> _syncState.value = SyncState.Failed(result.message)
                 ApiResult.Unauthorized -> {
-                    _needsPairing.value = true
-                    _syncState.value = SyncState.Failed("设备已被电脑端撤销，请重新配对。")
+                    // 「按离线用」时 401 不翻转 `_needsPairing`（A3）：同伴导入或用户选了看缓存时，
+                    // 401 是常态（B 从没配对过），把人顶去配对页会把刚导入的数据抢走。
+                    // 这时按「连不上」处理：静默同步就什么都不显示，用户主动同步才说一句实话。
+                    if (requiresPairingOnUnauthorized()) {
+                        _needsPairing.value = true
+                        // 用户主动点了「立即同步」却既没同步成功、又没被顶走时，必须说明原因 ——
+                        // 否则界面上「正在同步…」直接没了，看起来像按钮没反应。
+                        _syncState.value = SyncState.Failed("这台手机还没和电脑配对，现在只能看手机里的数据。")
+                    } else if (!silent) {
+                        _syncState.value = SyncState.Failed("连不上电脑，请先开电脑、连同一个 WiFi。")
+                    } else {
+                        _syncState.value = SyncState.Idle
+                    }
                 }
                 ApiResult.NoServerConfigured -> _syncState.value = SyncState.Failed("还没设置电脑地址。")
             }
@@ -569,35 +736,251 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         job.join()
     }
 
+    // -----------------------------------------------------------------------
+    // 同伴数据包（2026-11-21）：把快照导成文件 / 从文件导回来
+    // -----------------------------------------------------------------------
+
+    /**
+     * 导出：把本机的整份快照打成 `PeerPack` 文件，塞进 `cacheDir/peer-packs/`，
+     * 再通过 [shareFile] 交给 UI 弹系统分享面板。
+     *
+     * **先自检再导出**：如果这台手机自己就是几天前同步的，导出去只会把一份旧数据
+     * 伪装成「我刚同步过」。所以自己都没同步过就直接拒绝；时间够旧就提示一句。
+     */
+    fun exportPack() {
+        if (_peerBusy.value) return
+        viewModelScope.launch {
+            _peerBusy.value = true
+            try {
+                val syncedAt = snapshot.syncedAt()
+                if (syncedAt <= 0L) {
+                    _peerMessage.value = "这台手机还没同步过数据，先在设置里点「立即同步」。"
+                    return@launch
+                }
+                val entries = snapshot.entries()
+                if (entries.isEmpty()) {
+                    _peerMessage.value = "快照是空的，先在设置里点「立即同步」。"
+                    return@launch
+                }
+                val pack = PeerPack(
+                    appVersion = BuildConfig.VERSION_NAME,
+                    shopName = _shopName.value,
+                    baseUrl = _baseUrl.value,
+                    syncedAt = syncedAt,
+                    syncMonths = serverConfig.syncMonths(),
+                    syncFrom = serverConfig.syncFrom(),
+                    syncTo = serverConfig.syncTo(),
+                    backupKey = serverConfig.backupKey(),
+                    entries = entries,
+                )
+                val file = withContext(Dispatchers.IO) {
+                    val dir = File(getApplication<Application>().cacheDir, "peer-packs").apply { mkdirs() }
+                    // 先清旧包：目录里堆着几个几天前的包，分享面板里会挑错。
+                    dir.listFiles()?.forEach { it.delete() }
+                    File(dir, PeerPack.suggestFileName(syncedAt)).apply {
+                        writeText(PeerPack.encode(pack), Charsets.UTF_8)
+                    }
+                }
+                _shareFile.value = file
+            } catch (e: Exception) {
+                _peerMessage.value = "导出失败：${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                _peerBusy.value = false
+            }
+        }
+    }
+
+    /**
+     * 导入：读 [uri] 指向的数据包，校验后**整份替换**本机快照。
+     *
+     * 顺序里有三件事不能省：
+     * 1. **先清 `ResponseCache`**。精确键的优先级高于快照（`AppViewModel` 的 `load`），
+     *    不清的话 B 打开过的页面仍会先亮自己的旧版本，出现「有的页新、有的页旧」——
+     *    而这正是 B 最需要看数据的离线时刻。
+     * 2. **同步区间跟着覆盖**。只换快照不改 `syncMonths/syncFrom/syncTo/backupKey`，
+     *    断网本地筛选会按旧区间过滤，导入的条目反而筛不出来。
+     * 3. **不自动 syncNow**。B 通常连不上电脑，自动同步只会立刻闪一条红字，
+     *    把「导入成功」这件事盖掉。
+     */
+    fun importPack(uri: Uri) {
+        if (_peerBusy.value) return
+        viewModelScope.launch {
+            _peerBusy.value = true
+            try {
+                val text = withContext(Dispatchers.IO) {
+                    val resolver = getApplication<Application>().contentResolver
+                    resolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                        ?: throw IllegalArgumentException("打不开这个文件。")
+                }
+                val pack = PeerPack.decode(text).getOrElse { error ->
+                    _peerMessage.value = error.message ?: "这个文件读不出来。"
+                    return@launch
+                }
+
+                // 先记下本机原来的时间：导的是旧包时要提醒。
+                // 不弹二次确认（用户在微信里挑的文件，他自己知道挑的是哪份），
+                // 但「这份比你原来的旧」必须说出来 —— 否则他会以为数据被更新了。
+                val previousSyncedAt = snapshot.syncedAt()
+
+                // 1) 快照整份替换 + 精确键清空
+                snapshot.save(pack.syncedAt, pack.entries)
+                cache.clear()
+
+                // 2) 同步区间与备份键：它们和 entries 是一套的，必须一起换。
+                //    **先清空再写**（A12）：`saveSyncSpan` 对空值是跳过不写，包里的区间字段
+                //    为空时（旧版导出端、或同伴没同步过完整区间），三个键会原样留着
+                //    **上一家店/上一次同步**的值 —— 断网本地筛选按旧区间过滤，
+                //    刚导入的单据反而被筛掉，页面显示「这个区间没有单据」。
+                serverConfig.clearSyncSpan()
+                serverConfig.saveSyncMonths(pack.syncMonths)
+                serverConfig.saveSyncSpan(pack.syncFrom, pack.syncTo, pack.backupKey)
+                serverConfig.saveLastSyncAt(pack.syncedAt)
+
+                // 3) 地址兜底：只在从没配置过时才用包里的。
+                //    覆盖已有的地址等于把 B 指向一台它可能连不上的电脑，不能做。
+                if (_baseUrl.value.isEmpty() && pack.baseUrl.isNotEmpty()) {
+                    serverConfig.saveBaseUrl(pack.baseUrl)
+                    _baseUrl.value = serverConfig.baseUrl()
+                    api.updateBaseUrl(_baseUrl.value)
+                }
+                // 有数据可看 = 连不上时该进主界面，而不是停在「连不上电脑」页。
+                serverConfig.savePairedConfirmed(true)
+
+                // 4) 来源标记：界面要能说出「这是同伴的、截至什么时候」
+                val importedAt = System.currentTimeMillis()
+                serverConfig.savePeerImported(importedAt, pack.shopName)
+                _peerImportedAt.value = importedAt
+                _peerSourceShop.value = pack.shopName
+                if (pack.shopName.isNotBlank()) {
+                    _shopName.value = pack.shopName
+                    serverConfig.saveShopName(pack.shopName)
+                }
+
+                // 5) 界面状态与刷新
+                _cacheNewest.value = maxOf(cache.newestTimestamp() ?: 0L, pack.syncedAt)
+                _lastSyncAt.value = pack.syncedAt
+                _syncMonths.value = pack.syncMonths
+                _syncState.value = SyncState.Idle
+                _bootstrapped.value = true
+                _connectionLost.value = false
+                _needsPairing.value = false
+                // 导入成功本身就是「数据在手机上」，所以从这一刻起 401 按离线处理（A3）——
+                // 否则紧接着的那几个请求一拿到 401，又把刚导入的东西顶去配对页。
+                _needsSetup.value = _baseUrl.value.isEmpty()
+                refreshOpenedPages()
+
+                val whenText = formatCacheTime(pack.syncedAt)
+                val olderNote = if (previousSyncedAt > pack.syncedAt) {
+                    "（注意：这份比这台手机原来的旧，原来截至 ${formatCacheTime(previousSyncedAt)}）"
+                } else {
+                    ""
+                }
+                _peerMessage.value = if (_needsSetup.value) {
+                    "已导入 ${pack.entryCount} 项（数据截至 $whenText）$olderNote" +
+                        "，但数据包里没有电脑地址，请先填地址才能进主界面。"
+                } else {
+                    "已导入 ${pack.entryCount} 项，数据截至 $whenText。$olderNote"
+                }
+            } catch (e: Exception) {
+                _peerMessage.value = "导入失败：${e.message ?: e.javaClass.simpleName}"
+            } finally {
+                _peerBusy.value = false
+            }
+        }
+    }
+
     /** 设置页「重新检测」：重跑一次启动流程（地址/配对/元信息）。 */
     fun recheck() {
+        // 「重新检测」是用户明确表示「我要重新连」：撤销「先看离线缓存」这个临时状态（A2），
+        // 否则连不上的时候会一直按离线放行，用户会以为检测按钮没反应。
+        offlineBrowse = false
         viewModelScope.launch {
             _bootstrapped.value = false
             bootstrap()
         }
     }
 
+    /**
+     * 提交电脑地址（首次配置与「改地址」共用同一条路径）。
+     *
+     * 两条硬规则，都是 2026-11 审计挖出来的（A1 / A4）：
+     *
+     * 1. **只有真的换了地址才清东西**。同一条地址原样提交必须什么都不动 ——
+     *    原来「改地址」入口直接 `saveBaseUrl("")`，等于每次点一下就清空 cookie
+     *    和「确认过配对」，紧接着 bootstrap 又因为「地址空 + 有快照」把 `needsSetup`
+     *    按回 false，界面既没有输入框也不是主界面，各页永远转圈（死状态）。
+     * 2. **真的换店时清缓存**。缓存键不含 host（`ResponseCache` / `SnapshotStore`），
+     *    旧店的客户欠款和商品价留着，断网时会当成新店的数据显示出来 —— 报价报错价
+     *    是钱的问题。两个键清完，界面上的时间标签也必须归零，不能残留「截至某时」。
+     */
     fun saveBaseUrl(raw: String, onDone: (String) -> Unit = {}) {
         viewModelScope.launch {
+            // 旧地址要在写盘之前取：DataStore 是权威来源，内存值只兜「刚写入还没落盘」。
+            val previous = serverConfig.baseUrl().ifEmpty { _baseUrl.value }
             serverConfig.saveBaseUrl(raw)
             val normalized = serverConfig.baseUrl()
             _baseUrl.value = normalized
             api.updateBaseUrl(normalized)
-            // 换地址等于换电脑：旧 cookie 与新主机不匹配，必须清掉重新配对。
-            // 用 api 内部那个实例，否则清的不是真正发请求时用的那份。
-            api.cookieStore.clear()
-            // 「确认过配对」也跟着作废：新地址上这台手机还没被允许过。
-            // 不清的话，连不上新地址时会被当成「配过对」直接放行进主界面。
-            serverConfig.savePairedConfirmed(false)
+            val switchedComputer = normalized.isNotEmpty() && previous.isNotEmpty() && normalized != previous
+            if (switchedComputer) switchToNewComputer(previous)
+            // 「改地址」提交成功 = 用户要重新连，撤销「先看离线缓存」的临时状态（A2）。
+            offlineBrowse = false
             _connectionLost.value = false
             _needsSetup.value = normalized.isEmpty()
             _bootstrapped.value = false
             _meta.value = null
-            // 换电脑就等于换店：旧店名不能留在标题上。
-            _shopName.value = ""
             bootstrap()
             onDone(normalized)
         }
+    }
+
+    /**
+     * 换到**另一台电脑**（另一家店）时要丢掉的本机数据（A4）。
+     *
+     * 与 [disconnect] 的区别：断开连接**不清缓存**（明确需求 —— 重新连回来不该再等
+     * 一次全量加载）；而换店时旧数据是别家的，留着会误导报价，必须清干净。
+     */
+    private suspend fun switchToNewComputer(previousUrl: String) {
+        // 旧 cookie 只属于旧主机：按主机清（A6），别的电脑的配对态不该受影响。
+        // 必须用 `api` 内部那个实例，否则清的不是真正发请求时用的那份。
+        // 地址解析不出来（脏数据）时退回全清 —— 这时说不清旧主机是谁，
+        // 而「把别家的凭据留在手机上」比「多配对一次」更糟。
+        // 放到 IO 线程：`clear()` 内部是同步落盘（`commit()`，见 ApiClient 的 A8 说明），
+        // 而这个方法是从 `viewModelScope`（主线程）进来的，SharedPreferences 的
+        // 同步写盘不该出现在主线程上。
+        withContext(Dispatchers.IO) {
+            val previousHost = CookiePersistence.hostKeyOf(previousUrl)
+            if (previousHost != null) api.cookieStore.clear(previousHost) else api.cookieStore.clear()
+        }
+
+        // 「确认过配对」作废：新地址上这台手机还没被允许过。不清的话连不上时
+        // 会被当成「配过对」直接放行进主界面，看到的却是上一家店的缓存。
+        serverConfig.savePairedConfirmed(false)
+
+        // 换店 = 旧数据是别家的。清缓存 + 快照 + 同步区间（区间指向旧快照的布局）。
+        cache.clear()
+        snapshot.clear()
+        serverConfig.clearSyncSpan()
+        // 同伴来源也跟着作废：那份数据属于旧店，留着界面会写「数据来自同伴（旧店）」。
+        serverConfig.clearPeerImported()
+
+        // 内存态归零：不清的话设置页会继续显示「断网时能看截至 X 的数据」。
+        _cacheNewest.value = 0L
+        _lastSyncAt.value = 0L
+        _peerImportedAt.value = 0L
+        _peerSourceShop.value = ""
+        _syncState.value = SyncState.Idle
+        // 换电脑就等于换店：旧店名不能留在标题上。
+        _shopName.value = ""
+        // 页面上已经渲染的数据一律退回 Loading：否则从主界面改地址的那一瞬间，
+        // 屏幕上仍是旧店的客户欠款，看上去像「新电脑立刻有数据」。
+        _today.value = UiState.Loading
+        _customers.value = UiState.Loading
+        _orders.value = UiState.Loading
+        _products.value = UiState.Loading
+        _customerDetail.value = UiState.Loading
+        _documentDetail.value = UiState.Loading
+        _productDetail.value = UiState.Loading
     }
 
     /**
@@ -612,10 +995,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun disconnect() {
         viewModelScope.launch {
+            // 全清（不传 hostKey）：「断开连接」的语义是「这台手机不再连这台电脑」，
+            // 粒度上就是清掉所有 cookie（A6 保留了这个默认行为）。
             api.cookieStore.clear()
             serverConfig.clear()
             _baseUrl.value = ""
             api.updateBaseUrl("")
+            // 断开后回到配置页，「先看离线缓存」这个临时状态也该失效（A2）。
+            offlineBrowse = false
             // 缓存**不清**：断开是「不再连这台电脑」，不是「忘掉看过的数据」。
             // 清了的话用户重新连回来要重新等一遍全量加载，没有道理。
             _meta.value = null
@@ -641,7 +1028,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             Tab.ORDERS -> refreshOrders()
             Tab.PRODUCTS -> refreshProducts()
             Tab.SETTINGS -> viewModelScope.launch {
-                _cacheNewest.value = cache.newestTimestamp() ?: 0L
+                // 2026-11-21 真机验证抓到的 bug：这里原来只取 `ResponseCache` 的时间戳，
+                // 而导入同伴数据包时 `ResponseCache` 是**被清空的**（不清会新旧混显），
+                // 于是设置页明明有 255 项缓存，却显示「还没有缓存」。
+                // 快照时间必须一起算进来。
+                _cacheNewest.value = maxOf(cache.newestTimestamp() ?: 0L, snapshot.syncedAt())
             }
         }
     }
@@ -695,47 +1086,84 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         refreshProducts()
     }
 
+    /**
+     * 只刷新**用户已经点开过的**页面。
+     *
+     * 为什么导入同伴数据包后用这个而不是 [refreshAll]（A3）：B 通常连不上电脑，
+     * `refreshAll()` 就是四个请求同时撞 401/超时。而且它会把四个页面从
+     * `Loading` 拽进一次网络等待 —— 刚导入完的一瞬间，屏幕上本该立刻是导入的数据。
+     *
+     * 只刷「已经 Ready 的页」还有一个好处：这些页此刻显示的是**导入前**的数据
+     * （B 自己看过的旧版本），不刷就会新旧混显；而没点开过的页保持 Loading，
+     * 用户点进去时 `load()` 直接从快照出数（`cache.clear()` 之后快照是唯一来源，
+     * 正好是刚导入的那份）。
+     */
+    private fun refreshOpenedPages() {
+        if (_today.value is UiState.Ready) refreshToday()
+        if (_customers.value is UiState.Ready) refreshCustomers()
+        if (_orders.value is UiState.Ready) refreshOrders()
+        if (_products.value is UiState.Ready) refreshProducts()
+    }
+
     // -----------------------------------------------------------------------
     // 配对
     // -----------------------------------------------------------------------
 
+    /** 配对提交进行中：配对页的按钮据此禁用（A11，防连点）。 */
+    private val _pairBusy = MutableStateFlow(false)
+    val pairBusy: StateFlow<Boolean> = _pairBusy.asStateFlow()
+
     fun submitPairCode(code: String, onResult: (String?) -> Unit) {
+        // 防连点（A11）。6 位码一输满按钮就亮，但请求要 200ms~1.5s 才回来；
+        // 这期间再点一次会发出**第二个** `/m/api/pair`：
+        // - 服务端那 3 次/分钟的限流被自己吃掉；
+        // - 两次响应可能一个成功、一个「配对码已使用」，界面上谁后到算谁的 ——
+        //   真机上表现为「明明配对成功了却又弹出一句错误」。
+        // 复用 `peerBusy` 那套「忙就禁用」的模式，UI 只看状态，不在 Composable 里做判断。
+        if (_pairBusy.value) return
+        _pairBusy.value = true
         viewModelScope.launch {
-            // platform=app：让电脑端设备列表能区分「手机 App」和「浏览器」。
-            // 不带这个字段的话，一个 App 和一个浏览器在设置页会显示成两条
-            // 一模一样的「Android 手机」，撤销设备时没法判断该撤哪条。
-            //
-            // 2026-10-24 两处改进：
-            // ① `label` 用手机型号（Build.MODEL，如 `2201123C`）而不是「手机 App」——
-            //    两条记录连名字都一样时，人眼根本分不出来；
-            // ② `device_uid` 是这台手机的**稳定身份**，电脑端据此把同一台设备的重复
-            //    配对合并成一条（用户实测：改了地址再配一次就多出一条）。
-            val uid = serverConfig.deviceUid()
-            val label = pairLabel()
-            val payload = buildString {
-                append("{")
-                append("\"code\":\"").append(code.jsonEscape()).append("\",")
-                append("\"label\":\"").append(label.jsonEscape()).append("\",")
-                append("\"platform\":\"app\",")
-                append("\"device_uid\":\"").append(uid.jsonEscape()).append("\"")
-                append("}")
-            }
-            when (val result = api.postJson("/m/api/pair", payload)) {
-                is ApiResult.Success -> {
-                    _needsPairing.value = false
-                    // 先落「确认过配对」再 bootstrap：配对刚成功、网络随即抖一下时，
-                    // 也不会被当成「从没连上过」而退回连不上页。
-                    serverConfig.savePairedConfirmed(true)
-                    bootstrap()
-                    // 配对成功立刻同步一次：这样店主刚配好、还没点任何页面时，
-                    // 关电脑前的「最后同步」就已经有值了，不是「从未同步」。
-                    syncNow()
-                    onResult(null)
+            try {
+                // platform=app：让电脑端设备列表能区分「手机 App」和「浏览器」。
+                // 不带这个字段的话，一个 App 和一个浏览器在设置页会显示成两条
+                // 一模一样的「Android 手机」，撤销设备时没法判断该撤哪条。
+                //
+                // 2026-10-24 两处改进：
+                // ① `label` 用手机型号（Build.MODEL，如 `2201123C`）而不是「手机 App」——
+                //    两条记录连名字都一样时，人眼根本分不出来；
+                // ② `device_uid` 是这台手机的**稳定身份**，电脑端据此把同一台设备的重复
+                //    配对合并成一条（用户实测：改了地址再配一次就多出一条）。
+                val uid = serverConfig.deviceUid()
+                val label = pairLabel()
+                val payload = buildString {
+                    append("{")
+                    append("\"code\":\"").append(code.jsonEscape()).append("\",")
+                    append("\"label\":\"").append(label.jsonEscape()).append("\",")
+                    append("\"platform\":\"app\",")
+                    append("\"device_uid\":\"").append(uid.jsonEscape()).append("\"")
+                    append("}")
                 }
-                is ApiResult.Failure -> onResult(result.message)
-                is ApiResult.Unreachable -> onResult("连不上电脑，请确认手机和电脑在同一个 WiFi。")
-                ApiResult.Unauthorized -> onResult("配对被拒绝，请在电脑上重新生成配对码。")
-                ApiResult.NoServerConfigured -> onResult("还没设置电脑地址。")
+                when (val result = api.postJson("/m/api/pair", payload)) {
+                    is ApiResult.Success -> {
+                        _needsPairing.value = false
+                        // 配对成功后「先看离线缓存」这个临时状态就没意义了：之后是正常在线。
+                        offlineBrowse = false
+                        // 先落「确认过配对」再 bootstrap：配对刚成功、网络随即抖一下时，
+                        // 也不会被当成「从没连上过」而退回连不上页。
+                        serverConfig.savePairedConfirmed(true)
+                        bootstrap()
+                        // 配对成功立刻同步一次：这样店主刚配好、还没点任何页面时，
+                        // 关电脑前的「最后同步」就已经有值了，不是「从未同步」。
+                        syncNow()
+                        onResult(null)
+                    }
+                    is ApiResult.Failure -> onResult(result.message)
+                    is ApiResult.Unreachable -> onResult("连不上电脑，请确认手机和电脑在同一个 WiFi。")
+                    ApiResult.Unauthorized -> onResult("配对被拒绝，请在电脑上重新生成配对码。")
+                    ApiResult.NoServerConfigured -> onResult("还没设置电脑地址。")
+                }
+            } finally {
+                _pairBusy.value = false
             }
         }
     }
@@ -1209,20 +1637,29 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         //    2026-10-24：精确键没命中时**再查一次全量快照**。这是「二级页面断网
         //    刷不出来」的修法 —— 详情页只在点开那一刻才落盘，从没点开过的单据
         //    断网必然空白；快照里已经带着它的详情。
-        if (publish != null) {
-            val cached = cache.get(cacheKey)
-            val cachedValue = cached?.let { serializer(it.body) }
-            if (cached != null && cachedValue != null) {
-                _cacheNewest.value = maxOf(_cacheNewest.value, cached.fetchedAt)
-                publish(UiState.Ready(cachedValue, fromCache = true, fetchedAt = cached.fetchedAt))
-            } else {
-                val snap = snapshot.get(SnapshotStore.canonicalKey(path, query))
-                val snapValue = snap?.let { serializer(it.body) }
-                if (snap != null && snapValue != null) {
-                    _cacheNewest.value = maxOf(_cacheNewest.value, snap.fetchedAt)
-                    publish(UiState.Ready(snapValue, fromCache = true, fetchedAt = snap.fetchedAt))
-                }
-            }
+        // 先取缓存。**不管有没有 publish 都要取**：下面「没有电脑地址」的分支
+        // 需要用缓存当最终结果，而不是把一个转圈返回给页面。
+        //
+        // 解不开的缓存**就当没有**（A12）：精确键读出来但 decode 失败时继续去查快照，
+        // 而不是直接放弃这条回落链 —— 一份坏数据（schema 变了、上次写了一半）
+        // 不该把快照里那份能看的旧数据挡掉。
+        val exact = cache.get(cacheKey)
+        val exactValue: T? = exact?.let { serializer(it.body) }
+        val snap = if (exactValue == null) snapshot.get(SnapshotStore.canonicalKey(path, query)) else null
+        val cachedValue: T? = exactValue ?: snap?.let { serializer(it.body) }
+        val cached = if (exactValue != null) exact else snap
+        var cachedState: UiState.Ready<T>? = null
+        if (cached != null && cachedValue != null) {
+            _cacheNewest.value = maxOf(_cacheNewest.value, cached.fetchedAt)
+            // 显式收窄到 T：`cachedValue` 的静态类型是 T?，直接塞进 Ready<T> 会被推成 Ready<T?>。
+            val value: T = cachedValue
+            val state = UiState.Ready(value, fromCache = true, fetchedAt = cached.fetchedAt)
+            cachedState = state
+            publish?.invoke(state)
+            // 2026-11-21：没有电脑地址（同伴导入后地址还没填、或刚被清掉）时，
+            // 请求必然发不出去。与其返回 NeedsSetup 让页面转圈，不如就把缓存当结果 ——
+            // 人打开 App 本来就是为了看这份数据。
+            if (_baseUrl.value.isEmpty()) return state
         }
         // 显式写 <T>：`serializer` 的类型是 (String) -> T?，不指定的话编译器会把
         // loadWithCache 的 T 推成 T?，得到 Loaded<T?> 而无法赋给 UiState<T>。
@@ -1234,6 +1671,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 query = query,
                 decode = serializer,
                 snapshot = snapshot,
+                // 401 按离线处理的条件（同伴导入的数据 / 用户主动选了看缓存），
+                // 纯逻辑见 StartupRouting.requiresPairingOnUnauthorized（A3/A2）。
+                offlineAllowed = !requiresPairingOnUnauthorized(),
             )
         ) {
             is LoadOutcome.Ok -> {
@@ -1243,13 +1683,25 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 UiState.Ready(data.value, data.fromCache, data.fetchedAt)
             }
-            is LoadOutcome.Error -> UiState.Failed(outcome.message)
+            is LoadOutcome.Error -> {
+                // 服务端回了内容但解不开时，**不要**用一个「数据格式不对」把屏幕上
+                // 本来能看的旧数据盖掉（A12）：能读到缓存的场景下，旧数据是用户唯一
+                // 能用的东西，把它换成一句错误提示纯属倒退。
+                // 服务端明确报错（4xx/5xx）仍然照原样显示，不许拿旧数据糊过去。
+                if (outcome.kind == LoadOutcome.Error.Kind.BAD_PAYLOAD && cachedState != null) {
+                    cachedState
+                } else {
+                    UiState.Failed(outcome.message)
+                }
+            }
             LoadOutcome.NeedsPairing -> {
                 _needsPairing.value = true
                 UiState.NeedsPairing
             }
             LoadOutcome.NeedsSetup -> {
-                _needsSetup.value = true
+                // 2026-11-21：本地有数据时不把人弹回配置页 —— 数据就在手机上，
+                // 弹走等于把刚看到的东西抢走。只有真的什么都没有时才去填地址。
+                if (_cacheNewest.value <= 0L) _needsSetup.value = true
                 UiState.NeedsSetup
             }
         }

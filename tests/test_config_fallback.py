@@ -135,3 +135,44 @@ def test_template_has_no_private_or_absolute_paths():
         assert factory[key] == ""
     assert not any(key in factory for key in ("data_root", "project_root", "api_key", "token"))
     assert "C:\\" not in TEMPLATE.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# 数据根记忆文件：原子写 + 读不出来必须留痕（S3）
+# ---------------------------------------------------------------------------
+
+def test_save_data_root_is_atomic_and_leaves_no_temp_files(tmp_path):
+    """`data_location.json` 必须原子写（tmp + replace），且失败不留临时文件。
+
+    它只有几十字节，但半截的后果不是「丢一行配置」而是**数据根漂移**：
+    `_read_data_root` 读不出来 → 回落 `default_data_root()` → `erp.db` 与
+    `data/mobile_devices.json` 一起换成另一份（用户先看到「一张单都没有」，
+    再看到「所有手机要重新配对」）。直接 `write_text` 在断电/杀进程时就会留半截。
+    """
+    location = config_module.location_file()
+    root = config_module.save_data_root(tmp_path / "业务数据")
+    assert location.exists()
+    assert config_module._read_data_root(location) == root
+    # 原子写的副产品不能留在用户目录里（下次启动看到一个 .tmp 会很困惑）
+    assert list(location.parent.glob(location.name + ".*")) == []
+
+
+def test_half_written_location_file_warns_instead_of_silently_drifting(caplog):
+    """半截 `data_location.json` 时必须有一条 warning：静默回落等于数据根悄悄换人。"""
+    import logging
+
+    location = config_module.location_file()
+    location.parent.mkdir(parents=True, exist_ok=True)
+    location.write_text('{"data_root": "/一半的路径', encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING):
+        assert config_module._read_data_root(location) is None
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("数据位置文件" in message for message in messages), messages
+
+    # 「文件不存在」不算故障，不能跟着一起告警（首次运行是正常路径）
+    location.unlink()
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        assert config_module._read_data_root(location) is None
+    assert caplog.records == []

@@ -27,6 +27,20 @@
             </intent-filter>
         </activity>
 
+        <!-- 同伴数据包（2026-11-21）：把导出的快照 JSON 交给系统分享面板（微信/蓝牙/文件管理器）。
+             只暴露 cacheDir/peer-packs/ 一个子目录，见 res/xml/file_paths.xml。
+             exported=false + grantUriPermissions：只有我们自己用 EXTRA_STREAM 授过权的
+             那个 URI 才能被别的应用读到，不是"谁都能来拿"。 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <!-- 扫码界面：自带返回按钮与「从相册选」。
              横竖屏都不重建，避免相机预览重启导致闪一下。 -->
         <activity

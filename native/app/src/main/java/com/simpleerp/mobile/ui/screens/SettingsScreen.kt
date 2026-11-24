@@ -63,6 +63,14 @@ fun SettingsScreen(
     lastSyncAt: Long,
     /** 同步回溯几个月（含本月），默认 2。 */
     syncMonths: Int,
+    /** 当前快照是不是从同伴手机导入的：导入时刻，0 = 不是（2026-11-21）。 */
+    peerImportedAt: Long,
+    /** 同伴数据包里的店名，用来说明「这份数据来自哪家店」。 */
+    peerSourceShop: String,
+    /** 导出/导入正在进行中。 */
+    peerBusy: Boolean,
+    onExportPack: () -> Unit,
+    onImportPack: () -> Unit,
     onSyncNow: () -> Unit,
     onSetSyncMonths: (Int) -> Unit,
     onThemeMode: (ThemeMode) -> Unit,
@@ -219,9 +227,15 @@ fun SettingsScreen(
                         is AppViewModel.SyncState.Done ->
                             "已同步完成：${syncState.entryCount} 项，${formatCacheTime(syncState.atMillis)}"
                         is AppViewModel.SyncState.Failed -> syncState.message
-                        AppViewModel.SyncState.Idle ->
-                            if (lastSyncAt > 0) "上次同步：${formatCacheTime(lastSyncAt)}"
-                            else "还没同步过"
+                        AppViewModel.SyncState.Idle -> when {
+                            // 导入同伴数据后 lastSyncAt 记的是**同伴那份的截止时间**，
+                            // 不是这台手机自己同步的时间。写成「上次同步」会让 B 以为
+                            // 自己已经连过电脑了，这里必须说清出处。
+                            peerImportedAt > 0 ->
+                                "同伴数据截至：${formatCacheTime(lastSyncAt)}（这台手机还没自己同步过）"
+                            lastSyncAt > 0 -> "上次同步：${formatCacheTime(lastSyncAt)}"
+                            else -> "还没同步过"
+                        }
                     },
                     color = when (syncState) {
                         is AppViewModel.SyncState.Failed -> colors.danger
@@ -247,6 +261,62 @@ fun SettingsScreen(
                     },
                     color = colors.muted,
                     fontSize = 12.sp,
+                )
+            }
+        }
+
+        item { SectionLabel("同伴数据", modifier = Modifier.padding(top = 6.dp)) }
+        item {
+            ErpCard {
+                // 2026-11-21 用户需求：两个人用同一套账、各拿一台手机。
+                // 去了店里的那台同步完可以导出成文件，用微信/蓝牙传给没去的那台。
+                //
+                // 为什么不做成"手机之间联网同步"：手机端是**纯只读**（除配对全是 GET），
+                // A 手机里没有"B 缺的数据"，只有店里电脑某一刻的镜像。所以不需要
+                // 同步引擎，把那份镜像搬过去就够了；而联网互传要多一套服务端和信任机制，
+                // 为一个低频场景不值。
+                Text(
+                    "两个人用同一套账时：去过店里、已经同步过的那台，可以导出成数据包，"
+                        + "用微信或蓝牙传给另一台。另一台没去店里也能看到这份数据。",
+                    color = colors.muted,
+                    fontSize = 12.5.sp,
+                )
+                if (peerImportedAt > 0) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "当前数据来自同伴" +
+                            (if (peerSourceShop.isNotBlank()) "（$peerSourceShop）" else "") +
+                            "，截至 ${formatCacheTime(lastSyncAt)}。",
+                        color = colors.ink,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "这台手机自己连上电脑同步一次之后，就会换成自己拉的数据。",
+                        color = colors.muted,
+                        fontSize = 11.5.sp,
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SmallAction(
+                        if (peerBusy) "处理中…" else "导出数据包",
+                        onExportPack,
+                        enabled = !peerBusy,
+                    )
+                    SmallAction("导入数据包", onImportPack, enabled = !peerBusy)
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    if (lastSyncAt > 0) {
+                        "导出的是这台手机当前的数据（截至 ${formatCacheTime(lastSyncAt)}）。" +
+                            "导出前尽量先点上面的「立即同步」，否则传出去的是旧数据。"
+                    } else {
+                        "这台手机还没同步过，没有数据可以导出。"
+                    },
+                    color = colors.muted,
+                    fontSize = 11.5.sp,
                 )
             }
         }
@@ -290,18 +360,25 @@ private fun ThemeRow(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun SmallAction(label: String, onClick: () -> Unit) {
+private fun SmallAction(label: String, onClick: () -> Unit, enabled: Boolean = true) {
     val colors = LocalErpColors.current
     Box(
         modifier = Modifier
             .height(38.dp)
             .clip(RoundedCornerShape(Dimens.radiusSm))
             .background(colors.soft)
-            .clickable(onClick = onClick)
+            // 传 enabled 而不是"改一点字"：导出/导入在跑的时候再点一次会重复写盘，
+            // 分享面板也会弹两次。禁用比提示可靠。
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, color = colors.primary, fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
+        Text(
+            label,
+            color = if (enabled) colors.primary else colors.muted,
+            fontSize = 12.5.sp,
+            fontWeight = FontWeight.Medium,
+        )
     }
 }
 

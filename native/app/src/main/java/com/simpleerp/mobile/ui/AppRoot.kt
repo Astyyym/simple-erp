@@ -1,6 +1,13 @@
 package com.simpleerp.mobile.ui
 
+import android.content.Intent
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -105,10 +112,60 @@ fun AppRoot() {
         val connectionDetail by vm.connectionDetail.collectAsStateWithLifecycle()
         val cacheNewest by vm.cacheNewest.collectAsStateWithLifecycle()
         val baseUrl by vm.baseUrl.collectAsStateWithLifecycle()
+        // 配对提交进行中：配对页那颗按钮据此禁用（A11，防连点）。
+        val pairBusy by vm.pairBusy.collectAsStateWithLifecycle()
 
         var overlay by remember { mutableStateOf<Overlay?>(null) }
         var pairError by remember { mutableStateOf<String?>(null) }
         var setupForChange by remember { mutableStateOf(false) }
+
+        // ---- 同伴数据包（2026-11-21）----
+        //
+        // 导出：ViewModel 把 JSON 写进 `cacheDir/peer-packs/`，通过 `shareFile`
+        // 交出来；这里换成 FileProvider 的 content:// URI，再丢给系统分享面板。
+        // 不能直接用 file:// —— Android 7+ 会对它抛 FileUriExposedException。
+        //
+        // 导入：用系统的文件选择器。走 SAF 而不是自建文件浏览器，
+        // 是为了让「微信里保存下来的文件」「下载目录」「网盘」都能被选到。
+        val context = LocalContext.current
+        val peerMessage by vm.peerMessage.collectAsStateWithLifecycle()
+        val shareFile by vm.shareFile.collectAsStateWithLifecycle()
+
+        val importLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.OpenDocument(),
+        ) { uri ->
+            // 用户取消（uri == null）什么都不做：这不是失败。
+            if (uri != null) vm.importPack(uri)
+        }
+        val onImportPack: () -> Unit = {
+            // 有些文件管理器/微信给的 MIME 是 octet-stream，只写 application/json 会选不中。
+            // 打开本应用的 file_paths 目录不必受限，所以这里接受全部类型，校验交给 PeerPack。
+            importLauncher.launch(arrayOf("*/*"))
+        }
+
+        LaunchedEffect(shareFile) {
+            val file = shareFile ?: return@LaunchedEffect
+            val sent = runCatching {
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file,
+                )
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/json"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    // 只给这一个 URI 读权限，并且只在这次分享里有效。
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                context.startActivity(Intent.createChooser(send, "发送数据包"))
+            }
+            if (sent.isFailure) {
+                // 分享面板起不来（极少数 ROM），退回"文件已生成"的提示，
+                // 至少告诉用户东西在哪，而不是静默无反应。
+                vm.reportPeerError("打不开分享面板：${sent.exceptionOrNull()?.message ?: "未知原因"}")
+            }
+            vm.consumeShareFile()
+        }
 
         Box(
             modifier = Modifier
@@ -117,13 +174,31 @@ fun AppRoot() {
                 .statusBarsPadding()
                 .navigationBarsPadding(),
         ) {
-            when {
-                !bootstrapped -> LoadingState()
+            // 页面判定是纯函数（`RootRouting`），单测里逐格钉组合矩阵 ——
+            // 「改地址点了等于没点」那次死状态就是因为这里的分支漏读了一个标志（A1）。
+            when (RootRouting.screen(
+                bootstrapped = bootstrapped,
+                needsSetup = needsSetup,
+                setupForChange = setupForChange,
+                connectionLost = connectionLost,
+                needsPairing = needsPairing,
+            )) {
+                RootScreen.LOADING -> LoadingState()
 
-                needsSetup -> SetupScreen(
-                    onSubmit = { address ->
-                        vm.saveBaseUrl(address)
-                        setupForChange = false
+                RootScreen.SETUP -> SetupScreen(
+                    // `setupForChange` 在**提交走完 bootstrap 之后**才清：
+                    // 期间 `bootstrapped` 已是 false，界面显示 LoadingState，
+                    // 不会闪一下「旧页面」再跳走。
+                    onSubmit = { address -> vm.saveBaseUrl(address) { setupForChange = false } },
+                    // 新手机没有电脑地址时也能从这里导入同伴的数据包 ——
+                    // 否则它进不了主界面，也就永远够不到设置页那颗导入按钮。
+                    onImportPack = onImportPack,
+                    // 取消出口（A1）：只有「主动改地址」且手上还有可用地址时才有，
+                    // 取消不清任何东西 —— 因为进这一页时也没清任何东西。
+                    onCancel = if (RootRouting.canCancelSetup(setupForChange, baseUrl)) {
+                        { setupForChange = false }
+                    } else {
+                        null
                     },
                 )
 
@@ -134,18 +209,26 @@ fun AppRoot() {
                  * 处置方式是输 6 位码；这里是「压根没连上」，处置方式是查 WiFi / 地址 / 防火墙。
                  * 合成一个页面，用户会按错误的步骤排查（2026-10-31 门店事故就是这么发生的）。
                  */
-                connectionLost -> ConnectionLostScreen(
+                RootScreen.CONNECTION_LOST -> ConnectionLostScreen(
                     address = baseUrl,
                     detail = connectionDetail,
                     cacheAt = cacheNewest,
                     onRetry = { vm.recheck() },
-                    onChangeAddress = { vm.saveBaseUrl("") },
+                    // 「改地址」只是打开配置页（A1）。原来这里调 `saveBaseUrl("")`：
+                    // 地址一清、cookie 与「确认过配对」一并作废，而 `needsSetup` 又被
+                    // bootstrap 按回 false —— 既看不到输入框也不在主界面，只能杀进程。
+                    onChangeAddress = { setupForChange = true },
                     onShowCache = { vm.showOfflineCache() },
                 )
 
-                needsPairing -> PairScreen(
+                RootScreen.PAIR -> PairScreen(
                     address = baseUrl,
                     error = pairError,
+                    busy = pairBusy,
+                    // 「先看离线缓存」（A2）：本地有数据才给这颗次级入口，
+                    // 样式与「连不上电脑」页那颗一致（灰字、放在主按钮下面）。
+                    cacheAt = cacheNewest,
+                    onShowCache = { vm.showOfflineCache() },
                     onSubmit = { code ->
                         vm.submitPairCode(code) { error ->
                             pairError = error
@@ -153,16 +236,40 @@ fun AppRoot() {
                     },
                     onChangeAddress = {
                         pairError = null
-                        vm.saveBaseUrl("")
+                        // 只进配置页，不清任何东西（A1）。
                         setupForChange = true
                     },
                 )
 
-                else -> MainScaffold(
+                RootScreen.MAIN -> MainScaffold(
                     vm = vm,
                     overlay = overlay,
                     onOverlay = { overlay = it },
-                    onChangeAddress = { vm.saveBaseUrl("") },
+                    onChangeAddress = { setupForChange = true },
+                    onImportPack = onImportPack,
+                )
+            }
+
+            // 同伴数据包的结果提示（2026-11-21）。
+            //
+            // 用弹窗而不是 Toast：导入失败的原因（版本对不上 / 文件不是数据包）
+            // 需要用户读，Toast 两秒就没了，他只会再点一次导入再失败一次。
+            val peerMessageText = peerMessage
+            if (peerMessageText != null) {
+                AlertDialog(
+                    onDismissRequest = { vm.consumePeerMessage() },
+                    confirmButton = {
+                        TextButton(onClick = { vm.consumePeerMessage() }) {
+                            Text(
+                                "知道了",
+                                color = colors.primary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                            )
+                        }
+                    },
+                    text = { Text(peerMessageText, color = colors.ink, fontSize = 13.5.sp) },
+                    containerColor = colors.surface,
                 )
             }
         }
@@ -175,6 +282,7 @@ private fun MainScaffold(
     overlay: Overlay?,
     onOverlay: (Overlay?) -> Unit,
     onChangeAddress: () -> Unit,
+    onImportPack: () -> Unit,
 ) {
     val colors = LocalErpColors.current
     val tab by vm.tab.collectAsStateWithLifecycle()
@@ -381,6 +489,9 @@ private fun MainScaffold(
                         val syncState by vm.syncState.collectAsStateWithLifecycle()
                         val lastSyncAt by vm.lastSyncAt.collectAsStateWithLifecycle()
                         val syncMonths by vm.syncMonths.collectAsStateWithLifecycle()
+                        val peerImportedAt by vm.peerImportedAt.collectAsStateWithLifecycle()
+                        val peerSourceShop by vm.peerSourceShop.collectAsStateWithLifecycle()
+                        val peerBusy by vm.peerBusy.collectAsStateWithLifecycle()
                         SettingsScreen(
                             baseUrl = vm.baseUrl.value,
                             meta = meta,
@@ -390,6 +501,11 @@ private fun MainScaffold(
                             syncState = syncState,
                             lastSyncAt = lastSyncAt,
                             syncMonths = syncMonths,
+                            peerImportedAt = peerImportedAt,
+                            peerSourceShop = peerSourceShop,
+                            peerBusy = peerBusy,
+                            onExportPack = { vm.exportPack() },
+                            onImportPack = onImportPack,
                             onSyncNow = { vm.syncNow() },
                             onSetSyncMonths = vm::setSyncMonths,
                             onThemeMode = vm::setThemeMode,
