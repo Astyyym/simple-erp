@@ -103,6 +103,24 @@ Host-Only（`192.168.56.1`）或 VMware 网卡时，设置页与二维码可能�
 - 锁内包含 `fsync` + `.bak` 复制（约 85ms/次），最坏情况是 4 个快照请求排队。
 - 真机仍未验证（见遗留清单 ERP-MOBILE-06/07）。
 
+### 发布
+
+已发布到 [Releases v4.9.5](https://github.com/Astyyym/simple-erp/releases/tag/v4.9.5)（Latest，tag `v4.9.5` / 提交 `9de7fbf`）。下列 SHA256 与 GitHub 侧资产 `digest` 逐一核对一致：
+
+| 资产 | 大小 | SHA256 |
+|---|---|---|
+| `dist\simple-erp-setup-v4.9.5.exe` | 46602035 B | `2ED75AD0F401317A23CC8D83D5DCAFC22BA4E0701C32BAF4E7287FEF0AA92B8E` |
+| `dist\simple-erp-windows-v4.9.5.zip` | 63969476 B | `B4AEE6746520C130287A3D39BF94A1BDA908E44D4A10D10EEC85A955A82BFCB0` |
+| `dist\simple-erp-mobile-v1.4.15.apk` | 8087102 B | `D4E3F705FEE38E97B6C168500EC48064B7353BA0438619A4EF4738E877D449BF` |
+
+- 安装包与 ZIP **不含 `demo_data`、不含任何 `.db`**（已核：ZIP 691 项、`demo_data` 命中 0）；
+  绿色版自带 `demo_data\data\erp.db`（200 笔演示数据，seed 校验 `warnings` / `problems` 均为空）。
+- 绿色版 `config.json` 含新增键 `mobile_last_start_error`（共 35 键）。
+- APK `aapt2 dump badging`：`versionCode=20 versionName=1.4.15`，签名 `CN=SimpleERP`
+  （与 1.4.12 同一张证书，可直接覆盖安装）。
+- README 截图按 v4.9.5 重拍：9 张桌面图仅 JPEG 重编码级差异（变化像素 ≤0.5%），
+  `shot-mobile.jpg` 与 `shot-entry.jpg` 因跟随系统主题/当日演示数据变化较大，已逐张目视确认无空白页。
+
 ## 安卓 1.4.15 - 客户端残留收口：改地址、离线出口、换店（2026-11-24）
 
 > 安卓端 `1.4.14` → **`1.4.15`**（versionCode `19` → `20`）；与桌面 `v4.9.5` 同批；
