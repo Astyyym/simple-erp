@@ -67,6 +67,27 @@ reject —— 窗口没关、界面也没有任何提示。闸门因此没被 `c
 - `tests/test_order_entry_handfeel.py` 的断言从「页面里出现 `value="1"`」收紧为
   「数量输入框 `placeholder="0"` 且 `value=""`」——旧断言页面别处也能满足，说明不了这一格。
 
+### 发布
+
+已发布到 [Releases v4.9.6](https://github.com/Astyyym/simple-erp/releases/tag/v4.9.6)（Latest，tag `v4.9.6` / 提交 `d760248`）。
+下列 SHA256 与 GitHub 侧资产 `digest` 逐一核对一致（未下载、直接读 API 的 digest）：
+
+| 资产 | 大小 | SHA256 |
+|---|---|---|
+| `dist\simple-erp-setup-v4.9.6.exe` | 46598436 B | `50ED99A7F612B445D02F57FC61CC84D71255B588640495AAA1513DCB5FED2018` |
+| `dist\simple-erp-windows-v4.9.6.zip` | 63972421 B | `E4B1CC876DB56A20409B74EDAFE2334B5EDBCB6DB6DF8CEA4368C71E9FB05EB2` |
+
+- 安装包与 ZIP **不含 `demo_data`、不含任何 `.db`**（已核：ZIP 691 项、`demo_data` 命中 0、`.db` 命中 0）。
+- 交付 EXE 隔离冒烟（复制到 ASCII 临时目录 + 临时 `ERP_DATA_ROOT`）：`/health` 返回
+  `version=v4.9.6`、`auth: disabled`、`database: ok`；`/`、`/orders/`、`/settings/`、`/products/` 均 200；
+  `/orders/new` 的数量输入框为 `placeholder="0" value=""`；包内 `close-prompt.js` 为零参数桥调用版本、
+  `order-entry-common.js` 含 `findRowMissingQuantity`（即上述修复确实进了产物）。
+- 绿色版 `dist\local-v4.9.6\简单ERP` 自带 `demo_data\data\erp.db`：125 销售/退货 + 45 拿货 +
+  30 退拿货 = 200 笔，业务日期截止 2026-11-25。
+- README 截图按 v4.9.6 重拍并逐张目视确认：`shot-entry.jpg` 现在显示数量为空的灰色 `0`；
+  其余桌面页与上一版逐像素比对仅顶栏时钟与侧栏版本号变化（内容变化像素 0，`shot-analytics.jpg`
+  6 点、`shot-purchase.jpg` 15 点属 JPEG 重编码噪声）。
+
 ## v4.9.5 - 手机访问服务收口：并发、坏文件、地址与开关（2026-11-24）
 
 > 桌面端 `v4.9.4` → **`v4.9.5`**；同一批安卓端 `1.4.14` → **`1.4.15`**；
