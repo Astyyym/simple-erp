@@ -76,7 +76,10 @@ reject —— 窗口没关、界面也没有任何提示。闸门因此没被 `c
 |---|---|---|
 | `dist\simple-erp-setup-v4.9.6.exe` | 46598436 B | `50ED99A7F612B445D02F57FC61CC84D71255B588640495AAA1513DCB5FED2018` |
 | `dist\simple-erp-windows-v4.9.6.zip` | 63972421 B | `E4B1CC876DB56A20409B74EDAFE2334B5EDBCB6DB6DF8CEA4368C71E9FB05EB2` |
+| `dist\simple-erp-mobile-v1.4.15.apk` | 8087102 B | `D4E3F705FEE38E97B6C168500EC48064B7353BA0438619A4EF4738E877D449BF` |
 
+- 安卓 APK 与 v4.9.5 的
+  资产 digest 完全相同（`d4e3f705…`），即本次未重新构建、同一份 `1.4.15` 二进制，仅为便于新用户一次下齐。
 - 安装包与 ZIP **不含 `demo_data`、不含任何 `.db`**（已核：ZIP 691 项、`demo_data` 命中 0、`.db` 命中 0）。
 - 交付 EXE 隔离冒烟（复制到 ASCII 临时目录 + 临时 `ERP_DATA_ROOT`）：`/health` 返回
   `version=v4.9.6`、`auth: disabled`、`database: ok`；`/`、`/orders/`、`/settings/`、`/products/` 均 200；
