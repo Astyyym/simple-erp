@@ -1043,3 +1043,21 @@ New-NetFirewallRule -DisplayName "简单ERP 手机访问 5001" -Direction Inboun
 「哪个标志说了算」逐格钉住，真机点很难覆盖全组合。
 
 推论：任何「先清凭据、再靠后续流程恢复 UI」的写法都要先问「清完之后用户用什么填新地址」。
+
+## pywebview js_api：多传一个 undefined = TypeError，而且**静默无反应**（2026-11-25 真窗口实测）
+
+`close-prompt.js` 里的 `callBridge(name, arg)` 原来是 `api[name](arg)`。JS 侧 `arg` 为 undefined 时，
+pywebview 把 `arguments` 原样转发给 Python（`webview/util.py: js_bridge_call` → `func(*params)`），
+Python 收到 `func(None)`；方法不接参数就抛 `TypeError: takes 1 positional argument but 2 were given`。
+
+要害不在报错，而在**怎么失败**：`api[name](arg)` 是**同步返回 Promise**，同步 try/catch 抓不到
+异步 reject，于是界面既不关、也不提示 —— 用户只能自己再点窗口的 ×。
+实测复现：真 pywebview 窗口里 `Api.no_arg(undefined)` → REJECTED TypeError；`Api.no_arg()` → FULFILLED。
+
+**规矩**：桥调用一律「调用方几个参数就传几个」，不要 `api[name](arg)` 这种统一塞参数；
+并且对返回的 Promise 挂 `.catch()` 给可见提示。回归锁：`tests/frontend/close_prompt_bridge.test.mjs`
+（断言零参数调用 + 失败必须留提示）、`tests/test_desktop_close_prompt.py::test_bridge_extra_positional_arg_is_tolerated`。
+
+顺带两条别记错：① `_window.destroy()` **在 JS 回调线程里直接调并不会卡死**（真窗口对照实验证过），
+不要把它当根因；② 静态资源带**内容指纹**且进程内有 `_STATIC_FINGERPRINTS` 缓存，改了 `.js` 必须重启进程
+才会换 URL，否则 WebView2 会一直吃一年长缓存里的旧文件（本机实测：不重启就复现旧缺陷）。

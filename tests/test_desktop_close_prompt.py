@@ -154,11 +154,19 @@ def test_overlay_exception_falls_back_and_native_refusal_keeps_window(monkeypatc
 
 
 def test_api_close_window_confirms_gate_then_destroys(monkeypatch):
-    destroyed: list[bool] = []
+    """点「我已同步，关闭软件」= 真的关窗口，而且销毁不在调用线程上同步做。
+
+    2026-11-25 用户实测缺陷的真实根因在 JS 那一侧（`api[name](undefined)` 让 Python
+    收到多余参数 → TypeError → 调用根本没执行，见下面的参数容错用例与
+    `tests/frontend/close_prompt_bridge.test.mjs`）。这里锁的是 Python 侧契约：
+    一旦桥真的调进来，就必须把窗口关掉。
+    """
+    destroyed: list[str] = []
+    main_thread = threading.current_thread().name
 
     class FakeWindowWithDestroy(_FakeWindow):
         def destroy(self):
-            destroyed.append(True)
+            destroyed.append(threading.current_thread().name)
 
     fake = FakeWindowWithDestroy(js_result=True)
     monkeypatch.setattr(desktop_app, "_window", fake)
@@ -168,8 +176,51 @@ def test_api_close_window_confirms_gate_then_destroys(monkeypatch):
 
     api = desktop_app.DesktopApi()
     assert api.erp_close_window() is True
-    assert destroyed == [True]
+    assert _wait_for(lambda: bool(destroyed)), "确认关闭后必须真的销毁窗口"
+    assert destroyed[0] != main_thread, "销毁不能在 JS 回调线程里同步执行"
     assert gate.should_cancel_close() is False
+
+
+def test_native_fallback_confirm_also_closes_window(monkeypatch):
+    """浮层调不出来、原生确认框点了「确定」→ 同样要真的关窗口（不能只放行闸门）。"""
+    destroyed: list[bool] = []
+
+    class FakeWindowWithDestroy(_FakeWindow):
+        def destroy(self):
+            destroyed.append(True)
+
+    fake = FakeWindowWithDestroy(js_result=False)
+    monkeypatch.setattr(desktop_app, "_window", fake)
+    gate = desktop_app.CloseGate(probe=lambda: True, notify=lambda: True)
+
+    assert gate.should_cancel_close() is True
+    assert _wait_for(lambda: bool(destroyed)), "原生兜底确认后窗口没有被关掉"
+
+
+def test_bridge_extra_positional_arg_is_tolerated(monkeypatch):
+    """JS 多传一个参数（`api.erp_close_window(undefined)` → Python `func(None)`）不能炸。
+
+    这是 2026-11-25 缺陷的直接复现条件：pywebview 把 JS 的 arguments 原样转发
+    （真窗口探针实测 `Api.no_arg(undefined)` → REJECTED TypeError），旧 `close-prompt.js`
+    正是 `api[name](arg)` 这种写法，于是「点了『我已同步，关闭软件』窗口没关、也没有提示」。
+    JS 侧已改成零参数调用，这里再锁一层 Python 侧的容错。
+    """
+    destroyed: list[bool] = []
+
+    class FakeWindowWithDestroy(_FakeWindow):
+        def destroy(self):
+            destroyed.append(True)
+
+    monkeypatch.setattr(desktop_app, "_window", FakeWindowWithDestroy(js_result=True))
+    gate = desktop_app.CloseGate(probe=lambda: True, notify=lambda: True)
+    monkeypatch.setattr(desktop_app, "_close_gate", gate)
+
+    api = desktop_app.DesktopApi()
+    assert api.erp_close_window(None) is True, "桥多传一个 undefined 不能变成 TypeError"
+    assert _wait_for(lambda: bool(destroyed))
+
+    assert api.erp_close_prompt_cancel(None) is True
+    assert gate.prompted is False
 
 
 def test_api_cancel_returns_true_and_clears_gate(monkeypatch):

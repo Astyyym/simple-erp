@@ -212,6 +212,10 @@ class CloseGate:
                 allowed = False
         if allowed:
             self.confirm()
+            # 光放行闸门不够：关闭事件早在 `should_cancel_close()` 里被取消了，
+            # 窗口不会自己再关一次。原生兜底这条路径也必须真的把窗口关掉，
+            # 否则用户点完「确定」还得再点一次 ×（2026-11-25 用户实测）。
+            _destroy_window()
 
     # -- 由 JS 桥 / 兜底调用 ------------------------------------------------
     def confirm(self) -> None:
@@ -256,6 +260,36 @@ def _native_confirm() -> bool:
         return True
 
 
+def _destroy_window(delay: float = 0.05) -> bool:
+    """在**独立线程**里销毁窗口（用户确认关闭之后调用）。
+
+    实测口径（2026-11-25，pywebview 6.2.1 + WebView2）：在 JS 回调线程里直接
+    `window.destroy()` **并不会**卡死（真窗口对照实验证过，两种写法都能关掉），
+    所以「关不掉」的真正原因不在这里，而是 JS 侧 `api[name](undefined)` 传了多余
+    参数导致 Python 抛 TypeError、调用根本没执行（见 `erp_close_window`）。
+
+    仍然放到独立线程，理由有两条，都不是玄学：
+    1. 别在 JS 回调里做「销毁自己宿主」这种长动作，避免拖住桥的回包；
+    2. 与 `CloseGate` 的注释（UI 线程上的 `closing` 处理器必须立刻返回）保持一致。
+    """
+    if _window is None:
+        return False
+
+    def _run() -> None:
+        time.sleep(delay)
+        window = _window
+        destroy = getattr(window, "destroy", None)
+        if destroy is None:
+            return
+        try:
+            destroy()
+        except Exception:  # noqa: BLE001 — 关不掉也要留日志，别静默失败
+            logging.getLogger(__name__).exception("销毁窗口失败")
+
+    threading.Thread(target=_run, daemon=True).start()
+    return True
+
+
 class DesktopApi:
     """JS bridge for the PyWebView desktop shell."""
 
@@ -294,28 +328,25 @@ class DesktopApi:
     def is_desktop(self) -> bool:
         return True
 
-    def erp_close_window(self) -> bool:
+    def erp_close_window(self, *_ignored) -> bool:
         """页内浮层里点「我已同步，关闭软件」/「直接关闭」时调用：真正关窗口。
 
-        为什么不当场 `destroy()`：这个方法是**从 JS 的异步回调**进来的，
-        而 `destroy()` 会销毁正在执行 JS 的那个窗口。先置闸门标志、再由
-        `CloseGate` 安排的线程去关，能避开「在 JS 回调里销毁自己」那类竞态
-        （表现是卡住或进程留在后台）。
-        """
-        global _window
-        gate = _close_gate
-        if gate is not None and gate.prompted:
-            gate.confirm()
-        if _window is None:
-            return False
-        try:
-            _window.destroy()
-            return True
-        except Exception:  # noqa: BLE001 — 关不掉也要让进程退出（见 finally）
-            logging.getLogger(__name__).exception("销毁窗口失败")
-            return False
+        `*_ignored` 不是摆设：pywebview 把 JS 的 arguments 原样转发成
+        `func(*params)`，旧版 `close-prompt.js` 写的是 `api[name](arg)`，
+        `arg` 为 undefined 时 Python 收到一个多余的 `None` → TypeError →
+        Promise reject → **窗口没关、界面也没提示**（2026-11-25 用户实测，
+        真窗口探针复现：`Api.no_arg(undefined)` → REJECTED）。
+        JS 侧已改成零参数调用，这里再兜一层，避免以后再被同一个坑绊住。
 
-    def erp_close_prompt_cancel(self) -> bool:
+        销毁交给 `_destroy_window()`（独立线程），先置闸门标志让紧随其后的
+        `closing` 事件放行。
+        """
+        gate = _close_gate
+        if gate is not None:
+            gate.confirm()
+        return _destroy_window()
+
+    def erp_close_prompt_cancel(self, *_ignored) -> bool:
         """用户点了「取消，先不关」：清掉闸门，让下一次点 × 仍然弹提醒。
 
         没有这个方法的话，「第一次点 × 弹了、用户取消、第二次点 × 直接关」——

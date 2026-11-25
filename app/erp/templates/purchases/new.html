@@ -182,7 +182,7 @@
 
 <script type="application/json" id="productCatalog">{{ product_catalog|tojson }}</script>
 <script src="{{ url_for('static', filename='order-product-picker.js') }}?v=1"></script>
-<script src="{{ url_for('static', filename='order-entry-common.js') }}?v=4"></script>
+<script src="{{ url_for('static', filename='order-entry-common.js') }}?v=5"></script>
 <script>
 const money = ErpOrderEntry.money;
 const catalog = JSON.parse(document.getElementById('productCatalog').textContent || '[]');
@@ -329,9 +329,8 @@ function bindRow(tr) {
       tr.__pastedPrice = null;
     }
     clearMissingHint(tr);
-    // 1-F：选中商品后数量默认 1（空行不预填，避免空白行被当成有效明细提交）。
-    const qtyInput = tr.querySelector('.quantity');
-    if (qtyInput && !String(qtyInput.value || '').trim()) qtyInput.value = '1';
+    // 数量不预填（2026-11-25 用户口径：一律留空让用户自己填，省掉「删掉 1」那一步）。
+    // 原先这里在选中商品后补 1；改成留空后，漏填数量会在保存时被前端拦下并定位到该格。
     recalc();
     tr.querySelector('.quantity').focus();
   }
@@ -505,6 +504,18 @@ purchaseForm.addEventListener('submit', async event => {
   const activeButton = action === 'save_print' ? submitButton : (saveButton || submitButton);
   event.preventDefault();
   if (activeButton.disabled) return;
+
+  // 数量留空后，「填了商品忘填数量」必须当场拦下：后端会直接拒单（数量必须大于0），
+  // 但先在这里把光标定位到漏填那一格，用户不用自己找。
+  const missingQuantity = ErpOrderEntry.findRowMissingQuantity(document.getElementById('purchaseRows'));
+  if (missingQuantity) {
+    errorPanel.textContent = '有一行填了商品但没有填数量，请补上数量再保存。';
+    errorPanel.classList.remove('d-none');
+    missingQuantity.input.focus();
+    missingQuantity.input.scrollIntoView({ block: 'center' });
+    return;
+  }
+
   submitButton.disabled = true;
   if (saveButton) saveButton.disabled = true;
   const restoreText = activeButton.textContent;

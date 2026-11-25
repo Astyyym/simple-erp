@@ -31,15 +31,53 @@
     return (window.pywebview && window.pywebview.api) || null;
   }
 
+  /**
+   * 调 pywebview 的 js_api。
+   *
+   * **不要写成 `api[name](arg)`**（2026-11-25 真窗口实测的坑）：
+   * pywebview 把 JS 的 arguments 原样转发给 Python（`func(*params)`），
+   * `api[name](undefined)` 到 Python 就是 `func(None)` —— 这两个方法都不接参数，
+   * 于是抛 `TypeError: takes 1 positional argument but 2 were given`，Promise 被
+   * reject。而 `api[name](arg)` **同步返回一个 Promise，不会抛**，同步的 try/catch
+   * 抓不到，用户看到的就是「点了『我已同步，关闭软件』，窗口没关、也没有任何提示」，
+   * 只能再点一次窗口的 ×（闸门这时把第二次点 × 当成放行）。
+   * 实测记录：`tests/frontend/close_prompt_bridge.test.mjs` 锁住「零参数调用」这条契约。
+   *
+   * 返回 true = 已经发出调用；桥不在或同步抛错 = false，调用方据此给出可见提示。
+   */
   function callBridge(name, arg) {
     var api = bridge();
     if (!api || typeof api[name] !== 'function') return false;
+    var result;
     try {
-      api[name](arg);
-      return true;
+      result = arg === undefined ? api[name]() : api[name](arg);
     } catch (error) {
       return false;
     }
+    // 异步失败（Python 抛异常）也要让人看得见，否则又是一次静默无反应。
+    if (result && typeof result.catch === 'function') {
+      result.catch(function (error) {
+        console.error('[erp] 桌面桥调用失败：' + name, error);
+        showBridgeFailureHint();
+      });
+    }
+    return true;
+  }
+
+  /** 桥调不通时的一条可见提示：关不掉时用户至少知道该点窗口右上角的 ×。 */
+  function showBridgeFailureHint() {
+    if (!document.body || document.getElementById('erpCloseBridgeHint')) return;
+    var hint = document.createElement('div');
+    hint.id = 'erpCloseBridgeHint';
+    hint.setAttribute('role', 'alert');
+    hint.textContent = '关闭没有生效：请点窗口右上角的 × 关闭软件。';
+    hint.style.cssText = 'position:fixed;left:50%;top:18px;transform:translateX(-50%);z-index:100000;'
+      + 'background:#7f1d1d;color:#fff;font-size:13px;line-height:1.5;padding:10px 16px;'
+      + 'border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.28);';
+    document.body.appendChild(hint);
+    setTimeout(function () {
+      if (hint.parentNode) hint.parentNode.removeChild(hint);
+    }, 8000);
   }
 
   function escapeHtml(value) {
@@ -114,9 +152,12 @@
 
   function confirmClose() {
     stopPolling();
-    // 先摘掉浮层：destroy 有几十毫秒的空档，留着半透明遮罩看着像卡住。
+    // 顺序有讲究：先发调用、再摘浮层。桥不在或同步抛错时要留一条可见提示
+    // （否则用户看到的就是「点了没反应」，只能自己再去点窗口的 ×）。
+    var sent = callBridge('erp_close_window');
+    // 摘掉浮层：destroy 有几十毫秒的空档，留着半透明遮罩看着像卡住。
     closeOverlay();
-    callBridge('erp_close_window');
+    if (!sent) showBridgeFailureHint();
   }
 
   function cancelClose() {

@@ -1,6 +1,11 @@
-"""1-F 开单手手感：复制上一单 API + 数量默认 1 + 回车跳格脚本。"""
+"""1-F 开单手手感：复制上一单 API + 数量留空 + 回车跳格脚本。
+
+2026-11-25 用户口径变更：数量**不再预填 1**，一律留空（灰色 0 是 placeholder，
+表示「待补充数量」），用户自己填。原先预填 1 的代价是每次都要先删掉那个 1。
+"""
 from __future__ import annotations
 
+import re
 from uuid import uuid4
 
 from erp import create_app
@@ -64,14 +69,19 @@ def test_purchase_last_order_api():
     assert payload["items"][0]["unit_price"] == "8.00"
 
 
-def test_new_order_page_has_copy_button_and_quantity_default_and_enter_script():
+def test_new_order_page_has_copy_button_and_empty_quantity_and_enter_script():
     init_db()
     client = create_app().test_client()
     html = client.get("/orders/new").get_data(as_text=True)
     assert 'id="copyLastOrderButton"' in html
-    # 数量默认 1（首个空白行）
-    assert 'name="quantity"' in html
-    assert 'value="1"' in html
+    # 数量留空（2026-11-25 用户口径）：placeholder 是灰色 0（＝待补充数量），value 必须是空的。
+    # 不能再用「html 里出现 value="1"」这种松断言 —— 页面别处也有 value="1"，说明不了这一格。
+    quantity_input = re.search(r'<input name="quantity"[^>]*>', html)
+    assert quantity_input is not None, "开单页应当有数量输入框"
+    assert 'placeholder="0"' in quantity_input.group(0), "灰色 0 是「待补充数量」的提示，要保留"
+    assert 'value=""' in quantity_input.group(0), "数量不能预填 1，一律留空让用户自己填"
+    # 漏填数量的兜底：后端会静默丢掉「有名称没数量」的行，前端必须拦。
+    assert "findRowMissingQuantity" in html
     assert "/orders/api/last_order" in html
     # 回车跳格脚本存在
     assert "event.key !== 'Enter'" in html

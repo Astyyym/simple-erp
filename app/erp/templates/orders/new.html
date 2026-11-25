@@ -151,7 +151,7 @@
         <td class="text-center row-no">{{loop.index}}</td>
         <td class="product-picker"><div class="picker-row"><div class="row-copy-tools"><button type="button" class="row-tool-btn" data-row-action="copy" title="复制本行（Ctrl+D）" aria-label="复制本行"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><rect x="5.5" y="1.5" width="8" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M3.5 4.5h-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button><button type="button" class="row-tool-btn" data-row-action="paste" title="粘贴本行" aria-label="粘贴本行"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><rect x="3" y="2.5" width="10" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="6" y="1" width="4" height="2.6" rx="1" fill="currentColor"/><path d="M5.5 7h5M5.5 10h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button></div><span class="row-copy-sep" aria-hidden="true"></span><input type="hidden" name="product_id" class="product-id" value="{{item.product_id if item else ''}}"><input type="hidden" name="source_item_id" class="source-item-id" value="{{item.source_item_id or ''}}"><input type="hidden" name="product_name" class="product-name" value="{{item.product_name if item else ''}}"><div class="suggest-wrap product-suggest-wrap"><input class="form-control form-control-sm picker-name-input" autocomplete="off" aria-label="第 {{loop.index}} 行产品名称" placeholder="输入或选择商品名" value="{{item.product_name if item else ''}}"><div class="suggest-list d-none product-suggestions" role="listbox" aria-label="商品建议"></div></div></div></td>
         <td><div class="unit-cell suggest-wrap"><input name="unit" class="unit form-control form-control-sm" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" placeholder="单位" aria-label="第 {{loop.index}} 行单位" aria-expanded="false" data-unit-options="{{ (unit_options or ['个','套','件'])|join('|') }}" value="{{item.unit if item else ''}}"><div class="suggest-list d-none unit-suggestions" role="listbox" aria-label="单位建议"></div></div></td>
-        <td><input name="quantity" class="quantity" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0" value="{{item.quantity if item else '1'}}"></td>
+        <td><input name="quantity" class="quantity" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0" value="{{item.quantity if item else ''}}"></td>
         <td class="price-cell"><input name="unit_price" class="unit-price" autocomplete="new-password" data-lpignore="true" data-1p-ignore="true" inputmode="decimal" placeholder="0.00" value="{{cents_to_yuan(item.unit_price_cents) if item else ''}}"></td>
         <td><div class="readonly-total line-total">0.00</div></td>
         <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="clearRow(this)">清空</button></td>
@@ -222,7 +222,7 @@
 
 <script type="application/json" id="productCatalog">{{ product_catalog|tojson }}</script>
 <script src="{{ url_for('static', filename='order-product-picker.js') }}?v=2"></script>
-<script src="{{ url_for('static', filename='order-entry-common.js') }}?v=4"></script>
+<script src="{{ url_for('static', filename='order-entry-common.js') }}?v=5"></script>
 <script>
 // v14/Phase 3：联想与金额格式化统一来自 order-entry-common.js（原先本页内联一份副本）。
 const { money, bindAutocomplete } = window.ErpOrderEntry;
@@ -886,6 +886,18 @@ orderForm.addEventListener('submit', async event => {
 
   event.preventDefault();
   if (activeButton && activeButton.disabled) return;
+
+  // 数量一律留空（2026-11-25 用户口径）：填了商品忘了填数量，后端会**静默丢掉整行**
+  // （`_typed_rows_from_form` 只收「有名称且有数量」的行），单子照存、金额少算。
+  // 所以在这里拦一道，并把光标直接放到漏填的那一格，省得用户自己找。
+  const missingQuantity = ErpOrderEntry.findRowMissingQuantity(document.getElementById('orderBody'));
+  if (missingQuantity) {
+    errorPanel.textContent = '有一行填了商品但没有填数量，请补上数量再保存。';
+    errorPanel.classList.remove('d-none');
+    missingQuantity.input.focus();
+    missingQuantity.input.scrollIntoView({ block: 'center' });
+    return;
+  }
 
   if (activeButton) { activeButton.disabled = true; }
   if (savePrintButton) savePrintButton.disabled = true;

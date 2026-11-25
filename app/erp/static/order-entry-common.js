@@ -555,8 +555,34 @@
     return !!copiedRow;
   }
 
+  /**
+   * 找第一行「填了商品名、但数量是空的」明细行；没有就返回 null。
+   *
+   * 为什么要这个（2026-11-25 用户口径：数量不再预填 1，一律留空自己填）：
+   * 原先首行预填 1，其实在默默兜一个坑 —— 后端按「有名称 **且** 有数量」收明细行
+   * （`routes/orders.py: _typed_rows_from_form`），填了商品却忘填数量的行会被
+   * **静默丢掉**，单子照样保存，只是少一行、金额少算，单子上看不出来。
+   * 数量改成留空之后，这个坑就成了常态风险，所以保存前必须拦住并定位到那一格。
+   *
+   * 只认 `.slip-notice` 以外的行（换页提示行不是录入行，与页面其它逻辑同一口径）。
+   */
+  function findRowMissingQuantity(tbody) {
+    if (!tbody) return null;
+    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr:not(.slip-notice)'));
+    for (var i = 0; i < rows.length; i += 1) {
+      var tr = rows[i];
+      var nameField = tr.querySelector('.product-name') || tr.querySelector('.picker-name-input');
+      var name = String((nameField && nameField.value) || '').trim();
+      if (!name) continue;  // 整行没填商品：这是空行，不是漏填数量
+      var qtyInput = tr.querySelector('.quantity');
+      if (!String((qtyInput && qtyInput.value) || '').trim()) return { row: tr, input: qtyInput };
+    }
+    return null;
+  }
+
   window.ErpOrderEntry = {
     money: money,
+    findRowMissingQuantity: findRowMissingQuantity,
     bindAutocomplete: bindAutocomplete,
     bindUnitCell: bindUnitCell,
     createDirtyTracker: createDirtyTracker,

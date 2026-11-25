@@ -56,3 +56,19 @@ Flask + SQLite，可选 Windows PyWebView 桌面壳，**只在 Windows 运行**�
     仅因 `overflow:hidden` 裁在按钮右边缘而肉眼不可见。依据：`app/erp/templates/base.html:346`。
   - 采用值：按钮 45×26px、间距 2px、操作列 196px（占表宽 17.7%），1440→1100 各档视口全部不越界。
   - 关键点：**去掉的是按钮的 `min-width:60px` 硬撑**，不是减少动作数量。
+
+## 开单录入口径：数量一律留空 + 点选商品后光标落数量格（2026-11-25 用户决策）
+
+- **数量不预填**：销售 / 退货 / 拿货 / 退拿货四个开单页，新增行与点选商品后数量都留空，
+  placeholder 是灰色 `0`，语义就是「待补充数量」。原先预填 1 让用户每次先删一个 1，多余一步。
+  依据：`orders/new.html:154`（`value="{{item.quantity if item else ''}}"`）、
+  `purchases/new.html` 的 `applyProduct`（原 `qtyInput.value='1'` 已删）。
+- **配套兜底不能省**：`routes/orders.py:_typed_rows_from_form()` 只收「有名称 **且** 有数量」的行，
+  填了商品忘填数量会**静默丢掉整行**（`_validate_typed_rows([])` 也不报错），单子照存、金额少算。
+  所以保存前必须由 `ErpOrderEntry.findRowMissingQuantity()` 拦下并定位到那一格；
+  拿货侧后端本来就会拒（"数量必须大于0"），前端同样先拦、先定位。依据：
+  `app/erp/static/order-entry-common.js`、`tests/frontend/order_missing_quantity.test.mjs`。
+- **点选商品模糊匹配项后，光标直接落到该行数量格**（用户要求）。销售/退货在
+  `applyProductToRow()` 末尾已 `tr.querySelector('.quantity').focus()`；真桌面窗口点选实测成立。
+- **关窗提醒点一次就真退出**：`erp_close_window` 确认闸门后由 `_destroy_window()` 起线程销毁；
+  原生兜底框点「确定」同样要关窗（原先只放行闸门，用户得再点一次 ×）。依据：`desktop_app.py`。
